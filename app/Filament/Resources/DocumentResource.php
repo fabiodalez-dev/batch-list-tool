@@ -8,9 +8,12 @@ use Filament\Forms;
 use Filament\Forms\Form;
 use Filament\Resources\Resource;
 use Filament\Tables;
+use Filament\Tables\Filters\Filter;
 use Filament\Tables\Filters\SelectFilter;
 use Filament\Tables\Filters\TernaryFilter;
+use Filament\Tables\Filters\TrashedFilter;
 use Filament\Tables\Table;
+use Illuminate\Database\Eloquent\Builder;
 
 class DocumentResource extends Resource
 {
@@ -171,16 +174,158 @@ class DocumentResource extends Resource
                 Tables\Columns\IconColumn::make('torre')->boolean()->toggleable(isToggledHiddenByDefault: true),
                 Tables\Columns\TextColumn::make('updated_at')->dateTime()->sortable()->toggleable(isToggledHiddenByDefault: true),
             ])
+            ->filtersFormColumns(3)
             ->filters([
-                SelectFilter::make('series')->relationship('series', 'code')->searchable()->preload()->multiple(),
-                SelectFilter::make('batch')->relationship('batch', 'batch_number')->searchable()->preload()->multiple(),
-                SelectFilter::make('repository')->relationship('repository', 'code')->searchable()->preload(),
-                TernaryFilter::make('torre')->placeholder('Any')->trueLabel('Torre = yes')->falseLabel('Torre = no'),
-                TernaryFilter::make('disinfestation_date')->label('Disinfested')->nullable()->trueLabel('Yes')->falseLabel('No')
+                // Relationship multi-selects (parity with POC creators/series/batch filters)
+                SelectFilter::make('series')
+                    ->relationship('series', 'code')->searchable()->preload()->multiple(),
+
+                SelectFilter::make('batch')
+                    ->relationship('batch', 'batch_number')->searchable()->preload()->multiple(),
+
+                SelectFilter::make('repository')
+                    ->relationship('repository', 'code')->searchable()->preload(),
+
+                SelectFilter::make('current_box_id')
+                    ->label('Current box')
+                    ->relationship('currentBox', 'box_number')->searchable()->preload()->multiple(),
+
+                SelectFilter::make('accession_id')
+                    ->label('Accession')
+                    ->relationship('accession', 'code')->searchable()->preload(),
+
+                SelectFilter::make('authorities')
+                    ->label('Creators')
+                    ->relationship('authorities', 'surname')->searchable()->preload()->multiple(),
+
+                // Free-text search per field (POC-style filtri puntuali)
+                Filter::make('barcode_in')
+                    ->form([
+                        Forms\Components\TextInput::make('value')
+                            ->label('Barcode (IN) contains'),
+                    ])
+                    ->query(fn (Builder $q, array $data) =>
+                        $q->when($data['value'] ?? null,
+                            fn ($q, $v) => $q->where('barcode_in', 'like', "%{$v}%")
+                        )
+                    ),
+
+                Filter::make('catalogue_identifier')
+                    ->form([
+                        Forms\Components\TextInput::make('value')
+                            ->label('Catalogue ID contains'),
+                    ])
+                    ->query(fn (Builder $q, array $data) =>
+                        $q->when($data['value'] ?? null,
+                            fn ($q, $v) => $q->where('catalogue_identifier', 'like', "%{$v}%")
+                        )
+                    ),
+
+                Filter::make('practice')
+                    ->form([
+                        Forms\Components\TextInput::make('value')->label('Practice contains'),
+                    ])
+                    ->query(fn (Builder $q, array $data) =>
+                        $q->when($data['value'] ?? null,
+                            fn ($q, $v) => $q->where('practice', 'like', "%{$v}%")
+                        )
+                    ),
+
+                Filter::make('volume_label')
+                    ->form([
+                        Forms\Components\TextInput::make('value')->label('Volume contains'),
+                    ])
+                    ->query(fn (Builder $q, array $data) =>
+                        $q->when($data['value'] ?? null,
+                            fn ($q, $v) => $q->where(function ($q) use ($v) {
+                                $q->where('volume_label', 'like', "%{$v}%")
+                                  ->orWhere('extra->volume', 'like', "%{$v}%");
+                            })
+                        )
+                    ),
+
+                Filter::make('notes')
+                    ->form([
+                        Forms\Components\TextInput::make('value')->label('Notes contain'),
+                    ])
+                    ->query(fn (Builder $q, array $data) =>
+                        $q->when($data['value'] ?? null,
+                            fn ($q, $v) => $q->where('notes', 'like', "%{$v}%")
+                        )
+                    ),
+
+                // Year range filter
+                Filter::make('year_range')
+                    ->form([
+                        Forms\Components\TextInput::make('year_from')->label('Year from')->numeric(),
+                        Forms\Components\TextInput::make('year_to')->label('Year to')->numeric(),
+                    ])
+                    ->query(function (Builder $q, array $data) {
+                        return $q
+                            ->when($data['year_from'] ?? null,
+                                fn ($q, $v) => $q->where('dates_year_start', '>=', (int) $v))
+                            ->when($data['year_to'] ?? null,
+                                fn ($q, $v) => $q->where('dates_year_end', '<=', (int) $v));
+                    })
+                    ->indicateUsing(function (array $data): array {
+                        $i = [];
+                        if (! empty($data['year_from'])) $i[] = "Year ≥ {$data['year_from']}";
+                        if (! empty($data['year_to'])) $i[] = "Year ≤ {$data['year_to']}";
+                        return $i;
+                    }),
+
+                // Disinfestation date range
+                Filter::make('disinfestation_range')
+                    ->form([
+                        Forms\Components\DatePicker::make('disinfested_from')->label('Disinfested from'),
+                        Forms\Components\DatePicker::make('disinfested_to')->label('Disinfested to'),
+                    ])
+                    ->query(function (Builder $q, array $data) {
+                        return $q
+                            ->when($data['disinfested_from'] ?? null,
+                                fn ($q, $v) => $q->whereDate('disinfestation_date', '>=', $v))
+                            ->when($data['disinfested_to'] ?? null,
+                                fn ($q, $v) => $q->whereDate('disinfestation_date', '<=', $v));
+                    }),
+
+                // Ternary filters
+                TernaryFilter::make('torre')
+                    ->placeholder('Any')->trueLabel('Torre = yes')->falseLabel('Torre = no'),
+
+                TernaryFilter::make('disinfestation_date')
+                    ->label('Disinfested?')->nullable()
+                    ->trueLabel('Yes')->falseLabel('No')
                     ->queries(
                         true: fn ($q) => $q->whereNotNull('disinfestation_date'),
                         false: fn ($q) => $q->whereNull('disinfestation_date'),
                     ),
+
+                TernaryFilter::make('has_barcode')
+                    ->label('Has barcode?')
+                    ->placeholder('Any')->trueLabel('Yes')->falseLabel('No')
+                    ->queries(
+                        true: fn ($q) => $q->whereNotNull('barcode_in')->where('barcode_in', '!=', ''),
+                        false: fn ($q) => $q->where(fn ($q) => $q->whereNull('barcode_in')->orWhere('barcode_in', '')),
+                    ),
+
+                TernaryFilter::make('has_box')
+                    ->label('Assigned to box?')
+                    ->placeholder('Any')->trueLabel('Yes')->falseLabel('No')
+                    ->queries(
+                        true: fn ($q) => $q->whereNotNull('current_box_id'),
+                        false: fn ($q) => $q->whereNull('current_box_id'),
+                    ),
+
+                TernaryFilter::make('has_notes')
+                    ->label('Has notes?')
+                    ->placeholder('Any')->trueLabel('Yes')->falseLabel('No')
+                    ->queries(
+                        true: fn ($q) => $q->whereNotNull('notes')->where('notes', '!=', ''),
+                        false: fn ($q) => $q->where(fn ($q) => $q->whereNull('notes')->orWhere('notes', '')),
+                    ),
+
+                // Soft-deleted records filter
+                TrashedFilter::make(),
             ])
             ->actions([
                 Tables\Actions\ViewAction::make(),
@@ -196,6 +341,34 @@ class DocumentResource extends Resource
     public static function getRelations(): array
     {
         return [];
+    }
+
+    /** Extend the global search bar (top-right of Filament panel) — POC parity. */
+    public static function getGloballySearchableAttributes(): array
+    {
+        return [
+            'identifier',
+            'catalogue_identifier',
+            'document_type',
+            'practice',
+            'volume_label',
+            'dates',
+            'notes',
+            'barcode_in',
+            'series.code',
+            'series.title',
+            'authorities.surname',
+            'authorities.identifier',
+        ];
+    }
+
+    /** Restrict default list query — only see current repository scope (Global Scope effect). */
+    public static function getEloquentQuery(): Builder
+    {
+        return parent::getEloquentQuery()
+            ->withoutGlobalScopes([
+                \Illuminate\Database\Eloquent\SoftDeletingScope::class,
+            ]);
     }
 
     public static function getPages(): array
