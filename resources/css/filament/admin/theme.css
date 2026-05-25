@@ -1,0 +1,25 @@
+@import '/../../../../vendor/filament/filament/resources/css/theme.css';
+
+/*
+ * Local Inter Variable font — no CDN. RFQ-2026-06 / Security Baseline §15.
+ * Files in public/fonts/inter/ are shipped from rsms/inter v4.1 (OFL-1.1 licence).
+ */
+@font-face {
+    font-family: 'Inter';
+    font-style: normal;
+    font-weight: 100 900;
+    font-display: swap;
+    src: url('/fonts/inter/InterVariable.woff2') format('woff2-variations'),
+         url('/fonts/inter/InterVariable.woff2') format('woff2');
+}
+
+@font-face {
+    font-family: 'Inter';
+    font-style: italic;
+    font-weight: 100 900;
+    font-display: swap;
+    src: url('/fonts/inter/InterVariable-Italic.woff2') format('woff2-variations'),
+         url('/fonts/inter/InterVariable-Italic.woff2') format('woff2');
+}
+
+@config '../../../../tailwind.config.js';

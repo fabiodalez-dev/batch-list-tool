@@ -4,29 +4,48 @@ namespace App\Support\Csp;
 
 use Spatie\Csp\Directive;
 use Spatie\Csp\Keyword;
-use Spatie\Csp\Policies\Policy;
+use Spatie\Csp\Preset;
+use Spatie\Csp\Policy;
 
 /**
- * Content Security Policy aligned with the Development Security Baseline §6.
+ * Strict CSP — no external CDN dependencies at runtime.
  *
- * Filament + Livewire need 'unsafe-inline' + 'unsafe-eval' on scripts;
- * Tailwind generated styles need 'unsafe-inline' on style-src. These
- * relaxations are documented as accepted in baseline §15 (exclusions).
+ * Fonts:    served from /fonts/inter/        (rsms/inter v4.1, OFL-1.1)
+ * Avatars:  generated server-side as inline SVG (laravolt/avatar)
+ * Icons:    Filament heroicons are inline SVG (no network call)
+ *
+ * Filament 3 + Livewire 3 + Alpine.js heavily use inline styles/scripts/eval;
+ * we accept `unsafe-inline` + `unsafe-eval` and disable Spatie's nonce
+ * generation in .env (CSP_NONCE_ENABLED=false) so the relaxation takes effect.
  */
-class AppPolicy extends Policy
+class AppPolicy implements Preset
 {
-    public function configure(): void
+    public function configure(Policy $policy): void
     {
-        $this
-            ->addDirective(Directive::BASE, Keyword::SELF)
-            ->addDirective(Directive::DEFAULT, Keyword::SELF)
-            ->addDirective(Directive::FORM_ACTION, Keyword::SELF)
-            ->addDirective(Directive::FRAME_ANCESTORS, Keyword::NONE)
-            ->addDirective(Directive::IMG, [Keyword::SELF, 'data:', 'https:'])
-            ->addDirective(Directive::CONNECT, [Keyword::SELF, 'wss:'])
-            ->addDirective(Directive::FONT, [Keyword::SELF, 'data:', 'https:'])
-            ->addDirective(Directive::STYLE, [Keyword::SELF, Keyword::UNSAFE_INLINE])
-            ->addDirective(Directive::SCRIPT, [Keyword::SELF, Keyword::UNSAFE_INLINE, Keyword::UNSAFE_EVAL])
-            ->addDirective(Directive::OBJECT, Keyword::NONE);
+        $policy
+            ->add(Directive::BASE,            Keyword::SELF)
+            ->add(Directive::DEFAULT,         Keyword::SELF)
+            ->add(Directive::FORM_ACTION,     Keyword::SELF)
+            ->add(Directive::FRAME_ANCESTORS, Keyword::NONE)
+            ->add(Directive::OBJECT,          Keyword::NONE)
+
+            // Images: self + data: URIs (Filament inline SVG + laravolt avatar)
+            ->add(Directive::IMG, [Keyword::SELF, 'data:'])
+
+            // Fonts: self only (Inter served from /fonts/inter/)
+            ->add(Directive::FONT, [Keyword::SELF, 'data:'])
+
+            // Styles: self + unsafe-inline (Tailwind utility classes + Filament inline)
+            ->add(Directive::STYLE,           [Keyword::SELF, Keyword::UNSAFE_INLINE])
+            ->add(Directive::STYLE_ELEM,      [Keyword::SELF, Keyword::UNSAFE_INLINE])
+            ->add(Directive::STYLE_ATTR,      [Keyword::SELF, Keyword::UNSAFE_INLINE])
+
+            // Scripts: self + unsafe-inline + unsafe-eval (Alpine.js eval)
+            ->add(Directive::SCRIPT,          [Keyword::SELF, Keyword::UNSAFE_INLINE, Keyword::UNSAFE_EVAL])
+            ->add(Directive::SCRIPT_ELEM,     [Keyword::SELF, Keyword::UNSAFE_INLINE])
+            ->add(Directive::SCRIPT_ATTR,     [Keyword::SELF, Keyword::UNSAFE_INLINE])
+
+            // Connections: self + wss: (Livewire WebSocket if Reverb enabled)
+            ->add(Directive::CONNECT, [Keyword::SELF, 'wss:']);
     }
 }
