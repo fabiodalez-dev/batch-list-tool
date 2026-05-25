@@ -2,6 +2,7 @@
 
 namespace App\Models;
 
+use App\Models\Concerns\BelongsToRepository;
 use Illuminate\Database\Eloquent\Factories\HasFactory;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
@@ -24,6 +25,7 @@ class Document extends Model implements AuditableContract, HasMedia
     use Searchable;
     use HasTags;
     use InteractsWithMedia;
+    use BelongsToRepository;  // RFQ §3.5.1 — multi-tenant scope
 
     protected $fillable = [
         // Normalised columns
@@ -102,13 +104,27 @@ class Document extends Model implements AuditableContract, HasMedia
         return $this->hasMany(BoxMovement::class)->latest('movement_date');
     }
 
+    /**
+     * F-011 alignment: this MUST mirror the attributes exposed in
+     * DocumentResource::getGloballySearchableAttributes() so that swapping
+     * Scout drivers (database / Meilisearch / Algolia) does not change
+     * which fields the user sees in global search.
+     */
     public function toSearchableArray(): array
     {
         return [
-            'identifier' => $this->identifier,
-            'document_type' => $this->document_type,
-            'notes' => $this->notes,
-            'volume_label' => $this->volume_label,
+            'identifier'           => $this->identifier,
+            'catalogue_identifier' => $this->catalogue_identifier,
+            'document_type'        => $this->document_type,
+            'practice'             => $this->practice,
+            'volume_label'         => $this->volume_label,
+            'dates'                => $this->dates,
+            'notes'                => $this->notes,
+            'barcode_in'           => $this->barcode_in,
+            'series_code'          => $this->series?->code,
+            'series_title'         => $this->series?->title,
+            'authorities_surnames' => $this->authorities()->pluck('surname')->implode(' '),
+            'authorities_idents'   => $this->authorities()->pluck('identifier')->implode(' '),
         ];
     }
 

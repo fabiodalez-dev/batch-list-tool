@@ -15,6 +15,8 @@ class Box extends Model implements AuditableContract
     use HasFactory;
     use SoftDeletes;
     use Auditable;
+    // NOTE: Box has no direct repository_id column — scoping derives via batch.repository_id.
+    // Filament Resource for Box should filter on batch.repository_id manually if needed.
 
     public const TYPES = ['RAS', 'IN_SITU', 'NRA', 'MAV', 'STVC'];
     public const LEGACY_TYPES = ['MAV', 'STVC'];                  // RFQ rule #4

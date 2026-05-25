@@ -5,6 +5,7 @@ namespace App\Console\Commands;
 use App\Models\Authority;
 use App\Models\Document;
 use Illuminate\Console\Command;
+use Illuminate\Database\Eloquent\Collection;
 use Illuminate\Support\Facades\DB;
 
 /**
@@ -13,19 +14,28 @@ use Illuminate\Support\Facades\DB;
  *
  * Strategy (best-effort):
  *   1. Split the legacy_creator_text on ";" — POC allowed multiple creators per document
- *   2. For each token, try exact match on `authorities.surname` (full word) first
- *   3. Fall back to LIKE on surname (guarded against very short tokens — see F-001)
- *   4. The first matched Authority is marked as `is_primary = true`
- *   5. Unresolved names are reported in a summary line
- *   6. The match method (exact / last_word / fuzzy) is persisted per-document
- *      under `document.extra.creator_match_log` so operators can audit
- *      low-confidence fuzzy attributions.
+ *   2. For each token, try exact match on `authorities.surname` first
+ *   3. Try first-word match (handles "Surname Given" order)
+ *   4. Fall back to LIKE on surname (guarded against very short tokens — F-001)
+ *   5. On duplicate-surname collisions: skip + log "ambiguous_N_candidates" so the
+ *      operator can resolve manually (F-009 — safest for notarial domain)
+ *   6. The first matched Authority is marked as `is_primary = true`
+ *   7. Per-document match_method log persisted in `document.extra.creator_match_log`
+ *
+ * Performance (F-002):
+ *   - Documents are processed in `chunkById(500)`; commits per chunk instead of one
+ *     long transaction. Robust to interruption and to shared-hosting memory limits.
+ *   - Fuzzy LIKE results are memoised in-process so the same misspelled token
+ *     does not re-hit MySQL N times.
  */
 class LinkCreatorTextToAuthorities extends Command
 {
     protected $signature = 'nra:link-creator-text-to-authorities {--dry-run : Print stats without writing}';
 
     protected $description = 'Resolve Document.extra.legacy_creator_text into document_authority pivot rows.';
+
+    /** @var array<string, ?int> Memo cache for fuzzy resolution */
+    private array $fuzzyCache = [];
 
     public function handle(): int
     {
@@ -36,83 +46,109 @@ class LinkCreatorTextToAuthorities extends Command
             ->groupBy(fn ($a) => mb_strtolower(trim($a->surname)));
 
         $linked = 0;
+        $ambiguous = 0;
         $methodCounts = ['exact' => 0, 'last_word' => 0, 'fuzzy' => 0];
         $unresolved = [];
-        $documents = Document::whereNotNull('extra')->get(['id', 'extra']);
+        $totalDocs = Document::whereNotNull('extra')->count();
+        $isDryRun = (bool) $this->option('dry-run');
 
-        if (! $this->option('dry-run')) {
-            DB::beginTransaction();
-        }
+        $this->info("Processing {$totalDocs} documents in chunks of 500 …");
+        $progressBar = $this->output->createProgressBar($totalDocs);
+        $progressBar->start();
 
-        try {
-            foreach ($documents as $doc) {
-                $text = trim((string) ($doc->extra['legacy_creator_text'] ?? ''));
-                if ($text === '') {
-                    continue;
+        Document::whereNotNull('extra')
+            ->orderBy('id')
+            ->chunkById(500, function (Collection $documents) use (
+                &$linked, &$ambiguous, &$methodCounts, &$unresolved,
+                $authoritiesBySurname, $isDryRun, $progressBar
+            ) {
+                // F-002: commit per chunk (no long-running transaction).
+                if (! $isDryRun) {
+                    DB::beginTransaction();
                 }
 
-                $tokens = array_filter(array_map('trim', preg_split('/[;,]+/', $text)));
-                $primary = true;
-                $matchLog = [];
+                try {
+                    foreach ($documents as $doc) {
+                        $text = trim((string) ($doc->extra['legacy_creator_text'] ?? ''));
+                        if ($text === '') {
+                            $progressBar->advance();
+                            continue;
+                        }
 
-                foreach ($tokens as $token) {
-                    $result = $this->resolveAuthority($token, $authoritiesBySurname);
-                    if ($result === null) {
-                        $unresolved[$token] = ($unresolved[$token] ?? 0) + 1;
-                        continue;
+                        $tokens = array_filter(array_map('trim', preg_split('/[;,]+/', $text)));
+                        $primary = true;
+                        $matchLog = [];
+
+                        foreach ($tokens as $token) {
+                            $result = $this->resolveAuthority($token, $authoritiesBySurname);
+
+                            if ($result === null) {
+                                $unresolved[$token] = ($unresolved[$token] ?? 0) + 1;
+                                continue;
+                            }
+
+                            // F-009: ambiguous → skip + log, do not pick arbitrarily
+                            if (isset($result['ambiguous'])) {
+                                $matchLog[] = "{$token} → ambiguous_{$result['ambiguous']}_candidates";
+                                $ambiguous++;
+                                continue;
+                            }
+
+                            $authorityId = $result['id'];
+                            $method = $result['method'];
+
+                            if (! $isDryRun) {
+                                $doc->authorities()->syncWithoutDetaching([
+                                    $authorityId => ['is_primary' => $primary],
+                                ]);
+                            }
+                            $linked++;
+                            if (isset($methodCounts[$method])) {
+                                $methodCounts[$method]++;
+                            }
+                            $matchLog[] = "{$token} → {$method}";
+                            $primary = false;
+                        }
+
+                        // Persist log so operators can review fuzzy + ambiguous attributions
+                        if (! $isDryRun && ! empty($matchLog)) {
+                            $extra = $doc->extra ?? [];
+                            $extra['creator_match_log'] = $matchLog;
+                            $doc->extra = $extra;
+                            $doc->save();
+                        }
+
+                        $progressBar->advance();
                     }
 
-                    $authorityId = $result['id'];
-                    $method = $result['method'];
-
-                    if (! $this->option('dry-run')) {
-                        $doc->authorities()->syncWithoutDetaching([
-                            $authorityId => ['is_primary' => $primary],
-                        ]);
+                    if (! $isDryRun) {
+                        DB::commit();
                     }
-                    $linked++;
-                    if (isset($methodCounts[$method])) {
-                        $methodCounts[$method]++;
+                } catch (\Throwable $e) {
+                    if (! $isDryRun) {
+                        DB::rollBack();
                     }
-                    $matchLog[] = "{$token} → {$method}";
-                    $primary = false;
+                    throw $e;
                 }
+            });
 
-                // Persist the per-document match log so operators can review
-                // low-confidence fuzzy attributions later. Only one save per
-                // document so the audit-log trait records a single change.
-                if (! $this->option('dry-run') && ! empty($matchLog)) {
-                    $extra = $doc->extra ?? [];
-                    $extra['creator_match_log'] = $matchLog;
-                    $doc->extra = $extra;
-                    $doc->save();
-                }
-            }
-            if (! $this->option('dry-run')) {
-                DB::commit();
-            }
-        } catch (\Throwable $e) {
-            if (! $this->option('dry-run')) DB::rollBack();
-            throw $e;
-        }
+        $progressBar->finish();
+        $this->newLine(2);
 
-        $verb = $this->option('dry-run') ? 'Would link' : 'Linked';
-
-        $this->info('');
+        $verb = $isDryRun ? 'Would link' : 'Linked';
         $this->info('═══════════════════════════════════════════════════');
         $this->info(sprintf(
             ' %s Document → Authority pivot rows: %d (exact %d, last_word %d, fuzzy %d)',
-            $verb,
-            $linked,
-            $methodCounts['exact'],
-            $methodCounts['last_word'],
-            $methodCounts['fuzzy']
+            $verb, $linked,
+            $methodCounts['exact'], $methodCounts['last_word'], $methodCounts['fuzzy']
         ));
         if ($methodCounts['fuzzy'] > 0) {
-            $storageVerb = $this->option('dry-run') ? 'would be stored' : 'stored';
-            $this->info(
-                "   fuzzy matches {$storageVerb} in document.extra.creator_match_log for review"
-            );
+            $sv = $isDryRun ? 'would be stored' : 'stored';
+            $this->info("   fuzzy matches {$sv} in document.extra.creator_match_log for review");
+        }
+        if ($ambiguous > 0) {
+            $this->warn(" Ambiguous (skipped — operator must assign manually): {$ambiguous}");
+            $this->warn('   filter the Document list by extra.creator_match_log containing "ambiguous" to find them');
         }
         $this->info(' Unresolved creator names: ' . count($unresolved));
         if (! empty($unresolved)) {
@@ -131,46 +167,48 @@ class LinkCreatorTextToAuthorities extends Command
     }
 
     /**
-     * Attempt to resolve a free-text creator token to an Authority row.
-     *
-     * @return array{id:int, method:string}|null
-     *   - method = 'exact'     → last-word surname matched an authority surname exactly
-     *   - method = 'last_word' → first-word fallback matched (handles "Surname Given" order)
-     *   - method = 'fuzzy'     → LIKE-based fallback (low confidence — guarded by min length)
-     *   - null                 → no candidate found
+     * @return array{id:int, method:string}|array{ambiguous:int}|null
      */
     private function resolveAuthority(string $token, $authoritiesBySurname): ?array
     {
-        // Last word is usually the surname in "Given Surname" format
         $parts = preg_split('/\s+/', $token);
         $surnameCandidate = mb_strtolower(end($parts));
 
-        // Exact surname match (case-insensitive)
+        // 1. Exact surname match
         if (isset($authoritiesBySurname[$surnameCandidate])) {
-            $match = $authoritiesBySurname[$surnameCandidate]->first();
-            return ['id' => $match->id, 'method' => 'exact'];
+            $candidates = $authoritiesBySurname[$surnameCandidate];
+            if ($candidates->count() > 1) {
+                return ['ambiguous' => $candidates->count()];  // F-009
+            }
+            return ['id' => $candidates->first()->id, 'method' => 'exact'];
         }
 
-        // Try first word as surname (in case "Surname Given" order)
+        // 2. First-word fallback ("Surname Given" order)
         $firstCandidate = mb_strtolower($parts[0] ?? '');
         if ($firstCandidate !== $surnameCandidate && isset($authoritiesBySurname[$firstCandidate])) {
-            return [
-                'id' => $authoritiesBySurname[$firstCandidate]->first()->id,
-                'method' => 'last_word',
-            ];
+            $candidates = $authoritiesBySurname[$firstCandidate];
+            if ($candidates->count() > 1) {
+                return ['ambiguous' => $candidates->count()];  // F-009
+            }
+            return ['id' => $candidates->first()->id, 'method' => 'last_word'];
         }
 
-        // F-001: never fuzzy-match on short tokens — too ambiguous to attribute reliably
+        // 3. F-001 — never fuzzy-match on short tokens
         if (mb_strlen($surnameCandidate) < 4) {
             return null;
         }
 
-        // LIKE-based fuzzy: search any authority whose surname contains the token surname
-        $hit = Authority::query()
-            ->where('surname', 'like', "%{$surnameCandidate}%")
-            ->orderByRaw('CHAR_LENGTH(surname) ASC')
-            ->limit(1)
-            ->value('id');
+        // 4. Fuzzy LIKE (memoised — F-002)
+        if (array_key_exists($surnameCandidate, $this->fuzzyCache)) {
+            $hit = $this->fuzzyCache[$surnameCandidate];
+        } else {
+            $hit = Authority::query()
+                ->where('surname', 'like', "%{$surnameCandidate}%")
+                ->orderByRaw('CHAR_LENGTH(surname) ASC')
+                ->limit(1)
+                ->value('id');
+            $this->fuzzyCache[$surnameCandidate] = $hit;
+        }
 
         if ($hit === null) {
             return null;

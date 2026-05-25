@@ -11,7 +11,15 @@ return Application::configure(basePath: dirname(__DIR__))
         health: '/up',
     )
     ->withMiddleware(function (Middleware $middleware) {
-        //
+        // Security baseline §4-§6: global HTTP security headers + CSP + honeypot
+        $middleware->append([
+            \Bepsvpt\SecureHeaders\SecureHeadersMiddleware::class,
+            \Spatie\Csp\AddCspHeaders::class,
+        ]);
+        // Idempotency on POST/PUT/PATCH/DELETE to prevent double-submit duplicates
+        $middleware->alias([
+            'idempotency' => \Sobhanatar\Idempotency\Middleware\Idempotency::class,
+        ]);
     })
     ->withExceptions(function (Exceptions $exceptions) {
         //

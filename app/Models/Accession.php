@@ -7,6 +7,7 @@ use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
 use Illuminate\Database\Eloquent\Relations\HasMany;
 use Illuminate\Database\Eloquent\SoftDeletes;
+use App\Models\Concerns\BelongsToRepository;
 use OwenIt\Auditing\Auditable;
 use OwenIt\Auditing\Contracts\Auditable as AuditableContract;
 
@@ -15,6 +16,7 @@ class Accession extends Model implements AuditableContract
     use HasFactory;
     use SoftDeletes;
     use Auditable;
+    use BelongsToRepository;
 
     protected $fillable = [
         'code', 'accession_date', 'authority_id', 'batch_id', 'repository_id', 'notes',
