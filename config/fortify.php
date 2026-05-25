@@ -131,7 +131,9 @@ return [
     |
     */
 
-    'views' => true,
+    // Filament handles its own login/profile views; disable Fortify route registration
+    // to avoid LoginViewResponse binding errors when no view binding is set.
+    'views' => false,
 
     /*
     |--------------------------------------------------------------------------
