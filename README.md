@@ -1,66 +1,111 @@
-<p align="center"><a href="https://laravel.com" target="_blank"><img src="https://raw.githubusercontent.com/laravel/art/master/logo-lockup/5%20SVG/2%20CMYK/1%20Full%20Color/laravel-logolockup-cmyk-red.svg" width="400" alt="Laravel Logo"></a></p>
+# Batch List Tool
 
-<p align="center">
-<a href="https://github.com/laravel/framework/actions"><img src="https://github.com/laravel/framework/workflows/tests/badge.svg" alt="Build Status"></a>
-<a href="https://packagist.org/packages/laravel/framework"><img src="https://img.shields.io/packagist/dt/laravel/framework" alt="Total Downloads"></a>
-<a href="https://packagist.org/packages/laravel/framework"><img src="https://img.shields.io/packagist/v/laravel/framework" alt="Latest Stable Version"></a>
-<a href="https://packagist.org/packages/laravel/framework"><img src="https://img.shields.io/packagist/l/laravel/framework" alt="License"></a>
-</p>
+Web application for the **Notarial Archives Foundation (NAF)**, Malta, under contract **RFQ-2026-06**. Replaces the legacy Excel-based "Batch List" with a structured, auditable, multi-repository system.
 
-## About Laravel
+- **Production go-live**: 30 November 2026
+- **Stack**: Laravel 11 · Filament 3 · PHP 8.4 · MySQL 8 · Blade/Livewire (no SPA)
+- **Licence**: Apache 2.0 (to be added at handover)
+- **Operational docs**: `../Batch_List_Tool/nra/ops/` (planning, workflow, runbooks)
 
-Laravel is a web application framework with expressive, elegant syntax. We believe development must be an enjoyable and creative experience to be truly fulfilling. Laravel takes the pain out of development by easing common tasks used in many web projects, such as:
+---
 
-- [Simple, fast routing engine](https://laravel.com/docs/routing).
-- [Powerful dependency injection container](https://laravel.com/docs/container).
-- Multiple back-ends for [session](https://laravel.com/docs/session) and [cache](https://laravel.com/docs/cache) storage.
-- Expressive, intuitive [database ORM](https://laravel.com/docs/eloquent).
-- Database agnostic [schema migrations](https://laravel.com/docs/migrations).
-- [Robust background job processing](https://laravel.com/docs/queues).
-- [Real-time event broadcasting](https://laravel.com/docs/broadcasting).
+## Quick start (local development)
 
-Laravel is accessible, powerful, and provides tools required for large, robust applications.
+```bash
+git clone git@github.com:fabiodalez-dev/batch-list-tool.git
+cd batch-list-tool
+cp .env.example .env                    # then edit DB_* values for your local MySQL
+composer install
+npm install && npm run build            # or `npm run dev` while developing
+php artisan key:generate
+php artisan migrate
+php artisan db:seed                     # seeds 2 repos, 5 series, 4 authorities, 4 batches, 3 boxes
+php artisan serve
+```
 
-## Learning Laravel
+Open <http://127.0.0.1:8000/admin>.
 
-Laravel has the most extensive and thorough [documentation](https://laravel.com/docs) and video tutorial library of all modern web application frameworks, making it a breeze to get started with the framework.
+### Default admin (local dev only)
 
-You may also try the [Laravel Bootcamp](https://bootcamp.laravel.com), where you will be guided through building a modern Laravel application from scratch.
+| Field | Value |
+|---|---|
+| Email | `admin@batchlist.local` |
+| Password | `ChangeMe!Local2026` |
+| Role | `super_admin` |
 
-If you don't feel like reading, [Laracasts](https://laracasts.com) can help. Laracasts contains thousands of video tutorials on a range of topics including Laravel, modern PHP, unit testing, and JavaScript. Boost your skills by digging into our comprehensive video library.
+**⚠ Local-only credentials.** Staging and production use rotated passwords delivered via Bitwarden Send.
 
-## Laravel Sponsors
+---
 
-We would like to extend our thanks to the following sponsors for funding Laravel development. If you are interested in becoming a sponsor, please visit the [Laravel Partners program](https://partners.laravel.com).
+## Architecture overview
 
-### Premium Partners
+### Domain entities (9 + auxiliaries)
 
-- **[Vehikl](https://vehikl.com/)**
-- **[Tighten Co.](https://tighten.co)**
-- **[WebReinvent](https://webreinvent.com/)**
-- **[Kirschbaum Development Group](https://kirschbaumdevelopment.com)**
-- **[64 Robots](https://64robots.com)**
-- **[Curotec](https://www.curotec.com/services/technologies/laravel/)**
-- **[Cyber-Duck](https://cyber-duck.co.uk)**
-- **[DevSquad](https://devsquad.com/hire-laravel-developers)**
-- **[Jump24](https://jump24.co.uk)**
-- **[Redberry](https://redberry.international/laravel/)**
-- **[Active Logic](https://activelogic.com)**
-- **[byte5](https://byte5.de)**
-- **[OP.GG](https://op.gg)**
+| Table | Purpose | RFQ ref |
+|---|---|---|
+| `repositories` | Multi-tenant unit; every user is scoped to at least one | §3.5.1 |
+| `series` | Document series (R, REG, RWL, OWL, O) | §1 |
+| `authorities` | Notaries / Creators | §1 |
+| `batches` | Logical group of boxes (1-99) | §2 |
+| `accessions` | Formal acquisition events | §1 |
+| `boxes` | Physical containers (RAS, IN_SITU, NRA, MAV, STVC) | §2 |
+| `documents` | Central archival entity | §1, §3 |
+| `document_authority` | M:N pivot Document ↔ Authority | §1 |
+| `volumes` | First-class child of Document | §1 |
+| `box_movements` | Lifecycle tracking, replaces legacy `ras_batch_*` columns | §3.1 |
+| `audits` | `owen-it/laravel-auditing` — every CRUD captured | §3.1.5 |
+| `media` | `spatie/laravel-medialibrary` — document attachments | §1 |
 
-## Contributing
+### RFQ Appendix-1 validation rules
 
-Thank you for considering contributing to the Laravel framework! The contribution guide can be found in the [Laravel documentation](https://laravel.com/docs/contributions).
+| # | Rule | Enforcement |
+|---|---|---|
+| 1 | Batch numbers 33, 34, 36 forbidden | MySQL CHECK on `batches.batch_number` + app-level guard |
+| 2 | Wills documents must live in batch 50 | `Series.is_wills_series` + observer/state machine on Document |
+| 3 | IN_SITU / NRA boxes require parent RAS | `Box.requiresParent()` + FormRequest |
+| 4 | MAV / STVC types legacy-only | MySQL CHECK requiring `is_legacy = 1` |
+| 5 | `barcode_status = PERM_OUT` requires `disinfestation_date` | MySQL CHECK |
 
-## Code of Conduct
+### Composer packages (production)
 
-In order to ensure that the Laravel community is welcoming to all, please review and abide by the [Code of Conduct](https://laravel.com/docs/contributions#code-of-conduct).
+Auth & RBAC: `laravel/fortify`, `spatie/laravel-permission`, `bezhansalleh/filament-shield`.
+Audit: `owen-it/laravel-auditing` (all 9 domain models).
+Admin UI: `filament/filament` 3.x.
+Domain: `spatie/laravel-model-states`, `spatie/laravel-schemaless-attributes`, `spatie/laravel-tags`, `spatie/eloquent-sortable`, `staudenmeir/eloquent-has-many-deep`, `kirschbaum-development/eloquent-power-joins`.
+I/O: `maatwebsite/excel`, `barryvdh/laravel-dompdf`, `laravel/scout` (database driver).
+Media: `spatie/laravel-medialibrary`.
+Backup & Ops: `spatie/laravel-backup`, `spatie/laravel-health`, `laravel/pulse` (migration skipped on MySQL 9, see Known issues), `opcodesio/log-viewer`.
+Security: `bepsvpt/secure-headers`, `spatie/laravel-csp`, `spatie/laravel-honeypot`.
 
-## Security Vulnerabilities
+### Dev packages
 
-If you discover a security vulnerability within Laravel, please send an e-mail to Taylor Otwell via [taylor@laravel.com](mailto:taylor@laravel.com). All security vulnerabilities will be promptly addressed.
+`larastan/larastan`, `laravel/telescope`, `barryvdh/laravel-debugbar`.
 
-## License
+(Pest is **not** installed yet — Pest 4 requires PHPUnit 12 which conflicts with the Laravel 11 default. To revisit when Laravel 12 lands.)
 
-The Laravel framework is open-sourced software licensed under the [MIT license](https://opensource.org/licenses/MIT).
+---
+
+## Branching strategy
+
+| Branch | Purpose |
+|---|---|
+| `main` | Always-deployable production code |
+| `staging` | Auto-deployed to `staging.archivetool.eu` |
+| `feat/<name>`, `fix/<name>`, `chore/<name>` | Short-lived feature/fix branches |
+
+PR workflow + branch protection rules + CI/CD documented in `../Batch_List_Tool/nra/ops/workflow.md`.
+
+---
+
+## Known issues
+
+- **Pulse migration skipped on MySQL 9**: `pulse_values` and friends use `unhex(md5(...))` as a generated column, which MySQL 9 disallows. Migration file moved to `_skipped_migrations/`. To address: patch the Pulse migration to use a SHA2-based column (32 chars) or wait for Pulse upstream MySQL 9 support.
+- **`config:cache` not yet run**: avoid `php artisan config:cache` until staging — some service providers (Telescope) register only in non-cached state during early dev.
+
+---
+
+## Roadmap
+
+See `../Batch_List_Tool/nra/ops/plan.md` for the master plan (W0 → W26), milestone acceptance criteria, and the consolidated package catalog.
+
+Current state: **W0 complete**. Next: **W1 — Eloquent foundations + audit trait verification, requirements analysis kick-off with NAF**.
