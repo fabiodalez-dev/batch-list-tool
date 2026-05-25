@@ -32,7 +32,7 @@ class Authority extends Model implements AuditableContract
 
     public function documents(): BelongsToMany
     {
-        return $this->belongsToMany(Document::class)
+        return $this->belongsToMany(Document::class, 'document_authority')
             ->withPivot('is_primary')
             ->withTimestamps();
     }
