@@ -9,6 +9,7 @@ use App\Models\Repository;
 use App\Models\Series;
 use App\Models\User;
 use Illuminate\Database\Seeder;
+use Illuminate\Support\Facades\Artisan;
 use Illuminate\Support\Facades\Hash;
 use Spatie\Permission\Models\Role;
 
@@ -16,6 +17,11 @@ class InitialDataSeeder extends Seeder
 {
     public function run(): void
     {
+        // ----- Generate Filament Shield permissions FIRST so the role-permission sync below has something to assign -----
+        $this->command->info('Generating Filament Shield permissions for all panels and resources ...');
+        Artisan::call('shield:generate', ['--all' => true, '--panel' => 'admin']);
+        Artisan::call('permission:cache-reset');
+
         // ----- Repositories -----
         $main = Repository::firstOrCreate(
             ['code' => 'NRA'],
