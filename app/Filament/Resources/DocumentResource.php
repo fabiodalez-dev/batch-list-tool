@@ -362,15 +362,6 @@ class DocumentResource extends Resource
         ];
     }
 
-    /** Restrict default list query — only see current repository scope (Global Scope effect). */
-    public static function getEloquentQuery(): Builder
-    {
-        return parent::getEloquentQuery()
-            ->withoutGlobalScopes([
-                \Illuminate\Database\Eloquent\SoftDeletingScope::class,
-            ]);
-    }
-
     public static function getPages(): array
     {
         return [
