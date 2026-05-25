@@ -115,6 +115,28 @@ class Document extends Model implements AuditableContract, HasMedia
     }
 
     /**
+     * Chronological identifier-change log for this document (newest first).
+     */
+    public function identifierHistory(): HasMany
+    {
+        return $this->hasMany(DocumentIdentifierHistory::class)
+            ->orderByDesc('changed_at');
+    }
+
+    /**
+     * Distinct list of previous_identifier values from the history, useful for
+     * surfacing "also known as" labels and feeding the global search index.
+     */
+    public function previousIdentifiers(): \Illuminate\Support\Collection
+    {
+        return $this->identifierHistory()
+            ->pluck('previous_identifier')
+            ->filter(fn ($v) => $v !== null && $v !== '')
+            ->unique()
+            ->values();
+    }
+
+    /**
      * F-011 alignment: this MUST mirror the attributes exposed in
      * DocumentResource::getGloballySearchableAttributes() so that swapping
      * Scout drivers (database / Meilisearch / Algolia) does not change

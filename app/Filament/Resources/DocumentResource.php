@@ -335,7 +335,18 @@ class DocumentResource extends Resource
 
     public static function getRelations(): array
     {
-        return [];
+        return [
+            DocumentResource\RelationManagers\IdentifierHistoryRelationManager::class,
+        ];
+    }
+
+    /**
+     * Eager-load identifierHistory so the global search can match on
+     * previous identifiers without N+1 queries.
+     */
+    public static function getGlobalSearchEloquentQuery(): Builder
+    {
+        return parent::getGlobalSearchEloquentQuery()->with('identifierHistory');
     }
 
     /** Extend the global search bar (top-right of Filament panel) — POC parity. */
@@ -354,6 +365,9 @@ class DocumentResource extends Resource
             'series.title',
             'authorities.surname',
             'authorities.identifier',
+            // Identifier history (PR #8) — searching for "R7-old" finds the document
+            // whose identifier was previously "R7-old", even after re-classification.
+            'identifierHistory.previous_identifier',
         ];
     }
 
