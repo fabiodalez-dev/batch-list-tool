@@ -26,17 +26,38 @@ class Document extends Model implements AuditableContract, HasMedia
     use InteractsWithMedia;
 
     protected $fillable = [
+        // Normalised columns
         'identifier', 'document_type', 'series_id', 'accession_id',
         'current_box_id', 'batch_id', 'repository_id', 'volume_label',
         'dates_start', 'dates_end', 'dates_year_start', 'dates_year_end',
         'disinfestation_date', 'extra', 'notes',
+        // Legacy POC columns (parity with raw-PHP schema)
+        'ras_batch_1', 'ras_box_1', 'ras_batch_2', 'ras_box_2',
+        'in_situ_box_1', 'in_situ_box_2', 'in_situ_box_3',
+        'ras_1_box_destroyed', 'ras_2_box_destroyed',
+        'in_situ_box_1_destroyed', 'in_situ_box_2_destroyed', 'in_situ_box_3_destroyed',
+        'barcode_in', 'barcode_ras_1', 'status_1', 'barcode_ras_2', 'status_2',
+        'barcode_ras_3', 'status_3', 'barcode_ras_4', 'status_4',
+        'barcode_in_2', 'barcode_ras_2_alt', 'status_1_alt',
+        'barcode_ras_2_alt2', 'status_2_alt',
+        'seal_number', 'disinfestation_date_1', 'disinfestation_date_2', 'disinfestation_date_3',
+        'catalogue_identifier', 'nra_location', 'museum_location', 'practice',
+        'dates', 'deeds', 'current_box_type', 'colour_code', 'digitised', 'torre',
+        'accession_code_legacy', 'object_reference_number', 'tracking', 'museum_reference',
+        'custom_fields', 'metadata',
     ];
 
     protected $casts = [
         'dates_start' => 'date',
         'dates_end' => 'date',
         'disinfestation_date' => 'date',
+        'disinfestation_date_1' => 'date',
+        'disinfestation_date_2' => 'date',
+        'disinfestation_date_3' => 'date',
+        'torre' => 'boolean',
         'extra' => SchemalessAttributes::class,
+        'custom_fields' => 'array',
+        'metadata' => 'array',
     ];
 
     public function series(): BelongsTo
@@ -66,7 +87,7 @@ class Document extends Model implements AuditableContract, HasMedia
 
     public function authorities(): BelongsToMany
     {
-        return $this->belongsToMany(Authority::class)
+        return $this->belongsToMany(Authority::class, 'document_authority')
             ->withPivot('is_primary')
             ->withTimestamps();
     }

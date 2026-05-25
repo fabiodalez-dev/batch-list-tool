@@ -3,7 +3,6 @@
 namespace App\Filament\Resources;
 
 use App\Filament\Resources\DocumentResource\Pages;
-use App\Filament\Resources\DocumentResource\RelationManagers;
 use App\Models\Document;
 use Filament\Forms;
 use Filament\Forms\Form;
@@ -30,46 +29,24 @@ class DocumentResource extends Resource
         return $form
             ->schema([
                 Forms\Components\Section::make('Identification')
-                    ->columns(2)
-                    ->schema([
-                        Forms\Components\TextInput::make('identifier')
-                            ->required()
-                            ->maxLength(64)
-                            ->helperText('Document identifier (e.g. R1, R12-V3).'),
-                        Forms\Components\TextInput::make('document_type')
-                            ->maxLength(64),
-                        Forms\Components\Select::make('series_id')
-                            ->relationship('series', 'code')
-                            ->searchable()
-                            ->preload()
-                            ->required()
-                            ->helperText('RFQ series classification.'),
-                        Forms\Components\Select::make('repository_id')
-                            ->relationship('repository', 'name')
-                            ->searchable()
-                            ->preload()
-                            ->required(),
-                        Forms\Components\TextInput::make('volume_label')
-                            ->label('Volume')
-                            ->maxLength(64),
-                    ]),
-
-                Forms\Components\Section::make('Location')
                     ->columns(3)
                     ->schema([
-                        Forms\Components\Select::make('batch_id')
-                            ->relationship('batch', 'batch_number')
-                            ->searchable()
-                            ->preload(),
-                        Forms\Components\Select::make('current_box_id')
-                            ->label('Current box')
-                            ->relationship('currentBox', 'box_number')
-                            ->searchable()
-                            ->preload(),
-                        Forms\Components\Select::make('accession_id')
-                            ->relationship('accession', 'code')
-                            ->searchable()
-                            ->preload(),
+                        Forms\Components\TextInput::make('identifier')->required()->maxLength(64),
+                        Forms\Components\TextInput::make('catalogue_identifier')->maxLength(191),
+                        Forms\Components\TextInput::make('document_type')->maxLength(100),
+                        Forms\Components\Select::make('series_id')
+                            ->label('Series')
+                            ->relationship('series', 'code')
+                            ->searchable()->preload()->required(),
+                        Forms\Components\Select::make('repository_id')
+                            ->label('Repository')
+                            ->relationship('repository', 'name')
+                            ->searchable()->preload()->required(),
+                        Forms\Components\TextInput::make('volume_label')->label('Volume label')->maxLength(64),
+                        Forms\Components\TextInput::make('practice')->maxLength(100),
+                        Forms\Components\TextInput::make('dates')->label('Dates (text)')->maxLength(191)
+                            ->helperText('Free-text dates as in POC, e.g. "1607-1629" or "Jun 1997 - Nov 1998"'),
+                        Forms\Components\TextInput::make('deeds')->maxLength(2000),
                     ]),
 
                 Forms\Components\Section::make('Authorities (Creators)')
@@ -77,41 +54,98 @@ class DocumentResource extends Resource
                         Forms\Components\Select::make('authorities')
                             ->multiple()
                             ->relationship('authorities', 'surname')
-                            ->searchable()
-                            ->preload()
-                            ->helperText('Multi-select notaries / creators.'),
+                            ->searchable()->preload(),
                     ]),
 
-                Forms\Components\Section::make('Dates')
-                    ->columns(2)
+                Forms\Components\Section::make('Current location')
+                    ->columns(3)
                     ->schema([
-                        Forms\Components\TextInput::make('dates_year_start')
-                            ->label('Year start')
-                            ->numeric()
-                            ->minValue(1000)
-                            ->maxValue(2100),
-                        Forms\Components\TextInput::make('dates_year_end')
-                            ->label('Year end')
-                            ->numeric()
-                            ->minValue(1000)
-                            ->maxValue(2100),
-                        Forms\Components\DatePicker::make('dates_start')
-                            ->label('Date start (precise)'),
-                        Forms\Components\DatePicker::make('dates_end')
-                            ->label('Date end (precise)'),
-                        Forms\Components\DatePicker::make('disinfestation_date'),
+                        Forms\Components\Select::make('batch_id')->relationship('batch', 'batch_number')->searchable()->preload(),
+                        Forms\Components\Select::make('current_box_id')->relationship('currentBox', 'box_number')->searchable()->preload(),
+                        Forms\Components\Select::make('accession_id')->relationship('accession', 'code')->searchable()->preload(),
+                        Forms\Components\TextInput::make('current_box_type')->maxLength(50),
+                        Forms\Components\TextInput::make('nra_location')->maxLength(500),
+                        Forms\Components\TextInput::make('museum_location')->maxLength(500),
                     ]),
 
-                Forms\Components\Section::make('Tags & Notes')
+                Forms\Components\Section::make('Legacy box history (RAS / In Situ)')
+                    ->collapsed()
+                    ->columns(4)
                     ->schema([
-                        Forms\Components\Textarea::make('notes')
-                            ->columnSpanFull()
-                            ->rows(3),
-                        Forms\Components\KeyValue::make('extra')
-                            ->label('Extra metadata (schemaless)')
-                            ->columnSpanFull(),
-                    ])
-                    ->collapsed(),
+                        Forms\Components\TextInput::make('ras_batch_1')->label('RAS Batch 1')->maxLength(50),
+                        Forms\Components\TextInput::make('ras_box_1')->label('RAS Box 1')->maxLength(50),
+                        Forms\Components\TextInput::make('ras_1_box_destroyed')->label('RAS 1 Destroyed?')->maxLength(10),
+                        Forms\Components\TextInput::make('in_situ_box_1')->label('In Situ Box 1')->maxLength(50),
+                        Forms\Components\TextInput::make('ras_batch_2')->label('RAS Batch 2')->maxLength(50),
+                        Forms\Components\TextInput::make('ras_box_2')->label('RAS Box 2')->maxLength(50),
+                        Forms\Components\TextInput::make('ras_2_box_destroyed')->label('RAS 2 Destroyed?')->maxLength(10),
+                        Forms\Components\TextInput::make('in_situ_box_2')->label('In Situ Box 2')->maxLength(50),
+                        Forms\Components\TextInput::make('in_situ_box_1_destroyed')->label('In Situ 1 Destroyed?')->maxLength(10),
+                        Forms\Components\TextInput::make('in_situ_box_2_destroyed')->label('In Situ 2 Destroyed?')->maxLength(10),
+                        Forms\Components\TextInput::make('in_situ_box_3')->label('In Situ Box 3')->maxLength(50),
+                        Forms\Components\TextInput::make('in_situ_box_3_destroyed')->label('In Situ 3 Destroyed?')->maxLength(10),
+                    ]),
+
+                Forms\Components\Section::make('Legacy barcodes & status')
+                    ->collapsed()
+                    ->columns(4)
+                    ->schema([
+                        Forms\Components\TextInput::make('barcode_in')->label('Barcode (IN)')->maxLength(50),
+                        Forms\Components\TextInput::make('barcode_ras_1')->label('Barcode RAS 1')->maxLength(50),
+                        Forms\Components\TextInput::make('status_1')->label('Status 1')->maxLength(20),
+                        Forms\Components\TextInput::make('barcode_ras_2')->label('Barcode RAS 2')->maxLength(50),
+                        Forms\Components\TextInput::make('status_2')->label('Status 2')->maxLength(20),
+                        Forms\Components\TextInput::make('barcode_ras_3')->label('Barcode RAS 3')->maxLength(50),
+                        Forms\Components\TextInput::make('status_3')->label('Status 3')->maxLength(20),
+                        Forms\Components\TextInput::make('barcode_ras_4')->label('Barcode RAS 4')->maxLength(50),
+                        Forms\Components\TextInput::make('status_4')->label('Status 4')->maxLength(20),
+                        Forms\Components\TextInput::make('barcode_in_2')->label('Barcode (IN) #2')->maxLength(50),
+                        Forms\Components\TextInput::make('barcode_ras_2_alt')->label('Barcode RAS 2 alt')->maxLength(50),
+                        Forms\Components\TextInput::make('status_1_alt')->label('Status 1 alt')->maxLength(20),
+                        Forms\Components\TextInput::make('barcode_ras_2_alt2')->label('Barcode RAS 2 alt 2')->maxLength(50),
+                        Forms\Components\TextInput::make('status_2_alt')->label('Status 2 alt')->maxLength(20),
+                    ]),
+
+                Forms\Components\Section::make('Seal & disinfestation')
+                    ->columns(4)
+                    ->schema([
+                        Forms\Components\TextInput::make('seal_number')->maxLength(50),
+                        Forms\Components\DatePicker::make('disinfestation_date_1')->label('Disinfestation 1'),
+                        Forms\Components\DatePicker::make('disinfestation_date_2')->label('Disinfestation 2'),
+                        Forms\Components\DatePicker::make('disinfestation_date_3')->label('Disinfestation 3'),
+                        Forms\Components\DatePicker::make('disinfestation_date')->label('Disinfestation (current)'),
+                    ]),
+
+                Forms\Components\Section::make('Dates (precise)')
+                    ->columns(4)
+                    ->schema([
+                        Forms\Components\TextInput::make('dates_year_start')->label('Year start')->numeric(),
+                        Forms\Components\TextInput::make('dates_year_end')->label('Year end')->numeric(),
+                        Forms\Components\DatePicker::make('dates_start')->label('Date start'),
+                        Forms\Components\DatePicker::make('dates_end')->label('Date end'),
+                    ]),
+
+                Forms\Components\Section::make('Cataloguing extras')
+                    ->collapsed()
+                    ->columns(3)
+                    ->schema([
+                        Forms\Components\TextInput::make('colour_code')->maxLength(32),
+                        Forms\Components\TextInput::make('digitised')->maxLength(100),
+                        Forms\Components\Toggle::make('torre'),
+                        Forms\Components\TextInput::make('accession_code_legacy')->label('Accession (legacy text)')->maxLength(191),
+                        Forms\Components\TextInput::make('object_reference_number')->maxLength(500),
+                        Forms\Components\TextInput::make('tracking')->maxLength(500),
+                        Forms\Components\TextInput::make('museum_reference')->maxLength(500),
+                    ]),
+
+                Forms\Components\Section::make('Notes & custom fields')
+                    ->collapsed()
+                    ->schema([
+                        Forms\Components\Textarea::make('notes')->columnSpanFull()->rows(3),
+                        Forms\Components\KeyValue::make('extra')->label('Extra (schemaless)')->columnSpanFull(),
+                        Forms\Components\KeyValue::make('custom_fields')->label('Custom fields (POC json)')->columnSpanFull(),
+                        Forms\Components\KeyValue::make('metadata')->label('Metadata (POC json)')->columnSpanFull(),
+                    ]),
             ]);
     }
 
@@ -120,72 +154,29 @@ class DocumentResource extends Resource
         return $table
             ->defaultSort('identifier')
             ->columns([
-                Tables\Columns\TextColumn::make('identifier')
-                    ->searchable()
-                    ->sortable()
-                    ->copyable(),
-                Tables\Columns\TextColumn::make('document_type')
-                    ->searchable()
-                    ->toggleable(),
-                Tables\Columns\TextColumn::make('series.code')
-                    ->label('Series')
-                    ->badge()
-                    ->sortable(),
-                Tables\Columns\TextColumn::make('batch.batch_number')
-                    ->label('Batch')
-                    ->sortable()
-                    ->alignCenter(),
-                Tables\Columns\TextColumn::make('currentBox.box_number')
-                    ->label('Box')
-                    ->toggleable(),
-                Tables\Columns\TextColumn::make('repository.code')
-                    ->label('Repo')
-                    ->badge()
-                    ->color('gray')
-                    ->toggleable(),
-                Tables\Columns\TextColumn::make('volume_label')
-                    ->label('Vol.')
-                    ->toggleable(),
-                Tables\Columns\TextColumn::make('dates_year_start')
-                    ->label('From')
-                    ->numeric(thousandsSeparator: '')
-                    ->sortable()
-                    ->alignEnd(),
-                Tables\Columns\TextColumn::make('dates_year_end')
-                    ->label('To')
-                    ->numeric(thousandsSeparator: '')
-                    ->sortable()
-                    ->alignEnd(),
-                Tables\Columns\TextColumn::make('disinfestation_date')
-                    ->label('Disinfested')
-                    ->date()
-                    ->sortable()
-                    ->toggleable(isToggledHiddenByDefault: true),
-                Tables\Columns\TextColumn::make('updated_at')
-                    ->dateTime()
-                    ->sortable()
-                    ->toggleable(isToggledHiddenByDefault: true),
+                Tables\Columns\TextColumn::make('identifier')->searchable()->sortable()->copyable(),
+                Tables\Columns\TextColumn::make('document_type')->searchable()->toggleable(),
+                Tables\Columns\TextColumn::make('series.code')->label('Series')->badge()->sortable(),
+                Tables\Columns\TextColumn::make('batch.batch_number')->label('Batch')->sortable()->alignCenter(),
+                Tables\Columns\TextColumn::make('currentBox.box_number')->label('Box')->toggleable(),
+                Tables\Columns\TextColumn::make('practice')->toggleable(),
+                Tables\Columns\TextColumn::make('volume_label')->label('Vol.')->toggleable(),
+                Tables\Columns\TextColumn::make('dates')->label('Dates')->toggleable()->limit(30),
+                Tables\Columns\TextColumn::make('dates_year_start')->label('From')->numeric(thousandsSeparator: '')->sortable()->alignEnd(),
+                Tables\Columns\TextColumn::make('dates_year_end')->label('To')->numeric(thousandsSeparator: '')->sortable()->alignEnd(),
+                Tables\Columns\TextColumn::make('barcode_in')->label('Barcode (IN)')->toggleable(isToggledHiddenByDefault: true)->searchable(),
+                Tables\Columns\TextColumn::make('catalogue_identifier')->label('Catalogue ID')->toggleable(isToggledHiddenByDefault: true)->searchable(),
+                Tables\Columns\TextColumn::make('repository.code')->label('Repo')->badge()->color('gray')->toggleable(),
+                Tables\Columns\TextColumn::make('disinfestation_date')->label('Disinfested')->date()->sortable()->toggleable(isToggledHiddenByDefault: true),
+                Tables\Columns\IconColumn::make('torre')->boolean()->toggleable(isToggledHiddenByDefault: true),
+                Tables\Columns\TextColumn::make('updated_at')->dateTime()->sortable()->toggleable(isToggledHiddenByDefault: true),
             ])
             ->filters([
-                SelectFilter::make('series')
-                    ->relationship('series', 'code')
-                    ->searchable()
-                    ->preload()
-                    ->multiple(),
-                SelectFilter::make('batch')
-                    ->relationship('batch', 'batch_number')
-                    ->searchable()
-                    ->preload()
-                    ->multiple(),
-                SelectFilter::make('repository')
-                    ->relationship('repository', 'code')
-                    ->searchable()
-                    ->preload(),
-                TernaryFilter::make('disinfestation_date')
-                    ->label('Disinfested')
-                    ->nullable()
-                    ->trueLabel('Yes')
-                    ->falseLabel('No')
+                SelectFilter::make('series')->relationship('series', 'code')->searchable()->preload()->multiple(),
+                SelectFilter::make('batch')->relationship('batch', 'batch_number')->searchable()->preload()->multiple(),
+                SelectFilter::make('repository')->relationship('repository', 'code')->searchable()->preload(),
+                TernaryFilter::make('torre')->placeholder('Any')->trueLabel('Torre = yes')->falseLabel('Torre = no'),
+                TernaryFilter::make('disinfestation_date')->label('Disinfested')->nullable()->trueLabel('Yes')->falseLabel('No')
                     ->queries(
                         true: fn ($q) => $q->whereNotNull('disinfestation_date'),
                         false: fn ($q) => $q->whereNull('disinfestation_date'),
@@ -204,9 +195,7 @@ class DocumentResource extends Resource
 
     public static function getRelations(): array
     {
-        return [
-            // Add RelationManagers in W5 per plan.md (Authorities, Volumes, Movements, Audits)
-        ];
+        return [];
     }
 
     public static function getPages(): array

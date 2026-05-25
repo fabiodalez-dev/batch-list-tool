@@ -255,6 +255,7 @@ class ImportSampleData extends Command
                 [$yearStart, $yearEnd] = $this->parseYearRange($datesStr);
 
                 Document::create([
+                    // Normalised
                     'identifier'        => $identifier ?: $catalogueId ?: 'AUTO-' . ($rowIdx + 2),
                     'document_type'     => $docType ?: null,
                     'series_id'         => $series->id,
@@ -269,11 +270,52 @@ class ImportSampleData extends Command
                     'notes'             => $note ?: null,
                     'extra'             => [
                         'legacy_creator_text' => $creatorStr,
-                        'legacy_catalogue_id' => $catalogueId,
-                        'legacy_in_situ_1'    => $inSitu1,
-                        'legacy_box_2'        => $box2Num,
-                        'legacy_batch_2'      => $batch2Num,
                     ],
+                    // Legacy POC columns (1:1 with raw PHP schema)
+                    'ras_batch_1'             => $row[0] !== null ? (string) $row[0] : null,
+                    'ras_box_1'               => $box1Num ?: null,
+                    'ras_batch_2'             => $row[2] !== null ? (string) $row[2] : null,
+                    'ras_box_2'               => $box2Num ?: null,
+                    'in_situ_box_1'           => $inSitu1 ?: null,
+                    'in_situ_box_2'           => trim((string) ($row[5] ?? '')) ?: null,
+                    'in_situ_box_3'           => trim((string) ($row[6] ?? '')) ?: null,
+                    'ras_1_box_destroyed'     => trim((string) ($row[7] ?? '')) ?: null,
+                    'ras_2_box_destroyed'     => trim((string) ($row[8] ?? '')) ?: null,
+                    'in_situ_box_1_destroyed' => trim((string) ($row[9] ?? '')) ?: null,
+                    'in_situ_box_2_destroyed' => trim((string) ($row[10] ?? '')) ?: null,
+                    'in_situ_box_3_destroyed' => trim((string) ($row[11] ?? '')) ?: null,
+                    'barcode_in'              => $barcodeIn ?: null,
+                    'barcode_ras_1'           => trim((string) ($row[13] ?? '')) ?: null,
+                    'status_1'                => trim((string) ($row[14] ?? '')) ?: null,
+                    'barcode_ras_2'           => trim((string) ($row[15] ?? '')) ?: null,
+                    'status_2'                => trim((string) ($row[16] ?? '')) ?: null,
+                    'barcode_ras_3'           => trim((string) ($row[17] ?? '')) ?: null,
+                    'status_3'                => trim((string) ($row[18] ?? '')) ?: null,
+                    'barcode_ras_4'           => trim((string) ($row[19] ?? '')) ?: null,
+                    'status_4'                => trim((string) ($row[20] ?? '')) ?: null,
+                    'barcode_in_2'            => trim((string) ($row[21] ?? '')) ?: null,
+                    'barcode_ras_2_alt'       => trim((string) ($row[22] ?? '')) ?: null,
+                    'status_1_alt'            => trim((string) ($row[23] ?? '')) ?: null,
+                    'barcode_ras_2_alt2'      => trim((string) ($row[24] ?? '')) ?: null,
+                    'status_2_alt'            => trim((string) ($row[25] ?? '')) ?: null,
+                    'seal_number'             => trim((string) ($row[26] ?? '')) ?: null,
+                    'disinfestation_date_1'   => $this->parseDate($row[27] ?? null),
+                    'disinfestation_date_2'   => $this->parseDate($row[28] ?? null),
+                    'disinfestation_date_3'   => $this->parseDate($row[29] ?? null),
+                    'catalogue_identifier'    => $catalogueId ?: null,
+                    'nra_location'            => trim((string) ($row[31] ?? '')) ?: null,
+                    'museum_location'         => trim((string) ($row[32] ?? '')) ?: null,
+                    'practice'                => trim((string) ($row[34] ?? '')) ?: null,
+                    'dates'                   => $datesStr ?: null,
+                    'deeds'                   => trim((string) ($row[38] ?? '')) ?: null,
+                    'current_box_type'        => null,                                              // not in sample
+                    'colour_code'             => null,                                              // not in sample
+                    'digitised'               => trim((string) ($row[43] ?? '')) ?: null,
+                    'torre'                   => $this->parseBool($row[44] ?? null),
+                    'accession_code_legacy'   => $accessionCd ?: null,
+                    'object_reference_number' => trim((string) ($row[46] ?? '')) ?: null,
+                    'tracking'                => trim((string) ($row[47] ?? '')) ?: null,
+                    'museum_reference'        => trim((string) ($row[48] ?? '')) ?: null,
                 ]);
 
                 $count++;
@@ -287,6 +329,13 @@ class ImportSampleData extends Command
             DB::rollBack();
             throw $e;
         }
+    }
+
+    private function parseBool(mixed $v): bool
+    {
+        if ($v === null || $v === '') return false;
+        $s = strtolower(trim((string) $v));
+        return in_array($s, ['1', 'yes', 'y', 'true', 't', 'si', 'sì'], true);
     }
 
     private function parseInt(mixed $v): ?int
