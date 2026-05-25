@@ -199,58 +199,23 @@ class DocumentResource extends Resource
                     ->relationship('authorities', 'surname')->searchable()->preload()->multiple(),
 
                 // Free-text search per field (POC-style filtri puntuali)
-                Filter::make('barcode_in')
-                    ->form([
-                        Forms\Components\TextInput::make('value')
-                            ->label('Barcode (IN) contains'),
-                    ])
-                    ->query(fn (Builder $q, array $data) =>
-                        $q->when($data['value'] ?? null,
-                            fn ($q, $v) => $q->where('barcode_in', 'like', "%{$v}%")
-                        )
-                    ),
+                self::likeFilter('barcode_in',           'Search in Barcode (IN)'),
+                self::likeFilter('catalogue_identifier', 'Search in Catalogue ID'),
+                self::likeFilter('practice',             'Search in Practice'),
+                self::likeFilter('notes',                'Search in Notes'),
 
-                Filter::make('catalogue_identifier')
-                    ->form([
-                        Forms\Components\TextInput::make('value')
-                            ->label('Catalogue ID contains'),
-                    ])
-                    ->query(fn (Builder $q, array $data) =>
-                        $q->when($data['value'] ?? null,
-                            fn ($q, $v) => $q->where('catalogue_identifier', 'like', "%{$v}%")
-                        )
-                    ),
-
-                Filter::make('practice')
-                    ->form([
-                        Forms\Components\TextInput::make('value')->label('Practice contains'),
-                    ])
-                    ->query(fn (Builder $q, array $data) =>
-                        $q->when($data['value'] ?? null,
-                            fn ($q, $v) => $q->where('practice', 'like', "%{$v}%")
-                        )
-                    ),
-
+                // volume_label is special — also searches the JSON path extra->volume; kept inline.
                 Filter::make('volume_label')
                     ->form([
-                        Forms\Components\TextInput::make('value')->label('Volume contains'),
+                        Forms\Components\TextInput::make('value')->label('Search in Volume'),
                     ])
                     ->query(fn (Builder $q, array $data) =>
                         $q->when($data['value'] ?? null,
                             fn ($q, $v) => $q->where(function ($q) use ($v) {
-                                $q->where('volume_label', 'like', "%{$v}%")
-                                  ->orWhere('extra->volume', 'like', "%{$v}%");
+                                $needle = '%' . trim($v) . '%';
+                                $q->where('volume_label', 'like', $needle)
+                                  ->orWhere('extra->volume', 'like', $needle);
                             })
-                        )
-                    ),
-
-                Filter::make('notes')
-                    ->form([
-                        Forms\Components\TextInput::make('value')->label('Notes contain'),
-                    ])
-                    ->query(fn (Builder $q, array $data) =>
-                        $q->when($data['value'] ?? null,
-                            fn ($q, $v) => $q->where('notes', 'like', "%{$v}%")
                         )
                     ),
 
@@ -262,10 +227,12 @@ class DocumentResource extends Resource
                     ])
                     ->query(function (Builder $q, array $data) {
                         return $q
-                            ->when($data['year_from'] ?? null,
-                                fn ($q, $v) => $q->where('dates_year_start', '>=', (int) $v))
-                            ->when($data['year_to'] ?? null,
-                                fn ($q, $v) => $q->where('dates_year_end', '<=', (int) $v));
+                            ->when($data['year_from'] ?? null, fn ($q, $v) =>
+                                $q->where(fn ($q) => $q->whereNull('dates_year_end')
+                                                        ->orWhere('dates_year_end', '>=', (int) $v)))
+                            ->when($data['year_to'] ?? null, fn ($q, $v) =>
+                                $q->where(fn ($q) => $q->whereNull('dates_year_start')
+                                                        ->orWhere('dates_year_start', '<=', (int) $v)));
                     })
                     ->indicateUsing(function (array $data): array {
                         $i = [];
@@ -304,8 +271,8 @@ class DocumentResource extends Resource
                     ->label('Has barcode?')
                     ->placeholder('Any')->trueLabel('Yes')->falseLabel('No')
                     ->queries(
-                        true: fn ($q) => $q->whereNotNull('barcode_in')->where('barcode_in', '!=', ''),
-                        false: fn ($q) => $q->where(fn ($q) => $q->whereNull('barcode_in')->orWhere('barcode_in', '')),
+                        true: fn ($q) => $q->whereRaw("TRIM(COALESCE(barcode_in, '')) <> ''"),
+                        false: fn ($q) => $q->whereRaw("TRIM(COALESCE(barcode_in, '')) = ''"),
                     ),
 
                 TernaryFilter::make('has_box')
@@ -320,8 +287,8 @@ class DocumentResource extends Resource
                     ->label('Has notes?')
                     ->placeholder('Any')->trueLabel('Yes')->falseLabel('No')
                     ->queries(
-                        true: fn ($q) => $q->whereNotNull('notes')->where('notes', '!=', ''),
-                        false: fn ($q) => $q->where(fn ($q) => $q->whereNull('notes')->orWhere('notes', '')),
+                        true: fn ($q) => $q->whereRaw("TRIM(COALESCE(notes, '')) <> ''"),
+                        false: fn ($q) => $q->whereRaw("TRIM(COALESCE(notes, '')) = ''"),
                     ),
 
                 // Soft-deleted records filter
@@ -336,6 +303,21 @@ class DocumentResource extends Resource
                     Tables\Actions\DeleteBulkAction::make(),
                 ]),
             ]);
+    }
+
+    /**
+     * Build a leading-/trailing-wildcard LIKE filter on a single column.
+     * Centralises the form + query shape shared by all "Search in X" filters.
+     */
+    private static function likeFilter(string $name, string $label, ?string $column = null): Filter
+    {
+        $col = $column ?? $name;
+
+        return Filter::make($name)
+            ->form([Forms\Components\TextInput::make('value')->label($label)])
+            ->query(fn (Builder $q, array $data) =>
+                $q->when($data['value'] ?? null, fn ($q, $v) =>
+                    $q->where($col, 'like', '%' . trim($v) . '%')));
     }
 
     public static function getRelations(): array

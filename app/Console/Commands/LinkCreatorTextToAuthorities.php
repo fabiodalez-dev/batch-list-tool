@@ -14,9 +14,12 @@ use Illuminate\Support\Facades\DB;
  * Strategy (best-effort):
  *   1. Split the legacy_creator_text on ";" — POC allowed multiple creators per document
  *   2. For each token, try exact match on `authorities.surname` (full word) first
- *   3. Fall back to LIKE on surname
+ *   3. Fall back to LIKE on surname (guarded against very short tokens — see F-001)
  *   4. The first matched Authority is marked as `is_primary = true`
  *   5. Unresolved names are reported in a summary line
+ *   6. The match method (exact / last_word / fuzzy) is persisted per-document
+ *      under `document.extra.creator_match_log` so operators can audit
+ *      low-confidence fuzzy attributions.
  */
 class LinkCreatorTextToAuthorities extends Command
 {
@@ -33,6 +36,7 @@ class LinkCreatorTextToAuthorities extends Command
             ->groupBy(fn ($a) => mb_strtolower(trim($a->surname)));
 
         $linked = 0;
+        $methodCounts = ['exact' => 0, 'last_word' => 0, 'fuzzy' => 0];
         $unresolved = [];
         $documents = Document::whereNotNull('extra')->get(['id', 'extra']);
 
@@ -49,20 +53,39 @@ class LinkCreatorTextToAuthorities extends Command
 
                 $tokens = array_filter(array_map('trim', preg_split('/[;,]+/', $text)));
                 $primary = true;
+                $matchLog = [];
 
                 foreach ($tokens as $token) {
-                    $authorityId = $this->resolveAuthority($token, $authoritiesBySurname);
-                    if ($authorityId === null) {
+                    $result = $this->resolveAuthority($token, $authoritiesBySurname);
+                    if ($result === null) {
                         $unresolved[$token] = ($unresolved[$token] ?? 0) + 1;
                         continue;
                     }
+
+                    $authorityId = $result['id'];
+                    $method = $result['method'];
+
                     if (! $this->option('dry-run')) {
                         $doc->authorities()->syncWithoutDetaching([
                             $authorityId => ['is_primary' => $primary],
                         ]);
                     }
                     $linked++;
+                    if (isset($methodCounts[$method])) {
+                        $methodCounts[$method]++;
+                    }
+                    $matchLog[] = "{$token} → {$method}";
                     $primary = false;
+                }
+
+                // Persist the per-document match log so operators can review
+                // low-confidence fuzzy attributions later. Only one save per
+                // document so the audit-log trait records a single change.
+                if (! $this->option('dry-run') && ! empty($matchLog)) {
+                    $extra = $doc->extra ?? [];
+                    $extra['creator_match_log'] = $matchLog;
+                    $doc->extra = $extra;
+                    $doc->save();
                 }
             }
             if (! $this->option('dry-run')) {
@@ -73,9 +96,24 @@ class LinkCreatorTextToAuthorities extends Command
             throw $e;
         }
 
+        $verb = $this->option('dry-run') ? 'Would link' : 'Linked';
+
         $this->info('');
         $this->info('═══════════════════════════════════════════════════');
-        $this->info(' Linked Document → Authority pivot rows: ' . $linked);
+        $this->info(sprintf(
+            ' %s Document → Authority pivot rows: %d (exact %d, last_word %d, fuzzy %d)',
+            $verb,
+            $linked,
+            $methodCounts['exact'],
+            $methodCounts['last_word'],
+            $methodCounts['fuzzy']
+        ));
+        if ($methodCounts['fuzzy'] > 0) {
+            $storageVerb = $this->option('dry-run') ? 'would be stored' : 'stored';
+            $this->info(
+                "   fuzzy matches {$storageVerb} in document.extra.creator_match_log for review"
+            );
+        }
         $this->info(' Unresolved creator names: ' . count($unresolved));
         if (! empty($unresolved)) {
             arsort($unresolved);
@@ -92,7 +130,16 @@ class LinkCreatorTextToAuthorities extends Command
         return self::SUCCESS;
     }
 
-    private function resolveAuthority(string $token, $authoritiesBySurname): ?int
+    /**
+     * Attempt to resolve a free-text creator token to an Authority row.
+     *
+     * @return array{id:int, method:string}|null
+     *   - method = 'exact'     → last-word surname matched an authority surname exactly
+     *   - method = 'last_word' → first-word fallback matched (handles "Surname Given" order)
+     *   - method = 'fuzzy'     → LIKE-based fallback (low confidence — guarded by min length)
+     *   - null                 → no candidate found
+     */
+    private function resolveAuthority(string $token, $authoritiesBySurname): ?array
     {
         // Last word is usually the surname in "Given Surname" format
         $parts = preg_split('/\s+/', $token);
@@ -101,13 +148,21 @@ class LinkCreatorTextToAuthorities extends Command
         // Exact surname match (case-insensitive)
         if (isset($authoritiesBySurname[$surnameCandidate])) {
             $match = $authoritiesBySurname[$surnameCandidate]->first();
-            return $match->id;
+            return ['id' => $match->id, 'method' => 'exact'];
         }
 
         // Try first word as surname (in case "Surname Given" order)
         $firstCandidate = mb_strtolower($parts[0] ?? '');
         if ($firstCandidate !== $surnameCandidate && isset($authoritiesBySurname[$firstCandidate])) {
-            return $authoritiesBySurname[$firstCandidate]->first()->id;
+            return [
+                'id' => $authoritiesBySurname[$firstCandidate]->first()->id,
+                'method' => 'last_word',
+            ];
+        }
+
+        // F-001: never fuzzy-match on short tokens — too ambiguous to attribute reliably
+        if (mb_strlen($surnameCandidate) < 4) {
+            return null;
         }
 
         // LIKE-based fuzzy: search any authority whose surname contains the token surname
@@ -117,6 +172,10 @@ class LinkCreatorTextToAuthorities extends Command
             ->limit(1)
             ->value('id');
 
-        return $hit;
+        if ($hit === null) {
+            return null;
+        }
+
+        return ['id' => (int) $hit, 'method' => 'fuzzy'];
     }
 }
