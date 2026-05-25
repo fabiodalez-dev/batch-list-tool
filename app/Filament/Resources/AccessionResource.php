@@ -17,7 +17,13 @@ class AccessionResource extends Resource
 {
     protected static ?string $model = Accession::class;
 
-    protected static ?string $navigationIcon = 'heroicon-o-rectangle-stack';
+    protected static ?string $navigationIcon = 'heroicon-o-document-plus';
+
+    protected static ?string $navigationGroup = 'Archive';
+
+    protected static ?int $navigationSort = 12;
+
+    protected static ?string $recordTitleAttribute = 'code';
 
     public static function form(Form $form): Form
     {
@@ -27,11 +33,11 @@ class AccessionResource extends Resource
                     ->required()
                     ->maxLength(64),
                 Forms\Components\DatePicker::make('accession_date'),
-                Forms\Components\Select::make('authority_id')
-                    ->relationship('authority', 'id'),
-                Forms\Components\Select::make('batch_id')
-                    ->relationship('batch', 'id'),
-                Forms\Components\Select::make('repository_id')
+                Forms\Components\Select::make('authority.surname')
+                    ->relationship('authority', 'surname'),
+                Forms\Components\Select::make('batch.batch_number')
+                    ->relationship('batch', 'batch_number'),
+                Forms\Components\Select::make('repository.name')
                     ->relationship('repository', 'name')
                     ->required(),
                 Forms\Components\Textarea::make('notes')
@@ -48,10 +54,10 @@ class AccessionResource extends Resource
                 Tables\Columns\TextColumn::make('accession_date')
                     ->date()
                     ->sortable(),
-                Tables\Columns\TextColumn::make('authority.id')
+                Tables\Columns\TextColumn::make('authority.surname')
                     ->numeric()
                     ->sortable(),
-                Tables\Columns\TextColumn::make('batch.id')
+                Tables\Columns\TextColumn::make('batch.batch_number')
                     ->numeric()
                     ->sortable(),
                 Tables\Columns\TextColumn::make('repository.name')

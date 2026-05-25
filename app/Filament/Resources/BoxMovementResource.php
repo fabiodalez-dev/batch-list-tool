@@ -17,24 +17,28 @@ class BoxMovementResource extends Resource
 {
     protected static ?string $model = BoxMovement::class;
 
-    protected static ?string $navigationIcon = 'heroicon-o-rectangle-stack';
+    protected static ?string $navigationIcon = 'heroicon-o-arrows-right-left';
+
+    protected static ?string $navigationGroup = 'Archive';
+
+    protected static ?int $navigationSort = 15;
 
     public static function form(Form $form): Form
     {
         return $form
             ->schema([
-                Forms\Components\Select::make('document_id')
-                    ->relationship('document', 'id')
+                Forms\Components\Select::make('document.identifier')
+                    ->relationship('document', 'identifier')
                     ->required(),
                 Forms\Components\Select::make('from_box_id')
-                    ->relationship('fromBox', 'id'),
+                    ->relationship('fromBox', 'box_number'),
                 Forms\Components\Select::make('to_box_id')
-                    ->relationship('toBox', 'id'),
+                    ->relationship('toBox', 'box_number'),
                 Forms\Components\DateTimePicker::make('movement_date')
                     ->required(),
                 Forms\Components\TextInput::make('reason')
                     ->maxLength(255),
-                Forms\Components\Select::make('user_id')
+                Forms\Components\Select::make('user.name')
                     ->relationship('user', 'name'),
             ]);
     }
@@ -43,13 +47,13 @@ class BoxMovementResource extends Resource
     {
         return $table
             ->columns([
-                Tables\Columns\TextColumn::make('document.id')
+                Tables\Columns\TextColumn::make('document.identifier')
                     ->numeric()
                     ->sortable(),
-                Tables\Columns\TextColumn::make('fromBox.id')
+                Tables\Columns\TextColumn::make('fromBox.box_number')
                     ->numeric()
                     ->sortable(),
-                Tables\Columns\TextColumn::make('toBox.id')
+                Tables\Columns\TextColumn::make('toBox.box_number')
                     ->numeric()
                     ->sortable(),
                 Tables\Columns\TextColumn::make('movement_date')

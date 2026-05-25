@@ -17,7 +17,13 @@ class AuthorityResource extends Resource
 {
     protected static ?string $model = Authority::class;
 
-    protected static ?string $navigationIcon = 'heroicon-o-rectangle-stack';
+    protected static ?string $navigationIcon = 'heroicon-o-user-circle';
+
+    protected static ?string $navigationGroup = 'Reference';
+
+    protected static ?int $navigationSort = 21;
+
+    protected static ?string $recordTitleAttribute = 'surname';
 
     public static function form(Form $form): Form
     {

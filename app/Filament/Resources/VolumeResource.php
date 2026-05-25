@@ -17,14 +17,20 @@ class VolumeResource extends Resource
 {
     protected static ?string $model = Volume::class;
 
-    protected static ?string $navigationIcon = 'heroicon-o-rectangle-stack';
+    protected static ?string $navigationIcon = 'heroicon-o-book-open';
+
+    protected static ?string $navigationGroup = 'Archive';
+
+    protected static ?int $navigationSort = 14;
+
+    protected static ?string $recordTitleAttribute = 'volume_number';
 
     public static function form(Form $form): Form
     {
         return $form
             ->schema([
-                Forms\Components\Select::make('document_id')
-                    ->relationship('document', 'id')
+                Forms\Components\Select::make('document.identifier')
+                    ->relationship('document', 'identifier')
                     ->required(),
                 Forms\Components\TextInput::make('volume_number')
                     ->required()
@@ -40,7 +46,7 @@ class VolumeResource extends Resource
     {
         return $table
             ->columns([
-                Tables\Columns\TextColumn::make('document.id')
+                Tables\Columns\TextColumn::make('document.identifier')
                     ->numeric()
                     ->sortable(),
                 Tables\Columns\TextColumn::make('volume_number')

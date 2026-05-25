@@ -9,9 +9,9 @@ use Filament\Forms;
 use Filament\Forms\Form;
 use Filament\Resources\Resource;
 use Filament\Tables;
+use Filament\Tables\Filters\SelectFilter;
+use Filament\Tables\Filters\TernaryFilter;
 use Filament\Tables\Table;
-use Illuminate\Database\Eloquent\Builder;
-use Illuminate\Database\Eloquent\SoftDeletingScope;
 
 class DocumentResource extends Resource
 {
@@ -19,97 +19,177 @@ class DocumentResource extends Resource
 
     protected static ?string $navigationIcon = 'heroicon-o-rectangle-stack';
 
+    protected static ?string $navigationGroup = 'Archive';
+
+    protected static ?int $navigationSort = 10;
+
+    protected static ?string $recordTitleAttribute = 'identifier';
+
     public static function form(Form $form): Form
     {
         return $form
             ->schema([
-                Forms\Components\TextInput::make('identifier')
-                    ->required()
-                    ->maxLength(64),
-                Forms\Components\TextInput::make('document_type')
-                    ->maxLength(64),
-                Forms\Components\Select::make('series_id')
-                    ->relationship('series', 'title')
-                    ->required(),
-                Forms\Components\Select::make('accession_id')
-                    ->relationship('accession', 'id'),
-                Forms\Components\Select::make('current_box_id')
-                    ->relationship('currentBox', 'id'),
-                Forms\Components\Select::make('batch_id')
-                    ->relationship('batch', 'id'),
-                Forms\Components\Select::make('repository_id')
-                    ->relationship('repository', 'name')
-                    ->required(),
-                Forms\Components\TextInput::make('volume_label')
-                    ->maxLength(64),
-                Forms\Components\DatePicker::make('dates_start'),
-                Forms\Components\DatePicker::make('dates_end'),
-                Forms\Components\TextInput::make('dates_year_start')
-                    ->numeric(),
-                Forms\Components\TextInput::make('dates_year_end')
-                    ->numeric(),
-                Forms\Components\DatePicker::make('disinfestation_date'),
-                Forms\Components\TextInput::make('extra'),
-                Forms\Components\Textarea::make('notes')
-                    ->columnSpanFull(),
+                Forms\Components\Section::make('Identification')
+                    ->columns(2)
+                    ->schema([
+                        Forms\Components\TextInput::make('identifier')
+                            ->required()
+                            ->maxLength(64)
+                            ->helperText('Document identifier (e.g. R1, R12-V3).'),
+                        Forms\Components\TextInput::make('document_type')
+                            ->maxLength(64),
+                        Forms\Components\Select::make('series_id')
+                            ->relationship('series', 'code')
+                            ->searchable()
+                            ->preload()
+                            ->required()
+                            ->helperText('RFQ series classification.'),
+                        Forms\Components\Select::make('repository_id')
+                            ->relationship('repository', 'name')
+                            ->searchable()
+                            ->preload()
+                            ->required(),
+                        Forms\Components\TextInput::make('volume_label')
+                            ->label('Volume')
+                            ->maxLength(64),
+                    ]),
+
+                Forms\Components\Section::make('Location')
+                    ->columns(3)
+                    ->schema([
+                        Forms\Components\Select::make('batch_id')
+                            ->relationship('batch', 'batch_number')
+                            ->searchable()
+                            ->preload(),
+                        Forms\Components\Select::make('current_box_id')
+                            ->label('Current box')
+                            ->relationship('currentBox', 'box_number')
+                            ->searchable()
+                            ->preload(),
+                        Forms\Components\Select::make('accession_id')
+                            ->relationship('accession', 'code')
+                            ->searchable()
+                            ->preload(),
+                    ]),
+
+                Forms\Components\Section::make('Authorities (Creators)')
+                    ->schema([
+                        Forms\Components\Select::make('authorities')
+                            ->multiple()
+                            ->relationship('authorities', 'surname')
+                            ->searchable()
+                            ->preload()
+                            ->helperText('Multi-select notaries / creators.'),
+                    ]),
+
+                Forms\Components\Section::make('Dates')
+                    ->columns(2)
+                    ->schema([
+                        Forms\Components\TextInput::make('dates_year_start')
+                            ->label('Year start')
+                            ->numeric()
+                            ->minValue(1000)
+                            ->maxValue(2100),
+                        Forms\Components\TextInput::make('dates_year_end')
+                            ->label('Year end')
+                            ->numeric()
+                            ->minValue(1000)
+                            ->maxValue(2100),
+                        Forms\Components\DatePicker::make('dates_start')
+                            ->label('Date start (precise)'),
+                        Forms\Components\DatePicker::make('dates_end')
+                            ->label('Date end (precise)'),
+                        Forms\Components\DatePicker::make('disinfestation_date'),
+                    ]),
+
+                Forms\Components\Section::make('Tags & Notes')
+                    ->schema([
+                        Forms\Components\Textarea::make('notes')
+                            ->columnSpanFull()
+                            ->rows(3),
+                        Forms\Components\KeyValue::make('extra')
+                            ->label('Extra metadata (schemaless)')
+                            ->columnSpanFull(),
+                    ])
+                    ->collapsed(),
             ]);
     }
 
     public static function table(Table $table): Table
     {
         return $table
+            ->defaultSort('identifier')
             ->columns([
                 Tables\Columns\TextColumn::make('identifier')
-                    ->searchable(),
+                    ->searchable()
+                    ->sortable()
+                    ->copyable(),
                 Tables\Columns\TextColumn::make('document_type')
-                    ->searchable(),
-                Tables\Columns\TextColumn::make('series.title')
-                    ->numeric()
+                    ->searchable()
+                    ->toggleable(),
+                Tables\Columns\TextColumn::make('series.code')
+                    ->label('Series')
+                    ->badge()
                     ->sortable(),
-                Tables\Columns\TextColumn::make('accession.id')
-                    ->numeric()
-                    ->sortable(),
-                Tables\Columns\TextColumn::make('currentBox.id')
-                    ->numeric()
-                    ->sortable(),
-                Tables\Columns\TextColumn::make('batch.id')
-                    ->numeric()
-                    ->sortable(),
-                Tables\Columns\TextColumn::make('repository.name')
-                    ->numeric()
-                    ->sortable(),
+                Tables\Columns\TextColumn::make('batch.batch_number')
+                    ->label('Batch')
+                    ->sortable()
+                    ->alignCenter(),
+                Tables\Columns\TextColumn::make('currentBox.box_number')
+                    ->label('Box')
+                    ->toggleable(),
+                Tables\Columns\TextColumn::make('repository.code')
+                    ->label('Repo')
+                    ->badge()
+                    ->color('gray')
+                    ->toggleable(),
                 Tables\Columns\TextColumn::make('volume_label')
-                    ->searchable(),
-                Tables\Columns\TextColumn::make('dates_start')
-                    ->date()
-                    ->sortable(),
-                Tables\Columns\TextColumn::make('dates_end')
-                    ->date()
-                    ->sortable(),
+                    ->label('Vol.')
+                    ->toggleable(),
                 Tables\Columns\TextColumn::make('dates_year_start')
-                    ->numeric()
-                    ->sortable(),
+                    ->label('From')
+                    ->numeric(thousandsSeparator: '')
+                    ->sortable()
+                    ->alignEnd(),
                 Tables\Columns\TextColumn::make('dates_year_end')
-                    ->numeric()
-                    ->sortable(),
+                    ->label('To')
+                    ->numeric(thousandsSeparator: '')
+                    ->sortable()
+                    ->alignEnd(),
                 Tables\Columns\TextColumn::make('disinfestation_date')
+                    ->label('Disinfested')
                     ->date()
-                    ->sortable(),
-                Tables\Columns\TextColumn::make('created_at')
-                    ->dateTime()
                     ->sortable()
                     ->toggleable(isToggledHiddenByDefault: true),
                 Tables\Columns\TextColumn::make('updated_at')
                     ->dateTime()
                     ->sortable()
                     ->toggleable(isToggledHiddenByDefault: true),
-                Tables\Columns\TextColumn::make('deleted_at')
-                    ->dateTime()
-                    ->sortable()
-                    ->toggleable(isToggledHiddenByDefault: true),
             ])
             ->filters([
-                //
+                SelectFilter::make('series')
+                    ->relationship('series', 'code')
+                    ->searchable()
+                    ->preload()
+                    ->multiple(),
+                SelectFilter::make('batch')
+                    ->relationship('batch', 'batch_number')
+                    ->searchable()
+                    ->preload()
+                    ->multiple(),
+                SelectFilter::make('repository')
+                    ->relationship('repository', 'code')
+                    ->searchable()
+                    ->preload(),
+                TernaryFilter::make('disinfestation_date')
+                    ->label('Disinfested')
+                    ->nullable()
+                    ->trueLabel('Yes')
+                    ->falseLabel('No')
+                    ->queries(
+                        true: fn ($q) => $q->whereNotNull('disinfestation_date'),
+                        false: fn ($q) => $q->whereNull('disinfestation_date'),
+                    ),
             ])
             ->actions([
                 Tables\Actions\ViewAction::make(),
@@ -125,7 +205,7 @@ class DocumentResource extends Resource
     public static function getRelations(): array
     {
         return [
-            //
+            // Add RelationManagers in W5 per plan.md (Authorities, Volumes, Movements, Audits)
         ];
     }
 

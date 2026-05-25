@@ -17,7 +17,13 @@ class BatchResource extends Resource
 {
     protected static ?string $model = Batch::class;
 
-    protected static ?string $navigationIcon = 'heroicon-o-rectangle-stack';
+    protected static ?string $navigationIcon = 'heroicon-o-squares-2x2';
+
+    protected static ?string $navigationGroup = 'Archive';
+
+    protected static ?int $navigationSort = 11;
+
+    protected static ?string $recordTitleAttribute = 'batch_number';
 
     public static function form(Form $form): Form
     {
@@ -30,7 +36,7 @@ class BatchResource extends Resource
                     ->maxLength(255),
                 Forms\Components\TextInput::make('type')
                     ->required(),
-                Forms\Components\Select::make('repository_id')
+                Forms\Components\Select::make('repository.name')
                     ->relationship('repository', 'name')
                     ->required(),
                 Forms\Components\Toggle::make('is_active')

@@ -17,7 +17,13 @@ class BoxResource extends Resource
 {
     protected static ?string $model = Box::class;
 
-    protected static ?string $navigationIcon = 'heroicon-o-rectangle-stack';
+    protected static ?string $navigationIcon = 'heroicon-o-archive-box';
+
+    protected static ?string $navigationGroup = 'Archive';
+
+    protected static ?int $navigationSort = 13;
+
+    protected static ?string $recordTitleAttribute = 'box_number';
 
     public static function form(Form $form): Form
     {
@@ -28,8 +34,8 @@ class BoxResource extends Resource
                 Forms\Components\TextInput::make('box_number')
                     ->required()
                     ->maxLength(32),
-                Forms\Components\Select::make('batch_id')
-                    ->relationship('batch', 'id'),
+                Forms\Components\Select::make('batch.batch_number')
+                    ->relationship('batch', 'batch_number'),
                 Forms\Components\TextInput::make('parent_box_id')
                     ->numeric(),
                 Forms\Components\TextInput::make('barcode')
@@ -51,7 +57,7 @@ class BoxResource extends Resource
                 Tables\Columns\TextColumn::make('box_type'),
                 Tables\Columns\TextColumn::make('box_number')
                     ->searchable(),
-                Tables\Columns\TextColumn::make('batch.id')
+                Tables\Columns\TextColumn::make('batch.batch_number')
                     ->numeric()
                     ->sortable(),
                 Tables\Columns\TextColumn::make('parent_box_id')
