@@ -4,6 +4,8 @@ namespace App\Models;
 
 use App\Models\Builders\DocumentBuilder;
 use App\Models\Concerns\BelongsToRepository;
+use App\Models\Concerns\ConditionallyPreloadsRelations;
+use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Database\Eloquent\Factories\HasFactory;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
@@ -20,13 +22,14 @@ use Spatie\Tags\HasTags;
 
 class Document extends Model implements AuditableContract, HasMedia
 {
-    use HasFactory;
-    use SoftDeletes;
     use Auditable;
-    use Searchable;
+    use ConditionallyPreloadsRelations;
+    use HasFactory;
     use HasTags;
     use InteractsWithMedia;
     use BelongsToRepository;  // RFQ §3.5.1 — multi-tenant scope
+    use Searchable;
+    use SoftDeletes;
 
     /**
      * When true, the DocumentBuilder bulk-update guard is suspended so a
@@ -240,5 +243,71 @@ class Document extends Model implements AuditableContract, HasMedia
     public static function shouldBypassAuditGuard(): bool
     {
         return static::$bypassAuditGuard;
+    }
+
+    /**
+     * Full-text search across one or more text columns.
+     *
+     * On MySQL this expands to `MATCH (col1, col2) AGAINST (? IN NATURAL
+     * LANGUAGE MODE)` and uses whichever FULLTEXT index covers the exact
+     * column set passed in. The migration creates one single-column index
+     * per searchable column (notes, deeds, museum_reference); MySQL only
+     * uses a FULLTEXT index whose column list matches the MATCH() list
+     * exactly, so callers should pass one column at a time.
+     *
+     * On any other driver (SQLite for the test suite, Postgres for
+     * hypothetical staging) we silently degrade to the same `LIKE '%term%'`
+     * chain that the resource used before this change — slower, but
+     * functionally identical, and the unit tests cover both branches.
+     *
+     * The whole clause is wrapped in a where(fn $q => ...) closure so it
+     * composes with `where(...)->searchFullText(...)->where(...)` chains
+     * without leaking an OR into the outer WHERE group.
+     *
+     * @param  array<int, string>  $columns
+     */
+    public function scopeSearchFullText(
+        Builder $query,
+        string $term,
+        array $columns = ['notes', 'deeds', 'museum_reference'],
+    ): Builder {
+        $term = trim($term);
+
+        // Empty term → no-op, returning the unchanged builder lets callers
+        // chain ->searchFullText($value) inside a ->when() with no extra
+        // guard (Filament's filter ->query() callback expects exactly this).
+        if ($term === '' || $columns === []) {
+            return $query;
+        }
+
+        $driver = $query->getConnection()->getDriverName();
+
+        return $query->where(function (Builder $inner) use ($term, $columns, $driver) {
+            if ($driver === 'mysql') {
+                $columnList = implode(', ', array_map(
+                    fn (string $c) => '`' . str_replace('`', '``', $c) . '`',
+                    $columns,
+                ));
+
+                $inner->whereRaw(
+                    "MATCH ({$columnList}) AGAINST (? IN NATURAL LANGUAGE MODE)",
+                    [$term],
+                );
+
+                return;
+            }
+
+            // Non-MySQL fallback: chain OR LIKEs across the same columns.
+            // The `%term%` shape matches Eloquent's LIKE convention; we
+            // escape the term's wildcards so a user searching for "100%"
+            // doesn't accidentally match every row.
+            $needle = '%' . addcslashes($term, '%_\\') . '%';
+
+            foreach ($columns as $i => $col) {
+                $i === 0
+                    ? $inner->where($col, 'like', $needle)
+                    : $inner->orWhere($col, 'like', $needle);
+            }
+        });
     }
 }

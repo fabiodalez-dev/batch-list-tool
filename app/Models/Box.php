@@ -2,6 +2,7 @@
 
 namespace App\Models;
 
+use App\Models\Concerns\ConditionallyPreloadsRelations;
 use Illuminate\Database\Eloquent\Factories\HasFactory;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
@@ -12,9 +13,11 @@ use OwenIt\Auditing\Contracts\Auditable as AuditableContract;
 
 class Box extends Model implements AuditableContract
 {
+    use Auditable;
+    use ConditionallyPreloadsRelations;
     use HasFactory;
     use SoftDeletes;
-    use Auditable;
+
     // NOTE: Box has no direct repository_id column — scoping derives via batch.repository_id.
     // Filament Resource for Box should filter on batch.repository_id manually if needed.
 
