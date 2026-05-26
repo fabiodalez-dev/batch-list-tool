@@ -15,7 +15,6 @@ declare(strict_types=1);
  *   - allow data: URIs for fonts and images (Inter served locally + laravolt SVG)
  *   - never reference an external CDN (RFQ §11 / Security Baseline §15)
  */
-
 beforeEach(function () {
     $response = $this->get('/admin/login');
     $response->assertOk();
@@ -52,8 +51,10 @@ test('CSP does NOT reference any third-party CDN domain', function () {
     ];
 
     foreach ($forbiddenHosts as $host) {
-        expect($this->cspHeader)->not->toContain($host,
-            "CSP must not reference third-party host {$host} (security baseline §15)");
+        expect($this->cspHeader)->not->toContain(
+            $host,
+            "CSP must not reference third-party host {$host} (security baseline §15)"
+        );
     }
 });
 

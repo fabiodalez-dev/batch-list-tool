@@ -2,6 +2,7 @@
 
 namespace App\Models;
 
+use App\Models\Scopes\ThroughBoxBatchRepositoryScope;
 use Illuminate\Database\Eloquent\Factories\HasFactory;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
@@ -53,7 +54,7 @@ class BoxMovement extends Model implements AuditableContract
      */
     protected static function booted(): void
     {
-        static::addGlobalScope(new \App\Models\Scopes\ThroughBoxBatchRepositoryScope(
+        static::addGlobalScope(new ThroughBoxBatchRepositoryScope(
             boxForeignKey: 'to_box_id',
         ));
     }

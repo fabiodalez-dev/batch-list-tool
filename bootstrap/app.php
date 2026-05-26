@@ -1,8 +1,10 @@
 <?php
 
+use Bepsvpt\SecureHeaders\SecureHeadersMiddleware;
 use Illuminate\Foundation\Application;
 use Illuminate\Foundation\Configuration\Exceptions;
 use Illuminate\Foundation\Configuration\Middleware;
+use Spatie\Csp\AddCspHeaders;
 
 return Application::configure(basePath: dirname(__DIR__))
     ->withRouting(
@@ -13,8 +15,8 @@ return Application::configure(basePath: dirname(__DIR__))
     ->withMiddleware(function (Middleware $middleware) {
         // Security baseline §4-§6: global HTTP security headers + CSP + honeypot
         $middleware->append([
-            \Bepsvpt\SecureHeaders\SecureHeadersMiddleware::class,
-            \Spatie\Csp\AddCspHeaders::class,
+            SecureHeadersMiddleware::class,
+            AddCspHeaders::class,
         ]);
         // Idempotency middleware alias removed — sobhanatar/idempotency not yet
         // installed. Re-add `composer require sobhanatar/idempotency` first,

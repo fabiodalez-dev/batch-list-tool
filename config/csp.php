@@ -1,5 +1,8 @@
 <?php
 
+use App\Support\Csp\AppPolicy;
+use Spatie\Csp\Nonce\RandomString;
+
 // use Spatie\Csp\Directive;
 // use Spatie\Csp\Keyword;
 
@@ -10,7 +13,7 @@ return [
      * any class that implements `Spatie\Csp\Preset`
      */
     'presets' => [
-        \App\Support\Csp\AppPolicy::class,
+        AppPolicy::class,
     ],
 
     /**
@@ -85,7 +88,7 @@ return [
     /*
      * The class responsible for generating the nonces used in inline tags and headers.
      */
-    'nonce_generator' => Spatie\Csp\Nonce\RandomString::class,
+    'nonce_generator' => RandomString::class,
 
     /*
      * Set false to disable automatic nonce generation and handling.
