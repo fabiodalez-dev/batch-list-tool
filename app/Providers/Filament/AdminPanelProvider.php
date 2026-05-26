@@ -2,6 +2,11 @@
 
 namespace App\Providers\Filament;
 
+use App\Filament\Widgets\DocumentsPerBatchChart;
+use App\Filament\Widgets\DocumentsPerSeriesChart;
+use App\Filament\Widgets\PendingDisinfestationTable;
+use App\Filament\Widgets\RecentActivityWidget;
+use App\Filament\Widgets\StatsOverviewWidget;
 use App\Support\Avatars\LocalAvatarProvider;
 use BezhanSalleh\FilamentShield\FilamentShieldPlugin;
 use Filament\FontProviders\LocalFontProvider;
@@ -13,7 +18,6 @@ use Filament\Pages;
 use Filament\Panel;
 use Filament\PanelProvider;
 use Filament\Support\Colors\Color;
-use Filament\Widgets;
 use Illuminate\Cookie\Middleware\AddQueuedCookiesToResponse;
 use Illuminate\Cookie\Middleware\EncryptCookies;
 use Illuminate\Foundation\Http\Middleware\VerifyCsrfToken;
@@ -54,9 +58,13 @@ class AdminPanelProvider extends PanelProvider
                 Pages\Dashboard::class,
             ])
             ->discoverWidgets(in: app_path('Filament/Widgets'), for: 'App\\Filament\\Widgets')
+            // Dashboard widgets — order matters: highest-value above the fold.
             ->widgets([
-                Widgets\AccountWidget::class,
-                Widgets\FilamentInfoWidget::class,
+                StatsOverviewWidget::class,
+                PendingDisinfestationTable::class,
+                DocumentsPerSeriesChart::class,
+                DocumentsPerBatchChart::class,
+                RecentActivityWidget::class,
             ])
             ->middleware([
                 EncryptCookies::class,

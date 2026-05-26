@@ -2,21 +2,15 @@
 
 namespace App\Models;
 
-use App\Models\Builders\DocumentBuilder;
 use App\Models\Concerns\BelongsToRepository;
-use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Database\Eloquent\Factories\HasFactory;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
 use Illuminate\Database\Eloquent\Relations\BelongsToMany;
 use Illuminate\Database\Eloquent\Relations\HasMany;
-use Illuminate\Database\Eloquent\SoftDeletes;
-use Illuminate\Support\Collection;
-use Laravel\Scout\Searchable;
 use OwenIt\Auditing\Auditable;
 use OwenIt\Auditing\Contracts\Auditable as AuditableContract;
 use Spatie\EloquentSortable\Sortable;
-use Spatie\EloquentSortable\SortableTrait;
 use Spatie\MediaLibrary\HasMedia;
 use Spatie\MediaLibrary\InteractsWithMedia;
 use Spatie\SchemalessAttributes\Casts\SchemalessAttributes;
@@ -25,18 +19,12 @@ use Spatie\Tags\HasTags;
 class Document extends Model implements AuditableContract, HasMedia, Sortable
 {
     use Auditable;
-    use BelongsToRepository;  // RFQ §3.5.1 — multi-tenant scope
+    use BelongsToRepository;
+    use BelongsToRepository;
+    // RFQ §3.5.1 — multi-tenant scope
     use HasFactory;
     use HasTags;
-    use InteractsWithMedia;
-    use Searchable;
-    use SoftDeletes;
-    use SortableTrait;
-
-    public array $sortable = [
-        'order_column_name' => 'sort_order',
-        'sort_when_creating' => true,
-    ];
+    use InteractsWithMedia;  // RFQ §3.5.1 — multi-tenant scope
 
     /**
      * `repository_id` is mass-assignable so Filament admins (who legitimately
@@ -142,28 +130,6 @@ class Document extends Model implements AuditableContract, HasMedia, Sortable
     public function movements(): HasMany
     {
         return $this->hasMany(BoxMovement::class)->latest('movement_date');
-    }
-
-    /**
-     * Chronological identifier-change log for this document (newest first).
-     */
-    public function identifierHistory(): HasMany
-    {
-        return $this->hasMany(DocumentIdentifierHistory::class)
-            ->orderByDesc('changed_at');
-    }
-
-    /**
-     * Distinct list of previous_identifier values from the history, useful for
-     * surfacing "also known as" labels and feeding the global search index.
-     */
-    public function previousIdentifiers(): Collection
-    {
-        return $this->identifierHistory()
-            ->pluck('previous_identifier')
-            ->filter(fn ($v) => $v !== null && $v !== '')
-            ->unique()
-            ->values();
     }
 
     /**
