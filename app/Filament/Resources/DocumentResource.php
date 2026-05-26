@@ -4,8 +4,8 @@ namespace App\Filament\Resources;
 
 use App\Filament\Concerns\AppliesFieldPermissions;
 use App\Filament\Resources\DocumentResource\Pages;
+use App\Filament\Support\SearchableSelects;
 use App\Models\Document;
-use App\Models\Location;
 use App\Models\Repository;
 use Filament\Actions\BulkActionGroup;
 use Filament\Actions\DeleteBulkAction;
@@ -57,10 +57,12 @@ class DocumentResource extends Resource
                         $g(Forms\Components\TextInput::make('identifier')->required()->maxLength(64)),
                         $g(Forms\Components\TextInput::make('catalogue_identifier')->maxLength(191)),
                         $g(Forms\Components\TextInput::make('document_type')->maxLength(100)),
-                        $g(Forms\Components\Select::make('series_id')
+                        // Series ≈ 4–30 rows but still wired through the
+                        // SearchableSelects helper for label consistency
+                        // ("<code> — <title>") across the whole panel.
+                        $g(SearchableSelects::series('series_id')
                             ->label('Series')
-                            ->relationship('series', 'code')
-                            ->searchable()->preload()->required()),
+                            ->required()),
                         // NOTE: this Select kept its existing role-aware
                         // `disabled()` closure (tenant scoping for admins
                         // who legitimately pick a target Repository). The
@@ -69,21 +71,18 @@ class DocumentResource extends Resource
                         // wins (both closures must allow for the input to
                         // be writable). The visible/hidden side comes
                         // entirely from the gate.
-                        $g(Forms\Components\Select::make('repository_id')
+                        $g(SearchableSelects::repository(
+                            'repository_id',
+                            fn ($query) => $query->whereIn(
+                                'id',
+                                auth()->user()?->hasAnyRole(['super_admin', 'admin'])
+                                    ? Repository::query()->pluck('id')->all()
+                                    : (auth()->user()?->repositories()->pluck('repositories.id')->all() ?? [])
+                            ),
+                        )
                             ->label('Repository')
-                            ->relationship(
-                                'repository',
-                                'name',
-                                fn ($query) => $query->whereIn(
-                                    'id',
-                                    auth()->user()?->hasAnyRole(['super_admin', 'admin'])
-                                        ? Repository::query()->pluck('id')->all()
-                                        : (auth()->user()?->repositories()->pluck('repositories.id')->all() ?? [])
-                                )
-                            )
                             ->required()
-                            ->default(fn () => auth()->user()?->default_repository_id)
-                            ->searchable()->preload()),
+                            ->default(fn () => auth()->user()?->default_repository_id)),
                         $g(Forms\Components\TextInput::make('volume_label')->label('Volume label')->maxLength(64)),
                         $g(Forms\Components\TextInput::make('practice')->maxLength(100)),
                         $g(Forms\Components\TextInput::make('dates')->label('Dates (text)')->maxLength(191)
@@ -96,34 +95,32 @@ class DocumentResource extends Resource
                         // `authorities` is a BelongsToMany relation, not a
                         // column on documents — it has no matrix entry and
                         // falls back to the `_default` (allow all editors).
-                        $g(Forms\Components\Select::make('authorities')
-                            ->multiple()
-                            ->relationship('authorities', 'surname')
-                            ->searchable()->preload()),
+                        //
+                        // 808 rows in production → server-side search (label:
+                        // "<identifier> — <surname> <given_names> (<dates>)").
+                        $g(SearchableSelects::authoritiesMulti('authorities')),
                     ]),
 
                 Schemas\Components\Section::make('Current location')
                     ->columns(3)
                     ->schema([
-                        $g(Forms\Components\Select::make('batch_id')->relationship('batch', 'batch_number')->searchable()->preload()),
-                        $g(Forms\Components\Select::make('current_box_id')->relationship('currentBox', 'box_number')->searchable()->preload()),
-                        $g(Forms\Components\Select::make('accession_id')->relationship('accession', 'code')->searchable()->preload()),
+                        // Server-side autocompletes (3,000+ documents,
+                        // 600+ boxes, ~30 batches in production). Helpers
+                        // do the boring search/label wiring.
+                        $g(SearchableSelects::batch('batch_id', 'batch')),
+                        $g(SearchableSelects::box('current_box_id', 'currentBox')),
+                        $g(SearchableSelects::accession('accession_id')),
                         // RFQ §3.1.9 — configurable Location hierarchy.
                         // Lives next to the legacy `nra_location` / `museum_location` free-text
                         // columns kept for POC parity; from now on this Select is the source of
                         // truth and the legacy strings are slated for retirement (see PR body).
-                        $g(Forms\Components\Select::make('location_id')
+                        $g(SearchableSelects::location(
+                            'location_id',
+                            fn ($query) => $query
+                                ->active()
+                                ->forRepository(auth()->user()?->default_repository_id),
+                        )
                             ->label('Location (RFQ §3.1.9)')
-                            ->relationship(
-                                'location',
-                                'name',
-                                fn ($query) => $query
-                                    ->active()
-                                    ->forRepository(auth()->user()?->default_repository_id),
-                            )
-                            ->getOptionLabelFromRecordUsing(fn (Location $r) => $r->breadcrumb())
-                            ->searchable(['name', 'code'])
-                            ->preload()
                             ->nullable()
                             ->helperText('Repository / room / shelf / showcase / temp-holding hierarchy.')),
                         $g(Forms\Components\TextInput::make('current_box_type')->maxLength(50)),

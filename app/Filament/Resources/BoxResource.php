@@ -4,8 +4,8 @@ namespace App\Filament\Resources;
 
 use App\Filament\Concerns\AppliesFieldPermissions;
 use App\Filament\Resources\BoxResource\Pages;
+use App\Filament\Support\SearchableSelects;
 use App\Models\Box;
-use App\Models\Location;
 use Filament\Actions\BulkActionGroup;
 use Filament\Actions\DeleteBulkAction;
 use Filament\Actions\EditAction;
@@ -68,10 +68,9 @@ class BoxResource extends Resource
                 $g(Forms\Components\TextInput::make('box_number')
                     ->required()
                     ->maxLength(32)),
-                $g(Forms\Components\Select::make('batch_id')
-                    ->relationship('batch', 'batch_number')
-                    ->searchable()
-                    ->preload()),
+                // Batches dropdown: ~30 rows in production, but kept on the
+                // SearchableSelects helper for label consistency.
+                $g(SearchableSelects::batch('batch_id', 'batch')),
 
                 // RFQ Appendix-1 rule #3: In Situ boxes must reference a previous
                 // RAS box, unless the user explicitly opts-out via the "no parent
@@ -89,16 +88,16 @@ class BoxResource extends Resource
                 // `parent_box_id` keeps its own `visible(IN_SITU)` rule —
                 // the gate trait uses `hidden()` (separate channel) so
                 // the two compose without clobbering each other.
-                $g(Forms\Components\Select::make('parent_box_id')
+                //
+                // The RAS-only filter is now applied through the
+                // SearchableSelects helper, which also handles the
+                // server-side autocomplete (600+ boxes in production).
+                $g(SearchableSelects::boxFiltered(
+                    'parent_box_id',
+                    'parent',
+                    fn ($query) => $query->where('box_type', 'RAS'),
+                )
                     ->label('Parent RAS box')
-                    ->relationship(
-                        'parent',
-                        'box_number',
-                        fn ($query) => $query->where('box_type', 'RAS')
-                    )
-                    ->getOptionLabelFromRecordUsing(fn (Box $r) => "RAS Box #{$r->box_number} (batch " . ($r->batch?->batch_number ?? '?') . ', id ' . $r->id . ')')
-                    ->searchable()
-                    ->preload()
                     ->visible(fn (Get $get) => $get('box_type') === 'IN_SITU')
                     ->required(fn (Get $get) => $get('box_type') === 'IN_SITU' && ! $get('_parent_explicitly_unknown'))
                     ->rule(function (Get $get) {
@@ -143,18 +142,13 @@ class BoxResource extends Resource
                 // option list is scoped to the user's default repository AND
                 // global locations (repository_id IS NULL) — see
                 // Location::scopeForRepository().
-                $g(Forms\Components\Select::make('location_id')
+                $g(SearchableSelects::location(
+                    'location_id',
+                    fn ($query) => $query
+                        ->active()
+                        ->forRepository(auth()->user()?->default_repository_id),
+                )
                     ->label('Location (RFQ §3.1.9)')
-                    ->relationship(
-                        'location',
-                        'name',
-                        fn ($query) => $query
-                            ->active()
-                            ->forRepository(auth()->user()?->default_repository_id),
-                    )
-                    ->getOptionLabelFromRecordUsing(fn (Location $r) => $r->breadcrumb())
-                    ->searchable(['name', 'code'])
-                    ->preload()
                     ->nullable()
                     ->helperText('Repository / room / shelf / showcase / temp-holding hierarchy.')),
 

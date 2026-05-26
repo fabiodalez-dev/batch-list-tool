@@ -3,6 +3,7 @@
 namespace App\Filament\Resources;
 
 use App\Filament\Resources\VolumeResource\Pages;
+use App\Filament\Support\SearchableSelects;
 use App\Models\Volume;
 use Filament\Actions\BulkActionGroup;
 use Filament\Actions\DeleteBulkAction;
@@ -30,8 +31,10 @@ class VolumeResource extends Resource
     {
         return $schema
             ->schema([
-                Forms\Components\Select::make('document.identifier')
-                    ->relationship('document', 'identifier')
+                // Searchable autocomplete (no preload): the documents table has
+                // 3,000+ rows in production, so a `<select>` with that many
+                // options is unusable. See App\Filament\Support\SearchableSelects.
+                SearchableSelects::documentVia('document_id', 'document')
                     ->required(),
                 Forms\Components\TextInput::make('volume_number')
                     ->required()
