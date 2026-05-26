@@ -37,3 +37,15 @@ parameters:
         # spatie/permission HasRoles trait magic methods
         -
             message: '#Call to an undefined method App\\Models\\User::(hasRole|hasAnyRole|assignRole|syncRoles|getRoleNames)#'
+
+        # AppliesFieldPermissions is consumed by Filament Resources, all
+        # of which sit inside `app/Filament/Resources/` which is excluded
+        # from analysis (see `excludePaths` above for the rationale).
+        # Without that exclusion PHPStan would correctly detect the
+        # trait's `use` statements; with it, PHPStan loses the call-site
+        # and emits a false-positive `trait.unused`. We pin the ignore
+        # to the specific file so any future genuinely-unused trait
+        # would still surface.
+        -
+            identifier: trait.unused
+            path: app/Filament/Concerns/AppliesFieldPermissions.php

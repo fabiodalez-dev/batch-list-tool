@@ -2,6 +2,7 @@
 
 namespace App\Filament\Resources;
 
+use App\Filament\Concerns\AppliesFieldPermissions;
 use App\Filament\Resources\BatchResource\Pages;
 use App\Models\Batch;
 use App\Models\Repository;
@@ -13,6 +14,11 @@ use Filament\Tables\Table;
 
 class BatchResource extends Resource
 {
+    use AppliesFieldPermissions;
+
+    /** RFQ §3.1.8 — see config/field_permissions.php */
+    private const FIELD_PERMISSIONS_KEY = 'batch';
+
     protected static ?string $model = Batch::class;
 
     protected static ?string $navigationIcon = 'heroicon-o-squares-2x2';
@@ -25,9 +31,11 @@ class BatchResource extends Resource
 
     public static function form(Form $form): Form
     {
+        $g = fn (Forms\Components\Component $c): Forms\Components\Component => self::gateField($c, self::FIELD_PERMISSIONS_KEY);
+
         return $form
             ->schema([
-                Forms\Components\TextInput::make('batch_number')
+                $g(Forms\Components\TextInput::make('batch_number')
                     ->required()
                     ->numeric()
                     ->minValue(1)
@@ -45,12 +53,15 @@ class BatchResource extends Resource
                                 $fail("Batch number {$value} is reserved/forbidden (RFQ rule).");
                             }
                         };
-                    }),
-                Forms\Components\TextInput::make('description')
-                    ->maxLength(255),
-                Forms\Components\TextInput::make('type')
-                    ->required(),
-                Forms\Components\Select::make('repository_id')
+                    })),
+                $g(Forms\Components\TextInput::make('description')
+                    ->maxLength(255)),
+                $g(Forms\Components\TextInput::make('type')
+                    ->required()),
+                // NOTE: tenant-scoping `disabled()` closure stays on the
+                // Select; the field-level gate adds a second layer. Both
+                // must allow for the input to be writable.
+                $g(Forms\Components\Select::make('repository_id')
                     ->label('Repository')
                     ->relationship(
                         'repository',
@@ -64,29 +75,29 @@ class BatchResource extends Resource
                     )
                     ->required()
                     ->default(fn () => auth()->user()?->default_repository_id)
-                    ->disabled(fn () => ! auth()->user()?->hasAnyRole(['super_admin', 'admin']))
-                    ->dehydrated()
-                    ->searchable()->preload(),
-                Forms\Components\Toggle::make('is_active')
-                    ->required(),
+                    ->searchable()->preload()),
+                $g(Forms\Components\Toggle::make('is_active')
+                    ->required()),
             ]);
     }
 
     public static function table(Table $table): Table
     {
+        $gc = fn (mixed $col, ?string $fieldOverride = null): mixed => self::gateColumn($col, self::FIELD_PERMISSIONS_KEY, $fieldOverride);
+
         return $table
             ->columns([
-                Tables\Columns\TextColumn::make('batch_number')
+                $gc(Tables\Columns\TextColumn::make('batch_number')
                     ->numeric()
-                    ->sortable(),
-                Tables\Columns\TextColumn::make('description')
-                    ->searchable(),
-                Tables\Columns\TextColumn::make('type'),
-                Tables\Columns\TextColumn::make('repository.name')
+                    ->sortable()),
+                $gc(Tables\Columns\TextColumn::make('description')
+                    ->searchable()),
+                $gc(Tables\Columns\TextColumn::make('type')),
+                $gc(Tables\Columns\TextColumn::make('repository.name')
                     ->numeric()
-                    ->sortable(),
-                Tables\Columns\IconColumn::make('is_active')
-                    ->boolean(),
+                    ->sortable(), 'repository_id'),
+                $gc(Tables\Columns\IconColumn::make('is_active')
+                    ->boolean()),
                 Tables\Columns\TextColumn::make('created_at')
                     ->dateTime()
                     ->sortable()

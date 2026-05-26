@@ -2,6 +2,7 @@
 
 namespace App\Filament\Resources;
 
+use App\Filament\Concerns\AppliesFieldPermissions;
 use App\Filament\Resources\BoxResource\Pages;
 use App\Models\Box;
 use App\Models\Location;
@@ -13,6 +14,11 @@ use Filament\Tables\Table;
 
 class BoxResource extends Resource
 {
+    use AppliesFieldPermissions;
+
+    /** RFQ §3.1.8 — see config/field_permissions.php */
+    private const FIELD_PERMISSIONS_KEY = 'box';
+
     protected static ?string $model = Box::class;
 
     protected static ?string $navigationIcon = 'heroicon-o-archive-box';
@@ -25,9 +31,17 @@ class BoxResource extends Resource
 
     public static function form(Form $form): Form
     {
+        // Same wrapping trick as the other resources. NOTE: we do NOT
+        // gate `_parent_explicitly_unknown` — it is a transient,
+        // control-only toggle with `dehydrated(false)` whose UI rules
+        // depend on `box_type`, not on role. Gating would force
+        // `dehydrated(true)` and break the bulk-import code path that
+        // relies on this toggle being absent from the save payload.
+        $g = fn (Forms\Components\Component $c): Forms\Components\Component => self::gateField($c, self::FIELD_PERMISSIONS_KEY);
+
         return $form
             ->schema([
-                Forms\Components\Select::make('box_type')
+                $g(Forms\Components\Select::make('box_type')
                     ->options(collect(Box::TYPES)->mapWithKeys(fn ($t) => [$t => $t]))
                     ->required()
                     ->live()  // re-evaluate visibility/required of dependent fields
@@ -44,14 +58,14 @@ class BoxResource extends Resource
                                 $fail("Box type '{$value}' is a legacy type and cannot be assigned to new boxes (RFQ Appendix-1 rule #4). Allowed for create: " . implode(', ', array_diff(Box::TYPES, Box::LEGACY_TYPES)) . '.');
                             }
                         };
-                    }),
-                Forms\Components\TextInput::make('box_number')
+                    })),
+                $g(Forms\Components\TextInput::make('box_number')
                     ->required()
-                    ->maxLength(32),
-                Forms\Components\Select::make('batch_id')
+                    ->maxLength(32)),
+                $g(Forms\Components\Select::make('batch_id')
                     ->relationship('batch', 'batch_number')
                     ->searchable()
-                    ->preload(),
+                    ->preload()),
 
                 // RFQ Appendix-1 rule #3: In Situ boxes must reference a previous
                 // RAS box, unless the user explicitly opts-out via the "no parent
@@ -59,13 +73,17 @@ class BoxResource extends Resource
                 // hatch for the few legacy records described in Requirements §ii
                 // ("there are only a few exceptions where this rule is broken, as
                 // the provenance of the document was lost ie: Unknown/NULL RAS box").
+                // NOT gated — see comment at the top of this method.
                 Forms\Components\Toggle::make('_parent_explicitly_unknown')
                     ->label('Provenance lost (no parent RAS box)')
                     ->helperText('Only tick this if the RAS box of origin is genuinely unknown — RFQ Appendix-1 rule #3 escape hatch. Use sparingly.')
                     ->dehydrated(false)  // not persisted; control-only field
                     ->default(false)
                     ->visible(fn (Forms\Get $get) => $get('box_type') === 'IN_SITU'),
-                Forms\Components\Select::make('parent_box_id')
+                // `parent_box_id` keeps its own `visible(IN_SITU)` rule —
+                // the gate trait uses `hidden()` (separate channel) so
+                // the two compose without clobbering each other.
+                $g(Forms\Components\Select::make('parent_box_id')
                     ->label('Parent RAS box')
                     ->relationship(
                         'parent',
@@ -89,18 +107,18 @@ class BoxResource extends Resource
                                 $fail('IN_SITU boxes must reference a parent RAS box (RFQ Appendix-1 rule #3). Tick "Provenance lost" only if the origin RAS box is genuinely unknown.');
                             }
                         };
-                    }),
+                    })),
 
-                Forms\Components\TextInput::make('barcode')
-                    ->maxLength(64),
-                Forms\Components\Select::make('barcode_status')
+                $g(Forms\Components\TextInput::make('barcode')
+                    ->maxLength(64)),
+                $g(Forms\Components\Select::make('barcode_status')
                     ->options(collect(Box::BARCODE_STATUSES)->mapWithKeys(fn ($s) => [$s => $s]))
                     ->required()
                     ->live()
-                    ->default('IN'),
+                    ->default('IN')),
                 // RFQ Appendix-1 rule #2: a record cannot be marked PERM OUT
                 // unless it has a disinfestation_date.
-                Forms\Components\DatePicker::make('disinfestation_date')
+                $g(Forms\Components\DatePicker::make('disinfestation_date')
                     ->required(fn (Forms\Get $get) => $get('barcode_status') === 'PERM_OUT')
                     ->helperText(fn (Forms\Get $get) => $get('barcode_status') === 'PERM_OUT'
                         ? 'Required when status is PERM OUT (RFQ Appendix-1 rule #2).'
@@ -111,7 +129,7 @@ class BoxResource extends Resource
                                 $fail('Disinfestation date is required when status is PERM OUT (RFQ Appendix-1 rule #2).');
                             }
                         };
-                    }),
+                    })),
 
                 // RFQ §3.1.9 — Configurable Location Hierarchies.
                 // Boxes may be pinned to a configurable Location (room /
@@ -119,7 +137,7 @@ class BoxResource extends Resource
                 // option list is scoped to the user's default repository AND
                 // global locations (repository_id IS NULL) — see
                 // Location::scopeForRepository().
-                Forms\Components\Select::make('location_id')
+                $g(Forms\Components\Select::make('location_id')
                     ->label('Location (RFQ §3.1.9)')
                     ->relationship(
                         'location',
@@ -132,37 +150,39 @@ class BoxResource extends Resource
                     ->searchable(['name', 'code'])
                     ->preload()
                     ->nullable()
-                    ->helperText('Repository / room / shelf / showcase / temp-holding hierarchy.'),
+                    ->helperText('Repository / room / shelf / showcase / temp-holding hierarchy.')),
 
-                Forms\Components\Toggle::make('is_legacy')
+                $g(Forms\Components\Toggle::make('is_legacy')
                     ->helperText('Flags legacy data; required true when box_type is MAV or STVC.')
-                    ->required(),
-                Forms\Components\Textarea::make('notes')
-                    ->columnSpanFull(),
+                    ->required()),
+                $g(Forms\Components\Textarea::make('notes')
+                    ->columnSpanFull()),
             ]);
     }
 
     public static function table(Table $table): Table
     {
+        $gc = fn (mixed $col, ?string $fieldOverride = null): mixed => self::gateColumn($col, self::FIELD_PERMISSIONS_KEY, $fieldOverride);
+
         return $table
             ->columns([
-                Tables\Columns\TextColumn::make('box_type'),
-                Tables\Columns\TextColumn::make('box_number')
-                    ->searchable(),
-                Tables\Columns\TextColumn::make('batch.batch_number')
+                $gc(Tables\Columns\TextColumn::make('box_type')),
+                $gc(Tables\Columns\TextColumn::make('box_number')
+                    ->searchable()),
+                $gc(Tables\Columns\TextColumn::make('batch.batch_number')
                     ->numeric()
-                    ->sortable(),
-                Tables\Columns\TextColumn::make('parent_box_id')
+                    ->sortable(), 'batch_id'),
+                $gc(Tables\Columns\TextColumn::make('parent_box_id')
                     ->numeric()
-                    ->sortable(),
-                Tables\Columns\TextColumn::make('barcode')
-                    ->searchable(),
-                Tables\Columns\TextColumn::make('barcode_status'),
-                Tables\Columns\TextColumn::make('disinfestation_date')
+                    ->sortable()),
+                $gc(Tables\Columns\TextColumn::make('barcode')
+                    ->searchable()),
+                $gc(Tables\Columns\TextColumn::make('barcode_status')),
+                $gc(Tables\Columns\TextColumn::make('disinfestation_date')
                     ->date()
-                    ->sortable(),
-                Tables\Columns\IconColumn::make('is_legacy')
-                    ->boolean(),
+                    ->sortable()),
+                $gc(Tables\Columns\IconColumn::make('is_legacy')
+                    ->boolean()),
                 Tables\Columns\TextColumn::make('created_at')
                     ->dateTime()
                     ->sortable()
@@ -193,7 +213,7 @@ class BoxResource extends Resource
     public static function getRelations(): array
     {
         return [
-            //
+            BoxResource\RelationManagers\BarcodeHistoryRelationManager::class,
         ];
     }
 

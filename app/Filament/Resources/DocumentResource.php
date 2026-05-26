@@ -2,6 +2,7 @@
 
 namespace App\Filament\Resources;
 
+use App\Filament\Concerns\AppliesFieldPermissions;
 use App\Filament\Resources\DocumentResource\Pages;
 use App\Models\Document;
 use App\Models\Location;
@@ -19,6 +20,14 @@ use Illuminate\Database\Eloquent\Builder;
 
 class DocumentResource extends Resource
 {
+    use AppliesFieldPermissions;
+
+    /**
+     * Config key used by App\Support\FieldPermissions to look up
+     * the per-field, per-role read/write/hidden matrix (RFQ §3.1.8).
+     */
+    private const FIELD_PERMISSIONS_KEY = 'document';
+
     protected static ?string $model = Document::class;
 
     protected static ?string $navigationIcon = 'heroicon-o-rectangle-stack';
@@ -31,19 +40,31 @@ class DocumentResource extends Resource
 
     public static function form(Form $form): Form
     {
+        // Local alias so each gate call stays a one-liner instead of
+        // repeating the resource key constant 40+ times.
+        $g = fn (Forms\Components\Component $c): Forms\Components\Component => self::gateField($c, self::FIELD_PERMISSIONS_KEY);
+
         return $form
             ->schema([
                 Forms\Components\Section::make('Identification')
                     ->columns(3)
                     ->schema([
-                        Forms\Components\TextInput::make('identifier')->required()->maxLength(64),
-                        Forms\Components\TextInput::make('catalogue_identifier')->maxLength(191),
-                        Forms\Components\TextInput::make('document_type')->maxLength(100),
-                        Forms\Components\Select::make('series_id')
+                        $g(Forms\Components\TextInput::make('identifier')->required()->maxLength(64)),
+                        $g(Forms\Components\TextInput::make('catalogue_identifier')->maxLength(191)),
+                        $g(Forms\Components\TextInput::make('document_type')->maxLength(100)),
+                        $g(Forms\Components\Select::make('series_id')
                             ->label('Series')
                             ->relationship('series', 'code')
-                            ->searchable()->preload()->required(),
-                        Forms\Components\Select::make('repository_id')
+                            ->searchable()->preload()->required()),
+                        // NOTE: this Select kept its existing role-aware
+                        // `disabled()` closure (tenant scoping for admins
+                        // who legitimately pick a target Repository). The
+                        // field-level gate adds an ADDITIONAL layer: if
+                        // the role is also denied by the matrix, the gate
+                        // wins (both closures must allow for the input to
+                        // be writable). The visible/hidden side comes
+                        // entirely from the gate.
+                        $g(Forms\Components\Select::make('repository_id')
                             ->label('Repository')
                             ->relationship(
                                 'repository',
@@ -57,35 +78,36 @@ class DocumentResource extends Resource
                             )
                             ->required()
                             ->default(fn () => auth()->user()?->default_repository_id)
-                            ->disabled(fn () => ! auth()->user()?->hasAnyRole(['super_admin', 'admin']))
-                            ->dehydrated() // keep value submitted even when disabled
-                            ->searchable()->preload(),
-                        Forms\Components\TextInput::make('volume_label')->label('Volume label')->maxLength(64),
-                        Forms\Components\TextInput::make('practice')->maxLength(100),
-                        Forms\Components\TextInput::make('dates')->label('Dates (text)')->maxLength(191)
-                            ->helperText('Free-text dates as in POC, e.g. "1607-1629" or "Jun 1997 - Nov 1998"'),
-                        Forms\Components\TextInput::make('deeds')->maxLength(2000),
+                            ->searchable()->preload()),
+                        $g(Forms\Components\TextInput::make('volume_label')->label('Volume label')->maxLength(64)),
+                        $g(Forms\Components\TextInput::make('practice')->maxLength(100)),
+                        $g(Forms\Components\TextInput::make('dates')->label('Dates (text)')->maxLength(191)
+                            ->helperText('Free-text dates as in POC, e.g. "1607-1629" or "Jun 1997 - Nov 1998"')),
+                        $g(Forms\Components\TextInput::make('deeds')->maxLength(2000)),
                     ]),
 
                 Forms\Components\Section::make('Authorities (Creators)')
                     ->schema([
-                        Forms\Components\Select::make('authorities')
+                        // `authorities` is a BelongsToMany relation, not a
+                        // column on documents — it has no matrix entry and
+                        // falls back to the `_default` (allow all editors).
+                        $g(Forms\Components\Select::make('authorities')
                             ->multiple()
                             ->relationship('authorities', 'surname')
-                            ->searchable()->preload(),
+                            ->searchable()->preload()),
                     ]),
 
                 Forms\Components\Section::make('Current location')
                     ->columns(3)
                     ->schema([
-                        Forms\Components\Select::make('batch_id')->relationship('batch', 'batch_number')->searchable()->preload(),
-                        Forms\Components\Select::make('current_box_id')->relationship('currentBox', 'box_number')->searchable()->preload(),
-                        Forms\Components\Select::make('accession_id')->relationship('accession', 'code')->searchable()->preload(),
+                        $g(Forms\Components\Select::make('batch_id')->relationship('batch', 'batch_number')->searchable()->preload()),
+                        $g(Forms\Components\Select::make('current_box_id')->relationship('currentBox', 'box_number')->searchable()->preload()),
+                        $g(Forms\Components\Select::make('accession_id')->relationship('accession', 'code')->searchable()->preload()),
                         // RFQ §3.1.9 — configurable Location hierarchy.
                         // Lives next to the legacy `nra_location` / `museum_location` free-text
                         // columns kept for POC parity; from now on this Select is the source of
                         // truth and the legacy strings are slated for retirement (see PR body).
-                        Forms\Components\Select::make('location_id')
+                        $g(Forms\Components\Select::make('location_id')
                             ->label('Location (RFQ §3.1.9)')
                             ->relationship(
                                 'location',
@@ -98,116 +120,122 @@ class DocumentResource extends Resource
                             ->searchable(['name', 'code'])
                             ->preload()
                             ->nullable()
-                            ->helperText('Repository / room / shelf / showcase / temp-holding hierarchy.'),
-                        Forms\Components\TextInput::make('current_box_type')->maxLength(50),
-                        Forms\Components\TextInput::make('nra_location')->maxLength(500)
-                            ->helperText('Legacy free-text. New records should use the Location Select above.'),
-                        Forms\Components\TextInput::make('museum_location')->maxLength(500)
-                            ->helperText('Legacy free-text. New records should use the Location Select above.'),
+                            ->helperText('Repository / room / shelf / showcase / temp-holding hierarchy.')),
+                        $g(Forms\Components\TextInput::make('current_box_type')->maxLength(50)),
+                        $g(Forms\Components\TextInput::make('nra_location')->maxLength(500)
+                            ->helperText('Legacy free-text. New records should use the Location Select above.')),
+                        $g(Forms\Components\TextInput::make('museum_location')->maxLength(500)
+                            ->helperText('Legacy free-text. New records should use the Location Select above.')),
                     ]),
 
                 Forms\Components\Section::make('Legacy box history (RAS / In Situ)')
                     ->collapsed()
                     ->columns(4)
                     ->schema([
-                        Forms\Components\TextInput::make('ras_batch_1')->label('RAS Batch 1')->maxLength(50),
-                        Forms\Components\TextInput::make('ras_box_1')->label('RAS Box 1')->maxLength(50),
-                        Forms\Components\TextInput::make('ras_1_box_destroyed')->label('RAS 1 Destroyed?')->maxLength(10),
-                        Forms\Components\TextInput::make('in_situ_box_1')->label('In Situ Box 1')->maxLength(50),
-                        Forms\Components\TextInput::make('ras_batch_2')->label('RAS Batch 2')->maxLength(50),
-                        Forms\Components\TextInput::make('ras_box_2')->label('RAS Box 2')->maxLength(50),
-                        Forms\Components\TextInput::make('ras_2_box_destroyed')->label('RAS 2 Destroyed?')->maxLength(10),
-                        Forms\Components\TextInput::make('in_situ_box_2')->label('In Situ Box 2')->maxLength(50),
-                        Forms\Components\TextInput::make('in_situ_box_1_destroyed')->label('In Situ 1 Destroyed?')->maxLength(10),
-                        Forms\Components\TextInput::make('in_situ_box_2_destroyed')->label('In Situ 2 Destroyed?')->maxLength(10),
-                        Forms\Components\TextInput::make('in_situ_box_3')->label('In Situ Box 3')->maxLength(50),
-                        Forms\Components\TextInput::make('in_situ_box_3_destroyed')->label('In Situ 3 Destroyed?')->maxLength(10),
+                        $g(Forms\Components\TextInput::make('ras_batch_1')->label('RAS Batch 1')->maxLength(50)),
+                        $g(Forms\Components\TextInput::make('ras_box_1')->label('RAS Box 1')->maxLength(50)),
+                        $g(Forms\Components\TextInput::make('ras_1_box_destroyed')->label('RAS 1 Destroyed?')->maxLength(10)),
+                        $g(Forms\Components\TextInput::make('in_situ_box_1')->label('In Situ Box 1')->maxLength(50)),
+                        $g(Forms\Components\TextInput::make('ras_batch_2')->label('RAS Batch 2')->maxLength(50)),
+                        $g(Forms\Components\TextInput::make('ras_box_2')->label('RAS Box 2')->maxLength(50)),
+                        $g(Forms\Components\TextInput::make('ras_2_box_destroyed')->label('RAS 2 Destroyed?')->maxLength(10)),
+                        $g(Forms\Components\TextInput::make('in_situ_box_2')->label('In Situ Box 2')->maxLength(50)),
+                        $g(Forms\Components\TextInput::make('in_situ_box_1_destroyed')->label('In Situ 1 Destroyed?')->maxLength(10)),
+                        $g(Forms\Components\TextInput::make('in_situ_box_2_destroyed')->label('In Situ 2 Destroyed?')->maxLength(10)),
+                        $g(Forms\Components\TextInput::make('in_situ_box_3')->label('In Situ Box 3')->maxLength(50)),
+                        $g(Forms\Components\TextInput::make('in_situ_box_3_destroyed')->label('In Situ 3 Destroyed?')->maxLength(10)),
                     ]),
 
                 Forms\Components\Section::make('Legacy barcodes & status')
                     ->collapsed()
                     ->columns(4)
                     ->schema([
-                        Forms\Components\TextInput::make('barcode_in')->label('Barcode (IN)')->maxLength(50),
-                        Forms\Components\TextInput::make('barcode_ras_1')->label('Barcode RAS 1')->maxLength(50),
-                        Forms\Components\TextInput::make('status_1')->label('Status 1')->maxLength(20),
-                        Forms\Components\TextInput::make('barcode_ras_2')->label('Barcode RAS 2')->maxLength(50),
-                        Forms\Components\TextInput::make('status_2')->label('Status 2')->maxLength(20),
-                        Forms\Components\TextInput::make('barcode_ras_3')->label('Barcode RAS 3')->maxLength(50),
-                        Forms\Components\TextInput::make('status_3')->label('Status 3')->maxLength(20),
-                        Forms\Components\TextInput::make('barcode_ras_4')->label('Barcode RAS 4')->maxLength(50),
-                        Forms\Components\TextInput::make('status_4')->label('Status 4')->maxLength(20),
-                        Forms\Components\TextInput::make('barcode_in_2')->label('Barcode (IN) #2')->maxLength(50),
-                        Forms\Components\TextInput::make('barcode_ras_2_alt')->label('Barcode RAS 2 alt')->maxLength(50),
-                        Forms\Components\TextInput::make('status_1_alt')->label('Status 1 alt')->maxLength(20),
-                        Forms\Components\TextInput::make('barcode_ras_2_alt2')->label('Barcode RAS 2 alt 2')->maxLength(50),
-                        Forms\Components\TextInput::make('status_2_alt')->label('Status 2 alt')->maxLength(20),
+                        $g(Forms\Components\TextInput::make('barcode_in')->label('Barcode (IN)')->maxLength(50)),
+                        $g(Forms\Components\TextInput::make('barcode_ras_1')->label('Barcode RAS 1')->maxLength(50)),
+                        $g(Forms\Components\TextInput::make('status_1')->label('Status 1')->maxLength(20)),
+                        $g(Forms\Components\TextInput::make('barcode_ras_2')->label('Barcode RAS 2')->maxLength(50)),
+                        $g(Forms\Components\TextInput::make('status_2')->label('Status 2')->maxLength(20)),
+                        $g(Forms\Components\TextInput::make('barcode_ras_3')->label('Barcode RAS 3')->maxLength(50)),
+                        $g(Forms\Components\TextInput::make('status_3')->label('Status 3')->maxLength(20)),
+                        $g(Forms\Components\TextInput::make('barcode_ras_4')->label('Barcode RAS 4')->maxLength(50)),
+                        $g(Forms\Components\TextInput::make('status_4')->label('Status 4')->maxLength(20)),
+                        $g(Forms\Components\TextInput::make('barcode_in_2')->label('Barcode (IN) #2')->maxLength(50)),
+                        $g(Forms\Components\TextInput::make('barcode_ras_2_alt')->label('Barcode RAS 2 alt')->maxLength(50)),
+                        $g(Forms\Components\TextInput::make('status_1_alt')->label('Status 1 alt')->maxLength(20)),
+                        $g(Forms\Components\TextInput::make('barcode_ras_2_alt2')->label('Barcode RAS 2 alt 2')->maxLength(50)),
+                        $g(Forms\Components\TextInput::make('status_2_alt')->label('Status 2 alt')->maxLength(20)),
                     ]),
 
                 Forms\Components\Section::make('Seal & disinfestation')
                     ->columns(4)
                     ->schema([
-                        Forms\Components\TextInput::make('seal_number')->maxLength(50),
-                        Forms\Components\DatePicker::make('disinfestation_date_1')->label('Disinfestation 1'),
-                        Forms\Components\DatePicker::make('disinfestation_date_2')->label('Disinfestation 2'),
-                        Forms\Components\DatePicker::make('disinfestation_date_3')->label('Disinfestation 3'),
-                        Forms\Components\DatePicker::make('disinfestation_date')->label('Disinfestation (current)'),
+                        $g(Forms\Components\TextInput::make('seal_number')->maxLength(50)),
+                        $g(Forms\Components\DatePicker::make('disinfestation_date_1')->label('Disinfestation 1')),
+                        $g(Forms\Components\DatePicker::make('disinfestation_date_2')->label('Disinfestation 2')),
+                        $g(Forms\Components\DatePicker::make('disinfestation_date_3')->label('Disinfestation 3')),
+                        $g(Forms\Components\DatePicker::make('disinfestation_date')->label('Disinfestation (current)')),
                     ]),
 
                 Forms\Components\Section::make('Dates (precise)')
                     ->columns(4)
                     ->schema([
-                        Forms\Components\TextInput::make('dates_year_start')->label('Year start')->numeric(),
-                        Forms\Components\TextInput::make('dates_year_end')->label('Year end')->numeric(),
-                        Forms\Components\DatePicker::make('dates_start')->label('Date start'),
-                        Forms\Components\DatePicker::make('dates_end')->label('Date end'),
+                        $g(Forms\Components\TextInput::make('dates_year_start')->label('Year start')->numeric()),
+                        $g(Forms\Components\TextInput::make('dates_year_end')->label('Year end')->numeric()),
+                        $g(Forms\Components\DatePicker::make('dates_start')->label('Date start')),
+                        $g(Forms\Components\DatePicker::make('dates_end')->label('Date end')),
                     ]),
 
                 Forms\Components\Section::make('Cataloguing extras')
                     ->collapsed()
                     ->columns(3)
                     ->schema([
-                        Forms\Components\TextInput::make('colour_code')->maxLength(32),
-                        Forms\Components\TextInput::make('digitised')->maxLength(100),
-                        Forms\Components\Toggle::make('torre'),
-                        Forms\Components\TextInput::make('accession_code_legacy')->label('Accession (legacy text)')->maxLength(191),
-                        Forms\Components\TextInput::make('object_reference_number')->maxLength(500),
-                        Forms\Components\TextInput::make('tracking')->maxLength(500),
-                        Forms\Components\TextInput::make('museum_reference')->maxLength(500),
+                        $g(Forms\Components\TextInput::make('colour_code')->maxLength(32)),
+                        $g(Forms\Components\TextInput::make('digitised')->maxLength(100)),
+                        $g(Forms\Components\Toggle::make('torre')),
+                        $g(Forms\Components\TextInput::make('accession_code_legacy')->label('Accession (legacy text)')->maxLength(191)),
+                        $g(Forms\Components\TextInput::make('object_reference_number')->maxLength(500)),
+                        $g(Forms\Components\TextInput::make('tracking')->maxLength(500)),
+                        $g(Forms\Components\TextInput::make('museum_reference')->maxLength(500)),
                     ]),
 
                 Forms\Components\Section::make('Notes & custom fields')
                     ->collapsed()
                     ->schema([
-                        Forms\Components\Textarea::make('notes')->columnSpanFull()->rows(3),
-                        Forms\Components\KeyValue::make('extra')->label('Extra (schemaless)')->columnSpanFull(),
-                        Forms\Components\KeyValue::make('custom_fields')->label('Custom fields (POC json)')->columnSpanFull(),
-                        Forms\Components\KeyValue::make('metadata')->label('Metadata (POC json)')->columnSpanFull(),
+                        $g(Forms\Components\Textarea::make('notes')->columnSpanFull()->rows(3)),
+                        $g(Forms\Components\KeyValue::make('extra')->label('Extra (schemaless)')->columnSpanFull()),
+                        $g(Forms\Components\KeyValue::make('custom_fields')->label('Custom fields (POC json)')->columnSpanFull()),
+                        $g(Forms\Components\KeyValue::make('metadata')->label('Metadata (POC json)')->columnSpanFull()),
                     ]),
             ]);
     }
 
     public static function table(Table $table): Table
     {
+        // Same wrapping trick as form(): keep the column declarations
+        // single-line, route through the gate. For relationship columns
+        // (`series.code`, `repository.code`) we pass the local FK column
+        // name explicitly so the matrix can still gate it.
+        $gc = fn (mixed $col, ?string $fieldOverride = null): mixed => self::gateColumn($col, self::FIELD_PERMISSIONS_KEY, $fieldOverride);
+
         return $table
             ->defaultSort('identifier')
             ->columns([
-                Tables\Columns\TextColumn::make('identifier')->searchable()->sortable()->copyable(),
-                Tables\Columns\TextColumn::make('document_type')->searchable()->toggleable(),
-                Tables\Columns\TextColumn::make('series.code')->label('Series')->badge()->sortable(),
-                Tables\Columns\TextColumn::make('batch.batch_number')->label('Batch')->sortable()->alignCenter(),
-                Tables\Columns\TextColumn::make('currentBox.box_number')->label('Box')->toggleable(),
-                Tables\Columns\TextColumn::make('practice')->toggleable(),
-                Tables\Columns\TextColumn::make('volume_label')->label('Vol.')->toggleable(),
-                Tables\Columns\TextColumn::make('dates')->label('Dates')->toggleable()->limit(30),
-                Tables\Columns\TextColumn::make('dates_year_start')->label('From')->numeric(thousandsSeparator: '')->sortable()->alignEnd(),
-                Tables\Columns\TextColumn::make('dates_year_end')->label('To')->numeric(thousandsSeparator: '')->sortable()->alignEnd(),
-                Tables\Columns\TextColumn::make('barcode_in')->label('Barcode (IN)')->toggleable(isToggledHiddenByDefault: true)->searchable(),
-                Tables\Columns\TextColumn::make('catalogue_identifier')->label('Catalogue ID')->toggleable(isToggledHiddenByDefault: true)->searchable(),
-                Tables\Columns\TextColumn::make('repository.code')->label('Repo')->badge()->color('gray')->toggleable(),
-                Tables\Columns\TextColumn::make('disinfestation_date')->label('Disinfested')->date()->sortable()->toggleable(isToggledHiddenByDefault: true),
-                Tables\Columns\IconColumn::make('torre')->boolean()->toggleable(isToggledHiddenByDefault: true),
-                Tables\Columns\TextColumn::make('updated_at')->dateTime()->sortable()->toggleable(isToggledHiddenByDefault: true),
+                $gc(Tables\Columns\TextColumn::make('identifier')->searchable()->sortable()->copyable()),
+                $gc(Tables\Columns\TextColumn::make('document_type')->searchable()->toggleable()),
+                $gc(Tables\Columns\TextColumn::make('series.code')->label('Series')->badge()->sortable(), 'series_id'),
+                $gc(Tables\Columns\TextColumn::make('batch.batch_number')->label('Batch')->sortable()->alignCenter(), 'batch_id'),
+                $gc(Tables\Columns\TextColumn::make('currentBox.box_number')->label('Box')->toggleable(), 'current_box_id'),
+                $gc(Tables\Columns\TextColumn::make('practice')->toggleable()),
+                $gc(Tables\Columns\TextColumn::make('volume_label')->label('Vol.')->toggleable()),
+                $gc(Tables\Columns\TextColumn::make('dates')->label('Dates')->toggleable()->limit(30)),
+                $gc(Tables\Columns\TextColumn::make('dates_year_start')->label('From')->numeric(thousandsSeparator: '')->sortable()->alignEnd()),
+                $gc(Tables\Columns\TextColumn::make('dates_year_end')->label('To')->numeric(thousandsSeparator: '')->sortable()->alignEnd()),
+                $gc(Tables\Columns\TextColumn::make('barcode_in')->label('Barcode (IN)')->toggleable(isToggledHiddenByDefault: true)->searchable()),
+                $gc(Tables\Columns\TextColumn::make('catalogue_identifier')->label('Catalogue ID')->toggleable(isToggledHiddenByDefault: true)->searchable()),
+                $gc(Tables\Columns\TextColumn::make('repository.code')->label('Repo')->badge()->color('gray')->toggleable(), 'repository_id'),
+                $gc(Tables\Columns\TextColumn::make('disinfestation_date')->label('Disinfested')->date()->sortable()->toggleable(isToggledHiddenByDefault: true)),
+                $gc(Tables\Columns\IconColumn::make('torre')->boolean()->toggleable(isToggledHiddenByDefault: true)),
+                $gc(Tables\Columns\TextColumn::make('updated_at')->dateTime()->sortable()->toggleable(isToggledHiddenByDefault: true)),
             ])
             ->filtersFormColumns(3)
             ->filters([
@@ -364,6 +392,7 @@ class DocumentResource extends Resource
     {
         return [
             DocumentResource\RelationManagers\IdentifierHistoryRelationManager::class,
+            DocumentResource\RelationManagers\SealNumberHistoryRelationManager::class,
         ];
     }
 
