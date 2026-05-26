@@ -21,6 +21,7 @@ class User extends Authenticatable implements AuditableContract, FilamentUser
 
     /** @use HasFactory<UserFactory> */
     use HasFactory;
+
     use HasRoles;
     use Notifiable;
     use SoftDeletes;

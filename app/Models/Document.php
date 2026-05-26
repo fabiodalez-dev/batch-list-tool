@@ -2,6 +2,7 @@
 
 namespace App\Models;
 
+use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Database\Eloquent\Factories\HasFactory;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
@@ -11,12 +12,14 @@ use Illuminate\Database\Eloquent\SoftDeletes;
 use Laravel\Scout\Searchable;
 use OwenIt\Auditing\Auditable;
 use OwenIt\Auditing\Contracts\Auditable as AuditableContract;
+use Spatie\EloquentSortable\Sortable;
+use Spatie\EloquentSortable\SortableTrait;
 use Spatie\MediaLibrary\HasMedia;
 use Spatie\MediaLibrary\InteractsWithMedia;
 use Spatie\SchemalessAttributes\Casts\SchemalessAttributes;
 use Spatie\Tags\HasTags;
 
-class Document extends Model implements AuditableContract, HasMedia
+class Document extends Model implements AuditableContract, HasMedia, Sortable
 {
     use Auditable;
     use HasFactory;
@@ -24,8 +27,19 @@ class Document extends Model implements AuditableContract, HasMedia
     use InteractsWithMedia;
     use Searchable;
     use SoftDeletes;
+    use SortableTrait;
+
+    /**
+     * Documents are ordered WITHIN their current_box (catalogue sequence).
+     * buildSortQuery() below scopes the MAX(sort_order)+1 calculation per box.
+     */
+    public array $sortable = [
+        'order_column_name' => 'sort_order',
+        'sort_when_creating' => true,
+    ];
 
     protected $fillable = [
+        'sort_order',
         // Normalised columns
         'identifier', 'document_type', 'series_id', 'accession_id',
         'current_box_id', 'batch_id', 'repository_id', 'volume_label',
@@ -59,6 +73,15 @@ class Document extends Model implements AuditableContract, HasMedia
         'custom_fields' => 'array',
         'metadata' => 'array',
     ];
+
+    /**
+     * Sort within the current_box. Documents in box A and documents in box B
+     * each have their own 1..N sequence.
+     */
+    public function buildSortQuery(): Builder
+    {
+        return static::query()->where('current_box_id', $this->current_box_id);
+    }
 
     public function series(): BelongsTo
     {
