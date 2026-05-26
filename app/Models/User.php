@@ -12,6 +12,7 @@ use Illuminate\Database\Eloquent\SoftDeletes;
 use Illuminate\Foundation\Auth\User as Authenticatable;
 use Illuminate\Notifications\Notifiable;
 use Lab404\Impersonate\Models\Impersonate;
+use Laravel\Fortify\TwoFactorAuthenticatable;
 use OwenIt\Auditing\Auditable;
 use OwenIt\Auditing\Contracts\Auditable as AuditableContract;
 use Spatie\Permission\Traits\HasRoles;
@@ -26,6 +27,7 @@ class User extends Authenticatable implements AuditableContract, FilamentUser
     use Impersonate;
     use Notifiable;
     use SoftDeletes;
+    use TwoFactorAuthenticatable;
 
     protected $fillable = [
         'name', 'email', 'password', 'default_repository_id', 'is_active',
@@ -38,7 +40,7 @@ class User extends Authenticatable implements AuditableContract, FilamentUser
 
     protected $auditExclude = [
         'password', 'remember_token',
-        'two_factor_secret', 'two_factor_recovery_codes',
+        'two_factor_secret', 'two_factor_recovery_codes', 'two_factor_confirmed_at',
     ];
 
     public function defaultRepository(): BelongsTo
