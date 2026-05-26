@@ -181,6 +181,12 @@ parameters:
 			path: app/Models/User.php
 
 		-
+			message: '#^Match arm comparison between ''box'' and ''box'' is always true\.$#'
+			identifier: match.alwaysTrue
+			count: 1
+			path: app/Support/BulkImport/TemplateGenerator.php
+
+		-
 			message: '#^Access to an undefined property Illuminate\\Database\\Eloquent\\Model\:\:\$current_box_id\.$#'
 			identifier: property.notFound
 			count: 2
