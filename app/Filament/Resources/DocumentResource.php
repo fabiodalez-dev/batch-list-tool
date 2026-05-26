@@ -50,7 +50,7 @@ class DocumentResource extends Resource
                                 fn ($query) => $query->whereIn(
                                     'id',
                                     auth()->user()?->hasAnyRole(['super_admin', 'admin'])
-                                        ? \App\Models\Repository::query()->pluck('id')->all()
+                                        ? Repository::query()->pluck('id')->all()
                                         : (auth()->user()?->repositories()->pluck('repositories.id')->all() ?? [])
                                 )
                             )

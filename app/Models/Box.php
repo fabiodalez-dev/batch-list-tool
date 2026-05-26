@@ -19,7 +19,8 @@ class Box extends Model implements AuditableContract, Sortable
     use Auditable;
     use HasFactory;
     use SoftDeletes;
-    use Auditable;
+    use SortableTrait;
+
     // NOTE: Box has no direct repository_id column — scoping derives via batch.repository_id.
     // Filament Resource for Box should filter on batch.repository_id manually if needed.
 
@@ -113,9 +114,9 @@ class Box extends Model implements AuditableContract, Sortable
      */
     protected static function booted(): void
     {
-        static::addGlobalScope(new \App\Models\Scopes\ThroughBatchRepositoryScope(
+        static::addGlobalScope(new ThroughBatchRepositoryScope(
             foreignTable: 'batches',
-            foreignKey:   'batch_id',
+            foreignKey: 'batch_id',
         ));
     }
 }

@@ -5,8 +5,6 @@ namespace App\Providers;
 use App\Models\Document;
 use App\Observers\DocumentObserver;
 use Illuminate\Support\ServiceProvider;
-use Lab404\Impersonate\Events\LeaveImpersonation;
-use Lab404\Impersonate\Events\TakeImpersonation;
 
 class AppServiceProvider extends ServiceProvider
 {

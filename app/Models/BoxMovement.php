@@ -54,7 +54,7 @@ class BoxMovement extends Model implements AuditableContract
      */
     protected static function booted(): void
     {
-        static::addGlobalScope(new \App\Models\Scopes\ThroughBoxBatchRepositoryScope(
+        static::addGlobalScope(new ThroughBoxBatchRepositoryScope(
             boxForeignKey: 'to_box_id',
         ));
     }

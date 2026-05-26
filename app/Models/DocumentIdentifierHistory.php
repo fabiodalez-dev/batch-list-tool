@@ -18,9 +18,9 @@ use OwenIt\Auditing\Contracts\Auditable as AuditableContract;
  */
 class DocumentIdentifierHistory extends Model implements AuditableContract
 {
-    use HasFactory;
     use Auditable;
     use BelongsToRepository;
+    use HasFactory;
 
     /**
      * Table name is explicit because the conventional plural would mangle "history".
