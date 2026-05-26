@@ -5,6 +5,7 @@ namespace App\Filament\Resources\BoxResource\Pages;
 use App\Filament\Imports\BoxImporter;
 use App\Filament\Resources\BoxResource;
 use App\Models\Box;
+use App\Support\BulkImport\TemplateGenerator;
 use Filament\Actions;
 use Filament\Resources\Pages\ListRecords;
 use HayderHatem\FilamentExcelImport\Actions\FullImportAction;
@@ -35,6 +36,16 @@ class ListBoxes extends ListRecords
                 ->chunkSize(500)
                 ->maxRows(50000)
                 ->streamingThreshold(10 * 1024 * 1024)
+                ->visible(fn () => auth()->user()?->can('create', Box::class) ?? false),
+
+            // Synthesised xlsx — Box has no dedicated legacy sample.
+            // Column names match BoxImporter so download → fill → re-upload
+            // needs no remapping.
+            Actions\Action::make('download_template')
+                ->label('Download template')
+                ->icon('heroicon-o-arrow-down-tray')
+                ->color('gray')
+                ->action(fn () => TemplateGenerator::download('box'))
                 ->visible(fn () => auth()->user()?->can('create', Box::class) ?? false),
 
             Actions\CreateAction::make(),

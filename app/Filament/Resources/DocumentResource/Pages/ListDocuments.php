@@ -7,6 +7,7 @@ namespace App\Filament\Resources\DocumentResource\Pages;
 use App\Filament\Imports\DocumentImporter;
 use App\Filament\Resources\DocumentResource;
 use App\Models\Document;
+use App\Support\BulkImport\TemplateGenerator;
 use Filament\Actions;
 use Filament\Resources\Pages\ListRecords;
 use HayderHatem\FilamentExcelImport\Actions\FullImportAction;
@@ -118,6 +119,18 @@ class ListDocuments extends ListRecords
                 ->color('gray')
                 ->authorize(fn () => auth()->user()?->can('view_any_document') ?? false)
                 ->action(fn () => $this->exportToCsv()),
+
+            // Blank xlsx whose row-1 headers match Batch_List_Sample.xlsx
+            // verbatim — including the legitimately-duplicated headers
+            // ("Barcode (IN)", "Barcode RAS 2", "Status 1/2",
+            // "Disinfestation Date") that encode multi-step provenance.
+            // See TemplateGenerator's docblock for the rationale.
+            Actions\Action::make('download_template')
+                ->label('Download template')
+                ->icon('heroicon-o-arrow-down-tray')
+                ->color('gray')
+                ->action(fn () => TemplateGenerator::download('document'))
+                ->visible(fn () => auth()->user()?->can('create', Document::class) ?? false),
 
             Actions\CreateAction::make(),
         ];

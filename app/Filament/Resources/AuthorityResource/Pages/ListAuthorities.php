@@ -5,6 +5,7 @@ namespace App\Filament\Resources\AuthorityResource\Pages;
 use App\Filament\Imports\AuthorityImporter;
 use App\Filament\Resources\AuthorityResource;
 use App\Models\Authority;
+use App\Support\BulkImport\TemplateGenerator;
 use Filament\Actions;
 use Filament\Resources\Pages\ListRecords;
 use HayderHatem\FilamentExcelImport\Actions\FullImportAction;
@@ -43,6 +44,16 @@ class ListAuthorities extends ListRecords
                 // sample file is 808 rows (≪ MB) so the in-memory path is
                 // used by default — fast for that size.
                 ->streamingThreshold(10 * 1024 * 1024)
+                ->visible(fn () => auth()->user()?->can('create', Authority::class) ?? false),
+
+            // Blank xlsx whose row-1 headers match Authorities_Sample.xlsx
+            // verbatim. Gated on the create policy so a viewer cannot
+            // probe the schema by downloading the template.
+            Actions\Action::make('download_template')
+                ->label('Download template')
+                ->icon('heroicon-o-arrow-down-tray')
+                ->color('gray')
+                ->action(fn () => TemplateGenerator::download('authority'))
                 ->visible(fn () => auth()->user()?->can('create', Authority::class) ?? false),
 
             Actions\CreateAction::make(),
