@@ -18,7 +18,7 @@ use App\Policies\DocumentPolicy;
 use App\Policies\RepositoryPolicy;
 use App\Policies\SeriesPolicy;
 use Filament\Facades\Filament;
-use Illuminate\Foundation\Testing\DatabaseTransactions;
+use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Support\Facades\Gate;
 use Spatie\Permission\Models\Role;
 
@@ -46,7 +46,11 @@ use Spatie\Permission\Models\Role;
  *
  * These tests pin those properties at the Gate level.
  */
-uses(DatabaseTransactions::class);
+uses(RefreshDatabase::class);
+
+beforeEach(function () {
+    bl_seedShieldPermissions();
+});
 
 function rolesExist_pol(): void
 {

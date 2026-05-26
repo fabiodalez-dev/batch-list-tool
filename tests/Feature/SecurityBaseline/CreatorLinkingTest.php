@@ -8,7 +8,7 @@ use App\Models\Document;
 use App\Models\Repository;
 use App\Models\Scopes\RepositoryScope;
 use App\Models\Series;
-use Illuminate\Foundation\Testing\DatabaseTransactions;
+use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Support\Facades\Artisan;
 use Illuminate\Support\Facades\DB;
 
@@ -22,7 +22,7 @@ use Illuminate\Support\Facades\DB;
  *   F-009 — on duplicate-surname collisions, SKIP and log the candidate count
  *           so the operator can resolve manually. NEVER pick arbitrarily.
  */
-uses(DatabaseTransactions::class);
+uses(RefreshDatabase::class);
 
 beforeEach(function () {
     $this->repository = Repository::factory()->create([

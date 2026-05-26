@@ -5,7 +5,7 @@ declare(strict_types=1);
 use App\Models\User;
 use Filament\Facades\Filament;
 use Filament\Panel;
-use Illuminate\Foundation\Testing\DatabaseTransactions;
+use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Hashing\BcryptHasher;
 use Illuminate\Support\Facades\Hash;
 use OwenIt\Auditing\Models\Audit;
@@ -29,7 +29,11 @@ use Spatie\Permission\Models\Role;
  *     so we assert via Hash::info() that the hash IS bcrypt and rehash
  *     detection works against the production config of cost=12)
  */
-uses(DatabaseTransactions::class);
+uses(RefreshDatabase::class);
+
+beforeEach(function () {
+    bl_seedShieldPermissions();
+});
 
 function rolesExist_user(): void
 {

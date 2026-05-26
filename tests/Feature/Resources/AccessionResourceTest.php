@@ -9,11 +9,15 @@ use App\Models\Repository;
 use App\Models\Scopes\RepositoryScope;
 use App\Models\Series;
 use App\Models\User;
-use Illuminate\Foundation\Testing\DatabaseTransactions;
+use Illuminate\Foundation\Testing\RefreshDatabase;
 use Livewire\Livewire;
 use Spatie\Permission\Models\Role;
 
-uses(DatabaseTransactions::class);
+uses(RefreshDatabase::class);
+
+beforeEach(function () {
+    bl_seedShieldPermissions();
+});
 
 function rolesExist_acc(): void
 {

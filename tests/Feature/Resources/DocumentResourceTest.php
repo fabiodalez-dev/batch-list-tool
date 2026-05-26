@@ -11,8 +11,9 @@ use App\Models\Repository;
 use App\Models\Scopes\RepositoryScope;
 use App\Models\Series;
 use App\Models\User;
-use Illuminate\Foundation\Testing\DatabaseTransactions;
+use Illuminate\Foundation\Testing\RefreshDatabase;
 use Livewire\Livewire;
+use OwenIt\Auditing\AuditableObserver;
 use Spatie\Permission\Models\Role;
 
 /**
@@ -23,7 +24,11 @@ use Spatie\Permission\Models\Role;
  * the authorities pivot, and the cascade-on-delete behaviour at the
  * resource level (the model-level cascade is covered by PR #8).
  */
-uses(DatabaseTransactions::class);
+uses(RefreshDatabase::class);
+
+beforeEach(function () {
+    bl_seedShieldPermissions();
+});
 
 function rolesExist_doc(): void
 {
@@ -192,6 +197,13 @@ test('DocumentResource view page renders and shows attached authorities', functi
  */
 test('Document has an audits relation usable by the future history tab', function () {
     config(['audit.console' => true]);
+    // owen-it/laravel-auditing checks isAuditingEnabled() ONCE in
+    // bootAuditable() when the model class is first booted. By the time
+    // this individual test runs and flips the config, Document::bootAuditable()
+    // has long since run and the observer was never attached. Re-attach it
+    // explicitly so the `$doc->update(...)` below goes through the audit
+    // pipeline. Same pattern as DashboardWidgetsTest.
+    Document::observe(AuditableObserver::class);
 
     $repo = makeRepo_doc();
     $series = makeSeries_doc();

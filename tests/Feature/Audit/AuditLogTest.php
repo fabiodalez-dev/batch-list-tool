@@ -7,8 +7,9 @@ use App\Models\Repository;
 use App\Models\Scopes\RepositoryScope;
 use App\Models\Series;
 use App\Models\User;
-use Illuminate\Foundation\Testing\DatabaseTransactions;
+use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Http\Request;
+use OwenIt\Auditing\AuditableObserver;
 use OwenIt\Auditing\Models\Audit;
 use Spatie\Permission\Models\Role;
 
@@ -25,7 +26,21 @@ use Spatie\Permission\Models\Role;
  * These tests pin those behaviours for the Document model, which is the
  * highest-stakes auditable entity.
  */
-uses(DatabaseTransactions::class);
+uses(RefreshDatabase::class);
+
+beforeEach(function () {
+    // Re-attach the AuditableObserver for tests that flip audit.console=true.
+    // Owen-it boots the observer ONCE at model boot, checking the config flag
+    // at that moment. With audit.console=false (the default), no observer is
+    // attached, so subsequent config() flips inside individual tests don't
+    // suddenly start producing audit rows. We re-attach to Document and User
+    // explicitly here so the test can rely on the audit pipeline. NOTE the
+    // last `it()` block in this file still asserts that the *default*
+    // config('audit.console') is false — bl_seedShieldPermissions() and the
+    // observe() call don't change the config value.
+    Document::observe(AuditableObserver::class);
+    User::observe(AuditableObserver::class);
+});
 
 function rolesExist_audit(): void
 {
