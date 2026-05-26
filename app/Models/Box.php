@@ -12,12 +12,14 @@ use OwenIt\Auditing\Contracts\Auditable as AuditableContract;
 
 class Box extends Model implements AuditableContract
 {
+    use Auditable;
     use HasFactory;
     use SoftDeletes;
-    use Auditable;
 
     public const TYPES = ['RAS', 'IN_SITU', 'NRA', 'MAV', 'STVC'];
+
     public const LEGACY_TYPES = ['MAV', 'STVC'];                  // RFQ rule #4
+
     public const BARCODE_STATUSES = ['IN', 'OUT', 'PERM_OUT'];
 
     protected $fillable = [

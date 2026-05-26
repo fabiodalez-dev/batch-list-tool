@@ -2,6 +2,7 @@
 
 namespace App\Models;
 
+use Database\Factories\UserFactory;
 use Filament\Models\Contracts\FilamentUser;
 use Filament\Panel;
 use Illuminate\Database\Eloquent\Factories\HasFactory;
@@ -16,12 +17,13 @@ use Spatie\Permission\Traits\HasRoles;
 
 class User extends Authenticatable implements AuditableContract, FilamentUser
 {
-    /** @use HasFactory<\Database\Factories\UserFactory> */
+    use Auditable;
+
+    /** @use HasFactory<UserFactory> */
     use HasFactory;
     use HasRoles;
     use Notifiable;
     use SoftDeletes;
-    use Auditable;
 
     protected $fillable = [
         'name', 'email', 'password', 'default_repository_id', 'is_active',
@@ -36,15 +38,6 @@ class User extends Authenticatable implements AuditableContract, FilamentUser
         'password', 'remember_token',
         'two_factor_secret', 'two_factor_recovery_codes',
     ];
-
-    protected function casts(): array
-    {
-        return [
-            'email_verified_at' => 'datetime',
-            'password' => 'hashed',
-            'is_active' => 'boolean',
-        ];
-    }
 
     public function defaultRepository(): BelongsTo
     {
@@ -64,5 +57,14 @@ class User extends Authenticatable implements AuditableContract, FilamentUser
             $this->hasRole('super_admin')
             || $this->hasAnyRole(['admin', 'editor', 'viewer'])
         );
+    }
+
+    protected function casts(): array
+    {
+        return [
+            'email_verified_at' => 'datetime',
+            'password' => 'hashed',
+            'is_active' => 'boolean',
+        ];
     }
 }

@@ -18,12 +18,12 @@ use Spatie\Tags\HasTags;
 
 class Document extends Model implements AuditableContract, HasMedia
 {
-    use HasFactory;
-    use SoftDeletes;
     use Auditable;
-    use Searchable;
+    use HasFactory;
     use HasTags;
     use InteractsWithMedia;
+    use Searchable;
+    use SoftDeletes;
 
     protected $fillable = [
         // Normalised columns
