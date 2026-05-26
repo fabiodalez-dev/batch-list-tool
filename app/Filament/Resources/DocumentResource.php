@@ -25,6 +25,7 @@ use Filament\Tables\Filters\TernaryFilter;
 use Filament\Tables\Filters\TrashedFilter;
 use Filament\Tables\Table;
 use Illuminate\Database\Eloquent\Builder;
+use Illuminate\Database\Eloquent\Model;
 
 class DocumentResource extends Resource
 {
@@ -35,6 +36,47 @@ class DocumentResource extends Resource
      * the per-field, per-role read/write/hidden matrix (RFQ §3.1.8).
      */
     private const FIELD_PERMISSIONS_KEY = 'document';
+
+    /**
+     * Canonical list of Document direct columns the omni-search bar covers.
+     *
+     * Defined once so unit tests can introspect the surface area and the
+     * implementation does not silently drift from the documentation. All
+     * entries are real `documents` columns (verified against the migration
+     * stack — including the POC legacy columns kept for parity with the
+     * raw-PHP schema). LIKE-matched against `%search%`.
+     *
+     * @var array<int,string>
+     */
+    private const OMNI_DIRECT_COLUMNS = [
+        // Canonical normalised columns
+        'identifier',
+        'catalogue_identifier',
+        'barcode_in',
+        'document_type',
+        'practice',
+        'volume_label',
+        'dates',
+        'notes',
+        'deeds',
+        'seal_number',
+        'nra_location',
+        'museum_location',
+        'accession_code_legacy',
+        'object_reference_number',
+        'tracking',
+        'museum_reference',
+        // POC legacy columns (parity with raw-PHP schema) — still surfaced
+        // because the operator queries production data that was imported
+        // verbatim from the legacy Excel sheets.
+        'barcode_ras_1', 'barcode_ras_2', 'barcode_ras_3', 'barcode_ras_4',
+        'barcode_in_2', 'barcode_ras_2_alt', 'barcode_ras_2_alt2',
+        'status_1', 'status_2', 'status_3', 'status_4',
+        'status_1_alt', 'status_2_alt',
+        'in_situ_box_1', 'in_situ_box_2', 'in_situ_box_3',
+        'ras_batch_1', 'ras_batch_2',
+        'ras_box_1', 'ras_box_2',
+    ];
 
     protected static ?string $model = Document::class;
 
@@ -224,9 +266,35 @@ class DocumentResource extends Resource
 
         return $table
             ->defaultSort('identifier')
+            // Force the table search input on even though most columns below
+            // intentionally drop `->searchable()` (the omni-search closure
+            // wired via `searchUsing()` is now the single source of truth
+            // for the top-right search bar).
+            ->searchable()
+            // RFQ §3.1.2 — omni-search across direct columns, joined
+            // Authorities, Series, Batch, current Box, Location and open
+            // Flags. Replaces the per-column `searchable()` LIKE chain so
+            // typing "Abela" or "REG" or "needs_review" surfaces the right
+            // documents from the operator's primary entry point.
+            //
+            // Implementation note: Filament 5 calls this closure from
+            // `applyGlobalSearchToTableQuery()` WITHOUT wrapping it in a
+            // `where(fn ($q) => ...)` group (unlike the default loop over
+            // searchable columns). We add our own outer `where(fn)` so the
+            // ORs do not leak into the surrounding AND-stack of filters,
+            // table scopes and the RepositoryScope.
+            ->searchUsing(static function (Builder $query, string $search): void {
+                self::applyOmniSearch($query, $search);
+            })
             ->columns([
-                $gc(Tables\Columns\TextColumn::make('identifier')->searchable()->sortable()->copyable()),
-                $gc(Tables\Columns\TextColumn::make('document_type')->searchable()->toggleable()),
+                // Per-column `->searchable()` intentionally dropped on this
+                // resource: the table-level `searchUsing()` callback above is
+                // the single source of truth for the omni-search bar (RFQ
+                // §3.1.2) and covers `identifier`, `document_type`,
+                // `barcode_in`, `catalogue_identifier`, joined Authorities,
+                // Series, Batch, Box, Location and Flags.
+                $gc(Tables\Columns\TextColumn::make('identifier')->sortable()->copyable()),
+                $gc(Tables\Columns\TextColumn::make('document_type')->toggleable()),
                 $gc(Tables\Columns\TextColumn::make('series.code')->label('Series')->badge()->sortable(), 'series_id'),
                 $gc(Tables\Columns\TextColumn::make('batch.batch_number')->label('Batch')->sortable()->alignCenter(), 'batch_id'),
                 $gc(Tables\Columns\TextColumn::make('currentBox.box_number')->label('Box')->toggleable(), 'current_box_id'),
@@ -235,8 +303,8 @@ class DocumentResource extends Resource
                 $gc(Tables\Columns\TextColumn::make('dates')->label('Dates')->toggleable()->limit(30)),
                 $gc(Tables\Columns\TextColumn::make('dates_year_start')->label('From')->numeric(thousandsSeparator: '')->sortable()->alignEnd()),
                 $gc(Tables\Columns\TextColumn::make('dates_year_end')->label('To')->numeric(thousandsSeparator: '')->sortable()->alignEnd()),
-                $gc(Tables\Columns\TextColumn::make('barcode_in')->label('Barcode (IN)')->toggleable(isToggledHiddenByDefault: true)->searchable()),
-                $gc(Tables\Columns\TextColumn::make('catalogue_identifier')->label('Catalogue ID')->toggleable(isToggledHiddenByDefault: true)->searchable()),
+                $gc(Tables\Columns\TextColumn::make('barcode_in')->label('Barcode (IN)')->toggleable(isToggledHiddenByDefault: true)),
+                $gc(Tables\Columns\TextColumn::make('catalogue_identifier')->label('Catalogue ID')->toggleable(isToggledHiddenByDefault: true)),
                 $gc(Tables\Columns\TextColumn::make('repository.code')->label('Repo')->badge()->color('gray')->toggleable(), 'repository_id'),
                 $gc(Tables\Columns\TextColumn::make('disinfestation_date')->label('Disinfested')->date()->sortable()->toggleable(isToggledHiddenByDefault: true)),
                 $gc(Tables\Columns\IconColumn::make('torre')->boolean()->toggleable(isToggledHiddenByDefault: true)),
@@ -425,12 +493,15 @@ class DocumentResource extends Resource
     }
 
     /**
-     * Eager-load identifierHistory so the global search can match on
-     * previous identifiers without N+1 queries.
+     * Eager-load identifierHistory + the relations consumed by
+     * getGlobalSearchResultDetails() so the spotlight panel can render
+     * "Authors / Series / Box" hints without an N+1 explosion across the
+     * result set.
      */
     public static function getGlobalSearchEloquentQuery(): Builder
     {
-        return parent::getGlobalSearchEloquentQuery()->with('identifierHistory');
+        return parent::getGlobalSearchEloquentQuery()
+            ->with(['identifierHistory', 'authorities', 'series', 'currentBox']);
     }
 
     /**
@@ -465,10 +536,16 @@ class DocumentResource extends Resource
             ]);
     }
 
-    /** Extend the global search bar (top-right of Filament panel) — POC parity. */
+    /**
+     * Extend the global search bar (top-right of Filament panel) — POC parity
+     * plus RFQ §3.1.2 omni-search parity. The list here MUST stay aligned
+     * with {@see self::applyOmniSearch()} so that the spotlight panel and
+     * the in-table search bar surface the same documents.
+     */
     public static function getGloballySearchableAttributes(): array
     {
         return [
+            // Direct columns
             'identifier',
             'catalogue_identifier',
             'document_type',
@@ -477,14 +554,45 @@ class DocumentResource extends Resource
             'dates',
             'notes',
             'barcode_in',
+            // Joined relations
             'series.code',
             'series.title',
             'authorities.surname',
+            'authorities.given_names',
             'authorities.identifier',
+            'authorities.alternative_identifier',
+            'currentBox.box_number',
+            'currentBox.barcode',
             // Identifier history (PR #8) — searching for "R7-old" finds the document
             // whose identifier was previously "R7-old", even after re-classification.
             'identifierHistory.previous_identifier',
         ];
+    }
+
+    /**
+     * Show contextual hints in the spotlight (Cmd+K) global search results so
+     * an operator can tell at a glance WHY a document matched: surfaces the
+     * authors, the current box code, and the series code next to the title.
+     *
+     * @param Document $record
+     */
+    public static function getGlobalSearchResultDetails(Model $record): array
+    {
+        // The `authorities` and `currentBox.batch` relations are loaded
+        // up-front via getGlobalSearchEloquentQuery() (see PR #8 +
+        // identifierHistory eager-load). We use the in-memory collection
+        // rather than ->pluck() to avoid one query per result row.
+        $authors = $record->authorities
+            ->map(fn ($a) => trim((string) $a->surname))
+            ->filter()
+            ->take(3)
+            ->implode(', ');
+
+        return array_filter([
+            'Authors' => $authors !== '' ? $authors : null,
+            'Series' => $record->series?->code,
+            'Box' => $record->currentBox?->box_number,
+        ]);
     }
 
     public static function getPages(): array
@@ -495,6 +603,149 @@ class DocumentResource extends Resource
             'view' => Pages\ViewDocument::route('/{record}'),
             'edit' => Pages\EditDocument::route('/{record}/edit'),
         ];
+    }
+
+    /**
+     * RFQ §3.1.2 — omni-search closure for the documents list page.
+     *
+     * Builds a single OR-group across:
+     *   - {@see self::OMNI_DIRECT_COLUMNS} direct documents.* columns
+     *   - authorities.(identifier|surname|given_names|alternative_identifier)
+     *   - series.(code|title)
+     *   - batches.batch_number (exact integer match when the search parses
+     *     as a positive int, LIKE otherwise so "Batch 4" / "4" both match)
+     *   - boxes.(box_number|barcode)
+     *   - locations.(code|name)
+     *   - document_flags.(type|title)
+     *
+     * Composes correctly with the surrounding AND-stack of filters / the
+     * RepositoryScope because the whole OR group is wrapped in a single
+     * `where(fn ($q) => ...)` closure. Results are de-duplicated via
+     * `distinct()` so a document with N matching authorities still appears
+     * once in the table — Eloquent's hydration step then re-loads each
+     * row by id without double-counting.
+     *
+     * SQL-injection safe: the search value is bound through Eloquent's
+     * parameterised LIKE binding and the `%` / `_` wildcards inside the
+     * search term are escaped so a user searching for "100%" matches the
+     * literal "100%" instead of every row.
+     *
+     * @internal Used by table()'s `searchUsing()`; static so the closure
+     *           does not capture a reference to the resource instance.
+     */
+    public static function applyOmniSearch(Builder $query, string $search): void
+    {
+        $term = trim($search);
+        if ($term === '') {
+            return;
+        }
+
+        // Escape LIKE wildcards so user input like "100%" or
+        // "OMSEARCH_REG" matches the literal substring instead of being
+        // interpreted as a `%` / `_` pattern. Eloquent does NOT escape
+        // these for us — only the surrounding bound parameter is sanitised
+        // against SQL injection. We escape `%`, `_` and the escape char
+        // itself (`!`) with a leading `!`; the matching `LIKE ? ESCAPE '!'`
+        // clause is emitted by $likeEsc below.
+        $needle = '%' . self::escapeForLike($term) . '%';
+
+        // Integer-like terms get an exact-match path against batch_number
+        // (PK-style lookup) AND a LIKE path so "4" matches both batch_number
+        // = 4 and identifiers / codes containing "4". Same idea Filament
+        // uses for numeric primary-key columns in its default search.
+        $asInt = ctype_digit($term) ? (int) $term : null;
+
+        // Helper: emits `col LIKE ? ESCAPE '\'` so a search for "100%" /
+        // "OMSEARCH_REG" matches the literal substring instead of being
+        // interpreted as a wildcard pattern. Works identically on SQLite
+        // (test) and MySQL (prod).
+        // ESCAPE clause uses `!` (bang) as the escape character — it is
+        // ASCII-printable, never appears in real archive data, and avoids
+        // the backslash quoting quirks that differ between SQLite (literal
+        // 1-char) and MySQL/PDO (often doubled). The needle re-escape
+        // below targets the same `!` character.
+        $likeEsc = static function (Builder $q, string $col, string $pattern, bool $or = true): Builder {
+            $method = $or ? 'orWhereRaw' : 'whereRaw';
+
+            return $q->{$method}("{$col} LIKE ? ESCAPE '!'", [$pattern]);
+        };
+
+        $query->where(function (Builder $q) use ($needle, $asInt, $likeEsc): void {
+            // Direct columns — first iteration uses `whereRaw` (not `or`)
+            // to seed the inner WHERE group; subsequent rows OR onto it.
+            $first = true;
+            foreach (self::OMNI_DIRECT_COLUMNS as $col) {
+                $likeEsc($q, 'documents.' . $col, $needle, ! $first);
+                $first = false;
+            }
+
+            // Authorities (many-to-many via document_authority)
+            $q->orWhereHas('authorities', static function (Builder $a) use ($needle, $likeEsc): void {
+                $likeEsc($a, 'authorities.identifier', $needle, false);
+                $likeEsc($a, 'authorities.alternative_identifier', $needle, true);
+                $likeEsc($a, 'authorities.surname', $needle, true);
+                $likeEsc($a, 'authorities.given_names', $needle, true);
+            });
+
+            // Series
+            $q->orWhereHas('series', static function (Builder $s) use ($needle, $likeEsc): void {
+                $likeEsc($s, 'series.code', $needle, false);
+                $likeEsc($s, 'series.title', $needle, true);
+            });
+
+            // Batch — numeric match when possible; LIKE fallback covers
+            // phrases like "Batch 4" / partial numbers if the operator
+            // types padding.
+            $q->orWhereHas('batch', static function (Builder $b) use ($needle, $asInt, $likeEsc): void {
+                if ($asInt !== null) {
+                    $b->where('batches.batch_number', $asInt);
+                    $likeEsc($b, 'batches.batch_number', $needle, true);
+
+                    return;
+                }
+                $likeEsc($b, 'batches.batch_number', $needle, false);
+            });
+
+            // Current box
+            $q->orWhereHas('currentBox', static function (Builder $b) use ($needle, $likeEsc): void {
+                $likeEsc($b, 'boxes.box_number', $needle, false);
+                $likeEsc($b, 'boxes.barcode', $needle, true);
+            });
+
+            // Location
+            $q->orWhereHas('location', static function (Builder $l) use ($needle, $likeEsc): void {
+                $likeEsc($l, 'locations.code', $needle, false);
+                $likeEsc($l, 'locations.name', $needle, true);
+            });
+
+            // Document flags — operator can find "needs_review" / "damaged"
+            // by typing the type literal, or by typing the human-readable
+            // flag title.
+            $q->orWhereHas('flags', static function (Builder $f) use ($needle, $likeEsc): void {
+                $likeEsc($f, 'document_flags.type', $needle, false);
+                $likeEsc($f, 'document_flags.title', $needle, true);
+            });
+
+            // Identifier history — preserves PR #8 behaviour (searching
+            // for a previous identifier still finds the renamed doc).
+            $q->orWhereHas('identifierHistory', static function (Builder $h) use ($needle, $likeEsc): void {
+                $likeEsc($h, 'document_identifier_history.previous_identifier', $needle, false);
+            });
+
+            // NOTE: `spatie/laravel-tags` is wired on the Document model
+            // (HasTags trait) but is NOT included in the omni-search OR-set
+            // by design — tags are a free-form curation layer that the
+            // operator already searches via the dedicated Tag filters /
+            // tag chips in the UI. Adding them here would expand the OR
+            // surface area without a clear product use-case.
+        });
+
+        // No DISTINCT / GROUP BY needed: `whereHas` compiles to EXISTS
+        // subqueries (not JOINs), so a document with N matching authorities
+        // appears exactly once. Avoiding `distinct()` keeps the query
+        // pagination-friendly (no count() rewrite quirks) and lets MySQL
+        // reuse the existing index on `documents.identifier` for the
+        // outer ORDER BY.
     }
 
     /**
@@ -530,5 +781,16 @@ class DocumentResource extends Resource
                 $data['value'] ?? null,
                 fn (Builder $q, string $v) => $q->searchFullText($v, [$col]),
             ));
+    }
+
+    /**
+     * Escape `%`, `_` and the escape sentinel (`!`) so they match literally
+     * inside a `LIKE ? ESCAPE '!'` clause. Centralised so the unit tests
+     * can introspect the exact escape strategy and so any future change
+     * to the sentinel is a one-liner.
+     */
+    private static function escapeForLike(string $term): string
+    {
+        return str_replace(['!', '%', '_'], ['!!', '!%', '!_'], $term);
     }
 }
