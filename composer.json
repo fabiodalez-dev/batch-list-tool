@@ -11,6 +11,7 @@
         "bepsvpt/secure-headers": "^9.1",
         "bezhansalleh/filament-shield": "^3.9",
         "filament/filament": "^3.2",
+        "hayderhatem/filament-excel-import": "^4.0",
         "kirschbaum-development/eloquent-power-joins": "^4.3",
         "lab404/laravel-impersonate": "^1.7",
         "laravel/fortify": "^1.37",
