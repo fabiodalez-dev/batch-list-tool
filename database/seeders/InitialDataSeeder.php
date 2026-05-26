@@ -36,6 +36,17 @@ class InitialDataSeeder extends Seeder
         $editor = Role::firstOrCreate(['name' => 'editor', 'guard_name' => 'web']);
         $viewer = Role::firstOrCreate(['name' => 'viewer', 'guard_name' => 'web']);
 
+        // RFQ §3.1.10 — Reports landing + 5 canned reports.
+        // The reports are Filament Pages (not Resources), so shield:generate
+        // does not auto-discover them. We seed a "virtual" resource called
+        // `report` with the standard 12-op suffix matrix so the permission
+        // names line up with the rest of the policy surface.
+        foreach (['view_any', 'view', 'create', 'update', 'delete', 'delete_any',
+            'force_delete', 'force_delete_any', 'restore', 'restore_any',
+            'replicate', 'reorder'] as $op) {
+            Permission::firstOrCreate(['name' => "{$op}_report", 'guard_name' => 'web']);
+        }
+
         // Assign Shield-generated permissions per role (admin = all; editor = view+create+update; viewer = view only)
         $allPerms = Permission::pluck('name')->all();
         $admin->syncPermissions($allPerms);
