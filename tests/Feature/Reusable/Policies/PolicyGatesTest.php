@@ -62,11 +62,11 @@ it('PolicyGates: box — admin can create, viewer cannot', function () {
         ->and($viewer->can('create_box'))->toBeFalse();
 });
 
-it('PolicyGates: box::movement — admin can create, viewer cannot', function () {
+it('PolicyGates: box_movement — admin can create, viewer cannot', function () {
     $admin = pol_makeUser('admin');
     $viewer = pol_makeUser('viewer');
-    expect($admin->can('create_box::movement'))->toBeTrue()
-        ->and($viewer->can('create_box::movement'))->toBeFalse();
+    expect($admin->can('create_box_movement'))->toBeTrue()
+        ->and($viewer->can('create_box_movement'))->toBeFalse();
 });
 
 it('PolicyGates: document — admin can create, viewer cannot', function () {
@@ -76,11 +76,11 @@ it('PolicyGates: document — admin can create, viewer cannot', function () {
         ->and($viewer->can('create_document'))->toBeFalse();
 });
 
-it('PolicyGates: document::flag — admin can create, viewer cannot', function () {
+it('PolicyGates: document_flag — admin can create, viewer cannot', function () {
     $admin = pol_makeUser('admin');
     $viewer = pol_makeUser('viewer');
-    expect($admin->can('create_document::flag'))->toBeTrue()
-        ->and($viewer->can('create_document::flag'))->toBeFalse();
+    expect($admin->can('create_document_flag'))->toBeTrue()
+        ->and($viewer->can('create_document_flag'))->toBeFalse();
 });
 
 it('PolicyGates: location — admin can create, viewer cannot', function () {
