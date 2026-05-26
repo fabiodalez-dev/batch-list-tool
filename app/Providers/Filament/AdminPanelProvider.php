@@ -2,11 +2,6 @@
 
 namespace App\Providers\Filament;
 
-use App\Filament\Widgets\DocumentsPerBatchChart;
-use App\Filament\Widgets\DocumentsPerSeriesChart;
-use App\Filament\Widgets\PendingDisinfestationTable;
-use App\Filament\Widgets\RecentActivityWidget;
-use App\Filament\Widgets\StatsOverviewWidget;
 use App\Support\Avatars\LocalAvatarProvider;
 use BezhanSalleh\FilamentShield\FilamentShieldPlugin;
 use Filament\FontProviders\LocalFontProvider;

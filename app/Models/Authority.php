@@ -2,6 +2,7 @@
 
 namespace App\Models;
 
+use App\Models\Concerns\ConditionallyPreloadsRelations;
 use Illuminate\Database\Eloquent\Factories\HasFactory;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\BelongsToMany;
@@ -14,6 +15,7 @@ use OwenIt\Auditing\Contracts\Auditable as AuditableContract;
 class Authority extends Model implements AuditableContract
 {
     use Auditable;
+    use ConditionallyPreloadsRelations;
     use HasFactory;
     use Searchable;
     use SoftDeletes;
