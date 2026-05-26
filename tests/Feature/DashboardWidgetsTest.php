@@ -611,3 +611,128 @@ test('Dashboard route returns 200 for authenticated admin', function () {
 test('Dashboard route redirects (302) to login for a guest', function () {
     $this->get('/admin')->assertRedirect();
 });
+
+/* -------------------------------------------------------------------------
+ |  CSV export — security regressions (PR #10 review)
+ * ------------------------------------------------------------------------- */
+
+test('it rejects CSV export for users without view_any_document permission', function () {
+    // Build a user with NO roles → no `view_any_document` permission.
+    ensureRolesExist();
+    $unauthorized = User::factory()->create([
+        'email'     => 'noperm+' . uniqid() . '@test.local',
+        'is_active' => true,
+    ]);
+
+    $this->actingAs($unauthorized);
+
+    // Layer 1: the page itself denies the unauthorized user (resource policy).
+    // We confirm the user truly lacks the permission — the gate the action
+    // re-checks at the method level.
+    expect($unauthorized->can('view_any_document'))->toBeFalse();
+
+    // Layer 2 (defense-in-depth): even if somehow the page were reachable
+    // (e.g. permission added then revoked mid-session, Livewire payload
+    // tampering, direct method call from a console command), calling
+    // exportToCsv() must throw a 403 HttpException — the in-method
+    // `abort_unless(can('view_any_document'))` guard.
+    //
+    // We instantiate the page directly (no Livewire boot, since the page
+    // would otherwise refuse to mount). This is the most reliable way to
+    // assert the method-level guard in isolation.
+    $page = new ListDocuments();
+
+    expect(fn () => $page->exportToCsv())
+        ->toThrow(\Symfony\Component\HttpKernel\Exception\HttpException::class, 'Not authorized');
+
+    // Cross-check: same call from an authorized admin returns a StreamedResponse,
+    // proving the guard is not blocking everyone unconditionally.
+    $this->actingAs(adminUser());
+    $page2 = Livewire::test(ListDocuments::class)->instance();
+    expect($page2->exportToCsv())->toBeInstanceOf(
+        \Symfony\Component\HttpFoundation\StreamedResponse::class
+    );
+});
+
+test('it sanitizes CSV formula injection in document fields', function () {
+    $repo = makeRepository('CI');
+    $series = makeSeries('CI');
+
+    // Cover every dangerous leading char from the OWASP list:
+    //   =   classic formula prefix (HYPERLINK, IMPORTXML, …)
+    //   +   formula prefix
+    //   -   formula prefix
+    //   @   formula prefix (also DDE in older Excel)
+    //   \t  tab — Excel may still interpret payload after it
+    //   \r  carriage return — same risk
+    $payloads = [
+        'EQ_TOKEN' . substr(uniqid(), -5) => '=HYPERLINK("http://malicious.example/")',
+        'PL_TOKEN' . substr(uniqid(), -5) => '+SUM(A1:A10)',
+        'MI_TOKEN' . substr(uniqid(), -5) => '-2+3+cmd|" /C calc"!A0',
+        'AT_TOKEN' . substr(uniqid(), -5) => '@SUM(1+9)',
+        'TB_TOKEN' . substr(uniqid(), -5) => "\t=1+1",
+        'CR_TOKEN' . substr(uniqid(), -5) => "\r=1+1",
+    ];
+
+    foreach ($payloads as $identifierToken => $notesPayload) {
+        makeDocument($repo->id, $series->id, [
+            'identifier' => $identifierToken,
+            'notes'      => $notesPayload,
+        ]);
+    }
+
+    // Extra row: identifier itself is a formula → must also be neutralized.
+    $idPayload = '=HYPERLINK("http://malicious.example/")';
+    makeDocument($repo->id, $series->id, [
+        'identifier' => $idPayload,
+        'notes'      => 'plain safe text',
+    ]);
+
+    $this->actingAs(adminUser());
+
+    [$_resp, $body] = captureCsvExport();
+
+    // Parse the CSV back. fputcsv unwraps quoting, so the leading "'" we add is
+    // visible in the parsed cell value.
+    $rows = [];
+    $fh = fopen('php://memory', 'r+');
+    fwrite($fh, $body);
+    rewind($fh);
+    while (($r = fgetcsv($fh)) !== false) {
+        $rows[] = $r;
+    }
+    fclose($fh);
+
+    // Build identifier → notes map from the parsed CSV (col 0 = identifier, col 7 = notes).
+    $byIdentifier = [];
+    foreach (array_slice($rows, 1) as $r) {
+        // After sanitization, the identifier column for the formula-prefixed row
+        // will itself start with "'". Strip that for the lookup key.
+        $key = isset($r[0]) ? ltrim($r[0], "'") : '';
+        $byIdentifier[$key] = $r;
+    }
+
+    // Every token → its notes cell must start with "'" (neutralized).
+    foreach ($payloads as $token => $payload) {
+        expect($byIdentifier)->toHaveKey($token);
+        $notesCell = $byIdentifier[$token][7] ?? '';
+        expect($notesCell)
+            ->toStartWith("'")
+            ->and(substr($notesCell, 1))->toBe($payload);
+    }
+
+    // The row whose IDENTIFIER itself was a formula must have the identifier
+    // cell neutralized (starts with "'") and the original payload preserved
+    // after the prefix.
+    expect($byIdentifier)->toHaveKey($idPayload);
+    $idCell = $byIdentifier[$idPayload][0];
+    expect($idCell)
+        ->toStartWith("'")
+        ->and(substr($idCell, 1))->toBe($idPayload);
+
+    // Sanity: a plain ASCII identifier (no dangerous lead char) is NOT prefixed.
+    // Insert one and re-check the same export pass would have left it untouched.
+    // (We use the "plain safe text" row's notes column: it must NOT start with "'".)
+    $safeNotes = $byIdentifier[$idPayload][7] ?? '';
+    expect($safeNotes)->toBe('plain safe text');
+});

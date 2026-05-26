@@ -22,6 +22,7 @@ class ListDocuments extends ListRecords
                 ->label('Export CSV')
                 ->icon('heroicon-o-arrow-down-tray')
                 ->color('gray')
+                ->authorize(fn () => auth()->user()?->can('view_any_document') ?? false)
                 ->action(fn () => $this->exportToCsv()),
 
             Actions\CreateAction::make(),
@@ -37,6 +38,10 @@ class ListDocuments extends ListRecords
      */
     public function exportToCsv(): StreamedResponse
     {
+        // Defense-in-depth: even if the action button is bypassed (direct method
+        // call, Livewire payload tampering, …), the method itself rejects.
+        abort_unless(auth()->user()?->can('view_any_document'), 403, 'Not authorized to export documents.');
+
         $columns = [
             'identifier'          => 'Identifier',
             'document_type'       => 'Type',
@@ -76,14 +81,18 @@ class ListDocuments extends ListRecords
                 /** @var \Illuminate\Support\Collection<int, Document> $documents */
                 foreach ($documents as $doc) {
                     fputcsv($out, [
-                        (string) ($doc->identifier ?? ''),
-                        (string) ($doc->document_type ?? ''),
-                        $doc->authorities->pluck('surname')->filter()->implode('; '),
-                        (string) ($doc->series?->code ?? ''),
+                        $this->sanitizeCsvCell($doc->identifier),
+                        $this->sanitizeCsvCell($doc->document_type),
+                        $this->sanitizeCsvCell(
+                            $doc->authorities->pluck('surname')->filter()->implode('; ')
+                        ),
+                        $this->sanitizeCsvCell($doc->series?->code),
+                        // batch_number is an integer in DB — safe, but cast to string for fputcsv.
                         (string) ($doc->batch?->batch_number ?? ''),
-                        (string) ($doc->currentBox?->box_number ?? ''),
+                        $this->sanitizeCsvCell($doc->currentBox?->box_number),
+                        // Date in canonical Y-m-d form — never starts with a CSV-dangerous char.
                         $doc->disinfestation_date ? $doc->disinfestation_date->format('Y-m-d') : '',
-                        (string) ($doc->notes ?? ''),
+                        $this->sanitizeCsvCell($doc->notes),
                     ]);
                 }
             });
@@ -95,5 +104,32 @@ class ListDocuments extends ListRecords
             'Pragma'              => 'no-cache',
             'X-Content-Type-Options' => 'nosniff',
         ]);
+    }
+
+    /**
+     * Sanitize a single CSV cell to neutralize spreadsheet formula injection.
+     *
+     * fputcsv only escapes CSV grammar (commas, quotes, newlines) — it does NOT
+     * defend against Excel/LibreOffice/Sheets interpreting a leading "=", "+",
+     * "-", "@", TAB or CR as a formula trigger (CWE-1236 / OWASP "CSV Injection").
+     *
+     * OWASP-recommended mitigation: prefix dangerous leading characters with a
+     * single quote (') — both Excel and LibreOffice treat that as "show literally,
+     * do not evaluate".
+     *
+     * Apply ONLY to user-controllable string fields (identifier, notes,
+     * surnames, codes). Do NOT apply to IDs, integers, formatted dates — those
+     * cannot start with a dangerous character.
+     */
+    private function sanitizeCsvCell(mixed $value): string
+    {
+        $string = (string) ($value ?? '');
+        if ($string === '') {
+            return '';
+        }
+        if (preg_match('/^[=+\-@\t\r]/', $string)) {
+            return "'" . $string;
+        }
+        return $string;
     }
 }
