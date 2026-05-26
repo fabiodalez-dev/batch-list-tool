@@ -11,9 +11,9 @@ use OwenIt\Auditing\Contracts\Auditable as AuditableContract;
 
 class Volume extends Model implements AuditableContract
 {
+    use Auditable;
     use HasFactory;
     use SoftDeletes;
-    use Auditable;
 
     protected $fillable = [
         'document_id', 'volume_number', 'dates_start', 'dates_end', 'notes',

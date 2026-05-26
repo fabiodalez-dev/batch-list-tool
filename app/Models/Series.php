@@ -11,9 +11,9 @@ use OwenIt\Auditing\Contracts\Auditable as AuditableContract;
 
 class Series extends Model implements AuditableContract
 {
+    use Auditable;
     use HasFactory;
     use SoftDeletes;
-    use Auditable;
 
     protected $table = 'series';
 

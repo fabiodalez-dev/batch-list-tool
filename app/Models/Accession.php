@@ -12,9 +12,9 @@ use OwenIt\Auditing\Contracts\Auditable as AuditableContract;
 
 class Accession extends Model implements AuditableContract
 {
+    use Auditable;
     use HasFactory;
     use SoftDeletes;
-    use Auditable;
 
     protected $fillable = [
         'code', 'accession_date', 'authority_id', 'batch_id', 'repository_id', 'notes',

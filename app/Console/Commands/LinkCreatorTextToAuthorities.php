@@ -92,7 +92,10 @@ class LinkCreatorTextToAuthorities extends Command
                 DB::commit();
             }
         } catch (\Throwable $e) {
-            if (! $this->option('dry-run')) DB::rollBack();
+            if (! $this->option('dry-run')) {
+                DB::rollBack();
+            }
+
             throw $e;
         }
 
@@ -134,10 +137,10 @@ class LinkCreatorTextToAuthorities extends Command
      * Attempt to resolve a free-text creator token to an Authority row.
      *
      * @return array{id:int, method:string}|null
-     *   - method = 'exact'     → last-word surname matched an authority surname exactly
-     *   - method = 'last_word' → first-word fallback matched (handles "Surname Given" order)
-     *   - method = 'fuzzy'     → LIKE-based fallback (low confidence — guarded by min length)
-     *   - null                 → no candidate found
+     *                                           - method = 'exact'     → last-word surname matched an authority surname exactly
+     *                                           - method = 'last_word' → first-word fallback matched (handles "Surname Given" order)
+     *                                           - method = 'fuzzy'     → LIKE-based fallback (low confidence — guarded by min length)
+     *                                           - null                 → no candidate found
      */
     private function resolveAuthority(string $token, $authoritiesBySurname): ?array
     {
@@ -148,6 +151,7 @@ class LinkCreatorTextToAuthorities extends Command
         // Exact surname match (case-insensitive)
         if (isset($authoritiesBySurname[$surnameCandidate])) {
             $match = $authoritiesBySurname[$surnameCandidate]->first();
+
             return ['id' => $match->id, 'method' => 'exact'];
         }
 
