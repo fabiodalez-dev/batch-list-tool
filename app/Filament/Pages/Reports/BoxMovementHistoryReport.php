@@ -35,9 +35,9 @@ class BoxMovementHistoryReport extends Page implements HasTable
 {
     use InteractsWithTable;
 
-    protected static string $view = 'filament.pages.reports.table';
+    protected string $view = 'filament.pages.reports.table';
 
-    protected static ?string $navigationGroup = 'Operations';
+    protected static string|\UnitEnum|null $navigationGroup = 'Operations';
 
     protected static ?string $title = 'Box movement history';
 

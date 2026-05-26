@@ -50,13 +50,13 @@ class ImportWizard extends Page
     /**
      * Blade view rendered inside `<x-filament-panels::page>`.
      */
-    protected static string $view = 'filament.pages.import-wizard';
+    protected string $view = 'filament.pages.import-wizard';
 
-    protected static ?string $navigationGroup = 'Operations';
+    protected static string|\UnitEnum|null $navigationGroup = 'Operations';
 
     protected static ?int $navigationSort = 1;
 
-    protected static ?string $navigationIcon = 'heroicon-o-rocket-launch';
+    protected static string|\BackedEnum|null $navigationIcon = 'heroicon-o-rocket-launch';
 
     protected static ?string $title = 'Import wizard';
 

@@ -71,17 +71,17 @@ class TwoFactorProfile extends Page
      */
     public string $disablePassword = '';
 
-    protected static ?string $navigationGroup = 'Settings';
+    protected static string|\UnitEnum|null $navigationGroup = 'Settings';
 
     protected static ?int $navigationSort = 20;
 
-    protected static ?string $navigationIcon = 'heroicon-o-shield-check';
+    protected static string|\BackedEnum|null $navigationIcon = 'heroicon-o-shield-check';
 
     protected static ?string $title = 'Two-factor authentication';
 
     protected static ?string $slug = 'profile/two-factor';
 
-    protected static string $view = 'filament.pages.two-factor-profile';
+    protected string $view = 'filament.pages.two-factor-profile';
 
     public function getHeading(): string|Htmlable
     {

@@ -6,9 +6,14 @@ use App\Filament\Concerns\AppliesFieldPermissions;
 use App\Filament\Resources\BatchResource\Pages;
 use App\Models\Batch;
 use App\Models\Repository;
+use Filament\Actions\BulkActionGroup;
+use Filament\Actions\DeleteBulkAction;
+use Filament\Actions\EditAction;
+use Filament\Actions\ViewAction;
 use Filament\Forms;
-use Filament\Forms\Form;
 use Filament\Resources\Resource;
+use Filament\Schemas;
+use Filament\Schemas\Schema;
 use Filament\Tables;
 use Filament\Tables\Table;
 
@@ -21,19 +26,19 @@ class BatchResource extends Resource
 
     protected static ?string $model = Batch::class;
 
-    protected static ?string $navigationIcon = 'heroicon-o-squares-2x2';
+    protected static string|\BackedEnum|null $navigationIcon = 'heroicon-o-squares-2x2';
 
-    protected static ?string $navigationGroup = 'Archive';
+    protected static string|\UnitEnum|null $navigationGroup = 'Archive';
 
     protected static ?int $navigationSort = 11;
 
     protected static ?string $recordTitleAttribute = 'batch_number';
 
-    public static function form(Form $form): Form
+    public static function form(Schema $schema): Schema
     {
-        $g = fn (Forms\Components\Component $c): Forms\Components\Component => self::gateField($c, self::FIELD_PERMISSIONS_KEY);
+        $g = fn (Schemas\Components\Component $c): Schemas\Components\Component => self::gateField($c, self::FIELD_PERMISSIONS_KEY);
 
-        return $form
+        return $schema
             ->schema([
                 $g(Forms\Components\TextInput::make('batch_number')
                     ->required()
@@ -115,12 +120,12 @@ class BatchResource extends Resource
                 //
             ])
             ->actions([
-                Tables\Actions\ViewAction::make(),
-                Tables\Actions\EditAction::make(),
+                ViewAction::make(),
+                EditAction::make(),
             ])
             ->bulkActions([
-                Tables\Actions\BulkActionGroup::make([
-                    Tables\Actions\DeleteBulkAction::make(),
+                BulkActionGroup::make([
+                    DeleteBulkAction::make(),
                 ]),
             ]);
     }

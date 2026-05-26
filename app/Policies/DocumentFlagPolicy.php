@@ -1,95 +1,75 @@
 <?php
 
+declare(strict_types=1);
+
 namespace App\Policies;
 
+use Illuminate\Foundation\Auth\User as AuthUser;
 use App\Models\DocumentFlag;
-use App\Models\User;
 use Illuminate\Auth\Access\HandlesAuthorization;
 
-/**
- * Policy for {@see DocumentFlag} — RFQ §3.1.12.
- *
- * Permission names follow the filament-shield convention used elsewhere in
- * the codebase for compound model names (cf. `BoxMovementPolicy`):
- *   view_any_document::flag, view_document::flag, create_document::flag, etc.
- *
- * The `resolve` permission is a custom workflow gate — separate from
- * `update` because a reviewer may be allowed to close a flag without being
- * allowed to edit its content.
- */
 class DocumentFlagPolicy
 {
     use HandlesAuthorization;
-
-    public function viewAny(User $user): bool
+    
+    public function viewAny(AuthUser $authUser): bool
     {
-        return $user->can('view_any_document::flag');
+        return $authUser->can('view_any_document_flag');
     }
 
-    public function view(User $user, DocumentFlag $documentFlag): bool
+    public function view(AuthUser $authUser, DocumentFlag $documentFlag): bool
     {
-        return $user->can('view_document::flag');
+        return $authUser->can('view_document_flag');
     }
 
-    public function create(User $user): bool
+    public function create(AuthUser $authUser): bool
     {
-        return $user->can('create_document::flag');
+        return $authUser->can('create_document_flag');
     }
 
-    public function update(User $user, DocumentFlag $documentFlag): bool
+    public function update(AuthUser $authUser, DocumentFlag $documentFlag): bool
     {
-        return $user->can('update_document::flag');
+        return $authUser->can('update_document_flag');
     }
 
-    public function delete(User $user, DocumentFlag $documentFlag): bool
+    public function delete(AuthUser $authUser, DocumentFlag $documentFlag): bool
     {
-        return $user->can('delete_document::flag');
+        return $authUser->can('delete_document_flag');
     }
 
-    public function deleteAny(User $user): bool
+    public function deleteAny(AuthUser $authUser): bool
     {
-        return $user->can('delete_any_document::flag');
+        return $authUser->can('delete_any_document_flag');
     }
 
-    public function forceDelete(User $user, DocumentFlag $documentFlag): bool
+    public function restore(AuthUser $authUser, DocumentFlag $documentFlag): bool
     {
-        return $user->can('force_delete_document::flag');
+        return $authUser->can('restore_document_flag');
     }
 
-    public function forceDeleteAny(User $user): bool
+    public function forceDelete(AuthUser $authUser, DocumentFlag $documentFlag): bool
     {
-        return $user->can('force_delete_any_document::flag');
+        return $authUser->can('force_delete_document_flag');
     }
 
-    public function restore(User $user, DocumentFlag $documentFlag): bool
+    public function forceDeleteAny(AuthUser $authUser): bool
     {
-        return $user->can('restore_document::flag');
+        return $authUser->can('force_delete_any_document_flag');
     }
 
-    public function restoreAny(User $user): bool
+    public function restoreAny(AuthUser $authUser): bool
     {
-        return $user->can('restore_any_document::flag');
+        return $authUser->can('restore_any_document_flag');
     }
 
-    public function replicate(User $user, DocumentFlag $documentFlag): bool
+    public function replicate(AuthUser $authUser, DocumentFlag $documentFlag): bool
     {
-        return $user->can('replicate_document::flag');
+        return $authUser->can('replicate_document_flag');
     }
 
-    public function reorder(User $user): bool
+    public function reorder(AuthUser $authUser): bool
     {
-        return $user->can('reorder_document::flag');
+        return $authUser->can('reorder_document_flag');
     }
 
-    /**
-     * Custom workflow gate — RFQ §3.1.12.
-     *
-     * Used by the FlagsRelationManager and DocumentFlagResource to gate
-     * the "Mark resolved" / "Mark dismissed" / "Mark acknowledged" actions
-     * independently of the generic `update` permission.
-     */
-    public function resolve(User $user, DocumentFlag $documentFlag): bool
-    {
-        return $user->can('resolve_document::flag') || $user->can('update_document::flag');
-    }
 }

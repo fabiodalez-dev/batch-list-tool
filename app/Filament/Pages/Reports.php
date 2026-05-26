@@ -34,13 +34,13 @@ use Illuminate\Support\Facades\Cache;
  */
 class Reports extends Page
 {
-    protected static string $view = 'filament.pages.reports';
+    protected string $view = 'filament.pages.reports';
 
-    protected static ?string $navigationGroup = 'Operations';
+    protected static string|\UnitEnum|null $navigationGroup = 'Operations';
 
     protected static ?int $navigationSort = 90;
 
-    protected static ?string $navigationIcon = 'heroicon-o-document-chart-bar';
+    protected static string|\BackedEnum|null $navigationIcon = 'heroicon-o-document-chart-bar';
 
     protected static ?string $title = 'Reports';
 

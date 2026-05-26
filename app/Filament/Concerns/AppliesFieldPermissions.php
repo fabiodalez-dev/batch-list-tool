@@ -6,8 +6,8 @@ namespace App\Filament\Concerns;
 
 use App\Support\FieldPermissions;
 use Closure;
-use Filament\Forms\Components\Component as FormComponent;
 use Filament\Forms\Components\Field as FormField;
+use Filament\Schemas\Components\Component as FormComponent;
 use Filament\Tables\Columns\Column as TableColumn;
 
 /**

@@ -5,9 +5,16 @@ namespace App\Filament\Resources;
 use App\Filament\Resources\DocumentFlagResource\Pages;
 use App\Filament\Resources\DocumentResource\RelationManagers\FlagsRelationManager;
 use App\Models\DocumentFlag;
+use Filament\Actions\BulkAction;
+use Filament\Actions\BulkActionGroup;
+use Filament\Actions\DeleteBulkAction;
+use Filament\Actions\EditAction;
+use Filament\Actions\ViewAction;
 use Filament\Forms;
-use Filament\Forms\Form;
 use Filament\Resources\Resource;
+use Filament\Schemas;
+use Filament\Schemas\Components\Utilities\Get;
+use Filament\Schemas\Schema;
 use Filament\Tables;
 use Filament\Tables\Filters\Filter;
 use Filament\Tables\Filters\SelectFilter;
@@ -28,9 +35,9 @@ class DocumentFlagResource extends Resource
 {
     protected static ?string $model = DocumentFlag::class;
 
-    protected static ?string $navigationIcon = 'heroicon-o-flag';
+    protected static string|\BackedEnum|null $navigationIcon = 'heroicon-o-flag';
 
-    protected static ?string $navigationGroup = 'Operations';
+    protected static string|\UnitEnum|null $navigationGroup = 'Operations';
 
     protected static ?int $navigationSort = 85;
 
@@ -40,10 +47,10 @@ class DocumentFlagResource extends Resource
 
     protected static ?string $pluralModelLabel = 'document flags';
 
-    public static function form(Form $form): Form
+    public static function form(Schema $schema): Schema
     {
-        return $form->schema([
-            Forms\Components\Section::make('What')
+        return $schema->schema([
+            Schemas\Components\Section::make('What')
                 ->columns(2)
                 ->schema([
                     Forms\Components\Select::make('document_id')
@@ -76,7 +83,7 @@ class DocumentFlagResource extends Resource
                         ->columnSpanFull(),
                 ]),
 
-            Forms\Components\Section::make('Workflow')
+            Schemas\Components\Section::make('Workflow')
                 ->columns(2)
                 ->schema([
                     Forms\Components\Select::make('status')
@@ -93,7 +100,7 @@ class DocumentFlagResource extends Resource
                         ->rows(2)
                         ->maxLength(5000)
                         ->columnSpanFull()
-                        ->visible(fn (Forms\Get $get): bool => in_array(
+                        ->visible(fn (Get $get): bool => in_array(
                             $get('status'),
                             ['resolved', 'dismissed'],
                             true,
@@ -216,12 +223,12 @@ class DocumentFlagResource extends Resource
                     }),
             ])
             ->actions([
-                Tables\Actions\ViewAction::make(),
-                Tables\Actions\EditAction::make(),
+                ViewAction::make(),
+                EditAction::make(),
             ])
             ->bulkActions([
-                Tables\Actions\BulkActionGroup::make([
-                    Tables\Actions\BulkAction::make('bulkResolve')
+                BulkActionGroup::make([
+                    BulkAction::make('bulkResolve')
                         ->label('Mark resolved')
                         ->icon('heroicon-o-check-circle')
                         ->color('success')
@@ -239,7 +246,7 @@ class DocumentFlagResource extends Resource
                             ));
                         }),
 
-                    Tables\Actions\BulkAction::make('bulkDismiss')
+                    BulkAction::make('bulkDismiss')
                         ->label('Dismiss')
                         ->icon('heroicon-o-x-circle')
                         ->color('gray')
@@ -257,7 +264,7 @@ class DocumentFlagResource extends Resource
                             ));
                         }),
 
-                    Tables\Actions\DeleteBulkAction::make(),
+                    DeleteBulkAction::make(),
                 ]),
             ]);
     }

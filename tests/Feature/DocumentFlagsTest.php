@@ -58,19 +58,19 @@ function seedFlagPermissionsForSuperAdmin(): void
     $superAdmin = Role::firstOrCreate(['name' => 'super_admin', 'guard_name' => 'web']);
 
     foreach ([
-        'view_any_document::flag',
-        'view_document::flag',
-        'create_document::flag',
-        'update_document::flag',
-        'delete_document::flag',
-        'delete_any_document::flag',
-        'restore_document::flag',
-        'restore_any_document::flag',
-        'force_delete_document::flag',
-        'force_delete_any_document::flag',
-        'replicate_document::flag',
-        'reorder_document::flag',
-        'resolve_document::flag',
+        'view_any_document_flag',
+        'view_document_flag',
+        'create_document_flag',
+        'update_document_flag',
+        'delete_document_flag',
+        'delete_any_document_flag',
+        'restore_document_flag',
+        'restore_any_document_flag',
+        'force_delete_document_flag',
+        'force_delete_any_document_flag',
+        'replicate_document_flag',
+        'reorder_document_flag',
+        'resolve_document_flag',
     ] as $perm) {
         $p = Permission::firstOrCreate(['name' => $perm, 'guard_name' => 'web']);
         $superAdmin->givePermissionTo($p);

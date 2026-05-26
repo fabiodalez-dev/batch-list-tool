@@ -71,8 +71,8 @@ function bl_seedRoles(): void
 function bl_shieldPermissionNames(): array
 {
     $resources = [
-        'accession', 'audit', 'authority', 'batch', 'box', 'box::movement',
-        'document', 'document::flag', 'location', 'report', 'repository',
+        'accession', 'audit', 'authority', 'batch', 'box', 'box_movement',
+        'document', 'document_flag', 'location', 'report', 'repository',
         'role', 'series', 'user', 'volume',
     ];
     $ops = [
