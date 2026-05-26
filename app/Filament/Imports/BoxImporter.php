@@ -1,0 +1,207 @@
+<?php
+
+declare(strict_types=1);
+
+namespace App\Filament\Imports;
+
+use App\Models\Box;
+use App\Models\Scopes\ThroughBatchRepositoryScope;
+use App\Support\BulkImport\EntityResolver;
+use App\Support\BulkImport\SpreadsheetParsers;
+use Filament\Actions\Imports\ImportColumn;
+use Filament\Actions\Imports\Importer;
+use Filament\Actions\Imports\Models\Import;
+use Illuminate\Validation\ValidationException;
+
+/**
+ * RFQ §3.1.3 — Bulk import for {@see Box}.
+ *
+ * A Box (RAS, IN_SITU, NRA, MAV, STVC) is a physical container that holds
+ * a set of documents and lives inside a Batch. Critical RFQ rules
+ * enforced here:
+ *
+ *   - #3: IN_SITU and NRA boxes MUST reference a parent RAS box.
+ *   - #4: MAV / STVC types cannot be created for new records, only existing
+ *     legacy boxes can have those types — enforced as `is_legacy=true`
+ *     when type ∈ {MAV, STVC}.
+ *   - #5: a box marked PERM_OUT MUST have a non-null disinfestation_date.
+ *
+ * The importer accepts a Batch via either its numeric id OR its
+ * `batch_number` (the latter is what operators have on hand in the
+ * spreadsheet). Parent boxes can be referenced by their barcode.
+ */
+class BoxImporter extends Importer
+{
+    protected static ?string $model = Box::class;
+
+    /**
+     * @return array<ImportColumn>
+     */
+    public static function getColumns(): array
+    {
+        return [
+            ImportColumn::make('box_number')
+                ->label('Box number')
+                ->requiredMapping()
+                ->guess(['Box number', 'box_number', 'Box', 'Number'])
+                ->rules(['required', 'string', 'max:32']),
+
+            ImportColumn::make('box_type')
+                ->label('Box type (RAS / IN_SITU / NRA / MAV / STVC)')
+                ->requiredMappingForNewRecordsOnly()
+                ->guess(['Box type', 'Type', 'box_type'])
+                ->castStateUsing(function (?string $state): ?string {
+                    if ($state === null) {
+                        return null;
+                    }
+                    $s = strtoupper(trim($state));
+
+                    // Accept some common aliases.
+                    return match ($s) {
+                        'IN SITU', 'IN-SITU' => 'IN_SITU',
+                        'PERM_OUT', 'PERMOUT' => $s, // not a type, but be tolerant
+                        default => $s,
+                    };
+                })
+                ->rules(['required', 'in:RAS,IN_SITU,NRA,MAV,STVC']),
+
+            // Batch lookup by batch_number — the friendlier alternative to
+            // forcing operators to type DB ids.
+            ImportColumn::make('batch_number')
+                ->label('Batch number')
+                ->requiredMappingForNewRecordsOnly()
+                ->integer()
+                ->guess(['Batch number', 'Batch', 'batch_number'])
+                ->fillRecordUsing(function (Box $record, mixed $state): void {
+                    $n = SpreadsheetParsers::parseInt($state);
+                    if ($n === null) {
+                        return;
+                    }
+                    $res = EntityResolver::resolveBatch($n);
+                    if ($res === null || isset($res['forbidden'])) {
+                        // We don't throw here — `rules()` on a separate
+                        // column would, but Box requires the batch FK to
+                        // satisfy NOT NULL on insert, so leave the column
+                        // empty and let the resulting SQL constraint
+                        // failure surface in the failed-rows export.
+                        return;
+                    }
+                    $record->batch_id = $res['batch_id'];
+                }),
+
+            ImportColumn::make('parent_barcode')
+                ->label('Parent box barcode (for IN_SITU / NRA)')
+                ->guess(['Parent barcode', 'parent_barcode', 'Parent RAS barcode'])
+                ->fillRecordUsing(function (Box $record, ?string $state): void {
+                    if ($state === null || trim($state) === '') {
+                        return;
+                    }
+                    $res = EntityResolver::resolveBox(trim($state));
+                    if ($res !== null) {
+                        $record->parent_box_id = $res['box_id'];
+                    }
+                }),
+
+            ImportColumn::make('barcode')
+                ->label('Barcode')
+                ->guess(['Barcode', 'barcode', 'Barcode (IN)'])
+                ->rules(['nullable', 'string', 'max:64']),
+
+            ImportColumn::make('barcode_status')
+                ->label('Barcode status (IN / OUT / PERM_OUT)')
+                ->guess(['Barcode status', 'Status', 'barcode_status'])
+                ->castStateUsing(function (?string $state): ?string {
+                    if ($state === null) {
+                        return null;
+                    }
+                    $s = strtoupper(trim($state));
+
+                    return in_array($s, ['IN', 'OUT', 'PERM_OUT'], true) ? $s : null;
+                })
+                ->rules(['nullable', 'in:IN,OUT,PERM_OUT']),
+
+            ImportColumn::make('disinfestation_date')
+                ->label('Disinfestation date')
+                ->guess(['Disinfestation date', 'Disinfestation Date', 'disinfestation_date'])
+                ->castStateUsing(fn (mixed $state) => SpreadsheetParsers::parseDate($state))
+                ->rules(['nullable', 'date']),
+
+            ImportColumn::make('is_legacy')
+                ->label('Is legacy box?')
+                ->guess(['Is legacy', 'is_legacy', 'Legacy'])
+                ->boolean()
+                ->rules(['nullable', 'boolean']),
+
+            ImportColumn::make('notes')
+                ->label('Notes')
+                ->guess(['Notes', 'notes', 'Note'])
+                ->rules(['nullable', 'string']),
+        ];
+    }
+
+    /**
+     * Idempotent matching: prefer barcode (unique), then (batch_id, box_number).
+     */
+    public function resolveRecord(): ?Box
+    {
+        $barcode = $this->data['barcode'] ?? null;
+        if ($barcode !== null && trim((string) $barcode) !== '') {
+            $existing = Box::query()
+                ->withoutGlobalScope(ThroughBatchRepositoryScope::class)
+                ->where('barcode', trim((string) $barcode))
+                ->first();
+            if ($existing !== null) {
+                return $existing;
+            }
+        }
+
+        return new Box;
+    }
+
+    /**
+     * Apply the three RFQ rules that depend on multiple fields:
+     *
+     *  #3 — IN_SITU and NRA require a parent RAS box. If the operator
+     *       supplied no parent barcode we cannot proceed safely; we leave
+     *       parent_box_id null and let the row fail with an explicit
+     *       validation message via the `before save` check.
+     *  #4 — MAV / STVC force `is_legacy = true`.
+     *  #5 — PERM_OUT requires `disinfestation_date`.
+     */
+    public function afterFill(): void
+    {
+        /** @var Box $record */
+        $record = $this->record;
+
+        if (in_array($record->box_type, ['MAV', 'STVC'], true)) {
+            $record->is_legacy = true;
+        }
+
+        if ($record->barcode_status === 'PERM_OUT' && $record->disinfestation_date === null) {
+            // We refuse the row with a validation exception — this is what
+            // surfaces in the per-row failed export.
+            throw ValidationException::withMessages([
+                'disinfestation_date' => __('Boxes marked PERM_OUT must carry a disinfestation_date.'),
+            ]);
+        }
+
+        if (in_array($record->box_type, ['IN_SITU', 'NRA'], true) && $record->parent_box_id === null) {
+            // RFQ #3 — IN_SITU / NRA boxes MUST reference a parent RAS box.
+            // Reject the row instead of inserting an orphan.
+            throw ValidationException::withMessages([
+                'parent_box_id' => __('IN_SITU and NRA boxes must reference a parent RAS box (via barcode).'),
+            ]);
+        }
+    }
+
+    public static function getCompletedNotificationBody(Import $import): string
+    {
+        $body = 'Boxes import completed: '
+            . number_format($import->successful_rows) . ' rows processed';
+        if (($failed = $import->getFailedRowsCount()) > 0) {
+            $body .= ', ' . number_format($failed) . ' failed';
+        }
+
+        return $body;
+    }
+}

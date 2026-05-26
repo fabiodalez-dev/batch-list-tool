@@ -1,0 +1,384 @@
+<?php
+
+declare(strict_types=1);
+
+namespace App\Support\BulkImport;
+
+use App\Models\Authority;
+use App\Models\Batch;
+use App\Models\Box;
+use App\Models\Repository;
+use App\Models\Scopes\RepositoryScope;
+use App\Models\Series;
+
+/**
+ * Centralised foreign-key resolver for the v2 Bulk Import (RFQ §3.1.3).
+ *
+ * The headline UX feature of the Filament Excel Import is that operators map
+ * each spreadsheet column individually and the system understands FKs by
+ * *name* — not just by surrogate id. This class is where that "by name"
+ * intelligence lives.
+ *
+ * Resolution strategies (per entity) are the same as the one shipped in
+ * App\Console\Commands\LinkCreatorTextToAuthorities — we reuse the patterns
+ * intentionally so the live link command and the import command behave
+ * identically. In particular:
+ *
+ *  - F-001: never fuzzy-match on tokens shorter than 4 characters (Maltese
+ *    surnames like "Mai" would collide with hundreds of unrelated rows).
+ *  - F-002: callers expected to memoise; the resolver itself does not query
+ *    in a loop without need.
+ *  - F-009: when more than one Authority is found on a surname, the resolver
+ *    returns an `ambiguous_count` marker — callers MUST NOT auto-assign.
+ *
+ * All methods are static; the resolver has no state of its own beyond a
+ * per-request in-memory memo cache (`self::$memo`). The cache is flushed
+ * implicitly between import jobs because the class is reloaded with each
+ * worker process.
+ */
+final class EntityResolver
+{
+    /**
+     * Per-request memoisation cache.
+     *
+     * Key shape: `entity:strategy:normalised_token` → result array.
+     * Cleared explicitly only in tests (see {@see self::flushMemo()}).
+     *
+     * @var array<string, array<string, mixed>|null>
+     */
+    private static array $memo = [];
+
+    /**
+     * Resolve an Authority by (1) identifier, (2) surname+name pair,
+     * (3) surname exact (case-insensitive), (4) surname LIKE (≥4 chars).
+     *
+     * Returns one of:
+     *  - `['authority_id' => int, 'method' => string]` — single confident match.
+     *  - `['ambiguous_count' => int, 'candidates' => int[]]` — F-009: more than
+     *     one Authority share the same surname, caller MUST NOT pick one.
+     *  - `null` — no match at all.
+     *
+     * @return array{authority_id:int,method:string}|array{ambiguous_count:int,candidates:array<int,int>}|null
+     */
+    public static function resolveAuthority(
+        ?string $identifier,
+        ?string $surname = null,
+        ?string $name = null,
+    ): ?array {
+        $identifier = self::normaliseString($identifier);
+        $surname = self::normaliseString($surname);
+        $name = self::normaliseString($name);
+
+        // Strategy 1 — exact match on identifier (the canonical R-code from the
+        // POC: "R1", "R12", "R110"). This is the strongest signal: every
+        // Authority has a unique identifier, so a hit here is final.
+        if ($identifier !== null) {
+            $key = "authority:identifier:{$identifier}";
+            if (! array_key_exists($key, self::$memo)) {
+                $id = Authority::query()
+                    ->where('identifier', $identifier)
+                    ->value('id');
+                self::$memo[$key] = $id !== null
+                    ? ['authority_id' => (int) $id, 'method' => 'identifier']
+                    : null;
+            }
+            if (self::$memo[$key] !== null) {
+                return self::$memo[$key];
+            }
+        }
+
+        // The "Creator" column in Batch_List_Sample is free-text catalogator,
+        // sometimes "Name Surname", sometimes "Surname, Name", sometimes just
+        // "Surname". We split on whitespace and try the last word first
+        // (matches Italian/Maltese convention).
+        if ($surname === null && $name !== null) {
+            $parts = preg_split('/\s+/', $name) ?: [];
+            if (count($parts) > 0) {
+                $surname = mb_strtolower(trim((string) end($parts)));
+            }
+        }
+
+        if ($surname === null) {
+            return null;
+        }
+
+        // Strategy 2 — surname + given-name pair. Most discriminating after
+        // the identifier; collapses many ambiguous surname-only matches.
+        if ($name !== null) {
+            $key = "authority:surname_given:{$surname}|{$name}";
+            if (! array_key_exists($key, self::$memo)) {
+                $rows = Authority::query()
+                    ->whereRaw('LOWER(surname) = ?', [mb_strtolower($surname)])
+                    ->whereRaw('LOWER(given_names) = ?', [mb_strtolower($name)])
+                    ->limit(2)
+                    ->pluck('id')
+                    ->all();
+                if (count($rows) === 1) {
+                    self::$memo[$key] = ['authority_id' => (int) $rows[0], 'method' => 'surname_given'];
+                } else {
+                    self::$memo[$key] = null;
+                }
+            }
+            if (self::$memo[$key] !== null) {
+                return self::$memo[$key];
+            }
+        }
+
+        // Strategy 3 — surname exact (case-insensitive). Most rows in the
+        // legacy POC use only the surname; this is where ambiguous-surname
+        // collisions appear and F-009 kicks in.
+        $key = "authority:surname_exact:{$surname}";
+        if (! array_key_exists($key, self::$memo)) {
+            $rows = Authority::query()
+                ->whereRaw('LOWER(surname) = ?', [mb_strtolower($surname)])
+                ->limit(20)
+                ->pluck('id')
+                ->all();
+            if (count($rows) === 1) {
+                self::$memo[$key] = ['authority_id' => (int) $rows[0], 'method' => 'surname_exact'];
+            } elseif (count($rows) > 1) {
+                // F-009 — DO NOT auto-assign. Return the candidates so the
+                // caller can persist them in `document.extra.ambiguous_candidates`
+                // for an operator to resolve manually.
+                self::$memo[$key] = [
+                    'ambiguous_count' => count($rows),
+                    'candidates' => array_map('intval', $rows),
+                ];
+            } else {
+                self::$memo[$key] = null;
+            }
+        }
+        if (self::$memo[$key] !== null) {
+            return self::$memo[$key];
+        }
+
+        // Strategy 4 — surname fuzzy LIKE. F-001: refuse on short tokens
+        // because anything <4 chars matches half the table on a generous
+        // surname distribution (e.g. "Mai" matches "Maillé", "Maibach",
+        // "Maita", …). Yields too many false positives to be useful.
+        if (mb_strlen($surname) < 4) {
+            return null;
+        }
+        $key = "authority:surname_fuzzy:{$surname}";
+        if (! array_key_exists($key, self::$memo)) {
+            $rows = Authority::query()
+                ->where('surname', 'like', '%' . $surname . '%')
+                ->orderByRaw('CHAR_LENGTH(surname) ASC')
+                ->limit(2)
+                ->pluck('id')
+                ->all();
+            if (count($rows) === 1) {
+                self::$memo[$key] = ['authority_id' => (int) $rows[0], 'method' => 'surname_fuzzy'];
+            } elseif (count($rows) > 1) {
+                self::$memo[$key] = [
+                    'ambiguous_count' => count($rows),
+                    'candidates' => array_map('intval', $rows),
+                ];
+            } else {
+                self::$memo[$key] = null;
+            }
+        }
+
+        return self::$memo[$key];
+    }
+
+    /**
+     * Resolve a Series by either:
+     *   - exact `code` ("R", "REG", "RWL", "O"), or
+     *   - the legacy POC formatting "CODE: Title…" (split on ":"), or
+     *   - exact `title` (case-insensitive) as a last fallback.
+     *
+     * Returns `['series_id' => int]` on a unique match, `null` otherwise.
+     * Ambiguity on series is *not* expected because `series.code` is `UNIQUE`
+     * and titles are short and distinct; we therefore short-circuit on the
+     * first match and never produce an `ambiguous_count`.
+     *
+     * @return array{series_id:int}|null
+     */
+    public static function resolveSeries(?string $codeOrFullText): ?array
+    {
+        $text = self::normaliseString($codeOrFullText);
+        if ($text === null) {
+            return null;
+        }
+
+        // Batch_List_Sample.xlsx uses the format "REG: Registers Private
+        // Practice" in the Series column — the part before ":" is the
+        // canonical code in the database. We try that path first.
+        $code = $text;
+        if (str_contains($text, ':')) {
+            $code = trim((string) explode(':', $text, 2)[0]);
+        }
+        // Series codes are at most 16 chars in the schema.
+        $code = mb_substr($code, 0, 16);
+
+        if ($code !== '') {
+            $key = "series:code:{$code}";
+            if (! array_key_exists($key, self::$memo)) {
+                $id = Series::query()
+                    ->whereRaw('LOWER(code) = ?', [mb_strtolower($code)])
+                    ->value('id');
+                self::$memo[$key] = $id !== null ? ['series_id' => (int) $id] : null;
+            }
+            if (self::$memo[$key] !== null) {
+                return self::$memo[$key];
+            }
+        }
+
+        // Fallback: full text exact match on `title`. Useful when an operator
+        // pastes "Registers Private Practice" instead of "REG: Registers …".
+        $key = "series:title:{$text}";
+        if (! array_key_exists($key, self::$memo)) {
+            $id = Series::query()
+                ->whereRaw('LOWER(title) = ?', [mb_strtolower($text)])
+                ->value('id');
+            self::$memo[$key] = $id !== null ? ['series_id' => (int) $id] : null;
+        }
+
+        return self::$memo[$key];
+    }
+
+    /**
+     * Resolve a Batch by its `batch_number`. Enforces RFQ App.1 #1: numbers
+     * 33, 34 and 36 are reserved and cannot be allocated to new records —
+     * this is also enforced by a MySQL CHECK constraint, but rejecting
+     * client-side gives the operator a clean error message in the row
+     * report instead of a 1452-style SQLSTATE leak.
+     *
+     * The lookup ignores the global RepositoryScope so import preview can
+     * resolve cross-tenant matches; the caller is expected to validate
+     * tenancy further upstream (`fillRecordUsing` runs INSIDE the global
+     * scope, so the security boundary is preserved).
+     *
+     * @return array{batch_id:int,batch_number:int}|array{forbidden:int}|null
+     */
+    public static function resolveBatch(?int $batchNumber, ?int $repositoryId = null): ?array
+    {
+        if ($batchNumber === null) {
+            return null;
+        }
+
+        if (in_array($batchNumber, Batch::FORBIDDEN_NUMBERS, true)) {
+            // Signalled separately from "not found" so the importer can emit
+            // a specific human-readable error: "Batch N is reserved".
+            return ['forbidden' => $batchNumber];
+        }
+
+        $key = "batch:number:{$batchNumber}:" . ($repositoryId ?? '*');
+        if (! array_key_exists($key, self::$memo)) {
+            $q = Batch::query()->withoutGlobalScope(RepositoryScope::class)
+                ->where('batch_number', $batchNumber);
+            if ($repositoryId !== null) {
+                $q->where('repository_id', $repositoryId);
+            }
+            $id = $q->value('id');
+            self::$memo[$key] = $id !== null
+                ? ['batch_id' => (int) $id, 'batch_number' => $batchNumber]
+                : null;
+        }
+
+        return self::$memo[$key];
+    }
+
+    /**
+     * Resolve a Box by (1) barcode (unique in the schema), or (2) the pair
+     * (batch_id, box_number). Returns `['box_id' => int]` on a unique match
+     * or `null` otherwise. Box scoping is derived via the parent Batch so
+     * we don't have to pass `repository_id` here — the global scope on
+     * `Box` already excludes boxes the user can't see.
+     *
+     * @return array{box_id:int}|null
+     */
+    public static function resolveBox(
+        ?string $barcode,
+        ?int $batchId = null,
+        ?string $boxNumber = null,
+    ): ?array {
+        $barcode = self::normaliseString($barcode);
+
+        if ($barcode !== null) {
+            $key = "box:barcode:{$barcode}";
+            if (! array_key_exists($key, self::$memo)) {
+                $id = Box::query()
+                    ->where('barcode', $barcode)
+                    ->value('id');
+                self::$memo[$key] = $id !== null ? ['box_id' => (int) $id] : null;
+            }
+            if (self::$memo[$key] !== null) {
+                return self::$memo[$key];
+            }
+        }
+
+        $boxNumber = self::normaliseString($boxNumber);
+        if ($batchId !== null && $boxNumber !== null) {
+            $key = "box:batch_number:{$batchId}|{$boxNumber}";
+            if (! array_key_exists($key, self::$memo)) {
+                $id = Box::query()
+                    ->where('batch_id', $batchId)
+                    ->where('box_number', $boxNumber)
+                    ->value('id');
+                self::$memo[$key] = $id !== null ? ['box_id' => (int) $id] : null;
+            }
+
+            return self::$memo[$key];
+        }
+
+        return null;
+    }
+
+    /**
+     * Resolve a Repository by its `code` (the tenant key, e.g. "NRA") or
+     * `name`. Used by Authority/Series importers when the operator wants to
+     * stamp imported rows into a specific tenant via an `additionalFormComponents`
+     * Select.
+     *
+     * @return array{repository_id:int}|null
+     */
+    public static function resolveRepository(?string $codeOrName): ?array
+    {
+        $text = self::normaliseString($codeOrName);
+        if ($text === null) {
+            return null;
+        }
+
+        $key = "repository:code_or_name:{$text}";
+        if (! array_key_exists($key, self::$memo)) {
+            $id = Repository::query()
+                ->where(function ($q) use ($text) {
+                    $q->whereRaw('LOWER(code) = ?', [mb_strtolower($text)])
+                        ->orWhereRaw('LOWER(name) = ?', [mb_strtolower($text)]);
+                })
+                ->value('id');
+            self::$memo[$key] = $id !== null ? ['repository_id' => (int) $id] : null;
+        }
+
+        return self::$memo[$key];
+    }
+
+    /**
+     * Flush the per-request memoisation cache. Tests call this between
+     * scenarios to make sure stub data doesn't bleed across cases; the
+     * production path never needs to call it (a fresh PHP process means a
+     * fresh class).
+     */
+    public static function flushMemo(): void
+    {
+        self::$memo = [];
+    }
+
+    /**
+     * Normalise a raw spreadsheet cell into a trimmed, non-empty string, or
+     * `null` if it's effectively blank. Centralised here to keep the policy
+     * for what "blank" means consistent across every resolver path: a cell
+     * with only whitespace is treated identically to an empty cell.
+     */
+    private static function normaliseString(mixed $value): ?string
+    {
+        if ($value === null) {
+            return null;
+        }
+        $string = is_scalar($value) ? trim((string) $value) : '';
+
+        return $string === '' ? null : $string;
+    }
+}

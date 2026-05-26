@@ -4,10 +4,13 @@ declare(strict_types=1);
 
 namespace App\Filament\Resources\DocumentResource\Pages;
 
+use App\Filament\Imports\DocumentImporter;
 use App\Filament\Resources\DocumentResource;
 use App\Models\Document;
 use Filament\Actions;
 use Filament\Resources\Pages\ListRecords;
+use HayderHatem\FilamentExcelImport\Actions\FullImportAction;
+use Illuminate\Support\Collection;
 use Illuminate\Support\Str;
 use Symfony\Component\HttpFoundation\StreamedResponse;
 
@@ -95,6 +98,20 @@ class ListDocuments extends ListRecords
     protected function getHeaderActions(): array
     {
         return [
+            // RFQ §3.1.3 — Bulk Import v2.
+            // Per-column dropdown mapping, FK resolution by name (Series via
+            // code, Authority via R-code AND surname), F-009 ambiguous-skip
+            // policy. See {@see DocumentImporter} for the column declarations.
+            FullImportAction::make()
+                ->importer(DocumentImporter::class)
+                ->label('Import Excel / CSV')
+                ->icon('heroicon-o-arrow-up-tray')
+                ->color('gray')
+                ->chunkSize(500)
+                ->maxRows(50000)
+                ->streamingThreshold(10 * 1024 * 1024)
+                ->visible(fn () => auth()->user()?->can('create', Document::class) ?? false),
+
             Actions\Action::make('export_csv')
                 ->label('Export CSV')
                 ->icon('heroicon-o-arrow-down-tray')

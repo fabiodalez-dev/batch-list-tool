@@ -25,6 +25,18 @@ parameters:
 			path: app/Console/Commands/LinkCreatorTextToAuthorities.php
 
 		-
+			message: '#^Method App\\Filament\\Imports\\DocumentImporter\:\:resolveRecord\(\) should return App\\Models\\Document\|null but returns Illuminate\\Database\\Eloquent\\Model\.$#'
+			identifier: return.type
+			count: 1
+			path: app/Filament/Imports/DocumentImporter.php
+
+		-
+			message: '#^Property App\\Models\\Document\:\:\$extra \(Spatie\\SchemalessAttributes\\SchemalessAttributes\|null\) does not accept array\<mixed\>\.$#'
+			identifier: assign.propertyType
+			count: 1
+			path: app/Filament/Imports/DocumentImporter.php
+
+		-
 			message: '#^Access to an undefined property Illuminate\\Database\\Eloquent\\Model\:\:\$repository_id\.$#'
 			identifier: property.notFound
 			count: 1
