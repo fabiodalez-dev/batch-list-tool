@@ -3,6 +3,7 @@
 declare(strict_types=1);
 
 use App\Models\User;
+use Filament\Facades\Filament;
 use Illuminate\Foundation\Testing\DatabaseTransactions;
 use Illuminate\Support\Facades\Hash;
 use OwenIt\Auditing\Models\Audit;
@@ -40,16 +41,20 @@ function rolesExist_user(): void
 test('User::canAccessPanel honours is_active flag and role assignment', function () {
     rolesExist_user();
 
+    // Resolve the actual registered admin panel (NOT `app(Panel::class)`,
+    // which returns a fresh empty Panel and doesn't represent the real one).
+    $panel = Filament::getPanel('admin');
+
     $active = User::factory()->create(['is_active' => true]);
     $active->assignRole('super_admin');
-    expect($active->canAccessPanel(app(\Filament\Panel::class)))->toBeTrue();
+    expect($active->canAccessPanel($panel))->toBeTrue();
 
     $inactive = User::factory()->create(['is_active' => false]);
     $inactive->assignRole('super_admin');
-    expect($inactive->canAccessPanel(app(\Filament\Panel::class)))->toBeFalse();
+    expect($inactive->canAccessPanel($panel))->toBeFalse();
 
     $noRole = User::factory()->create(['is_active' => true]);
-    expect($noRole->canAccessPanel(app(\Filament\Panel::class)))->toBeFalse();
+    expect($noRole->canAccessPanel($panel))->toBeFalse();
 })->skip(
     fn () => ! class_exists(\Filament\Panel::class),
     'Filament Panel not available in this configuration',

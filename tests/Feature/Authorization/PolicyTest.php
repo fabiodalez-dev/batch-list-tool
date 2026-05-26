@@ -26,7 +26,15 @@ use Spatie\Permission\Models\Role;
  *   - admin      = ALL permissions
  *   - editor     = view_/create_/update_/reorder_
  *   - viewer     = view_ only
- *   - super_admin = bypasses every gate via Gate::before (Shield convention)
+ *   - super_admin = receives EVERY generated permission directly on the role
+ *                   (see config/filament-shield.php: 'define_via_gate' => false).
+ *                   With that flag false, Shield does NOT register a
+ *                   `Gate::before` bypass — instead, every call to
+ *                   `shield:generate` invokes
+ *                   FilamentShield::giveSuperAdminPermission(), which grants
+ *                   the newly-generated permission to the `super_admin` role.
+ *                   Authorization therefore flows through Spatie's normal
+ *                   permission lookup, NOT a Gate::before short-circuit.
  *
  * These tests pin those properties at the Gate level.
  */
@@ -51,17 +59,46 @@ function user_pol(string $role): User
     return $u;
 }
 
-/* 69. super_admin bypasses everything */
-test('super_admin bypasses every gate via Shield Gate::before', function () {
+/*
+ * 69. super_admin holds every Shield-generated permission directly.
+ *
+ * IMPORTANT: this codebase sets `filament-shield.super_admin.define_via_gate
+ * = false`. With that flag false, Shield does NOT register a `Gate::before`
+ * hook — instead, `shield:generate` calls
+ * FilamentShield::giveSuperAdminPermission() once per generated permission,
+ * which assigns the permission directly to the `super_admin` role. So the
+ * gate decisions below come from Spatie's normal permission lookup against
+ * a role that just happens to hold every permission, NOT from a global
+ * bypass.
+ *
+ * NOTE on test isolation: this test relies on the live DB already having
+ * been seeded (the suite uses DatabaseTransactions, not RefreshDatabase),
+ * so the seeded `super_admin` role + permission rows survive into the test
+ * transaction. If you ever flip to RefreshDatabase, this test will need an
+ * explicit `Artisan::call('shield:generate', ['--all' => true, '--panel' =>
+ * 'admin'])` in setUp to recreate those permission rows.
+ */
+test('super_admin holds every Shield-generated permission (no Gate::before bypass)', function () {
     $u = user_pol('super_admin');
 
-    // Shield's Gate::before maps every defined ability to true for super_admin.
+    // Sanity: the role tag itself is set.
+    expect($u->hasRole('super_admin'))->toBeTrue();
+
+    // Direct permission lookup — these only resolve to true if Shield
+    // attached the permission to the super_admin role during seeding.
+    foreach (['document', 'repository'] as $r) {
+        expect($u->hasPermissionTo("view_any_$r"))
+            ->toBeTrue("super_admin role is missing view_any_$r — was shield:generate ever run?");
+        expect($u->hasPermissionTo("delete_any_$r"))
+            ->toBeTrue("super_admin role is missing delete_any_$r — was shield:generate ever run?");
+    }
+
+    // And the same abilities resolve true at the Gate layer (Spatie's
+    // PermissionRegistrar wires every spatie permission into the Gate).
     expect(Gate::forUser($u)->allows('view_any_document'))->toBeTrue();
     expect(Gate::forUser($u)->allows('delete_any_document'))->toBeTrue();
     expect(Gate::forUser($u)->allows('view_any_repository'))->toBeTrue();
     expect(Gate::forUser($u)->allows('delete_any_repository'))->toBeTrue();
-    // hasRole('super_admin') is itself the bypass marker
-    expect($u->hasRole('super_admin'))->toBeTrue();
 });
 
 /*

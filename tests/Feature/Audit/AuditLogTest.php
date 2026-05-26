@@ -157,18 +157,29 @@ test('audit.console=true makes console-context updates auditable', function () {
 });
 
 /*
- * 68. Audit retention contract.
+ * 68. owen-it/laravel-auditing baseline configuration.
  *
- * config('audit.console') is the project's switch for console-context
- * auditing. We pin that the default is OFF (security baseline) so a
- * future config change does not silently flip a noisy default on, and
- * we pin the implementation class so a future package swap is caught.
+ * This test pins three properties of the audit wiring:
+ *   (a) the implementation class is owen-it's Audit model (so a future
+ *       package swap or override is caught),
+ *   (b) console-context auditing defaults to OFF (security baseline — a
+ *       noisy default would silently start logging artisan commands), and
+ *   (c) sensitive fields on the User model are listed in $auditExclude
+ *       (so credentials and 2FA secrets never enter the audits table).
+ *
+ * NOTE on retention: owen-it/laravel-auditing has NO built-in retention or
+ * pruning mechanism — audit rows accumulate forever unless an external job
+ * removes them. Designing and shipping that prune job is a separate concern
+ * and is intentionally NOT covered by this test.
  */
-test('Audit implementation is owen-it/laravel-auditing and console default is OFF', function () {
-    expect(config('audit.console'))->toBeFalse();
+it('owen-it auditing baseline configuration is intact (impl class, sensitive-field exclusion)', function () {
+    // (a) Implementation class is the one shipped by owen-it
     expect(config('audit.implementation'))->toBe(\OwenIt\Auditing\Models\Audit::class);
 
-    // Sensitive User fields are excluded from auditing
+    // (b) Console-context auditing defaults OFF (security baseline)
+    expect(config('audit.console'))->toBeFalse();
+
+    // (c) Sensitive User fields are excluded from auditing
     $exclude = (new User)->getAuditExclude();
     expect($exclude)->toContain('password');
     expect($exclude)->toContain('remember_token');

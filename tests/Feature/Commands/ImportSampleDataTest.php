@@ -25,6 +25,19 @@ use Illuminate\Support\Facades\Artisan;
 
 uses(DatabaseTransactions::class);
 
+/**
+ * Resolve the canonical samples folder relative to the Laravel app root.
+ *
+ * The samples live one level above `php-backend/` in the repository tree
+ * (i.e. `<repo>/samples`). Using `dirname(base_path())` keeps these tests
+ * portable across any clone of the repo (CI, other dev machines, etc.)
+ * instead of hard-coding the original author's home directory.
+ */
+function samplesPath_isd(): string
+{
+    return dirname(base_path()) . '/samples';
+}
+
 /* 55. Command is registered with the expected signature */
 test('nra:import-samples command is registered and exposes --path and --fresh', function () {
     $signature = (new ImportSampleData)->getDefinition();
@@ -51,12 +64,17 @@ test('nra:import-samples supports --dry-run (no-op when set)', function () {
         $this->markTestSkipped('Command does not (yet) declare a --dry-run flag — see CLAUDE.md note.');
     }
 
+    $path = samplesPath_isd();
+    if (! is_dir($path)) {
+        $this->markTestSkipped('Sample dataset not found at ' . $path);
+    }
+
     $beforeSeries = Series::count();
     $beforeAuth   = Authority::count();
 
     Artisan::call('nra:import-samples', [
         '--dry-run' => true,
-        '--path'    => '/Users/fabio/Desktop/Batch_List_Tool/samples',
+        '--path'    => $path,
     ]);
 
     expect(Series::count())->toBe($beforeSeries);
@@ -65,9 +83,9 @@ test('nra:import-samples supports --dry-run (no-op when set)', function () {
 
 /* 57. Seeds the expected number of Authorities (~808). */
 test('nra:import-samples imports the expected number of Authorities (~808)', function () {
-    $path = '/Users/fabio/Desktop/Batch_List_Tool/samples';
+    $path = samplesPath_isd();
     if (! is_dir($path) || ! file_exists($path . '/Authorities_Sample.xlsx')) {
-        $this->markTestSkipped('Sample XLSX folder not available at canonical path: ' . $path);
+        $this->markTestSkipped('Sample dataset not found at ' . $path);
     }
 
     $beforeAuth = Authority::count();
@@ -79,15 +97,15 @@ test('nra:import-samples imports the expected number of Authorities (~808)', fun
     expect($imported + $beforeAuth)->toBeGreaterThanOrEqual(700);
     expect($imported + $beforeAuth)->toBeLessThanOrEqual(900);
 })->skip(
-    fn () => ! is_dir('/Users/fabio/Desktop/Batch_List_Tool/samples'),
-    'samples folder not present in this checkout',
+    fn () => ! is_dir(samplesPath_isd()),
+    'samples folder not present in this checkout (expected at <repo-root>/samples)',
 );
 
 /* 58. Seeds the expected number of Series (~29). */
 test('nra:import-samples imports the expected number of Series (~29)', function () {
-    $path = '/Users/fabio/Desktop/Batch_List_Tool/samples';
+    $path = samplesPath_isd();
     if (! is_dir($path) || ! file_exists($path . '/Series_Sample.xlsx')) {
-        $this->markTestSkipped('Sample XLSX folder not available at canonical path: ' . $path);
+        $this->markTestSkipped('Sample dataset not found at ' . $path);
     }
 
     $beforeSer = Series::count();
@@ -97,6 +115,6 @@ test('nra:import-samples imports the expected number of Series (~29)', function 
     // reference rows. (Dev seed may have inserted more.)
     expect(Series::count())->toBeGreaterThanOrEqual(max($beforeSer, 29));
 })->skip(
-    fn () => ! is_dir('/Users/fabio/Desktop/Batch_List_Tool/samples'),
-    'samples folder not present in this checkout',
+    fn () => ! is_dir(samplesPath_isd()),
+    'samples folder not present in this checkout (expected at <repo-root>/samples)',
 );
