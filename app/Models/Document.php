@@ -8,13 +8,9 @@ use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
 use Illuminate\Database\Eloquent\Relations\BelongsToMany;
 use Illuminate\Database\Eloquent\Relations\HasMany;
-use Illuminate\Database\Eloquent\SoftDeletes;
-use Illuminate\Support\Collection;
-use Laravel\Scout\Searchable;
 use OwenIt\Auditing\Auditable;
 use OwenIt\Auditing\Contracts\Auditable as AuditableContract;
 use Spatie\EloquentSortable\Sortable;
-use Spatie\EloquentSortable\SortableTrait;
 use Spatie\MediaLibrary\HasMedia;
 use Spatie\MediaLibrary\InteractsWithMedia;
 use Spatie\SchemalessAttributes\Casts\SchemalessAttributes;
@@ -23,11 +19,12 @@ use Spatie\Tags\HasTags;
 class Document extends Model implements AuditableContract, HasMedia, Sortable
 {
     use Auditable;
-    use BelongsToRepository;  // RFQ §3.5.1 — multi-tenant scope
+    use BelongsToRepository;
+    use BelongsToRepository;
+    // RFQ §3.5.1 — multi-tenant scope
     use HasFactory;
     use HasTags;
-    use InteractsWithMedia;
-    use BelongsToRepository;  // RFQ §3.5.1 — multi-tenant scope
+    use InteractsWithMedia;  // RFQ §3.5.1 — multi-tenant scope
 
     /**
      * `repository_id` is mass-assignable so Filament admins (who legitimately
@@ -37,7 +34,7 @@ class Document extends Model implements AuditableContract, HasMedia, Sortable
      * and throws \DomainException for any non-privileged write that targets a
      * foreign tenant. Defence-in-depth here is the hook, NOT $guarded.
      *
-     * @see \App\Models\Concerns\BelongsToRepository
+     * @see BelongsToRepository
      */
     protected $fillable = [
         'sort_order',
@@ -144,18 +141,18 @@ class Document extends Model implements AuditableContract, HasMedia, Sortable
     public function toSearchableArray(): array
     {
         return [
-            'identifier'           => $this->identifier,
+            'identifier' => $this->identifier,
             'catalogue_identifier' => $this->catalogue_identifier,
-            'document_type'        => $this->document_type,
-            'practice'             => $this->practice,
-            'volume_label'         => $this->volume_label,
-            'dates'                => $this->dates,
-            'notes'                => $this->notes,
-            'barcode_in'           => $this->barcode_in,
-            'series_code'          => $this->series?->code,
-            'series_title'         => $this->series?->title,
+            'document_type' => $this->document_type,
+            'practice' => $this->practice,
+            'volume_label' => $this->volume_label,
+            'dates' => $this->dates,
+            'notes' => $this->notes,
+            'barcode_in' => $this->barcode_in,
+            'series_code' => $this->series?->code,
+            'series_title' => $this->series?->title,
             'authorities_surnames' => $this->authorities()->pluck('surname')->implode(' '),
-            'authorities_idents'   => $this->authorities()->pluck('identifier')->implode(' '),
+            'authorities_idents' => $this->authorities()->pluck('identifier')->implode(' '),
         ];
     }
 

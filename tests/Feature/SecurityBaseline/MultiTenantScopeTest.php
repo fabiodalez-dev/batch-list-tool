@@ -25,7 +25,6 @@ use Spatie\Permission\Models\Role;
  * Uses DatabaseTransactions because the project runs against MySQL and we
  * don't want to wipe the dev seed data.
  */
-
 uses(DatabaseTransactions::class);
 
 /**
@@ -43,9 +42,9 @@ uses(DatabaseTransactions::class);
 function createDocumentInRepository(int $repositoryId, int $seriesId, string $identifier): Document
 {
     return Document::withoutGlobalScope(RepositoryScope::class)->forceCreate([
-        'identifier'    => $identifier,
+        'identifier' => $identifier,
         'document_type' => 'TEST',
-        'series_id'     => $seriesId,
+        'series_id' => $seriesId,
         'repository_id' => $repositoryId,
     ]);
 }
@@ -175,11 +174,11 @@ test('it rejects creating a Document with a repository_id outside the user pivot
     // somehow smuggled `repository_id` past Filament, the creating hook MUST
     // throw a DomainException before the INSERT.
     expect(fn () => Document::query()->create([
-        'identifier'    => 'MASS-ASSIGN-' . uniqid(),
+        'identifier' => 'MASS-ASSIGN-' . uniqid(),
         'document_type' => 'TEST',
-        'series_id'     => $this->series->id,
+        'series_id' => $this->series->id,
         'repository_id' => $this->repoB->id, // foreign tenant!
-    ]))->toThrow(\DomainException::class, 'Multi-tenant violation');
+    ]))->toThrow(DomainException::class, 'Multi-tenant violation');
 });
 
 test('it forces repository_id to user default on create when omitted', function () {
@@ -191,9 +190,9 @@ test('it forces repository_id to user default on create when omitted', function 
 
     $identifier = 'DEFAULT-' . uniqid();
     $doc = Document::query()->create([
-        'identifier'    => $identifier,
+        'identifier' => $identifier,
         'document_type' => 'TEST',
-        'series_id'     => $this->series->id,
+        'series_id' => $this->series->id,
         // no repository_id provided
     ]);
 
@@ -215,9 +214,9 @@ test('admin can write to any repository on create', function () {
 
     // Admin creating a Document in repo B — must succeed.
     $doc = Document::query()->create([
-        'identifier'    => 'ADMIN-CROSS-' . uniqid(),
+        'identifier' => 'ADMIN-CROSS-' . uniqid(),
         'document_type' => 'TEST',
-        'series_id'     => $this->series->id,
+        'series_id' => $this->series->id,
         'repository_id' => $this->repoB->id,
     ]);
 
@@ -241,10 +240,10 @@ test('admin can write to any repository on create', function () {
 function createBatchInRepository(int $repositoryId, int $batchNumber): Batch
 {
     return Batch::withoutGlobalScope(RepositoryScope::class)->forceCreate([
-        'batch_number'  => $batchNumber,
-        'type'          => 'MAIN_COLLECTION',
+        'batch_number' => $batchNumber,
+        'type' => 'MAIN_COLLECTION',
         'repository_id' => $repositoryId,
-        'is_active'     => true,
+        'is_active' => true,
     ]);
 }
 
@@ -254,11 +253,11 @@ function createBatchInRepository(int $repositoryId, int $batchNumber): Batch
 function createBoxInBatch(int $batchId, string $boxNumber): Box
 {
     return Box::withoutGlobalScope(ThroughBatchRepositoryScope::class)->create([
-        'box_type'       => 'RAS',
-        'box_number'     => $boxNumber,
-        'batch_id'       => $batchId,
+        'box_type' => 'RAS',
+        'box_number' => $boxNumber,
+        'batch_id' => $batchId,
         'barcode_status' => 'IN',
-        'is_legacy'      => false,
+        'is_legacy' => false,
     ]);
 }
 
@@ -299,18 +298,18 @@ test('non-admin user cannot read a BoxMovement from another tenant', function ()
 
     // Create movements as super-user (no scope active because unauthenticated)
     $movementA = BoxMovement::withoutGlobalScope(ThroughBoxBatchRepositoryScope::class)->create([
-        'document_id'   => $this->docA1->id,
-        'from_box_id'   => null,
-        'to_box_id'     => $boxA->id,
+        'document_id' => $this->docA1->id,
+        'from_box_id' => null,
+        'to_box_id' => $boxA->id,
         'movement_date' => now(),
-        'reason'        => 'test-fixture',
+        'reason' => 'test-fixture',
     ]);
     $movementB = BoxMovement::withoutGlobalScope(ThroughBoxBatchRepositoryScope::class)->create([
-        'document_id'   => $this->docB1->id,
-        'from_box_id'   => null,
-        'to_box_id'     => $boxB->id,
+        'document_id' => $this->docB1->id,
+        'from_box_id' => null,
+        'to_box_id' => $boxB->id,
         'movement_date' => now(),
-        'reason'        => 'test-fixture',
+        'reason' => 'test-fixture',
     ]);
 
     $editor = User::factory()->create(['email' => 'movement.scope+' . uniqid() . '@test.local']);

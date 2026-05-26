@@ -4,12 +4,12 @@ namespace App\Models;
 
 use App\Models\Concerns\BelongsToRepository;
 use App\Models\Concerns\BelongsToRepository;
+use App\Models\Concerns\BelongsToRepository;
 use Illuminate\Database\Eloquent\Factories\HasFactory;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
 use Illuminate\Database\Eloquent\Relations\HasMany;
 use Illuminate\Database\Eloquent\SoftDeletes;
-use App\Models\Concerns\BelongsToRepository;
 use OwenIt\Auditing\Auditable;
 use OwenIt\Auditing\Contracts\Auditable as AuditableContract;
 
@@ -18,12 +18,12 @@ class Accession extends Model implements AuditableContract
     use Auditable;
     use Auditable;
     use Auditable;
+    use Auditable;
+    use BelongsToRepository;
     use BelongsToRepository;
     use BelongsToRepository;
     use HasFactory;
     use SoftDeletes;
-    use Auditable;
-    use BelongsToRepository;
 
     /**
      * `repository_id` is mass-assignable so Filament admins can write it via
@@ -31,7 +31,7 @@ class Accession extends Model implements AuditableContract
      * gate: it validates the value against the user's pivot and throws for
      * any non-privileged attempt to write to a foreign tenant.
      *
-     * @see \App\Models\Concerns\BelongsToRepository
+     * @see BelongsToRepository
      */
     protected $fillable = [
         'code', 'accession_date', 'authority_id', 'batch_id', 'repository_id', 'notes',

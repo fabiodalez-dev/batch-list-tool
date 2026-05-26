@@ -2,7 +2,6 @@
 
 declare(strict_types=1);
 
-use App\Filament\Resources\DocumentResource;
 use App\Filament\Resources\DocumentResource\Pages\ListDocuments;
 use App\Filament\Widgets\DocumentsPerBatchChart;
 use App\Filament\Widgets\DocumentsPerSeriesChart;
@@ -19,12 +18,16 @@ use App\Models\Scopes\RepositoryScope;
 use App\Models\Series;
 use App\Models\User;
 use Database\Seeders\DemoDataSeeder;
+use Filament\Widgets\StatsOverviewWidget\Stat;
+use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Foundation\Testing\DatabaseTransactions;
 use Illuminate\Support\Facades\Artisan;
 use Illuminate\Support\Facades\Cache;
 use Livewire\Livewire;
 use OwenIt\Auditing\Models\Audit;
 use Spatie\Permission\Models\Role;
+use Symfony\Component\HttpFoundation\StreamedResponse;
+use Symfony\Component\HttpKernel\Exception\HttpException;
 
 /**
  * PR #11 — Dashboard widgets, demo seeder, export action.
@@ -39,7 +42,6 @@ use Spatie\Permission\Models\Role;
  *     RepositoryScope at fixture-creation time and then act as the right
  *     user to exercise the scope.
  */
-
 uses(DatabaseTransactions::class);
 
 /* -------------------------------------------------------------------------
@@ -72,9 +74,9 @@ function makeSeries(string $code = 'TST'): Series
 function makeDocument(int $repoId, int $seriesId, array $attrs = []): Document
 {
     return Document::withoutGlobalScope(RepositoryScope::class)->create(array_merge([
-        'identifier'    => 'DOC-' . substr(uniqid(), -8),
+        'identifier' => 'DOC-' . substr(uniqid(), -8),
         'document_type' => 'TEST',
-        'series_id'     => $seriesId,
+        'series_id' => $seriesId,
         'repository_id' => $repoId,
     ], $attrs));
 }
@@ -82,10 +84,10 @@ function makeDocument(int $repoId, int $seriesId, array $attrs = []): Document
 function makeBatch(int $repoId, int $batchNumber, array $attrs = []): Batch
 {
     return Batch::withoutGlobalScope(RepositoryScope::class)->create(array_merge([
-        'batch_number'  => $batchNumber,
-        'type'          => $batchNumber <= 29 ? 'MAIN_COLLECTION' : 'NOTARY_ACCESSION',
+        'batch_number' => $batchNumber,
+        'type' => $batchNumber <= 29 ? 'MAIN_COLLECTION' : 'NOTARY_ACCESSION',
         'repository_id' => $repoId,
-        'is_active'     => true,
+        'is_active' => true,
     ], $attrs));
 }
 
@@ -93,10 +95,11 @@ function adminUser(): User
 {
     ensureRolesExist();
     $u = User::factory()->create([
-        'email'     => 'admin+' . uniqid() . '@test.local',
+        'email' => 'admin+' . uniqid() . '@test.local',
         'is_active' => true,
     ]);
     $u->assignRole('admin');
+
     return $u;
 }
 
@@ -104,12 +107,13 @@ function editorUserIn(Repository $repo): User
 {
     ensureRolesExist();
     $u = User::factory()->create([
-        'email'                 => 'editor+' . uniqid() . '@test.local',
-        'is_active'             => true,
+        'email' => 'editor+' . uniqid() . '@test.local',
+        'is_active' => true,
         'default_repository_id' => $repo->id,
     ]);
     $u->assignRole('editor');
     $u->repositories()->attach($repo->id, ['is_default' => true]);
+
     return $u;
 }
 
@@ -136,7 +140,7 @@ test('Documents stat returns expected count', function () {
 
     $this->actingAs(adminUser());
 
-    $widget = new StatsOverviewWidget();
+    $widget = new StatsOverviewWidget;
     $reflection = (new ReflectionClass($widget))->getMethod('computeStats');
     $reflection->setAccessible(true);
     $stats = $reflection->invoke($widget);
@@ -177,7 +181,7 @@ test('Pending disinfestation stat counts only NULL disinfestation_date and non-P
     // Act as an editor scoped to the same repo
     $this->actingAs(editorUserIn($repo));
 
-    $widget = new StatsOverviewWidget();
+    $widget = new StatsOverviewWidget;
     $m = (new ReflectionClass($widget))->getMethod('computeStats');
     $m->setAccessible(true);
     $stats = $m->invoke($widget);
@@ -200,7 +204,7 @@ test('Pending disinfestation stat respects multi-tenant scope', function () {
 
     $this->actingAs(editorUserIn($repoA));
 
-    $widget = new StatsOverviewWidget();
+    $widget = new StatsOverviewWidget;
     $m = (new ReflectionClass($widget))->getMethod('computeStats');
     $m->setAccessible(true);
     $stats = $m->invoke($widget);
@@ -218,16 +222,15 @@ test('Stat color is warning when pending > 0 and success when zero', function ()
 
     $this->actingAs(editorUserIn($repo));
 
-    $widget = new StatsOverviewWidget();
+    $widget = new StatsOverviewWidget;
     $m = (new ReflectionClass($widget))->getMethod('getStats');
     $m->setAccessible(true);
 
     Cache::flush();
     $stats = $m->invoke($widget);
 
-    /** @var \Filament\Widgets\StatsOverviewWidget\Stat $pendingCard */
-    $pendingCard = collect($stats)->first(fn ($s) =>
-        str_contains(strtolower((string) $s->getLabel()), 'pending'));
+    /** @var Stat $pendingCard */
+    $pendingCard = collect($stats)->first(fn ($s) => str_contains(strtolower((string) $s->getLabel()), 'pending'));
     expect($pendingCard)->not->toBeNull();
 
     $colorProp = (new ReflectionClass($pendingCard))->getProperty('color');
@@ -240,10 +243,9 @@ test('Stat color is warning when pending > 0 and success when zero', function ()
         ->update(['disinfestation_date' => now()]);
     Cache::flush();
 
-    $widget2 = new StatsOverviewWidget();
+    $widget2 = new StatsOverviewWidget;
     $stats2 = $m->invoke($widget2);
-    $pending2 = collect($stats2)->first(fn ($s) =>
-        str_contains(strtolower((string) $s->getLabel()), 'pending'));
+    $pending2 = collect($stats2)->first(fn ($s) => str_contains(strtolower((string) $s->getLabel()), 'pending'));
     expect($colorProp->getValue($pending2))->toBe('success');
 });
 
@@ -261,7 +263,7 @@ test('DocumentsPerSeriesChart returns data keyed by series code', function () {
 
     $this->actingAs(adminUser());
 
-    $widget = new DocumentsPerSeriesChart();
+    $widget = new DocumentsPerSeriesChart;
     $m = (new ReflectionClass($widget))->getMethod('getData');
     $m->setAccessible(true);
     $data = $m->invoke($widget);
@@ -295,7 +297,7 @@ test('DocumentsPerBatchChart top-15 ordering (descending by count)', function ()
 
     $this->actingAs(adminUser());
 
-    $widget = new DocumentsPerBatchChart();
+    $widget = new DocumentsPerBatchChart;
     $widget->filter = 'all';
     $m = (new ReflectionClass($widget))->getMethod('getData');
     $m->setAccessible(true);
@@ -315,7 +317,7 @@ test('DocumentsPerBatchChart filter "wills" returns only batch 50', function () 
     $series = makeSeries('W');
 
     $wills = makeBatch($repo->id, Batch::WILLS_BATCH);
-    $main  = makeBatch($repo->id, 7);
+    $main = makeBatch($repo->id, 7);
 
     makeDocument($repo->id, $series->id, ['batch_id' => $wills->id]);
     makeDocument($repo->id, $series->id, ['batch_id' => $wills->id]);
@@ -323,7 +325,7 @@ test('DocumentsPerBatchChart filter "wills" returns only batch 50', function () 
 
     $this->actingAs(adminUser());
 
-    $widget = new DocumentsPerBatchChart();
+    $widget = new DocumentsPerBatchChart;
     $widget->filter = 'wills';
     $m = (new ReflectionClass($widget))->getMethod('getData');
     $m->setAccessible(true);
@@ -407,10 +409,10 @@ test('Recent activity respects multi-tenant scope (editor cannot see audits for 
     // Act as editor in repoA only
     $this->actingAs(editorUserIn($repoA));
 
-    $widget = new RecentActivityWidget();
+    $widget = new RecentActivityWidget;
     $m = (new ReflectionClass($widget))->getMethod('scopedAuditQuery');
     $m->setAccessible(true);
-    /** @var \Illuminate\Database\Eloquent\Builder $q */
+    /** @var Builder $q */
     $q = $m->invoke($widget);
 
     $ids = $q->get(['auditable_id', 'auditable_type'])
@@ -429,7 +431,7 @@ test('Recent activity respects multi-tenant scope (editor cannot see audits for 
  * Helper: invoke exportToCsv() through a fully-booted Livewire component
  * (so getFilteredTableQuery() works) and capture the streamed body + response.
  *
- * @return array{0: \Symfony\Component\HttpFoundation\StreamedResponse, 1: string}
+ * @return array{0: StreamedResponse, 1: string}
  */
 function captureCsvExport(?callable $configure = null): array
 {
@@ -586,13 +588,13 @@ test('DemoDataSeeder does NOT create new Documents/Authorities/Series', function
 
     $beforeDocs = Document::query()->withoutGlobalScope(RepositoryScope::class)->count();
     $beforeAuth = Authority::query()->count();
-    $beforeSer  = Series::query()->count();
+    $beforeSer = Series::query()->count();
 
     Artisan::call('db:seed', ['--class' => DemoDataSeeder::class, '--force' => true]);
 
     $afterDocs = Document::query()->withoutGlobalScope(RepositoryScope::class)->count();
     $afterAuth = Authority::query()->count();
-    $afterSer  = Series::query()->count();
+    $afterSer = Series::query()->count();
 
     expect($afterDocs)->toBe($beforeDocs);
     expect($afterAuth)->toBe($beforeAuth);
@@ -620,7 +622,7 @@ test('it rejects CSV export for users without view_any_document permission', fun
     // Build a user with NO roles → no `view_any_document` permission.
     ensureRolesExist();
     $unauthorized = User::factory()->create([
-        'email'     => 'noperm+' . uniqid() . '@test.local',
+        'email' => 'noperm+' . uniqid() . '@test.local',
         'is_active' => true,
     ]);
 
@@ -640,17 +642,17 @@ test('it rejects CSV export for users without view_any_document permission', fun
     // We instantiate the page directly (no Livewire boot, since the page
     // would otherwise refuse to mount). This is the most reliable way to
     // assert the method-level guard in isolation.
-    $page = new ListDocuments();
+    $page = new ListDocuments;
 
     expect(fn () => $page->exportToCsv())
-        ->toThrow(\Symfony\Component\HttpKernel\Exception\HttpException::class, 'Not authorized');
+        ->toThrow(HttpException::class, 'Not authorized');
 
     // Cross-check: same call from an authorized admin returns a StreamedResponse,
     // proving the guard is not blocking everyone unconditionally.
     $this->actingAs(adminUser());
     $page2 = Livewire::test(ListDocuments::class)->instance();
     expect($page2->exportToCsv())->toBeInstanceOf(
-        \Symfony\Component\HttpFoundation\StreamedResponse::class
+        StreamedResponse::class
     );
 });
 
@@ -677,7 +679,7 @@ test('it sanitizes CSV formula injection in document fields', function () {
     foreach ($payloads as $identifierToken => $notesPayload) {
         makeDocument($repo->id, $series->id, [
             'identifier' => $identifierToken,
-            'notes'      => $notesPayload,
+            'notes' => $notesPayload,
         ]);
     }
 
@@ -685,7 +687,7 @@ test('it sanitizes CSV formula injection in document fields', function () {
     $idPayload = '=HYPERLINK("http://malicious.example/")';
     makeDocument($repo->id, $series->id, [
         'identifier' => $idPayload,
-        'notes'      => 'plain safe text',
+        'notes' => 'plain safe text',
     ]);
 
     $this->actingAs(adminUser());

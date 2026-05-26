@@ -9,7 +9,6 @@ declare(strict_types=1);
  * We hit the homepage (`/`) — already returning 200 via the default welcome
  * route — and inspect the response headers.
  */
-
 test('response includes X-Content-Type-Options: nosniff', function () {
     $response = $this->get('/');
 

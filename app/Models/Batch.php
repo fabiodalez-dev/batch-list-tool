@@ -4,12 +4,12 @@ namespace App\Models;
 
 use App\Models\Concerns\BelongsToRepository;
 use App\Models\Concerns\BelongsToRepository;
+use App\Models\Concerns\BelongsToRepository;
 use Illuminate\Database\Eloquent\Factories\HasFactory;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
 use Illuminate\Database\Eloquent\Relations\HasMany;
 use Illuminate\Database\Eloquent\SoftDeletes;
-use App\Models\Concerns\BelongsToRepository;
 use OwenIt\Auditing\Auditable;
 use OwenIt\Auditing\Contracts\Auditable as AuditableContract;
 
@@ -18,12 +18,12 @@ class Batch extends Model implements AuditableContract
     use Auditable;
     use Auditable;
     use Auditable;
+    use Auditable;
+    use BelongsToRepository;
     use BelongsToRepository;
     use BelongsToRepository;
     use HasFactory;
     use SoftDeletes;
-    use Auditable;
-    use BelongsToRepository;
 
     /** Reserved batch numbers — cannot be used (RFQ rule #1) */
     public const FORBIDDEN_NUMBERS = [33, 34, 36];
@@ -40,7 +40,7 @@ class Batch extends Model implements AuditableContract
      * gate: it validates the value against the user's pivot and throws for
      * any non-privileged attempt to write to a foreign tenant.
      *
-     * @see \App\Models\Concerns\BelongsToRepository
+     * @see BelongsToRepository
      */
     protected $fillable = [
         'batch_number', 'description', 'type', 'repository_id', 'is_active',

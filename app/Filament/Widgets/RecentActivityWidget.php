@@ -4,12 +4,26 @@ declare(strict_types=1);
 
 namespace App\Filament\Widgets;
 
+use App\Filament\Resources\AccessionResource;
+use App\Filament\Resources\AuthorityResource;
+use App\Filament\Resources\BatchResource;
+use App\Filament\Resources\BoxResource;
+use App\Filament\Resources\DocumentResource;
+use App\Filament\Resources\RepositoryResource;
+use App\Filament\Resources\SeriesResource;
+use App\Models\Accession;
+use App\Models\Authority;
+use App\Models\Batch;
+use App\Models\Box;
 use App\Models\Document;
+use App\Models\Repository;
+use App\Models\Series;
 use App\Models\User;
 use Filament\Tables;
 use Filament\Tables\Table;
 use Filament\Widgets\TableWidget as BaseWidget;
 use Illuminate\Database\Eloquent\Builder;
+use Illuminate\Database\Eloquent\Model;
 use Illuminate\Support\Str;
 use OwenIt\Auditing\Models\Audit;
 
@@ -30,7 +44,7 @@ class RecentActivityWidget extends BaseWidget
 
     protected static ?string $heading = 'Recent Activity';
 
-    protected int | string | array $columnSpan = 'full';
+    protected int|string|array $columnSpan = 'full';
 
     public function table(Table $table): Table
     {
@@ -117,17 +131,18 @@ class RecentActivityWidget extends BaseWidget
 
         /** @var User|null $user */
         $user = User::query()->find($audit->user_id);
+
         return $user?->name ?? ('User #' . $audit->user_id);
     }
 
     protected function describeAudit(Audit $audit): string
     {
         $verb = match ($audit->event) {
-            'created'  => 'created',
-            'updated'  => 'updated',
-            'deleted'  => 'deleted',
+            'created' => 'created',
+            'updated' => 'updated',
+            'deleted' => 'deleted',
             'restored' => 'restored',
-            default    => $audit->event ?? 'modified',
+            default => $audit->event ?? 'modified',
         };
 
         $modelLabel = class_basename($audit->auditable_type ?? 'Record');
@@ -145,7 +160,7 @@ class RecentActivityWidget extends BaseWidget
         }
 
         try {
-            /** @var \Illuminate\Database\Eloquent\Model|null $model */
+            /** @var Model|null $model */
             $model = $type::query()->find($id);
         } catch (\Throwable) {
             return '#' . $id;
@@ -160,6 +175,7 @@ class RecentActivityWidget extends BaseWidget
                 return (string) $model->{$attr};
             }
         }
+
         return '#' . $id;
     }
 
@@ -172,13 +188,13 @@ class RecentActivityWidget extends BaseWidget
 
         // Map model class → Filament resource URL if available.
         $resourceMap = [
-            \App\Models\Document::class   => \App\Filament\Resources\DocumentResource::class,
-            \App\Models\Authority::class  => \App\Filament\Resources\AuthorityResource::class,
-            \App\Models\Batch::class      => \App\Filament\Resources\BatchResource::class,
-            \App\Models\Box::class        => \App\Filament\Resources\BoxResource::class,
-            \App\Models\Series::class     => \App\Filament\Resources\SeriesResource::class,
-            \App\Models\Accession::class  => \App\Filament\Resources\AccessionResource::class,
-            \App\Models\Repository::class => \App\Filament\Resources\RepositoryResource::class,
+            Document::class => DocumentResource::class,
+            Authority::class => AuthorityResource::class,
+            Batch::class => BatchResource::class,
+            Box::class => BoxResource::class,
+            Series::class => SeriesResource::class,
+            Accession::class => AccessionResource::class,
+            Repository::class => RepositoryResource::class,
         ];
 
         $resource = $resourceMap[$type] ?? null;

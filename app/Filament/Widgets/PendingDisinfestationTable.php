@@ -12,6 +12,7 @@ use Filament\Tables\Actions\Action;
 use Filament\Tables\Table;
 use Filament\Widgets\TableWidget as BaseWidget;
 use Illuminate\Database\Eloquent\Builder;
+use Illuminate\Support\Facades\Cache;
 
 /**
  * Top-10 documents waiting for fumigation. Each row has a "Mark disinfested"
@@ -28,7 +29,7 @@ class PendingDisinfestationTable extends BaseWidget
 
     protected static ?string $heading = 'Pending disinfestation — action required';
 
-    protected int | string | array $columnSpan = 'full';
+    protected int|string|array $columnSpan = 'full';
 
     public function table(Table $table): Table
     {
@@ -72,8 +73,8 @@ class PendingDisinfestationTable extends BaseWidget
                     ->badge()
                     ->color(fn (string $state): string => match (true) {
                         (int) $state > 30 => 'danger',
-                        (int) $state > 7  => 'warning',
-                        default           => 'gray',
+                        (int) $state > 7 => 'warning',
+                        default => 'gray',
                     })
                     ->alignEnd(),
             ])
@@ -83,8 +84,7 @@ class PendingDisinfestationTable extends BaseWidget
                     ->icon('heroicon-m-shield-check')
                     ->color('success')
                     ->modalHeading('Mark document as disinfested')
-                    ->modalDescription(fn (Document $record): string =>
-                        "Set the disinfestation date for {$record->identifier}.")
+                    ->modalDescription(fn (Document $record): string => "Set the disinfestation date for {$record->identifier}.")
                     ->form([
                         Forms\Components\DatePicker::make('disinfestation_date')
                             ->label('Disinfestation date')
@@ -133,11 +133,11 @@ class PendingDisinfestationTable extends BaseWidget
         $user = auth()->user();
         $uid = $user?->getKey() ?? 'guest';
 
-        \Illuminate\Support\Facades\Cache::forget("dashboard:chart:series:u={$uid}");
-        \Illuminate\Support\Facades\Cache::forget("dashboard:chart:batch:u={$uid}:f=all");
-        \Illuminate\Support\Facades\Cache::forget("dashboard:chart:batch:u={$uid}:f=main_collection");
-        \Illuminate\Support\Facades\Cache::forget("dashboard:chart:batch:u={$uid}:f=notary_accessions");
-        \Illuminate\Support\Facades\Cache::forget("dashboard:chart:batch:u={$uid}:f=wills");
+        Cache::forget("dashboard:chart:series:u={$uid}");
+        Cache::forget("dashboard:chart:batch:u={$uid}:f=all");
+        Cache::forget("dashboard:chart:batch:u={$uid}:f=main_collection");
+        Cache::forget("dashboard:chart:batch:u={$uid}:f=notary_accessions");
+        Cache::forget("dashboard:chart:batch:u={$uid}:f=wills");
 
         // Stats key embeds admin flag + repo ids — recompute the same shape.
         $admin = ($user && method_exists($user, 'hasAnyRole') && $user->hasAnyRole(['super_admin', 'admin'])) ? '1' : '0';
@@ -149,6 +149,6 @@ class PendingDisinfestationTable extends BaseWidget
             $ids = $ids->push($user->default_repository_id);
         }
         $idsStr = $ids->unique()->values()->implode(',');
-        \Illuminate\Support\Facades\Cache::forget("dashboard:stats:u={$uid}:a={$admin}:r={$idsStr}");
+        Cache::forget("dashboard:stats:u={$uid}:a={$admin}:r={$idsStr}");
     }
 }

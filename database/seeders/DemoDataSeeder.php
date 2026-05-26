@@ -123,12 +123,12 @@ class DemoDataSeeder extends Seeder
             }
 
             BoxMovement::create([
-                'document_id'   => $doc->id,
-                'from_box_id'   => $doc->current_box_id,
-                'to_box_id'     => $toBoxId,
+                'document_id' => $doc->id,
+                'from_box_id' => $doc->current_box_id,
+                'to_box_id' => $toBoxId,
                 'movement_date' => now()->subDays($created + 1),
-                'reason'        => 'demo:dashboard_seed',
-                'user_id'       => User::query()->orderBy('id')->value('id'),
+                'reason' => 'demo:dashboard_seed',
+                'user_id' => User::query()->orderBy('id')->value('id'),
             ]);
             $created++;
         }

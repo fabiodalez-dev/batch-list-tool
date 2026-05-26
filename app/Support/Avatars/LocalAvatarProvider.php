@@ -18,7 +18,7 @@ use Laravolt\Avatar\Facade as Avatar;
  */
 class LocalAvatarProvider implements AvatarProvider
 {
-    public function get(Model | Authenticatable $record): string
+    public function get(Model|Authenticatable $record): string
     {
         $name = (string) ($record->name ?? $record->email ?? 'User');
 
