@@ -10,8 +10,10 @@ use Illuminate\Database\Eloquent\Relations\HasMany;
 use Illuminate\Database\Eloquent\SoftDeletes;
 use OwenIt\Auditing\Auditable;
 use OwenIt\Auditing\Contracts\Auditable as AuditableContract;
+use Spatie\EloquentSortable\Sortable;
+use Spatie\EloquentSortable\SortableTrait;
 
-class Box extends Model implements AuditableContract
+class Box extends Model implements AuditableContract, Sortable
 {
     use Auditable;
     use ConditionallyPreloadsRelations;
@@ -22,10 +24,23 @@ class Box extends Model implements AuditableContract
     // Filament Resource for Box should filter on batch.repository_id manually if needed.
 
     public const TYPES = ['RAS', 'IN_SITU', 'NRA', 'MAV', 'STVC'];
+
     public const LEGACY_TYPES = ['MAV', 'STVC'];                  // RFQ rule #4
+
     public const BARCODE_STATUSES = ['IN', 'OUT', 'PERM_OUT'];
 
+    /**
+     * Boxes are ordered WITHIN their batch — sort_order is unique per batch_id,
+     * not globally. The override below scopes the sort query so renumbering
+     * one batch does not touch another. Index in migration: (batch_id, sort_order).
+     */
+    public array $sortable = [
+        'order_column_name' => 'sort_order',
+        'sort_when_creating' => true,
+    ];
+
     protected $fillable = [
+        'sort_order',
         'box_type', 'box_number', 'batch_id', 'parent_box_id',
         'barcode', 'barcode_status', 'disinfestation_date',
         'is_legacy', 'notes',
@@ -35,6 +50,16 @@ class Box extends Model implements AuditableContract
         'disinfestation_date' => 'date',
         'is_legacy' => 'boolean',
     ];
+
+    /**
+     * Scope sort_order computation to siblings inside the same batch.
+     * Without this override the package would compute MAX(sort_order)+1 across
+     * ALL boxes, breaking per-batch ordering.
+     */
+    public function buildSortQuery(): Builder
+    {
+        return static::query()->where('batch_id', $this->batch_id);
+    }
 
     public function batch(): BelongsTo
     {

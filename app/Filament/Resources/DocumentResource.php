@@ -4,6 +4,7 @@ namespace App\Filament\Resources;
 
 use App\Filament\Resources\DocumentResource\Pages;
 use App\Models\Document;
+use App\Models\Repository;
 use Filament\Forms;
 use Filament\Forms\Form;
 use Filament\Resources\Resource;
@@ -234,12 +235,13 @@ class DocumentResource extends Resource
                     ->form([
                         Forms\Components\TextInput::make('value')->label('Search in Volume'),
                     ])
-                    ->query(fn (Builder $q, array $data) =>
-                        $q->when($data['value'] ?? null,
+                    ->query(
+                        fn (Builder $q, array $data) => $q->when(
+                            $data['value'] ?? null,
                             fn ($q, $v) => $q->where(function ($q) use ($v) {
                                 $needle = '%' . trim($v) . '%';
                                 $q->where('volume_label', 'like', $needle)
-                                  ->orWhere('extra->volume', 'like', $needle);
+                                    ->orWhere('extra->volume', 'like', $needle);
                             })
                         )
                     ),
@@ -252,17 +254,20 @@ class DocumentResource extends Resource
                     ])
                     ->query(function (Builder $q, array $data) {
                         return $q
-                            ->when($data['year_from'] ?? null, fn ($q, $v) =>
-                                $q->where(fn ($q) => $q->whereNull('dates_year_end')
-                                                        ->orWhere('dates_year_end', '>=', (int) $v)))
-                            ->when($data['year_to'] ?? null, fn ($q, $v) =>
-                                $q->where(fn ($q) => $q->whereNull('dates_year_start')
-                                                        ->orWhere('dates_year_start', '<=', (int) $v)));
+                            ->when($data['year_from'] ?? null, fn ($q, $v) => $q->where(fn ($q) => $q->whereNull('dates_year_end')
+                                ->orWhere('dates_year_end', '>=', (int) $v)))
+                            ->when($data['year_to'] ?? null, fn ($q, $v) => $q->where(fn ($q) => $q->whereNull('dates_year_start')
+                                ->orWhere('dates_year_start', '<=', (int) $v)));
                     })
                     ->indicateUsing(function (array $data): array {
                         $i = [];
-                        if (! empty($data['year_from'])) $i[] = "Year ≥ {$data['year_from']}";
-                        if (! empty($data['year_to'])) $i[] = "Year ≤ {$data['year_to']}";
+                        if (! empty($data['year_from'])) {
+                            $i[] = "Year ≥ {$data['year_from']}";
+                        }
+                        if (! empty($data['year_to'])) {
+                            $i[] = "Year ≤ {$data['year_to']}";
+                        }
+
                         return $i;
                     }),
 
@@ -274,10 +279,14 @@ class DocumentResource extends Resource
                     ])
                     ->query(function (Builder $q, array $data) {
                         return $q
-                            ->when($data['disinfested_from'] ?? null,
-                                fn ($q, $v) => $q->whereDate('disinfestation_date', '>=', $v))
-                            ->when($data['disinfested_to'] ?? null,
-                                fn ($q, $v) => $q->whereDate('disinfestation_date', '<=', $v));
+                            ->when(
+                                $data['disinfested_from'] ?? null,
+                                fn ($q, $v) => $q->whereDate('disinfestation_date', '>=', $v)
+                            )
+                            ->when(
+                                $data['disinfested_to'] ?? null,
+                                fn ($q, $v) => $q->whereDate('disinfestation_date', '<=', $v)
+                            );
                     }),
 
                 // Ternary filters
@@ -446,5 +455,18 @@ class DocumentResource extends Resource
             'view' => Pages\ViewDocument::route('/{record}'),
             'edit' => Pages\EditDocument::route('/{record}/edit'),
         ];
+    }
+
+    /**
+     * Build a leading-/trailing-wildcard LIKE filter on a single column.
+     * Centralises the form + query shape shared by all "Search in X" filters.
+     */
+    private static function likeFilter(string $name, string $label, ?string $column = null): Filter
+    {
+        $col = $column ?? $name;
+
+        return Filter::make($name)
+            ->form([Forms\Components\TextInput::make('value')->label($label)])
+            ->query(fn (Builder $q, array $data) => $q->when($data['value'] ?? null, fn ($q, $v) => $q->where($col, 'like', '%' . trim($v) . '%')));
     }
 }

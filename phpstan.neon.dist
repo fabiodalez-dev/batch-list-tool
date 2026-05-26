@@ -1,0 +1,39 @@
+includes:
+    - vendor/larastan/larastan/extension.neon
+    - phpstan-baseline.neon
+
+parameters:
+    level: 6
+
+    paths:
+        - app/
+        - database/factories/
+        - database/seeders/
+        - bootstrap/
+
+    excludePaths:
+        # Filament magic types: Resources rely on dynamic Component returns + Builder
+        # callbacks; level 6+ would emit hundreds of "callable expects ... given closure"
+        # noise. Re-include once we move to level 7.
+        - app/Filament/Resources/*Resource.php (?)
+        - app/Filament/Resources/*/Pages/*.php (?)
+        # owen-it Audit model uses dynamic property access for the audit JSON columns
+        - vendor/owen-it/laravel-auditing (?)
+
+    # PHPStan 2.x: missingType.iterableValue + missingType.generics are reported
+    # as identifiers; ignore them globally via ignoreErrors below rather than
+    # legacy `checkMissingIterableValueType` (which 2.x removed).
+    treatPhpDocTypesAsCertain: false
+
+    # Tighten the obvious wins even at level 5
+    reportUnmatchedIgnoredErrors: false
+
+    ignoreErrors:
+        # Eloquent / Collection iterable types — too noisy at level 5 without per-model
+        # generic @method PHPDoc. Re-evaluate at level 7.
+        - identifier: missingType.iterableValue
+        - identifier: missingType.generics
+
+        # spatie/permission HasRoles trait magic methods
+        -
+            message: '#Call to an undefined method App\\Models\\User::(hasRole|hasAnyRole|assignRole|syncRoles|getRoleNames)#'

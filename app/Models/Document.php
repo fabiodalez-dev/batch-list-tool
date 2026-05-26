@@ -11,16 +11,15 @@ use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
 use Illuminate\Database\Eloquent\Relations\BelongsToMany;
 use Illuminate\Database\Eloquent\Relations\HasMany;
-use Illuminate\Database\Eloquent\SoftDeletes;
-use Laravel\Scout\Searchable;
 use OwenIt\Auditing\Auditable;
 use OwenIt\Auditing\Contracts\Auditable as AuditableContract;
+use Spatie\EloquentSortable\Sortable;
 use Spatie\MediaLibrary\HasMedia;
 use Spatie\MediaLibrary\InteractsWithMedia;
 use Spatie\SchemalessAttributes\Casts\SchemalessAttributes;
 use Spatie\Tags\HasTags;
 
-class Document extends Model implements AuditableContract, HasMedia
+class Document extends Model implements AuditableContract, HasMedia, Sortable
 {
     use Auditable;
     use ConditionallyPreloadsRelations;
@@ -63,6 +62,7 @@ class Document extends Model implements AuditableContract, HasMedia
      * @see \App\Models\Concerns\BelongsToRepository
      */
     protected $fillable = [
+        'sort_order',
         // Normalised columns
         'identifier', 'document_type', 'series_id', 'accession_id',
         'current_box_id', 'batch_id', 'repository_id', 'volume_label',
@@ -96,6 +96,24 @@ class Document extends Model implements AuditableContract, HasMedia
         'custom_fields' => 'array',
         'metadata' => 'array',
     ];
+
+    /**
+     * When true, the DocumentBuilder bulk-update guard is suspended so a
+     * caller can intentionally run a query-level update that touches the
+     * `identifier` column (e.g., a one-off back-fill migration where the
+     * audit row is written manually). Always flipped back to false in the
+     * `finally` block of withoutAuditGuards().
+     */
+    private static bool $bypassAuditGuard = false;
+
+    /**
+     * Sort within the current_box. Documents in box A and documents in box B
+     * each have their own 1..N sequence.
+     */
+    public function buildSortQuery(): Builder
+    {
+        return static::query()->where('current_box_id', $this->current_box_id);
+    }
 
     public function series(): BelongsTo
     {
