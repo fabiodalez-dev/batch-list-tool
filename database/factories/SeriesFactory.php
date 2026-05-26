@@ -4,8 +4,11 @@ namespace Database\Factories;
 
 use App\Models\Series;
 use Illuminate\Database\Eloquent\Factories\Factory;
+use Illuminate\Support\Str;
 
-/** @extends Factory<Series> */
+/**
+ * @extends Factory<Series>
+ */
 class SeriesFactory extends Factory
 {
     protected $model = Series::class;
@@ -13,9 +16,9 @@ class SeriesFactory extends Factory
     public function definition(): array
     {
         return [
-            'code' => strtoupper($this->faker->unique()->lexify('???')),
-            'title' => $this->faker->words(3, true),
-            'description' => $this->faker->sentence(),
+            'code' => strtoupper(Str::random(4)),
+            'title' => fake()->words(3, true),
+            'description' => fake()->optional()->sentence(),
             'is_wills_series' => false,
             'is_active' => true,
         ];

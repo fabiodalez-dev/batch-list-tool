@@ -2,13 +2,14 @@
 
 namespace Database\Factories;
 
-use App\Models\Box;
 use App\Models\Document;
 use App\Models\Repository;
 use App\Models\Series;
 use Illuminate\Database\Eloquent\Factories\Factory;
 
-/** @extends Factory<Document> */
+/**
+ * @extends Factory<Document>
+ */
 class DocumentFactory extends Factory
 {
     protected $model = Document::class;
@@ -16,18 +17,12 @@ class DocumentFactory extends Factory
     public function definition(): array
     {
         return [
-            'identifier' => 'R' . $this->faker->unique()->numberBetween(1, 99999),
-            'document_type' => 'register',
+            'identifier' => 'R' . fake()->unique()->numberBetween(1, 99999),
+            'document_type' => 'Register',
             'series_id' => Series::factory(),
             'repository_id' => Repository::factory(),
-            'current_box_id' => null,   // tests that need a box opt-in
-            'batch_id' => null,
             'volume_label' => null,
+            'notes' => fake()->optional()->sentence(),
         ];
-    }
-
-    public function inBox(?Box $box = null): static
-    {
-        return $this->state(fn () => ['current_box_id' => ($box ?? Box::factory())->id]);
     }
 }

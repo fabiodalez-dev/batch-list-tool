@@ -2,6 +2,7 @@
 
 namespace App\Models;
 
+use App\Models\Builders\DocumentBuilder;
 use App\Models\Concerns\BelongsToRepository;
 use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Database\Eloquent\Factories\HasFactory;
@@ -10,6 +11,7 @@ use Illuminate\Database\Eloquent\Relations\BelongsTo;
 use Illuminate\Database\Eloquent\Relations\BelongsToMany;
 use Illuminate\Database\Eloquent\Relations\HasMany;
 use Illuminate\Database\Eloquent\SoftDeletes;
+use Illuminate\Support\Collection;
 use Laravel\Scout\Searchable;
 use OwenIt\Auditing\Auditable;
 use OwenIt\Auditing\Contracts\Auditable as AuditableContract;
@@ -31,9 +33,6 @@ class Document extends Model implements AuditableContract, HasMedia, Sortable
     use SoftDeletes;
     use SortableTrait;
 
-    /**
-     * Documents are ordered WITHIN their current_box (catalogue sequence).
-     */
     public array $sortable = [
         'order_column_name' => 'sort_order',
         'sort_when_creating' => true,
@@ -84,6 +83,15 @@ class Document extends Model implements AuditableContract, HasMedia, Sortable
         'custom_fields' => 'array',
         'metadata' => 'array',
     ];
+
+    /**
+     * When true, the DocumentBuilder bulk-update guard is suspended so a
+     * caller can intentionally run a query-level update that touches the
+     * `identifier` column (e.g., a one-off back-fill migration where the
+     * audit row is written manually). Always flipped back to false in the
+     * `finally` block of withoutAuditGuards().
+     */
+    private static bool $bypassAuditGuard = false;
 
     /**
      * Sort within the current_box. Documents in box A and documents in box B
@@ -137,6 +145,28 @@ class Document extends Model implements AuditableContract, HasMedia, Sortable
     }
 
     /**
+     * Chronological identifier-change log for this document (newest first).
+     */
+    public function identifierHistory(): HasMany
+    {
+        return $this->hasMany(DocumentIdentifierHistory::class)
+            ->orderByDesc('changed_at');
+    }
+
+    /**
+     * Distinct list of previous_identifier values from the history, useful for
+     * surfacing "also known as" labels and feeding the global search index.
+     */
+    public function previousIdentifiers(): Collection
+    {
+        return $this->identifierHistory()
+            ->pluck('previous_identifier')
+            ->filter(fn ($v) => $v !== null && $v !== '')
+            ->unique()
+            ->values();
+    }
+
+    /**
      * F-011 alignment: this MUST mirror the attributes exposed in
      * DocumentResource::getGloballySearchableAttributes() so that swapping
      * Scout drivers (database / Meilisearch / Algolia) does not change
@@ -167,5 +197,69 @@ class Document extends Model implements AuditableContract, HasMedia, Sortable
                 'application/pdf',
                 'image/jpeg', 'image/png', 'image/tiff',
             ]);
+    }
+
+    /**
+     * Wire Eloquent up to our custom DocumentBuilder so that bulk
+     * `Document::query()->update([...])` calls go through the audit guard.
+     */
+    public function newEloquentBuilder($query): DocumentBuilder
+    {
+        return new DocumentBuilder($query);
+    }
+
+    /**
+     * Run a callback with the DocumentBuilder bulk-update guard temporarily
+     * suspended. Intended for genuinely needed back-fill migrations where
+     * the caller takes responsibility for recording the audit rows.
+     *
+     * Example:
+     *   Document::withoutAuditGuards(function () use ($ids, $newId) {
+     *       Document::query()->whereIn('id', $ids)->update(['identifier' => $newId]);
+     *       // ... and now manually insert into document_identifier_history
+     *   });
+     *
+     * @template T
+     *
+     * @param callable(): T $callback
+     * @return T
+     */
+    public static function withoutAuditGuards(callable $callback): mixed
+    {
+        static::$bypassAuditGuard = true;
+
+        try {
+            return $callback();
+        } finally {
+            static::$bypassAuditGuard = false;
+        }
+    }
+
+    /**
+     * Used by DocumentBuilder to decide whether to enforce the bulk-update
+     * guard on the `identifier` column.
+     */
+    public static function shouldBypassAuditGuard(): bool
+    {
+        return static::$bypassAuditGuard;
+    }
+
+    /**
+     * Override performUpdate so single-model `save()` calls bypass the
+     * DocumentBuilder bulk-update guard. Per-instance saves DO fire the
+     * `updating`/`updated` events that DocumentObserver hooks into, so the
+     * identifier-history audit trail is preserved — only the guard, which
+     * exists for query-level bulk updates, must be temporarily suspended.
+     */
+    protected function performUpdate(Builder $query)
+    {
+        $previous = static::$bypassAuditGuard;
+        static::$bypassAuditGuard = true;
+
+        try {
+            return parent::performUpdate($query);
+        } finally {
+            static::$bypassAuditGuard = $previous;
+        }
     }
 }
