@@ -364,7 +364,6 @@ class DocumentResource extends Resource
     {
         return [
             DocumentResource\RelationManagers\IdentifierHistoryRelationManager::class,
-            DocumentResource\RelationManagers\FlagsRelationManager::class,
         ];
     }
 

@@ -31,7 +31,7 @@ uses(RefreshDatabase::class);
 /**
  * Build a Document without triggering the per-tenant global scope concerns.
  */
-function makeDocument(array $overrides = []): Document
+function makeDocumentForHistory(array $overrides = []): Document
 {
     return Document::factory()->create($overrides);
 }
@@ -77,7 +77,7 @@ test('model exposes the correct fillable and casts', function () {
 
 // 3 ---------------------------------------------------------------------------
 test('observer records a history row when identifier changes on update', function () {
-    $doc = makeDocument(['identifier' => 'R1']);
+    $doc = makeDocumentForHistory(['identifier' => 'R1']);
 
     $doc->update(['identifier' => 'R1-new']);
 
@@ -89,7 +89,7 @@ test('observer records a history row when identifier changes on update', functio
 
 // 4 ---------------------------------------------------------------------------
 test('observer does NOT record when identifier is unchanged', function () {
-    $doc = makeDocument(['identifier' => 'R2']);
+    $doc = makeDocumentForHistory(['identifier' => 'R2']);
 
     $doc->update(['notes' => 'unrelated change']);
 
@@ -99,7 +99,7 @@ test('observer does NOT record when identifier is unchanged', function () {
 
 // 5 ---------------------------------------------------------------------------
 test('observer does NOT record on initial create', function () {
-    $doc = makeDocument(['identifier' => 'R3']);
+    $doc = makeDocumentForHistory(['identifier' => 'R3']);
 
     expect(DocumentIdentifierHistory::where('document_id', $doc->id)->count())
         ->toBe(0);
@@ -107,7 +107,7 @@ test('observer does NOT record on initial create', function () {
 
 // 6 ---------------------------------------------------------------------------
 test('whitespace-only identifier change is ignored', function () {
-    $doc = makeDocument(['identifier' => 'R4']);
+    $doc = makeDocumentForHistory(['identifier' => 'R4']);
 
     $doc->update(['identifier' => '  R4  ']);
 
@@ -117,7 +117,7 @@ test('whitespace-only identifier change is ignored', function () {
 
 // 7 ---------------------------------------------------------------------------
 test('multiple identifier changes produce multiple rows in chronological order', function () {
-    $doc = makeDocument(['identifier' => 'R5']);
+    $doc = makeDocumentForHistory(['identifier' => 'R5']);
 
     $doc->update(['identifier' => 'R5-a']);
     $doc->refresh();
@@ -136,7 +136,7 @@ test('multiple identifier changes produce multiple rows in chronological order',
 // 8 ---------------------------------------------------------------------------
 test('recordChange() uses auth user id when userId is null', function () {
     $user = User::factory()->create();
-    $doc = makeDocument();
+    $doc = makeDocumentForHistory();
     // After PR #7 hardening, BelongsToRepository::creating validates that the
     // authenticated user can write into the target repository. Attach the
     // doc's repository to the test user so the cross-tenant guard passes.
@@ -153,7 +153,7 @@ test('recordChange() uses auth user id when userId is null', function () {
 test('recordChange() respects explicit userId argument', function () {
     $authUser = User::factory()->create();
     $explicitUser = User::factory()->create();
-    $doc = makeDocument();
+    $doc = makeDocumentForHistory();
     // See test #8 — auth user needs repo access for the creating hook to pass.
     $authUser->repositories()->attach($doc->repository_id);
 
@@ -172,7 +172,7 @@ test('recordChange() respects explicit userId argument', function () {
 // 10 --------------------------------------------------------------------------
 test('repository_id on the history row is copied from the parent document', function () {
     $repo = Repository::factory()->create();
-    $doc = makeDocument(['repository_id' => $repo->id, 'identifier' => 'R10']);
+    $doc = makeDocumentForHistory(['repository_id' => $repo->id, 'identifier' => 'R10']);
 
     $doc->update(['identifier' => 'R10-new']);
 
@@ -182,7 +182,7 @@ test('repository_id on the history row is copied from the parent document', func
 
 // 11 --------------------------------------------------------------------------
 test('deleting a document cascades and removes its identifier history', function () {
-    $doc = makeDocument(['identifier' => 'R11']);
+    $doc = makeDocumentForHistory(['identifier' => 'R11']);
     $doc->update(['identifier' => 'R11-new']);
     expect(DocumentIdentifierHistory::where('document_id', $doc->id)->count())->toBe(1);
 
@@ -215,8 +215,8 @@ test('multi-tenant scope: history rows are filtered by the user repository', fun
     $repoA = Repository::factory()->create();
     $repoB = Repository::factory()->create();
 
-    $docA = makeDocument(['repository_id' => $repoA->id, 'identifier' => 'A1']);
-    $docB = makeDocument(['repository_id' => $repoB->id, 'identifier' => 'B1']);
+    $docA = makeDocumentForHistory(['repository_id' => $repoA->id, 'identifier' => 'A1']);
+    $docB = makeDocumentForHistory(['repository_id' => $repoB->id, 'identifier' => 'B1']);
 
     $docA->update(['identifier' => 'A1-new']);
     $docB->update(['identifier' => 'B1-new']);
@@ -236,7 +236,7 @@ test('audit trail: inserting a history row triggers an owen-it Audit record', fu
     // for this assertion so we can prove the audit pipeline is wired up.
     config(['audit.console' => true]);
 
-    $doc = makeDocument(['identifier' => 'R15']);
+    $doc = makeDocumentForHistory(['identifier' => 'R15']);
 
     Audit::query()->delete(); // clean slate for the assertion
 
@@ -248,7 +248,7 @@ test('audit trail: inserting a history row triggers an owen-it Audit record', fu
 
 // 16 --------------------------------------------------------------------------
 test('reason field is optional and persists when provided', function () {
-    $doc = makeDocument();
+    $doc = makeDocumentForHistory();
 
     $row = DocumentIdentifierHistory::recordChange($doc, 'X', 'Y');
     expect($row->reason)->toBeNull();
@@ -259,7 +259,7 @@ test('reason field is optional and persists when provided', function () {
 
 // 17 --------------------------------------------------------------------------
 test('changed_at defaults to "now" when not provided explicitly', function () {
-    $doc = makeDocument();
+    $doc = makeDocumentForHistory();
 
     $before = now()->subSecond();
     $row = DocumentIdentifierHistory::recordChange($doc, 'A', 'B');
@@ -290,7 +290,7 @@ test('factory generates valid persistable records', function () {
 
 // 20 --------------------------------------------------------------------------
 test('previousIdentifiers() returns distinct values only', function () {
-    $doc = makeDocument(['identifier' => 'R20']);
+    $doc = makeDocumentForHistory(['identifier' => 'R20']);
 
     // Manually insert duplicates of the same previous identifier.
     DocumentIdentifierHistory::recordChange($doc, 'R20-old', 'R20');
@@ -305,7 +305,7 @@ test('previousIdentifiers() returns distinct values only', function () {
 
 // 21 --------------------------------------------------------------------------
 test('identifierHistory relation is ordered descending by changed_at', function () {
-    $doc = makeDocument();
+    $doc = makeDocumentForHistory();
 
     $a = DocumentIdentifierHistory::factory()
         ->backDatedTo(now()->subDays(10))
@@ -326,7 +326,7 @@ test('identifierHistory relation is ordered descending by changed_at', function 
 // 22 --------------------------------------------------------------------------
 test('null -> null transition is skipped by the observer', function () {
     // Force a document with a null identifier (we bypass model validation here).
-    $doc = makeDocument(['identifier' => 'R22']);
+    $doc = makeDocumentForHistory(['identifier' => 'R22']);
 
     // Simulate the observer directly with both values null.
     $observer = new DocumentObserver;
@@ -347,7 +347,7 @@ test('history row is created with the authenticated user when present', function
 
     $this->actingAs($user);
 
-    $doc = makeDocument(['identifier' => 'R23', 'repository_id' => $repo->id]);
+    $doc = makeDocumentForHistory(['identifier' => 'R23', 'repository_id' => $repo->id]);
     $doc->update(['identifier' => 'R23-new']);
 
     $row = DocumentIdentifierHistory::where('document_id', $doc->id)->first();
@@ -359,7 +359,7 @@ test('history row is created with the authenticated user when present', function
 // 24 --------------------------------------------------------------------------
 test('history row falls back to null user when no auth context', function () {
     auth()->logout();
-    $doc = makeDocument(['identifier' => 'R24']);
+    $doc = makeDocumentForHistory(['identifier' => 'R24']);
     $doc->update(['identifier' => 'R24-new']);
 
     $row = DocumentIdentifierHistory::where('document_id', $doc->id)->first();
@@ -368,7 +368,7 @@ test('history row falls back to null user when no auth context', function () {
 
 // 25 --------------------------------------------------------------------------
 test('Document model exposes identifierHistory() returning a HasMany', function () {
-    $doc = makeDocument();
+    $doc = makeDocumentForHistory();
     $rel = $doc->identifierHistory();
 
     expect($rel)->toBeInstanceOf(HasMany::class);
@@ -380,14 +380,14 @@ test('Document model exposes identifierHistory() returning a HasMany', function 
 // ---------------------------------------------------------------------------
 
 it('blocks bulk identifier updates with a LogicException by default', function () {
-    $doc = makeDocument(['identifier' => 'R1']);
+    $doc = makeDocumentForHistory(['identifier' => 'R1']);
     expect(fn () => Document::query()->where('id', $doc->id)->update(['identifier' => 'R1-NEW']))
         ->toThrow(LogicException::class, 'Bulk update of Document.identifier is forbidden');
 });
 
 // 27 --------------------------------------------------------------------------
 it('allows bulk identifier updates inside withoutAuditGuards()', function () {
-    $doc = makeDocument(['identifier' => 'R1']);
+    $doc = makeDocumentForHistory(['identifier' => 'R1']);
     Document::withoutAuditGuards(function () use ($doc) {
         Document::query()->where('id', $doc->id)->update(['identifier' => 'R1-NEW']);
     });
@@ -396,7 +396,7 @@ it('allows bulk identifier updates inside withoutAuditGuards()', function () {
 
 // 28 --------------------------------------------------------------------------
 it('allows bulk updates that do not touch identifier (e.g., notes-only)', function () {
-    $doc = makeDocument(['notes' => 'old']);
+    $doc = makeDocumentForHistory(['notes' => 'old']);
     Document::query()->where('id', $doc->id)->update(['notes' => 'new']);
     expect(Document::find($doc->id)->notes)->toBe('new');
 });

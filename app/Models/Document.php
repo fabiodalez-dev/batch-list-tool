@@ -151,37 +151,10 @@ class Document extends Model implements AuditableContract, HasMedia, Sortable
     }
 
     /**
-     * All issue flags ever raised against this document — newest first.
-     *
-     * RFQ §3.1.12 — structured replacement for the legacy spreadsheet
-     * colour-coding. See {@see DocumentFlag}.
-     */
-    public function flags(): HasMany
-    {
-        return $this->hasMany(DocumentFlag::class)->latest('flagged_at');
-    }
-
-    /**
-     * Only the flags that still need attention (`open` + `acknowledged`).
-     * Used by the Document detail page, the alerts dashboard, and the
-     * search-index summary built by {@see self::toSearchableArray()}.
-     */
-    public function openFlags(): HasMany
-    {
-        return $this->flags()->open();
-    }
-
-    /**
      * F-011 alignment: this MUST mirror the attributes exposed in
      * DocumentResource::getGloballySearchableAttributes() so that swapping
      * Scout drivers (database / Meilisearch / Algolia) does not change
      * which fields the user sees in global search.
-     *
-     * The trailing `flag_tokens` field is a space-separated list of
-     * `flag:<type>` tokens (one per open flag) so an operator searching
-     * for "flag:duplicate_suspect" lands on every document with an open
-     * duplicate-suspect flag. Closed (resolved/dismissed) flags are not
-     * indexed — they're noise once handled.
      */
     public function toSearchableArray(): array
     {
@@ -198,10 +171,6 @@ class Document extends Model implements AuditableContract, HasMedia, Sortable
             'series_title' => $this->series?->title,
             'authorities_surnames' => $this->authorities()->pluck('surname')->implode(' '),
             'authorities_idents' => $this->authorities()->pluck('identifier')->implode(' '),
-            'flag_tokens' => $this->openFlags()
-                ->pluck('type')
-                ->map(fn (string $t): string => 'flag:' . $t)
-                ->implode(' '),
         ];
     }
 
