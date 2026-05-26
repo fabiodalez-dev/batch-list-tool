@@ -262,6 +262,64 @@ describe('FULLTEXT search', function () {
         // Empty term → no filter → full table count.
         expect($count)->toBeGreaterThan(0);
     });
+
+    it('throws InvalidArgumentException for non-whitelisted columns', function () {
+        // `barcode_in` is a legitimate column on `documents`, but it is NOT
+        // part of FULLTEXT_COLUMNS — passing it to scopeSearchFullText
+        // must throw immediately rather than producing a MySQL error at
+        // execution time (or, worse, silently scanning the wrong index).
+        expect(fn () => Document::query()->searchFullText('foo', ['barcode_in']))
+            ->toThrow(\InvalidArgumentException::class);
+
+        // The exception message must enumerate both the whitelist and the
+        // offending columns so the operator can fix the call-site fast.
+        try {
+            Document::query()->searchFullText('foo', ['barcode_in']);
+            // Unreachable — the previous line throws.
+            expect(true)->toBeFalse();
+        } catch (\InvalidArgumentException $e) {
+            expect($e->getMessage())->toContain('barcode_in');
+            expect($e->getMessage())->toContain('notes');
+        }
+    });
+
+    it('short-circuits on terms shorter than min token size', function () {
+        // Seed 3 docs so the baseline count is non-zero and visible to
+        // the assertion. Their contents are irrelevant — the scope must
+        // return the unfiltered builder for any term shorter than 3 chars,
+        // which means the count after .searchFullText() equals the count
+        // before it.
+        makeFtDocument(['notes' => 'register entry one']);
+        makeFtDocument(['notes' => 'register entry two']);
+        makeFtDocument(['notes' => 'unrelated']);
+
+        $baseline = Document::query()->count();
+        expect($baseline)->toBe(3);
+
+        DB::enableQueryLog();
+        DB::flushQueryLog();
+
+        // "R7" is 2 chars → below InnoDB's default min_token_size (3).
+        $filtered = Document::query()->searchFullText('R7', ['notes'])->count();
+
+        $queries = collect(DB::getQueryLog());
+        DB::disableQueryLog();
+
+        // 1. The filter is a no-op: count equals the unfiltered baseline.
+        expect($filtered)->toBe($baseline);
+
+        // 2. No MATCH (...) AGAINST and no LIKE '%R7%' should have been
+        //    issued — only the bare COUNT(*) from the assertion above.
+        $hasFulltextOrLike = $queries->contains(function ($q) {
+            $sql = strtolower($q['query']);
+            return str_contains($sql, 'match')
+                || str_contains($sql, 'against')
+                || str_contains($sql, 'like ?')
+                || str_contains($sql, "like '%r7%'");
+        });
+
+        expect($hasFulltextOrLike)->toBeFalse();
+    });
 });
 
 // =============================================================================

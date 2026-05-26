@@ -40,15 +40,13 @@ return new class extends Migration
 
         // ---- authorities ----
         // The schema only ships with `notes` on authorities; the "practice"
-        // column lives on documents. We guard with hasColumn() anyway so the
-        // migration is resilient to a future column rename / drop.
+        // column lives on documents (already covered by the FULLTEXT index
+        // on documents.notes/deeds/museum_reference above). We guard with
+        // hasColumn() so the migration is resilient to a future column
+        // rename / drop on the authorities side.
         Schema::table('authorities', function (Blueprint $table) {
             if (Schema::hasColumn('authorities', 'notes')) {
                 $table->fullText('notes', 'idx_authorities_notes_ft');
-            }
-
-            if (Schema::hasColumn('authorities', 'practice')) {
-                $table->fullText('practice', 'idx_authorities_practice_ft');
             }
         });
     }
@@ -68,10 +66,6 @@ return new class extends Migration
         Schema::table('authorities', function (Blueprint $table) {
             if (Schema::hasColumn('authorities', 'notes')) {
                 $table->dropFullText('idx_authorities_notes_ft');
-            }
-
-            if (Schema::hasColumn('authorities', 'practice')) {
-                $table->dropFullText('idx_authorities_practice_ft');
             }
         });
     }

@@ -41,6 +41,18 @@ class Document extends Model implements AuditableContract, HasMedia
     private static bool $bypassAuditGuard = false;
 
     /**
+     * Whitelist of columns that {@see scopeSearchFullText()} is allowed to
+     * search. Kept as a class constant so callers (Filament filters, API
+     * endpoints, tests) can introspect it and so a typo at the call-site
+     * fails fast with an InvalidArgumentException instead of generating a
+     * MySQL error about a missing FULLTEXT index at query time.
+     *
+     * Must stay in sync with the FULLTEXT indexes created by
+     * database/migrations/2026_05_25_190000_add_fulltext_indexes_to_searchable_tables.php.
+     */
+    public const FULLTEXT_COLUMNS = ['notes', 'deeds', 'museum_reference'];
+
+    /**
      * `repository_id` is mass-assignable so Filament admins (who legitimately
      * pick a target tenant from the Repository Select) can write it through
      * `create()` — but the BelongsToRepository `creating` hook is the security
@@ -264,19 +276,62 @@ class Document extends Model implements AuditableContract, HasMedia
      * composes with `where(...)->searchFullText(...)->where(...)` chains
      * without leaking an OR into the outer WHERE group.
      *
-     * @param  array<int, string>  $columns
+     * ## MySQL FULLTEXT quirks operators should know about
+     *
+     * - **Minimum token size.** InnoDB defaults to `innodb_ft_min_token_size = 3`:
+     *   terms shorter than 3 characters silently match *nothing*. We short-circuit
+     *   below that threshold to avoid issuing a useless query and to make the
+     *   "empty result" obvious to the caller instead of being a silent miss.
+     * - **Stopword list.** The default English InnoDB stopword list drops common
+     *   words such as `will`, `the`, `of`, `an`, `is`, `was`. A FULLTEXT search
+     *   for "will" against an Italian/Maltese notarial dataset returns zero rows.
+     * - **Not for identifiers.** Identifier-like searches ("R7", "R12") MUST go
+     *   through the B-tree index on `documents.identifier`; this scope is the
+     *   wrong tool for short codes (see min-token-size note). The Filament
+     *   resource keeps identifier lookups on the B-tree column.
+     * - **Production tuning for IT/MT corpora.** For the NRA archive in
+     *   production we recommend `innodb_ft_min_token_size = 2` and disabling
+     *   the English stopword list at the MySQL server level (`my.cnf` →
+     *   `innodb_ft_enable_stopword = OFF` or a custom stopword table). Changes
+     *   to these settings require a rebuild of the FULLTEXT indexes
+     *   (`OPTIMIZE TABLE documents` after the restart).
+     *
+     * @param  array<int, string>  $columns  Must be a subset of {@see self::FULLTEXT_COLUMNS}.
+     *
+     * @throws \InvalidArgumentException when $columns contains a non-whitelisted column.
      */
     public function scopeSearchFullText(
         Builder $query,
         string $term,
         array $columns = ['notes', 'deeds', 'museum_reference'],
     ): Builder {
+        // Whitelist check — fail fast on typos / SQL-injection attempts via
+        // user-controlled column names. We compare against the canonical
+        // FULLTEXT_COLUMNS constant; callers may pass any subset of it.
+        $invalid = array_diff($columns, self::FULLTEXT_COLUMNS);
+        if ($invalid !== []) {
+            throw new \InvalidArgumentException(
+                'scopeSearchFullText: columns must be a subset of '
+                . implode(',', self::FULLTEXT_COLUMNS)
+                . '; got: ' . implode(',', $invalid)
+            );
+        }
+
         $term = trim($term);
 
         // Empty term → no-op, returning the unchanged builder lets callers
         // chain ->searchFullText($value) inside a ->when() with no extra
         // guard (Filament's filter ->query() callback expects exactly this).
         if ($term === '' || $columns === []) {
+            return $query;
+        }
+
+        // Short-circuit on terms shorter than MySQL's default minimum token
+        // size (3 chars). Hitting MySQL with such a term would silently
+        // return an empty set and waste a round-trip; returning the
+        // unmodified builder makes the no-op visible to the caller and
+        // gives identical results between MySQL and the SQLite fallback.
+        if (mb_strlen($term) < 3) {
             return $query;
         }
 
