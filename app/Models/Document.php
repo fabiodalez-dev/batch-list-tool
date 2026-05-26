@@ -9,20 +9,22 @@ use Illuminate\Database\Eloquent\Relations\BelongsTo;
 use Illuminate\Database\Eloquent\Relations\BelongsToMany;
 use Illuminate\Database\Eloquent\Relations\HasMany;
 use Illuminate\Database\Eloquent\SoftDeletes;
+use Illuminate\Support\Collection;
 use Laravel\Scout\Searchable;
 use OwenIt\Auditing\Auditable;
 use OwenIt\Auditing\Contracts\Auditable as AuditableContract;
+use Spatie\EloquentSortable\Sortable;
+use Spatie\EloquentSortable\SortableTrait;
 use Spatie\MediaLibrary\HasMedia;
 use Spatie\MediaLibrary\InteractsWithMedia;
 use Spatie\SchemalessAttributes\Casts\SchemalessAttributes;
 use Spatie\Tags\HasTags;
 
-class Document extends Model implements AuditableContract, HasMedia
+class Document extends Model implements AuditableContract, HasMedia, Sortable
 {
-    use HasFactory;
-    use SoftDeletes;
     use Auditable;
-    use Searchable;
+    use BelongsToRepository;  // RFQ §3.5.1 — multi-tenant scope
+    use HasFactory;
     use HasTags;
     use InteractsWithMedia;
     use BelongsToRepository;  // RFQ §3.5.1 — multi-tenant scope
@@ -38,6 +40,7 @@ class Document extends Model implements AuditableContract, HasMedia
      * @see \App\Models\Concerns\BelongsToRepository
      */
     protected $fillable = [
+        'sort_order',
         // Normalised columns
         'identifier', 'document_type', 'series_id', 'accession_id',
         'current_box_id', 'batch_id', 'repository_id', 'volume_label',
@@ -71,6 +74,24 @@ class Document extends Model implements AuditableContract, HasMedia
         'custom_fields' => 'array',
         'metadata' => 'array',
     ];
+
+    /**
+     * When true, the DocumentBuilder bulk-update guard is suspended so a
+     * caller can intentionally run a query-level update that touches the
+     * `identifier` column (e.g., a one-off back-fill migration where the
+     * audit row is written manually). Always flipped back to false in the
+     * `finally` block of withoutAuditGuards().
+     */
+    private static bool $bypassAuditGuard = false;
+
+    /**
+     * Sort within the current_box. Documents in box A and documents in box B
+     * each have their own 1..N sequence.
+     */
+    public function buildSortQuery(): Builder
+    {
+        return static::query()->where('current_box_id', $this->current_box_id);
+    }
 
     public function series(): BelongsTo
     {
@@ -145,5 +166,69 @@ class Document extends Model implements AuditableContract, HasMedia
                 'application/pdf',
                 'image/jpeg', 'image/png', 'image/tiff',
             ]);
+    }
+
+    /**
+     * Wire Eloquent up to our custom DocumentBuilder so that bulk
+     * `Document::query()->update([...])` calls go through the audit guard.
+     */
+    public function newEloquentBuilder($query): DocumentBuilder
+    {
+        return new DocumentBuilder($query);
+    }
+
+    /**
+     * Run a callback with the DocumentBuilder bulk-update guard temporarily
+     * suspended. Intended for genuinely needed back-fill migrations where
+     * the caller takes responsibility for recording the audit rows.
+     *
+     * Example:
+     *   Document::withoutAuditGuards(function () use ($ids, $newId) {
+     *       Document::query()->whereIn('id', $ids)->update(['identifier' => $newId]);
+     *       // ... and now manually insert into document_identifier_history
+     *   });
+     *
+     * @template T
+     *
+     * @param callable(): T $callback
+     * @return T
+     */
+    public static function withoutAuditGuards(callable $callback): mixed
+    {
+        static::$bypassAuditGuard = true;
+
+        try {
+            return $callback();
+        } finally {
+            static::$bypassAuditGuard = false;
+        }
+    }
+
+    /**
+     * Used by DocumentBuilder to decide whether to enforce the bulk-update
+     * guard on the `identifier` column.
+     */
+    public static function shouldBypassAuditGuard(): bool
+    {
+        return static::$bypassAuditGuard;
+    }
+
+    /**
+     * Override performUpdate so single-model `save()` calls bypass the
+     * DocumentBuilder bulk-update guard. Per-instance saves DO fire the
+     * `updating`/`updated` events that DocumentObserver hooks into, so the
+     * identifier-history audit trail is preserved — only the guard, which
+     * exists for query-level bulk updates, must be temporarily suspended.
+     */
+    protected function performUpdate(Builder $query)
+    {
+        $previous = static::$bypassAuditGuard;
+        static::$bypassAuditGuard = true;
+
+        try {
+            return parent::performUpdate($query);
+        } finally {
+            static::$bypassAuditGuard = $previous;
+        }
     }
 }

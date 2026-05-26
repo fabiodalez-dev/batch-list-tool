@@ -2,6 +2,7 @@
 
 namespace App\Models;
 
+use App\Models\Scopes\ThroughBoxBatchRepositoryScope;
 use Illuminate\Database\Eloquent\Factories\HasFactory;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
@@ -10,8 +11,8 @@ use OwenIt\Auditing\Contracts\Auditable as AuditableContract;
 
 class BoxMovement extends Model implements AuditableContract
 {
-    use HasFactory;
     use Auditable;
+    use HasFactory;
 
     protected $fillable = [
         'document_id', 'from_box_id', 'to_box_id', 'movement_date', 'reason', 'user_id',
