@@ -16,10 +16,9 @@ return Application::configure(basePath: dirname(__DIR__))
             \Bepsvpt\SecureHeaders\SecureHeadersMiddleware::class,
             \Spatie\Csp\AddCspHeaders::class,
         ]);
-        // Idempotency on POST/PUT/PATCH/DELETE to prevent double-submit duplicates
-        $middleware->alias([
-            'idempotency' => \Sobhanatar\Idempotency\Middleware\Idempotency::class,
-        ]);
+        // Idempotency middleware alias removed — sobhanatar/idempotency not yet
+        // installed. Re-add `composer require sobhanatar/idempotency` first,
+        // then restore the alias and apply it to the write routes that need it.
     })
     ->withExceptions(function (Exceptions $exceptions) {
         //
