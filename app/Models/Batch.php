@@ -12,9 +12,9 @@ use OwenIt\Auditing\Contracts\Auditable as AuditableContract;
 
 class Batch extends Model implements AuditableContract
 {
+    use Auditable;
     use HasFactory;
     use SoftDeletes;
-    use Auditable;
 
     /** Reserved batch numbers — cannot be used (RFQ rule #1) */
     public const FORBIDDEN_NUMBERS = [33, 34, 36];
