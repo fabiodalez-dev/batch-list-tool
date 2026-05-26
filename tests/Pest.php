@@ -88,6 +88,10 @@ function bl_shieldPermissionNames(): array
         }
     }
 
+    // Custom (non-Shield-default) permission gating DocumentFlag workflow
+    // transitions; mirrored from InitialDataSeeder.
+    $names[] = 'resolve_document_flag';
+
     return $names;
 }
 
@@ -132,7 +136,8 @@ function bl_seedShieldPermissions(): void
             ->filter(fn ($p) => str_starts_with($p, 'view_')
                 || str_starts_with($p, 'create_')
                 || str_starts_with($p, 'update_')
-                || str_starts_with($p, 'reorder_'))
+                || str_starts_with($p, 'reorder_')
+                || $p === 'resolve_document_flag')
             ->all()
     );
 

@@ -47,11 +47,18 @@ class InitialDataSeeder extends Seeder
             Permission::firstOrCreate(['name' => "{$op}_report", 'guard_name' => 'web']);
         }
 
+        // Custom (non-Shield-default) permission: gates the workflow
+        // transitions on DocumentFlag (acknowledge / resolve / dismiss)
+        // separately from generic `update_document_flag`, so reviewers can
+        // be allowed to close flags without editing their content.
+        // See FlagsRelationManager::userCanResolve() and DocumentFlagPolicy.
+        Permission::firstOrCreate(['name' => 'resolve_document_flag', 'guard_name' => 'web']);
+
         // Assign Shield-generated permissions per role (admin = all; editor = view+create+update; viewer = view only)
         $allPerms = Permission::pluck('name')->all();
         $admin->syncPermissions($allPerms);
         $editor->syncPermissions(
-            collect($allPerms)->filter(fn ($p) => str_starts_with($p, 'view_') || str_starts_with($p, 'create_') || str_starts_with($p, 'update_') || str_starts_with($p, 'reorder_'))->all()
+            collect($allPerms)->filter(fn ($p) => str_starts_with($p, 'view_') || str_starts_with($p, 'create_') || str_starts_with($p, 'update_') || str_starts_with($p, 'reorder_') || $p === 'resolve_document_flag')->all()
         );
         $viewer->syncPermissions(
             collect($allPerms)->filter(fn ($p) => str_starts_with($p, 'view_'))->all()
