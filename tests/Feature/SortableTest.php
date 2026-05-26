@@ -4,6 +4,9 @@ use App\Models\Batch;
 use App\Models\Box;
 use App\Models\Document;
 use App\Models\Series;
+use Illuminate\Foundation\Testing\RefreshDatabase;
+
+uses(RefreshDatabase::class);
 
 it('assigns sort_order = MAX+1 within a batch when a Box is created', function () {
     $batch = Batch::factory()->create();
