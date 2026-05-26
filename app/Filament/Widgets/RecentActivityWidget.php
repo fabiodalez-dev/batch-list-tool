@@ -19,6 +19,7 @@ use App\Models\Document;
 use App\Models\Repository;
 use App\Models\Series;
 use App\Models\User;
+use Filament\Actions\Action;
 use Filament\Tables;
 use Filament\Tables\Table;
 use Filament\Widgets\TableWidget as BaseWidget;
@@ -85,7 +86,7 @@ class RecentActivityWidget extends BaseWidget
                     ->sortable(),
             ])
             ->actions([
-                Tables\Actions\Action::make('open')
+                Action::make('open')
                     ->label('Open')
                     ->icon('heroicon-m-arrow-top-right-on-square')
                     ->color('gray')

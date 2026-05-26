@@ -3,9 +3,14 @@
 namespace App\Filament\Resources\DocumentResource\RelationManagers;
 
 use App\Models\DocumentFlag;
+use Filament\Actions\Action;
+use Filament\Actions\CreateAction;
+use Filament\Actions\EditAction;
+use Filament\Actions\ViewAction;
 use Filament\Forms;
-use Filament\Forms\Form;
 use Filament\Resources\RelationManagers\RelationManager;
+use Filament\Schemas;
+use Filament\Schemas\Schema;
 use Filament\Tables;
 use Filament\Tables\Filters\SelectFilter;
 use Filament\Tables\Table;
@@ -35,10 +40,10 @@ class FlagsRelationManager extends RelationManager
 
     protected static ?string $recordTitleAttribute = 'title';
 
-    public function form(Form $form): Form
+    public function form(Schema $schema): Schema
     {
-        return $form->schema([
-            Forms\Components\Grid::make(2)->schema([
+        return $schema->schema([
+            Schemas\Components\Grid::make(2)->schema([
                 Forms\Components\Select::make('type')
                     ->options(self::typeOptions())
                     ->required()
@@ -151,7 +156,7 @@ class FlagsRelationManager extends RelationManager
                     ->multiple(),
             ])
             ->headerActions([
-                Tables\Actions\CreateAction::make()
+                CreateAction::make()
                     ->visible(fn (): bool => static::userCanCreate())
                     ->mutateFormDataUsing(function (array $data): array {
                         $owner = $this->getOwnerRecord();
@@ -167,12 +172,12 @@ class FlagsRelationManager extends RelationManager
                     }),
             ])
             ->actions([
-                Tables\Actions\ViewAction::make(),
+                ViewAction::make(),
 
-                Tables\Actions\EditAction::make()
+                EditAction::make()
                     ->visible(fn (DocumentFlag $record): bool => $record->isOpen() && static::userCanUpdate()),
 
-                Tables\Actions\Action::make('acknowledge')
+                Action::make('acknowledge')
                     ->label('Acknowledge')
                     ->icon('heroicon-o-eye')
                     ->color('info')
@@ -180,7 +185,7 @@ class FlagsRelationManager extends RelationManager
                     ->requiresConfirmation()
                     ->action(fn (DocumentFlag $record) => $record->markAcknowledged(auth()->user())),
 
-                Tables\Actions\Action::make('resolve')
+                Action::make('resolve')
                     ->label('Mark resolved')
                     ->icon('heroicon-o-check-circle')
                     ->color('success')
@@ -197,7 +202,7 @@ class FlagsRelationManager extends RelationManager
                         $data['resolution_notes'] ?? null,
                     )),
 
-                Tables\Actions\Action::make('dismiss')
+                Action::make('dismiss')
                     ->label('Dismiss')
                     ->icon('heroicon-o-x-circle')
                     ->color('gray')

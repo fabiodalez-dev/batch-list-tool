@@ -2,9 +2,11 @@
 
 namespace App\Filament\Resources\DocumentResource\RelationManagers;
 
+use Filament\Actions\CreateAction;
+use Filament\Actions\ViewAction;
 use Filament\Forms;
-use Filament\Forms\Form;
 use Filament\Resources\RelationManagers\RelationManager;
+use Filament\Schemas\Schema;
 use Filament\Tables;
 use Filament\Tables\Filters\Filter;
 use Filament\Tables\Table;
@@ -28,9 +30,9 @@ class SealNumberHistoryRelationManager extends RelationManager
 
     protected static ?string $recordTitleAttribute = 'previous_seal_number';
 
-    public function form(Form $form): Form
+    public function form(Schema $schema): Schema
     {
-        return $form->schema([
+        return $schema->schema([
             Forms\Components\TextInput::make('previous_seal_number')
                 ->required()->maxLength(50),
             Forms\Components\TextInput::make('new_seal_number')->maxLength(50),
@@ -103,7 +105,7 @@ class SealNumberHistoryRelationManager extends RelationManager
                     }),
             ])
             ->headerActions([
-                Tables\Actions\CreateAction::make()
+                CreateAction::make()
                     ->visible(fn (): bool => static::userCanManage())
                     ->mutateFormDataUsing(function (array $data): array {
                         $owner = $this->getOwnerRecord();
@@ -115,7 +117,7 @@ class SealNumberHistoryRelationManager extends RelationManager
                     }),
             ])
             ->actions([
-                Tables\Actions\ViewAction::make(),
+                ViewAction::make(),
             ])
             ->bulkActions([]);
     }

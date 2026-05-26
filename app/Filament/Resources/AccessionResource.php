@@ -5,9 +5,13 @@ namespace App\Filament\Resources;
 use App\Filament\Resources\AccessionResource\Pages;
 use App\Models\Accession;
 use App\Models\Repository;
+use Filament\Actions\BulkActionGroup;
+use Filament\Actions\DeleteBulkAction;
+use Filament\Actions\EditAction;
+use Filament\Actions\ViewAction;
 use Filament\Forms;
-use Filament\Forms\Form;
 use Filament\Resources\Resource;
+use Filament\Schemas\Schema;
 use Filament\Tables;
 use Filament\Tables\Table;
 
@@ -15,17 +19,17 @@ class AccessionResource extends Resource
 {
     protected static ?string $model = Accession::class;
 
-    protected static ?string $navigationIcon = 'heroicon-o-document-plus';
+    protected static string|\BackedEnum|null $navigationIcon = 'heroicon-o-document-plus';
 
-    protected static ?string $navigationGroup = 'Archive';
+    protected static string|\UnitEnum|null $navigationGroup = 'Archive';
 
     protected static ?int $navigationSort = 12;
 
     protected static ?string $recordTitleAttribute = 'code';
 
-    public static function form(Form $form): Form
+    public static function form(Schema $schema): Schema
     {
-        return $form
+        return $schema
             ->schema([
                 Forms\Components\TextInput::make('code')
                     ->required()
@@ -92,12 +96,12 @@ class AccessionResource extends Resource
                 //
             ])
             ->actions([
-                Tables\Actions\ViewAction::make(),
-                Tables\Actions\EditAction::make(),
+                ViewAction::make(),
+                EditAction::make(),
             ])
             ->bulkActions([
-                Tables\Actions\BulkActionGroup::make([
-                    Tables\Actions\DeleteBulkAction::make(),
+                BulkActionGroup::make([
+                    DeleteBulkAction::make(),
                 ]),
             ]);
     }

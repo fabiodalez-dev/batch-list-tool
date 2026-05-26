@@ -5,9 +5,14 @@ namespace App\Filament\Resources;
 use App\Filament\Concerns\AppliesFieldPermissions;
 use App\Filament\Resources\AuthorityResource\Pages;
 use App\Models\Authority;
+use Filament\Actions\BulkActionGroup;
+use Filament\Actions\DeleteBulkAction;
+use Filament\Actions\EditAction;
+use Filament\Actions\ViewAction;
 use Filament\Forms;
-use Filament\Forms\Form;
 use Filament\Resources\Resource;
+use Filament\Schemas;
+use Filament\Schemas\Schema;
 use Filament\Tables;
 use Filament\Tables\Table;
 
@@ -20,19 +25,19 @@ class AuthorityResource extends Resource
 
     protected static ?string $model = Authority::class;
 
-    protected static ?string $navigationIcon = 'heroicon-o-user-circle';
+    protected static string|\BackedEnum|null $navigationIcon = 'heroicon-o-user-circle';
 
-    protected static ?string $navigationGroup = 'Reference';
+    protected static string|\UnitEnum|null $navigationGroup = 'Reference';
 
     protected static ?int $navigationSort = 21;
 
     protected static ?string $recordTitleAttribute = 'surname';
 
-    public static function form(Form $form): Form
+    public static function form(Schema $schema): Schema
     {
-        $g = fn (Forms\Components\Component $c): Forms\Components\Component => self::gateField($c, self::FIELD_PERMISSIONS_KEY);
+        $g = fn (Schemas\Components\Component $c): Schemas\Components\Component => self::gateField($c, self::FIELD_PERMISSIONS_KEY);
 
-        return $form
+        return $schema
             ->schema([
                 $g(Forms\Components\TextInput::make('identifier')
                     ->required()
@@ -96,12 +101,12 @@ class AuthorityResource extends Resource
                 //
             ])
             ->actions([
-                Tables\Actions\ViewAction::make(),
-                Tables\Actions\EditAction::make(),
+                ViewAction::make(),
+                EditAction::make(),
             ])
             ->bulkActions([
-                Tables\Actions\BulkActionGroup::make([
-                    Tables\Actions\DeleteBulkAction::make(),
+                BulkActionGroup::make([
+                    DeleteBulkAction::make(),
                 ]),
             ]);
     }

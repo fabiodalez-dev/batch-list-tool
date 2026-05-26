@@ -6,9 +6,15 @@ use App\Filament\Concerns\AppliesFieldPermissions;
 use App\Filament\Resources\BoxResource\Pages;
 use App\Models\Box;
 use App\Models\Location;
+use Filament\Actions\BulkActionGroup;
+use Filament\Actions\DeleteBulkAction;
+use Filament\Actions\EditAction;
+use Filament\Actions\ViewAction;
 use Filament\Forms;
-use Filament\Forms\Form;
 use Filament\Resources\Resource;
+use Filament\Schemas;
+use Filament\Schemas\Components\Utilities\Get;
+use Filament\Schemas\Schema;
 use Filament\Tables;
 use Filament\Tables\Table;
 
@@ -21,15 +27,15 @@ class BoxResource extends Resource
 
     protected static ?string $model = Box::class;
 
-    protected static ?string $navigationIcon = 'heroicon-o-archive-box';
+    protected static string|\BackedEnum|null $navigationIcon = 'heroicon-o-archive-box';
 
-    protected static ?string $navigationGroup = 'Archive';
+    protected static string|\UnitEnum|null $navigationGroup = 'Archive';
 
     protected static ?int $navigationSort = 13;
 
     protected static ?string $recordTitleAttribute = 'box_number';
 
-    public static function form(Form $form): Form
+    public static function form(Schema $schema): Schema
     {
         // Same wrapping trick as the other resources. NOTE: we do NOT
         // gate `_parent_explicitly_unknown` — it is a transient,
@@ -37,9 +43,9 @@ class BoxResource extends Resource
         // depend on `box_type`, not on role. Gating would force
         // `dehydrated(true)` and break the bulk-import code path that
         // relies on this toggle being absent from the save payload.
-        $g = fn (Forms\Components\Component $c): Forms\Components\Component => self::gateField($c, self::FIELD_PERMISSIONS_KEY);
+        $g = fn (Schemas\Components\Component $c): Schemas\Components\Component => self::gateField($c, self::FIELD_PERMISSIONS_KEY);
 
-        return $form
+        return $schema
             ->schema([
                 $g(Forms\Components\Select::make('box_type')
                     ->options(collect(Box::TYPES)->mapWithKeys(fn ($t) => [$t => $t]))
@@ -79,7 +85,7 @@ class BoxResource extends Resource
                     ->helperText('Only tick this if the RAS box of origin is genuinely unknown — RFQ Appendix-1 rule #3 escape hatch. Use sparingly.')
                     ->dehydrated(false)  // not persisted; control-only field
                     ->default(false)
-                    ->visible(fn (Forms\Get $get) => $get('box_type') === 'IN_SITU'),
+                    ->visible(fn (Get $get) => $get('box_type') === 'IN_SITU'),
                 // `parent_box_id` keeps its own `visible(IN_SITU)` rule —
                 // the gate trait uses `hidden()` (separate channel) so
                 // the two compose without clobbering each other.
@@ -93,9 +99,9 @@ class BoxResource extends Resource
                     ->getOptionLabelFromRecordUsing(fn (Box $r) => "RAS Box #{$r->box_number} (batch " . ($r->batch?->batch_number ?? '?') . ', id ' . $r->id . ')')
                     ->searchable()
                     ->preload()
-                    ->visible(fn (Forms\Get $get) => $get('box_type') === 'IN_SITU')
-                    ->required(fn (Forms\Get $get) => $get('box_type') === 'IN_SITU' && ! $get('_parent_explicitly_unknown'))
-                    ->rule(function (Forms\Get $get) {
+                    ->visible(fn (Get $get) => $get('box_type') === 'IN_SITU')
+                    ->required(fn (Get $get) => $get('box_type') === 'IN_SITU' && ! $get('_parent_explicitly_unknown'))
+                    ->rule(function (Get $get) {
                         return function (string $attribute, $value, \Closure $fail) use ($get) {
                             // Strict enforcement at validation time (defence in depth
                             // vs the ->required() above; covers API/bulk-import paths
@@ -119,11 +125,11 @@ class BoxResource extends Resource
                 // RFQ Appendix-1 rule #2: a record cannot be marked PERM OUT
                 // unless it has a disinfestation_date.
                 $g(Forms\Components\DatePicker::make('disinfestation_date')
-                    ->required(fn (Forms\Get $get) => $get('barcode_status') === 'PERM_OUT')
-                    ->helperText(fn (Forms\Get $get) => $get('barcode_status') === 'PERM_OUT'
+                    ->required(fn (Get $get) => $get('barcode_status') === 'PERM_OUT')
+                    ->helperText(fn (Get $get) => $get('barcode_status') === 'PERM_OUT'
                         ? 'Required when status is PERM OUT (RFQ Appendix-1 rule #2).'
                         : null)
-                    ->rule(function (Forms\Get $get) {
+                    ->rule(function (Get $get) {
                         return function (string $attribute, $value, \Closure $fail) use ($get) {
                             if ($get('barcode_status') === 'PERM_OUT' && empty($value)) {
                                 $fail('Disinfestation date is required when status is PERM OUT (RFQ Appendix-1 rule #2).');
@@ -200,12 +206,12 @@ class BoxResource extends Resource
                 //
             ])
             ->actions([
-                Tables\Actions\ViewAction::make(),
-                Tables\Actions\EditAction::make(),
+                ViewAction::make(),
+                EditAction::make(),
             ])
             ->bulkActions([
-                Tables\Actions\BulkActionGroup::make([
-                    Tables\Actions\DeleteBulkAction::make(),
+                BulkActionGroup::make([
+                    DeleteBulkAction::make(),
                 ]),
             ]);
     }

@@ -7,9 +7,14 @@ use App\Filament\Resources\DocumentResource\Pages;
 use App\Models\Document;
 use App\Models\Location;
 use App\Models\Repository;
+use Filament\Actions\BulkActionGroup;
+use Filament\Actions\DeleteBulkAction;
+use Filament\Actions\EditAction;
+use Filament\Actions\ViewAction;
 use Filament\Forms;
-use Filament\Forms\Form;
 use Filament\Resources\Resource;
+use Filament\Schemas;
+use Filament\Schemas\Schema;
 use Filament\Tables;
 use Filament\Tables\Filters\Filter;
 use Filament\Tables\Filters\SelectFilter;
@@ -30,23 +35,23 @@ class DocumentResource extends Resource
 
     protected static ?string $model = Document::class;
 
-    protected static ?string $navigationIcon = 'heroicon-o-rectangle-stack';
+    protected static string|\BackedEnum|null $navigationIcon = 'heroicon-o-rectangle-stack';
 
-    protected static ?string $navigationGroup = 'Archive';
+    protected static string|\UnitEnum|null $navigationGroup = 'Archive';
 
     protected static ?int $navigationSort = 10;
 
     protected static ?string $recordTitleAttribute = 'identifier';
 
-    public static function form(Form $form): Form
+    public static function form(Schema $schema): Schema
     {
         // Local alias so each gate call stays a one-liner instead of
         // repeating the resource key constant 40+ times.
-        $g = fn (Forms\Components\Component $c): Forms\Components\Component => self::gateField($c, self::FIELD_PERMISSIONS_KEY);
+        $g = fn (Schemas\Components\Component $c): Schemas\Components\Component => self::gateField($c, self::FIELD_PERMISSIONS_KEY);
 
-        return $form
+        return $schema
             ->schema([
-                Forms\Components\Section::make('Identification')
+                Schemas\Components\Section::make('Identification')
                     ->columns(3)
                     ->schema([
                         $g(Forms\Components\TextInput::make('identifier')->required()->maxLength(64)),
@@ -86,7 +91,7 @@ class DocumentResource extends Resource
                         $g(Forms\Components\TextInput::make('deeds')->maxLength(2000)),
                     ]),
 
-                Forms\Components\Section::make('Authorities (Creators)')
+                Schemas\Components\Section::make('Authorities (Creators)')
                     ->schema([
                         // `authorities` is a BelongsToMany relation, not a
                         // column on documents — it has no matrix entry and
@@ -97,7 +102,7 @@ class DocumentResource extends Resource
                             ->searchable()->preload()),
                     ]),
 
-                Forms\Components\Section::make('Current location')
+                Schemas\Components\Section::make('Current location')
                     ->columns(3)
                     ->schema([
                         $g(Forms\Components\Select::make('batch_id')->relationship('batch', 'batch_number')->searchable()->preload()),
@@ -128,7 +133,7 @@ class DocumentResource extends Resource
                             ->helperText('Legacy free-text. New records should use the Location Select above.')),
                     ]),
 
-                Forms\Components\Section::make('Legacy box history (RAS / In Situ)')
+                Schemas\Components\Section::make('Legacy box history (RAS / In Situ)')
                     ->collapsed()
                     ->columns(4)
                     ->schema([
@@ -146,7 +151,7 @@ class DocumentResource extends Resource
                         $g(Forms\Components\TextInput::make('in_situ_box_3_destroyed')->label('In Situ 3 Destroyed?')->maxLength(10)),
                     ]),
 
-                Forms\Components\Section::make('Legacy barcodes & status')
+                Schemas\Components\Section::make('Legacy barcodes & status')
                     ->collapsed()
                     ->columns(4)
                     ->schema([
@@ -166,7 +171,7 @@ class DocumentResource extends Resource
                         $g(Forms\Components\TextInput::make('status_2_alt')->label('Status 2 alt')->maxLength(20)),
                     ]),
 
-                Forms\Components\Section::make('Seal & disinfestation')
+                Schemas\Components\Section::make('Seal & disinfestation')
                     ->columns(4)
                     ->schema([
                         $g(Forms\Components\TextInput::make('seal_number')->maxLength(50)),
@@ -176,7 +181,7 @@ class DocumentResource extends Resource
                         $g(Forms\Components\DatePicker::make('disinfestation_date')->label('Disinfestation (current)')),
                     ]),
 
-                Forms\Components\Section::make('Dates (precise)')
+                Schemas\Components\Section::make('Dates (precise)')
                     ->columns(4)
                     ->schema([
                         $g(Forms\Components\TextInput::make('dates_year_start')->label('Year start')->numeric()),
@@ -185,7 +190,7 @@ class DocumentResource extends Resource
                         $g(Forms\Components\DatePicker::make('dates_end')->label('Date end')),
                     ]),
 
-                Forms\Components\Section::make('Cataloguing extras')
+                Schemas\Components\Section::make('Cataloguing extras')
                     ->collapsed()
                     ->columns(3)
                     ->schema([
@@ -198,7 +203,7 @@ class DocumentResource extends Resource
                         $g(Forms\Components\TextInput::make('museum_reference')->maxLength(500)),
                     ]),
 
-                Forms\Components\Section::make('Notes & custom fields')
+                Schemas\Components\Section::make('Notes & custom fields')
                     ->collapsed()
                     ->schema([
                         $g(Forms\Components\Textarea::make('notes')->columnSpanFull()->rows(3)),
@@ -378,12 +383,12 @@ class DocumentResource extends Resource
                 TrashedFilter::make(),
             ])
             ->actions([
-                Tables\Actions\ViewAction::make(),
-                Tables\Actions\EditAction::make(),
+                ViewAction::make(),
+                EditAction::make(),
             ])
             ->bulkActions([
-                Tables\Actions\BulkActionGroup::make([
-                    Tables\Actions\DeleteBulkAction::make(),
+                BulkActionGroup::make([
+                    DeleteBulkAction::make(),
                 ]),
             ]);
     }

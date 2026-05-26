@@ -2,9 +2,10 @@
 
 namespace App\Filament\Resources\BoxResource\RelationManagers;
 
+use Filament\Actions\ViewAction;
 use Filament\Forms;
-use Filament\Forms\Form;
 use Filament\Resources\RelationManagers\RelationManager;
+use Filament\Schemas\Schema;
 use Filament\Tables;
 use Filament\Tables\Filters\Filter;
 use Filament\Tables\Table;
@@ -28,12 +29,12 @@ class BarcodeHistoryRelationManager extends RelationManager
 
     protected static ?string $recordTitleAttribute = 'previous_barcode';
 
-    public function form(Form $form): Form
+    public function form(Schema $schema): Schema
     {
         // The form schema is required by the RelationManager base class even
         // when no create/edit actions are exposed; we keep it minimal so the
         // ViewAction modal can still render the fields cleanly.
-        return $form->schema([
+        return $schema->schema([
             Forms\Components\TextInput::make('previous_barcode')
                 ->disabled()->maxLength(64),
             Forms\Components\TextInput::make('new_barcode')
@@ -118,7 +119,7 @@ class BarcodeHistoryRelationManager extends RelationManager
             ])
             ->headerActions([])
             ->actions([
-                Tables\Actions\ViewAction::make(),
+                ViewAction::make(),
             ])
             ->bulkActions([]);
     }

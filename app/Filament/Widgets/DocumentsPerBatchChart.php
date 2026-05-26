@@ -27,9 +27,9 @@ class DocumentsPerBatchChart extends ChartWidget
 
     protected static ?int $sort = 4;
 
-    protected static ?string $heading = 'Top 15 Batches by Document Count';
+    protected ?string $heading = 'Top 15 Batches by Document Count';
 
-    protected static ?string $maxHeight = '300px';
+    protected ?string $maxHeight = '300px';
 
     protected int|string|array $columnSpan = 1;
 

@@ -2,9 +2,11 @@
 
 namespace App\Filament\Resources\DocumentResource\RelationManagers;
 
+use Filament\Actions\CreateAction;
+use Filament\Actions\ViewAction;
 use Filament\Forms;
-use Filament\Forms\Form;
 use Filament\Resources\RelationManagers\RelationManager;
+use Filament\Schemas\Schema;
 use Filament\Tables;
 use Filament\Tables\Filters\Filter;
 use Filament\Tables\Table;
@@ -25,9 +27,9 @@ class IdentifierHistoryRelationManager extends RelationManager
 
     protected static ?string $recordTitleAttribute = 'previous_identifier';
 
-    public function form(Form $form): Form
+    public function form(Schema $schema): Schema
     {
-        return $form->schema([
+        return $schema->schema([
             Forms\Components\TextInput::make('previous_identifier')
                 ->required()->maxLength(64),
             Forms\Components\TextInput::make('new_identifier')->maxLength(64),
@@ -100,7 +102,7 @@ class IdentifierHistoryRelationManager extends RelationManager
                     }),
             ])
             ->headerActions([
-                Tables\Actions\CreateAction::make()
+                CreateAction::make()
                     ->visible(fn (): bool => static::userCanManage())
                     ->mutateFormDataUsing(function (array $data): array {
                         $owner = $this->getOwnerRecord();
@@ -112,7 +114,7 @@ class IdentifierHistoryRelationManager extends RelationManager
                     }),
             ])
             ->actions([
-                Tables\Actions\ViewAction::make(),
+                ViewAction::make(),
             ])
             ->bulkActions([]);
     }

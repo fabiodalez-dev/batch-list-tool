@@ -7,10 +7,15 @@ namespace App\Filament\Resources;
 use App\Filament\Resources\LocationResource\Pages;
 use App\Models\Location;
 use App\Models\Repository;
+use Filament\Actions\BulkActionGroup;
+use Filament\Actions\DeleteAction;
+use Filament\Actions\EditAction;
+use Filament\Actions\ViewAction;
 use Filament\Forms;
-use Filament\Forms\Form;
 use Filament\Notifications\Notification;
 use Filament\Resources\Resource;
+use Filament\Schemas;
+use Filament\Schemas\Schema;
 use Filament\Tables;
 use Filament\Tables\Filters\SelectFilter;
 use Filament\Tables\Filters\TernaryFilter;
@@ -38,19 +43,19 @@ class LocationResource extends Resource
 {
     protected static ?string $model = Location::class;
 
-    protected static ?string $navigationIcon = 'heroicon-o-map-pin';
+    protected static string|\BackedEnum|null $navigationIcon = 'heroicon-o-map-pin';
 
-    protected static ?string $navigationGroup = 'Reference data';
+    protected static string|\UnitEnum|null $navigationGroup = 'Reference data';
 
     protected static ?int $navigationSort = 80;
 
     protected static ?string $recordTitleAttribute = 'name';
 
-    public static function form(Form $form): Form
+    public static function form(Schema $schema): Schema
     {
-        return $form
+        return $schema
             ->schema([
-                Forms\Components\Section::make('Identification')
+                Schemas\Components\Section::make('Identification')
                     ->columns(2)
                     ->schema([
                         Forms\Components\TextInput::make('name')
@@ -97,7 +102,7 @@ class LocationResource extends Resource
                             }),
                     ]),
 
-                Forms\Components\Section::make('Scope & status')
+                Schemas\Components\Section::make('Scope & status')
                     ->columns(3)
                     ->schema([
                         Forms\Components\Select::make('repository_id')
@@ -130,7 +135,7 @@ class LocationResource extends Resource
                             ->helperText('Sibling display order under the same parent.'),
                     ]),
 
-                Forms\Components\Section::make('Notes')
+                Schemas\Components\Section::make('Notes')
                     ->collapsed()
                     ->schema([
                         Forms\Components\Textarea::make('notes')->rows(3)->columnSpanFull(),
@@ -214,10 +219,10 @@ class LocationResource extends Resource
                 TrashedFilter::make(),
             ])
             ->actions([
-                Tables\Actions\ViewAction::make(),
-                Tables\Actions\EditAction::make(),
-                Tables\Actions\DeleteAction::make()
-                    ->before(function (Tables\Actions\DeleteAction $action, Location $record) {
+                ViewAction::make(),
+                EditAction::make(),
+                DeleteAction::make()
+                    ->before(function (DeleteAction $action, Location $record) {
                         if ($record->hasChildren() || $record->isReferenced()) {
                             Notification::make()
                                 ->danger()
@@ -229,7 +234,7 @@ class LocationResource extends Resource
                     }),
             ])
             ->bulkActions([
-                Tables\Actions\BulkActionGroup::make([
+                BulkActionGroup::make([
                     // No bulk-delete: enforcing the "no children, no
                     // references" guard per-row inside a bulk action is too
                     // surprising — admins should delete one Location at a
