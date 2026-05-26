@@ -22,28 +22,24 @@ return new class extends Migration
         Schema::create('document_identifier_history', function (Blueprint $table) {
             $table->bigIncrements('id');
 
-            $table->foreignId('document_id')
-                ->constrained('documents')
-                ->cascadeOnDelete()
-                ->index();
+            $table->unsignedBigInteger('document_id')->index();
+            $table->foreign('document_id', 'doc_id_history_doc_fk')
+                ->references('id')->on('documents')->cascadeOnDelete();
 
             $table->string('previous_identifier', 64)->index();
             $table->string('new_identifier', 64)->nullable()->index();
 
             $table->timestamp('changed_at')->useCurrent()->index();
 
-            $table->foreignId('changed_by_user_id')
-                ->nullable()
-                ->constrained('users')
-                ->nullOnDelete();
+            $table->unsignedBigInteger('changed_by_user_id')->nullable();
+            $table->foreign('changed_by_user_id', 'doc_id_history_user_fk')
+                ->references('id')->on('users')->nullOnDelete();
 
             $table->string('reason', 255)->nullable();
 
-            $table->foreignId('repository_id')
-                ->nullable()
-                ->constrained('repositories')
-                ->nullOnDelete()
-                ->index();
+            $table->unsignedBigInteger('repository_id')->nullable()->index();
+            $table->foreign('repository_id', 'doc_id_history_repo_fk')
+                ->references('id')->on('repositories')->nullOnDelete();
 
             $table->timestamps();
 
