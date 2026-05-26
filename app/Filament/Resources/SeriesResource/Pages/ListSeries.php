@@ -5,6 +5,7 @@ namespace App\Filament\Resources\SeriesResource\Pages;
 use App\Filament\Imports\SeriesImporter;
 use App\Filament\Resources\SeriesResource;
 use App\Models\Series;
+use App\Support\BulkImport\TemplateGenerator;
 use Filament\Actions;
 use Filament\Resources\Pages\ListRecords;
 use HayderHatem\FilamentExcelImport\Actions\FullImportAction;
@@ -33,6 +34,16 @@ class ListSeries extends ListRecords
                 ->chunkSize(500)
                 ->maxRows(50000)
                 ->streamingThreshold(10 * 1024 * 1024)
+                ->visible(fn () => auth()->user()?->can('create', Series::class) ?? false),
+
+            // Blank xlsx whose row-1 headers match Series_Sample.xlsx
+            // (the first 6 populated columns — trailing NULLs in the
+            // sample are stripped). Gated on the create policy.
+            Actions\Action::make('download_template')
+                ->label('Download template')
+                ->icon('heroicon-o-arrow-down-tray')
+                ->color('gray')
+                ->action(fn () => TemplateGenerator::download('series'))
                 ->visible(fn () => auth()->user()?->can('create', Series::class) ?? false),
 
             Actions\CreateAction::make(),
