@@ -21,6 +21,7 @@ use Database\Seeders\DemoDataSeeder;
 use Filament\Widgets\StatsOverviewWidget\Stat;
 use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Foundation\Testing\DatabaseTransactions;
+use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Support\Facades\Artisan;
 use Illuminate\Support\Facades\Cache;
 use Livewire\Livewire;
@@ -42,7 +43,7 @@ use Symfony\Component\HttpKernel\Exception\HttpException;
  *     RepositoryScope at fixture-creation time and then act as the right
  *     user to exercise the scope.
  */
-uses(DatabaseTransactions::class);
+uses(RefreshDatabase::class);
 
 /* -------------------------------------------------------------------------
  |  Helpers

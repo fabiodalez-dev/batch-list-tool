@@ -6,8 +6,11 @@ use App\Filament\Resources\AuditResource\Pages\ViewAudit;
 use App\Models\User;
 use Filament\Resources\Pages\ListRecords;
 use Filament\Resources\Pages\ViewRecord;
+use Illuminate\Foundation\Testing\RefreshDatabase;
 use OwenIt\Auditing\Models\Audit;
 use Spatie\Permission\Models\Role;
+
+uses(RefreshDatabase::class);
 
 beforeEach(function () {
     foreach (['super_admin', 'admin', 'editor', 'viewer'] as $role) {

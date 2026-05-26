@@ -2,10 +2,13 @@
 
 use App\Listeners\LogImpersonation;
 use App\Models\User;
+use Illuminate\Foundation\Testing\RefreshDatabase;
 use Lab404\Impersonate\Events\LeaveImpersonation;
 use Lab404\Impersonate\Events\TakeImpersonation;
 use OwenIt\Auditing\Models\Audit;
 use Spatie\Permission\Models\Role;
+
+uses(RefreshDatabase::class);
 
 beforeEach(function () {
     foreach (['super_admin', 'admin', 'editor', 'viewer'] as $role) {
