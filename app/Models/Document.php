@@ -2,6 +2,7 @@
 
 namespace App\Models;
 
+use App\Models\Concerns\BelongsToRepository;
 use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Database\Eloquent\Factories\HasFactory;
 use Illuminate\Database\Eloquent\Model;
@@ -22,6 +23,7 @@ use Spatie\Tags\HasTags;
 class Document extends Model implements AuditableContract, HasMedia, Sortable
 {
     use Auditable;
+    use BelongsToRepository;  // RFQ §3.5.1 — multi-tenant scope
     use HasFactory;
     use HasTags;
     use InteractsWithMedia;
@@ -31,13 +33,22 @@ class Document extends Model implements AuditableContract, HasMedia, Sortable
 
     /**
      * Documents are ordered WITHIN their current_box (catalogue sequence).
-     * buildSortQuery() below scopes the MAX(sort_order)+1 calculation per box.
      */
     public array $sortable = [
         'order_column_name' => 'sort_order',
         'sort_when_creating' => true,
     ];
 
+    /**
+     * `repository_id` is mass-assignable so Filament admins (who legitimately
+     * pick a target tenant from the Repository Select) can write it through
+     * `create()` — but the BelongsToRepository `creating` hook is the security
+     * gate: it validates the chosen `repository_id` against the user's pivot
+     * and throws \DomainException for any non-privileged write that targets a
+     * foreign tenant. Defence-in-depth here is the hook, NOT $guarded.
+     *
+     * @see BelongsToRepository
+     */
     protected $fillable = [
         'sort_order',
         // Normalised columns
@@ -125,13 +136,27 @@ class Document extends Model implements AuditableContract, HasMedia, Sortable
         return $this->hasMany(BoxMovement::class)->latest('movement_date');
     }
 
+    /**
+     * F-011 alignment: this MUST mirror the attributes exposed in
+     * DocumentResource::getGloballySearchableAttributes() so that swapping
+     * Scout drivers (database / Meilisearch / Algolia) does not change
+     * which fields the user sees in global search.
+     */
     public function toSearchableArray(): array
     {
         return [
             'identifier' => $this->identifier,
+            'catalogue_identifier' => $this->catalogue_identifier,
             'document_type' => $this->document_type,
-            'notes' => $this->notes,
+            'practice' => $this->practice,
             'volume_label' => $this->volume_label,
+            'dates' => $this->dates,
+            'notes' => $this->notes,
+            'barcode_in' => $this->barcode_in,
+            'series_code' => $this->series?->code,
+            'series_title' => $this->series?->title,
+            'authorities_surnames' => $this->authorities()->pluck('surname')->implode(' '),
+            'authorities_idents' => $this->authorities()->pluck('identifier')->implode(' '),
         ];
     }
 

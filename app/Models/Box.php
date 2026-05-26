@@ -2,6 +2,7 @@
 
 namespace App\Models;
 
+use App\Models\Scopes\ThroughBatchRepositoryScope;
 use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Database\Eloquent\Factories\HasFactory;
 use Illuminate\Database\Eloquent\Model;
@@ -19,6 +20,9 @@ class Box extends Model implements AuditableContract, Sortable
     use HasFactory;
     use SoftDeletes;
     use SortableTrait;
+
+    // NOTE: Box has no direct repository_id column — scoping derives via batch.repository_id.
+    // Filament Resource for Box should filter on batch.repository_id manually if needed.
 
     public const TYPES = ['RAS', 'IN_SITU', 'NRA', 'MAV', 'STVC'];
 
@@ -98,5 +102,21 @@ class Box extends Model implements AuditableContract, Sortable
     public function requiresParent(): bool
     {
         return in_array($this->box_type, ['IN_SITU', 'NRA'], true);
+    }
+
+    /**
+     * Multi-tenant scoping (RFQ §3.5.1).
+     *
+     * `boxes` has no `repository_id` column — tenancy is derived from
+     * `boxes.batch_id → batches.repository_id`. The scope restricts queries
+     * to the repositories the authenticated user has been assigned to.
+     * Admin / super_admin bypass the scope (cross-repo oversight).
+     */
+    protected static function booted(): void
+    {
+        static::addGlobalScope(new ThroughBatchRepositoryScope(
+            foreignTable: 'batches',
+            foreignKey: 'batch_id',
+        ));
     }
 }

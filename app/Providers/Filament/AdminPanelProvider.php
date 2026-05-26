@@ -2,7 +2,9 @@
 
 namespace App\Providers\Filament;
 
+use App\Support\Avatars\LocalAvatarProvider;
 use BezhanSalleh\FilamentShield\FilamentShieldPlugin;
+use Filament\FontProviders\LocalFontProvider;
 use Filament\Http\Middleware\Authenticate;
 use Filament\Http\Middleware\AuthenticateSession;
 use Filament\Http\Middleware\DisableBladeIconComponents;
@@ -31,6 +33,15 @@ class AdminPanelProvider extends PanelProvider
             ->login()
             ->passwordReset()
             ->profile()
+            // Security Baseline §15: NO external CDNs at runtime —
+            // Inter font is served from /fonts/inter/ (rsms/inter v4.1, OFL-1.1)
+            ->font(
+                family: 'Inter',
+                url: '/fonts/inter/InterVariable.woff2',
+                provider: LocalFontProvider::class,
+            )
+            // ui-avatars.com replaced by laravolt/avatar (server-side SVG)
+            ->defaultAvatarProvider(LocalAvatarProvider::class)
             ->plugins([
                 FilamentShieldPlugin::make(),
             ])

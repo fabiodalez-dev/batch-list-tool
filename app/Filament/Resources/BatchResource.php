@@ -4,6 +4,7 @@ namespace App\Filament\Resources;
 
 use App\Filament\Resources\BatchResource\Pages;
 use App\Models\Batch;
+use App\Models\Repository;
 use Filament\Forms;
 use Filament\Forms\Form;
 use Filament\Resources\Resource;
@@ -33,9 +34,23 @@ class BatchResource extends Resource
                     ->maxLength(255),
                 Forms\Components\TextInput::make('type')
                     ->required(),
-                Forms\Components\Select::make('repository.name')
-                    ->relationship('repository', 'name')
-                    ->required(),
+                Forms\Components\Select::make('repository_id')
+                    ->label('Repository')
+                    ->relationship(
+                        'repository',
+                        'name',
+                        fn ($query) => $query->whereIn(
+                            'id',
+                            auth()->user()?->hasAnyRole(['super_admin', 'admin'])
+                                ? Repository::query()->pluck('id')->all()
+                                : (auth()->user()?->repositories()->pluck('repositories.id')->all() ?? [])
+                        )
+                    )
+                    ->required()
+                    ->default(fn () => auth()->user()?->default_repository_id)
+                    ->disabled(fn () => ! auth()->user()?->hasAnyRole(['super_admin', 'admin']))
+                    ->dehydrated()
+                    ->searchable()->preload(),
                 Forms\Components\Toggle::make('is_active')
                     ->required(),
             ]);

@@ -4,6 +4,7 @@ namespace App\Filament\Resources;
 
 use App\Filament\Resources\DocumentResource\Pages;
 use App\Models\Document;
+use App\Models\Repository;
 use Filament\Forms;
 use Filament\Forms\Form;
 use Filament\Resources\Resource;
@@ -43,8 +44,21 @@ class DocumentResource extends Resource
                             ->searchable()->preload()->required(),
                         Forms\Components\Select::make('repository_id')
                             ->label('Repository')
-                            ->relationship('repository', 'name')
-                            ->searchable()->preload()->required(),
+                            ->relationship(
+                                'repository',
+                                'name',
+                                fn ($query) => $query->whereIn(
+                                    'id',
+                                    auth()->user()?->hasAnyRole(['super_admin', 'admin'])
+                                        ? Repository::query()->pluck('id')->all()
+                                        : (auth()->user()?->repositories()->pluck('repositories.id')->all() ?? [])
+                                )
+                            )
+                            ->required()
+                            ->default(fn () => auth()->user()?->default_repository_id)
+                            ->disabled(fn () => ! auth()->user()?->hasAnyRole(['super_admin', 'admin']))
+                            ->dehydrated() // keep value submitted even when disabled
+                            ->searchable()->preload(),
                         Forms\Components\TextInput::make('volume_label')->label('Volume label')->maxLength(64),
                         Forms\Components\TextInput::make('practice')->maxLength(100),
                         Forms\Components\TextInput::make('dates')->label('Dates (text)')->maxLength(191)

@@ -1,20 +1,27 @@
 <?php
 
+declare(strict_types=1);
+
 namespace Database\Factories;
 
 use App\Models\Repository;
 use Illuminate\Database\Eloquent\Factories\Factory;
+use Illuminate\Support\Str;
 
-/** @extends Factory<Repository> */
+/**
+ * @extends Factory<Repository>
+ */
 class RepositoryFactory extends Factory
 {
     protected $model = Repository::class;
 
     public function definition(): array
     {
+        // RFQ §3.5.1 — code is the tenant key, must be unique and short.
         return [
-            'name' => $this->faker->company(),
-            'code' => strtoupper($this->faker->unique()->lexify('???')),
+            'code' => strtoupper(Str::random(6)),
+            'name' => $this->faker->company() . ' Archive',
+            'description' => $this->faker->sentence(),
             'is_active' => true,
         ];
     }

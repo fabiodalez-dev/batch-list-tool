@@ -4,6 +4,7 @@ namespace App\Filament\Resources;
 
 use App\Filament\Resources\AccessionResource\Pages;
 use App\Models\Accession;
+use App\Models\Repository;
 use Filament\Forms;
 use Filament\Forms\Form;
 use Filament\Resources\Resource;
@@ -34,9 +35,23 @@ class AccessionResource extends Resource
                     ->relationship('authority', 'surname'),
                 Forms\Components\Select::make('batch.batch_number')
                     ->relationship('batch', 'batch_number'),
-                Forms\Components\Select::make('repository.name')
-                    ->relationship('repository', 'name')
-                    ->required(),
+                Forms\Components\Select::make('repository_id')
+                    ->label('Repository')
+                    ->relationship(
+                        'repository',
+                        'name',
+                        fn ($query) => $query->whereIn(
+                            'id',
+                            auth()->user()?->hasAnyRole(['super_admin', 'admin'])
+                                ? Repository::query()->pluck('id')->all()
+                                : (auth()->user()?->repositories()->pluck('repositories.id')->all() ?? [])
+                        )
+                    )
+                    ->required()
+                    ->default(fn () => auth()->user()?->default_repository_id)
+                    ->disabled(fn () => ! auth()->user()?->hasAnyRole(['super_admin', 'admin']))
+                    ->dehydrated()
+                    ->searchable()->preload(),
                 Forms\Components\Textarea::make('notes')
                     ->columnSpanFull(),
             ]);
