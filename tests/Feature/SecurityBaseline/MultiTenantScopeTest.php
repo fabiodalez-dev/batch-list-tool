@@ -12,7 +12,7 @@ use App\Models\Scopes\ThroughBatchRepositoryScope;
 use App\Models\Scopes\ThroughBoxBatchRepositoryScope;
 use App\Models\Series;
 use App\Models\User;
-use Illuminate\Foundation\Testing\DatabaseTransactions;
+use Illuminate\Foundation\Testing\RefreshDatabase;
 use Spatie\Permission\Models\Role;
 
 /**
@@ -22,10 +22,11 @@ use Spatie\Permission\Models\Role;
  * repositories the authenticated user has been assigned to, EXCEPT when the
  * user has the `super_admin` or `admin` role (cross-repo oversight).
  *
- * Uses DatabaseTransactions because the project runs against MySQL and we
- * don't want to wipe the dev seed data.
+ * Convention: RefreshDatabase on the SQLite in-memory test connection. The
+ * Spatie roles/permissions are seeded by bl_seedShieldPermissions() in
+ * tests/Pest.php — see the top-level beforeEach() below.
  */
-uses(DatabaseTransactions::class);
+uses(RefreshDatabase::class);
 
 /**
  * Helper: create a Document with an explicit `repository_id` for assertions.
@@ -59,10 +60,10 @@ function attachUserToRepository(User $user, Repository $repository, bool $isDefa
 }
 
 beforeEach(function () {
-    // Pin to existing seeded role names — RepositoryScope checks them by name.
-    Role::firstOrCreate(['name' => 'super_admin', 'guard_name' => 'web']);
-    Role::firstOrCreate(['name' => 'admin',       'guard_name' => 'web']);
-    Role::firstOrCreate(['name' => 'editor',      'guard_name' => 'web']);
+    // Seed the Shield permission/role matrix mirroring InitialDataSeeder.
+    // RepositoryScope checks roles by name; the fixtures below also rely on
+    // `editor`/`admin`/`super_admin` existing.
+    bl_seedShieldPermissions();
 
     // Two isolated test repositories. Permission/auditing make these heavy, so
     // we set is_active=true to mimic production rows.

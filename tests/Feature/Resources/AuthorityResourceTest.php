@@ -10,7 +10,7 @@ use App\Models\Concerns\BelongsToRepository;
 use App\Models\Repository;
 use App\Models\User;
 use Illuminate\Database\QueryException;
-use Illuminate\Foundation\Testing\DatabaseTransactions;
+use Illuminate\Foundation\Testing\RefreshDatabase;
 use Livewire\Livewire;
 use OwenIt\Auditing\Models\Audit;
 use Spatie\Permission\Models\Role;
@@ -23,10 +23,17 @@ use Spatie\Permission\Models\Role;
  * separation, because the repository scope simply does not apply to
  * Authority by design (it is shared across all repositories).
  *
- * Convention: DatabaseTransactions, mirroring the existing SecurityBaseline
- * tests so the dev seed survives.
+ * Convention: RefreshDatabase against the SQLite in-memory test connection
+ * (the previous DatabaseTransactions convention assumed a pre-migrated dev
+ * DB which the test harness does not provide). bl_seedShieldPermissions()
+ * (defined in tests/Pest.php) replaces the seeded role/permission rows that
+ * DatabaseTransactions used to inherit.
  */
-uses(DatabaseTransactions::class);
+uses(RefreshDatabase::class);
+
+beforeEach(function () {
+    bl_seedShieldPermissions();
+});
 
 /* ----------------------------------------------------------------------- */
 /* Helpers (suffixed _auth to avoid name collisions with sibling files) */

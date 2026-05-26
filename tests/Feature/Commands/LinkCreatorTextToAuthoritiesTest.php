@@ -7,7 +7,7 @@ use App\Models\Document;
 use App\Models\Repository;
 use App\Models\Scopes\RepositoryScope;
 use App\Models\Series;
-use Illuminate\Foundation\Testing\DatabaseTransactions;
+use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Support\Facades\Artisan;
 use Illuminate\Support\Facades\DB;
 
@@ -21,7 +21,7 @@ use Illuminate\Support\Facades\DB;
  *   61 - command output contains 'ambiguous' on collision
  *   62 - chunked execution (verifies the chunkById(500) contract via query log)
  */
-uses(DatabaseTransactions::class);
+uses(RefreshDatabase::class);
 
 function makeRepo_link(string $prefix = 'LK'): Repository
 {

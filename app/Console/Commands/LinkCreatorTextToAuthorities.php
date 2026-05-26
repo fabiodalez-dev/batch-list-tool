@@ -213,9 +213,15 @@ class LinkCreatorTextToAuthorities extends Command
         if (array_key_exists($surnameCandidate, $this->fuzzyCache)) {
             $hit = $this->fuzzyCache[$surnameCandidate];
         } else {
+            // CHAR_LENGTH() is MySQL-specific; SQLite (test driver) and
+            // PostgreSQL both accept LENGTH(). We use whichever the current
+            // connection supports so the command is portable across drivers.
+            $lengthFn = DB::connection()->getDriverName() === 'mysql'
+                ? 'CHAR_LENGTH'
+                : 'LENGTH';
             $hit = Authority::query()
                 ->where('surname', 'like', "%{$surnameCandidate}%")
-                ->orderByRaw('CHAR_LENGTH(surname) ASC')
+                ->orderByRaw("{$lengthFn}(surname) ASC")
                 ->limit(1)
                 ->value('id');
             $this->fuzzyCache[$surnameCandidate] = $hit;
