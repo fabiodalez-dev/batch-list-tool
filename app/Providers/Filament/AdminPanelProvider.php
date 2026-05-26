@@ -2,6 +2,7 @@
 
 namespace App\Providers\Filament;
 
+use App\Filament\Pages\Auth\TwoFactorLogin;
 use App\Filament\Widgets\DocumentsPerBatchChart;
 use App\Filament\Widgets\DocumentsPerSeriesChart;
 use App\Filament\Widgets\PendingDisinfestationTable;
@@ -34,7 +35,11 @@ class AdminPanelProvider extends PanelProvider
             ->id('admin')
             ->path('admin')
             ->brandName('Batch List Tool')
-            ->login()
+            // RFQ §3.1.7 hardening — TwoFactorLogin is a stock Login subclass
+            // that re-routes users with a confirmed TOTP secret to Fortify's
+            // /two-factor-challenge endpoint after their password is validated.
+            // Users without 2FA enrolment authenticate exactly as before.
+            ->login(TwoFactorLogin::class)
             ->passwordReset()
             ->profile()
             // Security Baseline §15: NO external CDNs at runtime —
