@@ -4,6 +4,7 @@ namespace App\Filament\Resources;
 
 use App\Filament\Resources\DocumentResource\Pages;
 use App\Models\Document;
+use App\Models\Repository;
 use Filament\Forms;
 use Filament\Forms\Form;
 use Filament\Resources\Resource;
@@ -211,23 +212,36 @@ class DocumentResource extends Resource
                     ->label('Creators')
                     ->relationship('authorities', 'surname')->searchable()->preload()->multiple(),
 
-                // Free-text search per field (POC-style filtri puntuali)
-                self::likeFilter('barcode_in',           'Search in Barcode (IN)'),
+                // Free-text search per field (POC-style filtri puntuali).
+                // For columns covered by a single-column FULLTEXT index
+                // (notes, deeds, museum_reference) we use the model scope:
+                // on MySQL it expands to MATCH(...) AGAINST(... IN NATURAL
+                // LANGUAGE MODE) and uses the FT index added by migration
+                // 2026_05_18_100000; on other drivers it transparently falls
+                // back to the same LIKE chain.
+                // Short-string indexed columns (barcode_in, catalogue_identifier,
+                // practice) keep the LIKE filter because they're already covered
+                // by B-tree indexes and a FULLTEXT index on a VARCHAR(50) gives
+                // no measurable gain.
+                self::likeFilter('barcode_in', 'Search in Barcode (IN)'),
                 self::likeFilter('catalogue_identifier', 'Search in Catalogue ID'),
-                self::likeFilter('practice',             'Search in Practice'),
-                self::likeFilter('notes',                'Search in Notes'),
+                self::likeFilter('practice', 'Search in Practice'),
+                self::fullTextFilter('notes', 'Search in Notes'),
+                self::fullTextFilter('deeds', 'Search in Deeds'),
+                self::fullTextFilter('museum_reference', 'Search in Museum Reference'),
 
                 // volume_label is special — also searches the JSON path extra->volume; kept inline.
                 Filter::make('volume_label')
                     ->form([
                         Forms\Components\TextInput::make('value')->label('Search in Volume'),
                     ])
-                    ->query(fn (Builder $q, array $data) =>
-                        $q->when($data['value'] ?? null,
+                    ->query(
+                        fn (Builder $q, array $data) => $q->when(
+                            $data['value'] ?? null,
                             fn ($q, $v) => $q->where(function ($q) use ($v) {
                                 $needle = '%' . trim($v) . '%';
                                 $q->where('volume_label', 'like', $needle)
-                                  ->orWhere('extra->volume', 'like', $needle);
+                                    ->orWhere('extra->volume', 'like', $needle);
                             })
                         )
                     ),
@@ -240,17 +254,20 @@ class DocumentResource extends Resource
                     ])
                     ->query(function (Builder $q, array $data) {
                         return $q
-                            ->when($data['year_from'] ?? null, fn ($q, $v) =>
-                                $q->where(fn ($q) => $q->whereNull('dates_year_end')
-                                                        ->orWhere('dates_year_end', '>=', (int) $v)))
-                            ->when($data['year_to'] ?? null, fn ($q, $v) =>
-                                $q->where(fn ($q) => $q->whereNull('dates_year_start')
-                                                        ->orWhere('dates_year_start', '<=', (int) $v)));
+                            ->when($data['year_from'] ?? null, fn ($q, $v) => $q->where(fn ($q) => $q->whereNull('dates_year_end')
+                                ->orWhere('dates_year_end', '>=', (int) $v)))
+                            ->when($data['year_to'] ?? null, fn ($q, $v) => $q->where(fn ($q) => $q->whereNull('dates_year_start')
+                                ->orWhere('dates_year_start', '<=', (int) $v)));
                     })
                     ->indicateUsing(function (array $data): array {
                         $i = [];
-                        if (! empty($data['year_from'])) $i[] = "Year ≥ {$data['year_from']}";
-                        if (! empty($data['year_to'])) $i[] = "Year ≤ {$data['year_to']}";
+                        if (! empty($data['year_from'])) {
+                            $i[] = "Year ≥ {$data['year_from']}";
+                        }
+                        if (! empty($data['year_to'])) {
+                            $i[] = "Year ≤ {$data['year_to']}";
+                        }
+
                         return $i;
                     }),
 
@@ -262,10 +279,14 @@ class DocumentResource extends Resource
                     ])
                     ->query(function (Builder $q, array $data) {
                         return $q
-                            ->when($data['disinfested_from'] ?? null,
-                                fn ($q, $v) => $q->whereDate('disinfestation_date', '>=', $v))
-                            ->when($data['disinfested_to'] ?? null,
-                                fn ($q, $v) => $q->whereDate('disinfestation_date', '<=', $v));
+                            ->when(
+                                $data['disinfested_from'] ?? null,
+                                fn ($q, $v) => $q->whereDate('disinfestation_date', '>=', $v)
+                            )
+                            ->when(
+                                $data['disinfested_to'] ?? null,
+                                fn ($q, $v) => $q->whereDate('disinfestation_date', '<=', $v)
+                            );
                     }),
 
                 // Ternary filters
@@ -318,24 +339,52 @@ class DocumentResource extends Resource
             ]);
     }
 
-    /**
-     * Build a leading-/trailing-wildcard LIKE filter on a single column.
-     * Centralises the form + query shape shared by all "Search in X" filters.
-     */
-    private static function likeFilter(string $name, string $label, ?string $column = null): Filter
-    {
-        $col = $column ?? $name;
-
-        return Filter::make($name)
-            ->form([Forms\Components\TextInput::make('value')->label($label)])
-            ->query(fn (Builder $q, array $data) =>
-                $q->when($data['value'] ?? null, fn ($q, $v) =>
-                    $q->where($col, 'like', '%' . trim($v) . '%')));
-    }
-
     public static function getRelations(): array
     {
-        return [];
+        return [
+            DocumentResource\RelationManagers\IdentifierHistoryRelationManager::class,
+        ];
+    }
+
+    /**
+     * Eager-load identifierHistory so the global search can match on
+     * previous identifiers without N+1 queries.
+     */
+    public static function getGlobalSearchEloquentQuery(): Builder
+    {
+        return parent::getGlobalSearchEloquentQuery()->with('identifierHistory');
+    }
+
+    /**
+     * Apply conditional eager-loading to the base query.
+     *
+     * NOTE on timing: Filament evaluates `getEloquentQuery()` BEFORE the
+     * table's filters run (see `Filament\Tables\Concerns\HasRecords::filterTableQuery()`
+     * — the eloquent builder returned here is the one filters are then
+     * stacked onto). That means the `conditionallyWith()` count probes
+     * the full table, not the post-filter subset. For the production
+     * archive (~50k+ docs) the count will always cross the 200 threshold,
+     * so the eager load is effectively always-on — which is the SAFE
+     * default and matches the previous behaviour. For smaller installs
+     * (e.g. a development copy with < 200 documents) the scope skips
+     * the eager load and lets Filament fall back to lazy access per row,
+     * which is cheaper for the dev case.
+     *
+     * If a future page wants true post-filter conditional preloading it
+     * should override `ListDocuments::getTableRecords()` and call
+     * `loadMissing(...)` on the paginated collection — Filament does not
+     * expose a post-filter hook on the resource itself.
+     */
+    public static function getEloquentQuery(): Builder
+    {
+        return parent::getEloquentQuery()
+            ->conditionallyWith([
+                'series',
+                'batch',
+                'currentBox.batch',
+                'repository',
+                'authorities',
+            ]);
     }
 
     /** Extend the global search bar (top-right of Filament panel) — POC parity. */
@@ -354,6 +403,9 @@ class DocumentResource extends Resource
             'series.title',
             'authorities.surname',
             'authorities.identifier',
+            // Identifier history (PR #8) — searching for "R7-old" finds the document
+            // whose identifier was previously "R7-old", even after re-classification.
+            'identifierHistory.previous_identifier',
         ];
     }
 
@@ -365,5 +417,53 @@ class DocumentResource extends Resource
             'view' => Pages\ViewDocument::route('/{record}'),
             'edit' => Pages\EditDocument::route('/{record}/edit'),
         ];
+    }
+
+    /**
+     * Build a leading-/trailing-wildcard LIKE filter on a single column.
+     * Centralises the form + query shape shared by all "Search in X" filters.
+     */
+    private static function likeFilter(string $name, string $label, ?string $column = null): Filter
+    {
+        $col = $column ?? $name;
+
+        return Filter::make($name)
+            ->form([Forms\Components\TextInput::make('value')->label($label)])
+            ->query(fn (Builder $q, array $data) => $q->when($data['value'] ?? null, fn ($q, $v) => $q->where($col, 'like', '%' . trim($v) . '%')));
+    }
+
+    /**
+     * Build a FULLTEXT-backed filter on a single column. Delegates to
+     * Document::scopeSearchFullText() which handles the MySQL/non-MySQL
+     * driver split (MATCH...AGAINST vs LIKE) and the empty-term no-op.
+     *
+     * One column per filter is intentional: MySQL only uses a FULLTEXT
+     * index when the MATCH() column list exactly matches the index's
+     * column list, and the migration creates one single-column index
+     * per searchable column.
+     */
+    private static function fullTextFilter(string $name, string $label, ?string $column = null): Filter
+    {
+        $col = $column ?? $name;
+
+        return Filter::make($name)
+            ->form([Forms\Components\TextInput::make('value')->label($label)])
+            ->query(fn (Builder $q, array $data) => $q->when(
+                $data['value'] ?? null,
+                fn (Builder $q, string $v) => $q->searchFullText($v, [$col]),
+            ));
+    }
+
+    /**
+     * Build a leading-/trailing-wildcard LIKE filter on a single column.
+     * Centralises the form + query shape shared by all "Search in X" filters.
+     */
+    private static function likeFilter(string $name, string $label, ?string $column = null): Filter
+    {
+        $col = $column ?? $name;
+
+        return Filter::make($name)
+            ->form([Forms\Components\TextInput::make('value')->label($label)])
+            ->query(fn (Builder $q, array $data) => $q->when($data['value'] ?? null, fn ($q, $v) => $q->where($col, 'like', '%' . trim($v) . '%')));
     }
 }

@@ -9,20 +9,23 @@ use Illuminate\Database\Eloquent\Relations\BelongsTo;
 use Illuminate\Database\Eloquent\Relations\BelongsToMany;
 use Illuminate\Database\Eloquent\Relations\HasMany;
 use Illuminate\Database\Eloquent\SoftDeletes;
+use Illuminate\Support\Collection;
 use Laravel\Scout\Searchable;
 use OwenIt\Auditing\Auditable;
 use OwenIt\Auditing\Contracts\Auditable as AuditableContract;
+use Spatie\EloquentSortable\Sortable;
+use Spatie\EloquentSortable\SortableTrait;
 use Spatie\MediaLibrary\HasMedia;
 use Spatie\MediaLibrary\InteractsWithMedia;
 use Spatie\SchemalessAttributes\Casts\SchemalessAttributes;
 use Spatie\Tags\HasTags;
 
-class Document extends Model implements AuditableContract, HasMedia
+class Document extends Model implements AuditableContract, HasMedia, Sortable
 {
-    use HasFactory;
-    use SoftDeletes;
     use Auditable;
-    use Searchable;
+    use BelongsToRepository;  // RFQ §3.5.1 — multi-tenant scope
+    use ConditionallyPreloadsRelations;
+    use HasFactory;
     use HasTags;
     use InteractsWithMedia;
     use BelongsToRepository;  // RFQ §3.5.1 — multi-tenant scope
@@ -38,6 +41,7 @@ class Document extends Model implements AuditableContract, HasMedia
      * @see \App\Models\Concerns\BelongsToRepository
      */
     protected $fillable = [
+        'sort_order',
         // Normalised columns
         'identifier', 'document_type', 'series_id', 'accession_id',
         'current_box_id', 'batch_id', 'repository_id', 'volume_label',
@@ -71,6 +75,18 @@ class Document extends Model implements AuditableContract, HasMedia
         'custom_fields' => 'array',
         'metadata' => 'array',
     ];
+
+    /** @internal DocumentBuilder bulk-update guard bypass flag */
+    private static bool $bypassAuditGuard = false;
+
+    /**
+     * Sort within the current_box. Documents in box A and documents in box B
+     * each have their own 1..N sequence.
+     */
+    public function buildSortQuery(): Builder
+    {
+        return static::query()->where('current_box_id', $this->current_box_id);
+    }
 
     public function series(): BelongsTo
     {
@@ -145,5 +161,178 @@ class Document extends Model implements AuditableContract, HasMedia
                 'application/pdf',
                 'image/jpeg', 'image/png', 'image/tiff',
             ]);
+    }
+
+    /**
+     * Wire Eloquent up to our custom DocumentBuilder so that bulk
+     * `Document::query()->update([...])` calls go through the audit guard.
+     */
+    public function newEloquentBuilder($query): DocumentBuilder
+    {
+        return new DocumentBuilder($query);
+    }
+
+    /**
+     * Run a callback with the DocumentBuilder bulk-update guard temporarily
+     * suspended. Intended for genuinely needed back-fill migrations where
+     * the caller takes responsibility for recording the audit rows.
+     *
+     * Example:
+     *   Document::withoutAuditGuards(function () use ($ids, $newId) {
+     *       Document::query()->whereIn('id', $ids)->update(['identifier' => $newId]);
+     *       // ... and now manually insert into document_identifier_history
+     *   });
+     *
+     * @template T
+     *
+     * @param callable(): T $callback
+     * @return T
+     */
+    public static function withoutAuditGuards(callable $callback): mixed
+    {
+        static::$bypassAuditGuard = true;
+
+        try {
+            return $callback();
+        } finally {
+            static::$bypassAuditGuard = false;
+        }
+    }
+
+    /**
+     * Used by DocumentBuilder to decide whether to enforce the bulk-update
+     * guard on the `identifier` column.
+     */
+    public static function shouldBypassAuditGuard(): bool
+    {
+        return static::$bypassAuditGuard;
+    }
+
+    /**
+     * Full-text search across one or more text columns.
+     *
+     * On MySQL this expands to `MATCH (col1, col2) AGAINST (? IN NATURAL
+     * LANGUAGE MODE)` and uses whichever FULLTEXT index covers the exact
+     * column set passed in. The migration creates one single-column index
+     * per searchable column (notes, deeds, museum_reference); MySQL only
+     * uses a FULLTEXT index whose column list matches the MATCH() list
+     * exactly, so callers should pass one column at a time.
+     *
+     * On any other driver (SQLite for the test suite, Postgres for
+     * hypothetical staging) we silently degrade to the same `LIKE '%term%'`
+     * chain that the resource used before this change — slower, but
+     * functionally identical, and the unit tests cover both branches.
+     *
+     * The whole clause is wrapped in a where(fn $q => ...) closure so it
+     * composes with `where(...)->searchFullText(...)->where(...)` chains
+     * without leaking an OR into the outer WHERE group.
+     *
+     * ## MySQL FULLTEXT quirks operators should know about
+     *
+     * - **Minimum token size.** InnoDB defaults to `innodb_ft_min_token_size = 3`:
+     *   terms shorter than 3 characters silently match *nothing*. We short-circuit
+     *   below that threshold to avoid issuing a useless query and to make the
+     *   "empty result" obvious to the caller instead of being a silent miss.
+     * - **Stopword list.** The default English InnoDB stopword list drops common
+     *   words such as `will`, `the`, `of`, `an`, `is`, `was`. A FULLTEXT search
+     *   for "will" against an Italian/Maltese notarial dataset returns zero rows.
+     * - **Not for identifiers.** Identifier-like searches ("R7", "R12") MUST go
+     *   through the B-tree index on `documents.identifier`; this scope is the
+     *   wrong tool for short codes (see min-token-size note). The Filament
+     *   resource keeps identifier lookups on the B-tree column.
+     * - **Production tuning for IT/MT corpora.** For the NRA archive in
+     *   production we recommend `innodb_ft_min_token_size = 2` and disabling
+     *   the English stopword list at the MySQL server level (`my.cnf` →
+     *   `innodb_ft_enable_stopword = OFF` or a custom stopword table). Changes
+     *   to these settings require a rebuild of the FULLTEXT indexes
+     *   (`OPTIMIZE TABLE documents` after the restart).
+     *
+     * @param array<int, string> $columns Must be a subset of {@see self::FULLTEXT_COLUMNS}.
+     *
+     * @throws \InvalidArgumentException when $columns contains a non-whitelisted column.
+     */
+    public function scopeSearchFullText(
+        Builder $query,
+        string $term,
+        array $columns = ['notes', 'deeds', 'museum_reference'],
+    ): Builder {
+        // Whitelist check — fail fast on typos / SQL-injection attempts via
+        // user-controlled column names. We compare against the canonical
+        // FULLTEXT_COLUMNS constant; callers may pass any subset of it.
+        $invalid = array_diff($columns, self::FULLTEXT_COLUMNS);
+        if ($invalid !== []) {
+            throw new \InvalidArgumentException(
+                'scopeSearchFullText: columns must be a subset of '
+                . implode(',', self::FULLTEXT_COLUMNS)
+                . '; got: ' . implode(',', $invalid)
+            );
+        }
+
+        $term = trim($term);
+
+        // Empty term → no-op, returning the unchanged builder lets callers
+        // chain ->searchFullText($value) inside a ->when() with no extra
+        // guard (Filament's filter ->query() callback expects exactly this).
+        if ($term === '' || $columns === []) {
+            return $query;
+        }
+
+        // Short-circuit on terms shorter than MySQL's default minimum token
+        // size (3 chars). Hitting MySQL with such a term would silently
+        // return an empty set and waste a round-trip; returning the
+        // unmodified builder makes the no-op visible to the caller and
+        // gives identical results between MySQL and the SQLite fallback.
+        if (mb_strlen($term) < 3) {
+            return $query;
+        }
+
+        $driver = $query->getConnection()->getDriverName();
+
+        return $query->where(function (Builder $inner) use ($term, $columns, $driver) {
+            if ($driver === 'mysql') {
+                $columnList = implode(', ', array_map(
+                    fn (string $c) => '`' . str_replace('`', '``', $c) . '`',
+                    $columns,
+                ));
+
+                $inner->whereRaw(
+                    "MATCH ({$columnList}) AGAINST (? IN NATURAL LANGUAGE MODE)",
+                    [$term],
+                );
+
+                return;
+            }
+
+            // Non-MySQL fallback: chain OR LIKEs across the same columns.
+            // The `%term%` shape matches Eloquent's LIKE convention; we
+            // escape the term's wildcards so a user searching for "100%"
+            // doesn't accidentally match every row.
+            $needle = '%' . addcslashes($term, '%_\\') . '%';
+
+            foreach ($columns as $i => $col) {
+                $i === 0
+                    ? $inner->where($col, 'like', $needle)
+                    : $inner->orWhere($col, 'like', $needle);
+            }
+        });
+    }
+
+    /**
+     * Override performUpdate so single-model `save()` calls bypass the
+     * DocumentBuilder bulk-update guard. Per-instance saves DO fire the
+     * `updating`/`updated` events that DocumentObserver hooks into, so the
+     * identifier-history audit trail is preserved — only the guard, which
+     * exists for query-level bulk updates, must be temporarily suspended.
+     */
+    protected function performUpdate(Builder $query)
+    {
+        $previous = static::$bypassAuditGuard;
+        static::$bypassAuditGuard = true;
+
+        try {
+            return parent::performUpdate($query);
+        } finally {
+            static::$bypassAuditGuard = $previous;
+        }
     }
 }

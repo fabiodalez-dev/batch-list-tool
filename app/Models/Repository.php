@@ -12,9 +12,9 @@ use OwenIt\Auditing\Contracts\Auditable as AuditableContract;
 
 class Repository extends Model implements AuditableContract
 {
+    use Auditable;
     use HasFactory;
     use SoftDeletes;
-    use Auditable;
 
     protected $fillable = ['code', 'name', 'description', 'is_active'];
 

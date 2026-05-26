@@ -2,6 +2,10 @@
 
 namespace App\Models;
 
+use App\Models\Concerns\BelongsToRepository;
+use App\Models\Concerns\BelongsToRepository;
+use App\Models\Concerns\BelongsToRepository;
+use App\Models\Concerns\BelongsToRepository;
 use Illuminate\Database\Eloquent\Factories\HasFactory;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
@@ -13,6 +17,15 @@ use OwenIt\Auditing\Contracts\Auditable as AuditableContract;
 
 class Accession extends Model implements AuditableContract
 {
+    use Auditable;
+    use Auditable;
+    use Auditable;
+    use Auditable;
+    use Auditable;
+    use BelongsToRepository;
+    use BelongsToRepository;
+    use BelongsToRepository;
+    use BelongsToRepository;
     use HasFactory;
     use SoftDeletes;
     use Auditable;
