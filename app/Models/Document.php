@@ -2,6 +2,7 @@
 
 namespace App\Models;
 
+use App\Models\Builders\DocumentBuilder;
 use App\Models\Concerns\BelongsToRepository;
 use Illuminate\Database\Eloquent\Factories\HasFactory;
 use Illuminate\Database\Eloquent\Model;
@@ -26,6 +27,15 @@ class Document extends Model implements AuditableContract, HasMedia
     use HasTags;
     use InteractsWithMedia;
     use BelongsToRepository;  // RFQ §3.5.1 — multi-tenant scope
+
+    /**
+     * When true, the DocumentBuilder bulk-update guard is suspended so a
+     * caller can intentionally run a query-level update that touches the
+     * `identifier` column (e.g., a one-off back-fill migration where the
+     * audit row is written manually). Always flipped back to false in the
+     * `finally` block of withoutAuditGuards().
+     */
+    private static bool $bypassAuditGuard = false;
 
     /**
      * `repository_id` is mass-assignable so Filament admins (who legitimately
@@ -167,5 +177,68 @@ class Document extends Model implements AuditableContract, HasMedia
                 'application/pdf',
                 'image/jpeg', 'image/png', 'image/tiff',
             ]);
+    }
+
+    /**
+     * Wire Eloquent up to our custom DocumentBuilder so that bulk
+     * `Document::query()->update([...])` calls go through the audit guard.
+     */
+    public function newEloquentBuilder($query): DocumentBuilder
+    {
+        return new DocumentBuilder($query);
+    }
+
+    /**
+     * Override performUpdate so single-model `save()` calls bypass the
+     * DocumentBuilder bulk-update guard. Per-instance saves DO fire the
+     * `updating`/`updated` events that DocumentObserver hooks into, so the
+     * identifier-history audit trail is preserved — only the guard, which
+     * exists for query-level bulk updates, must be temporarily suspended.
+     *
+     * @param  \Illuminate\Database\Eloquent\Builder  $query
+     */
+    protected function performUpdate(\Illuminate\Database\Eloquent\Builder $query)
+    {
+        $previous = static::$bypassAuditGuard;
+        static::$bypassAuditGuard = true;
+        try {
+            return parent::performUpdate($query);
+        } finally {
+            static::$bypassAuditGuard = $previous;
+        }
+    }
+
+    /**
+     * Run a callback with the DocumentBuilder bulk-update guard temporarily
+     * suspended. Intended for genuinely needed back-fill migrations where
+     * the caller takes responsibility for recording the audit rows.
+     *
+     * Example:
+     *   Document::withoutAuditGuards(function () use ($ids, $newId) {
+     *       Document::query()->whereIn('id', $ids)->update(['identifier' => $newId]);
+     *       // ... and now manually insert into document_identifier_history
+     *   });
+     *
+     * @template T
+     * @param callable(): T $callback
+     * @return T
+     */
+    public static function withoutAuditGuards(callable $callback): mixed
+    {
+        static::$bypassAuditGuard = true;
+        try {
+            return $callback();
+        } finally {
+            static::$bypassAuditGuard = false;
+        }
+    }
+
+    /**
+     * Used by DocumentBuilder to decide whether to enforce the bulk-update
+     * guard on the `identifier` column.
+     */
+    public static function shouldBypassAuditGuard(): bool
+    {
+        return static::$bypassAuditGuard;
     }
 }

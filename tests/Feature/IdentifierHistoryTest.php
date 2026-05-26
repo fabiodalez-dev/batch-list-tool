@@ -137,6 +137,10 @@ test('multiple identifier changes produce multiple rows in chronological order',
 test('recordChange() uses auth user id when userId is null', function () {
     $user = User::factory()->create();
     $doc = makeDocument();
+    // After PR #7 hardening, BelongsToRepository::creating validates that the
+    // authenticated user can write into the target repository. Attach the
+    // doc's repository to the test user so the cross-tenant guard passes.
+    $user->repositories()->attach($doc->repository_id);
 
     $this->actingAs($user);
 
@@ -150,6 +154,8 @@ test('recordChange() respects explicit userId argument', function () {
     $authUser = User::factory()->create();
     $explicitUser = User::factory()->create();
     $doc = makeDocument();
+    // See test #8 — auth user needs repo access for the creating hook to pass.
+    $authUser->repositories()->attach($doc->repository_id);
 
     $this->actingAs($authUser);
 
@@ -367,4 +373,30 @@ test('Document model exposes identifierHistory() returning a HasMany', function 
 
     expect($rel)->toBeInstanceOf(\Illuminate\Database\Eloquent\Relations\HasMany::class);
     expect($rel->getRelated())->toBeInstanceOf(DocumentIdentifierHistory::class);
+});
+
+// 26 --------------------------------------------------------------------------
+// Bulk-update guard tests (DocumentBuilder, RFQ §3.1.5 — see review feedback).
+// ---------------------------------------------------------------------------
+
+it('blocks bulk identifier updates with a LogicException by default', function () {
+    $doc = makeDocument(['identifier' => 'R1']);
+    expect(fn () => Document::query()->where('id', $doc->id)->update(['identifier' => 'R1-NEW']))
+        ->toThrow(\LogicException::class, 'Bulk update of Document.identifier is forbidden');
+});
+
+// 27 --------------------------------------------------------------------------
+it('allows bulk identifier updates inside withoutAuditGuards()', function () {
+    $doc = makeDocument(['identifier' => 'R1']);
+    Document::withoutAuditGuards(function () use ($doc) {
+        Document::query()->where('id', $doc->id)->update(['identifier' => 'R1-NEW']);
+    });
+    expect(Document::find($doc->id)->identifier)->toBe('R1-NEW');
+});
+
+// 28 --------------------------------------------------------------------------
+it('allows bulk updates that do not touch identifier (e.g., notes-only)', function () {
+    $doc = makeDocument(['notes' => 'old']);
+    Document::query()->where('id', $doc->id)->update(['notes' => 'new']);
+    expect(Document::find($doc->id)->notes)->toBe('new');
 });
