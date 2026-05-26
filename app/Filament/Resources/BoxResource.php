@@ -4,6 +4,7 @@ namespace App\Filament\Resources;
 
 use App\Filament\Resources\BoxResource\Pages;
 use App\Models\Box;
+use App\Models\Location;
 use Filament\Forms;
 use Filament\Forms\Form;
 use Filament\Resources\Resource;
@@ -26,37 +27,115 @@ class BoxResource extends Resource
     {
         return $form
             ->schema([
-                Forms\Components\TextInput::make('box_type')
+                Forms\Components\Select::make('box_type')
+                    ->options(collect(Box::TYPES)->mapWithKeys(fn ($t) => [$t => $t]))
                     ->required()
-                    ->maxLength(16)
-                    // RFQ rule #4: legacy box types (MAV, STVC) cannot be
-                    // assigned to *new* boxes. Existing legacy records must
-                    // stay editable, so we only enforce this on CREATE.
+                    ->live()  // re-evaluate visibility/required of dependent fields
+                    ->helperText('RAS / IN_SITU / NRA for new boxes. MAV / STVC are legacy-only and cannot be created.')
+                    // RFQ Appendix-1 rule #4: legacy box types (MAV, STVC) cannot be
+                    // assigned to *new* boxes. Existing legacy records must stay
+                    // editable, so we only enforce this on CREATE.
                     ->rule(function (?Box $record) {
                         return function (string $attribute, $value, \Closure $fail) use ($record) {
-                            // On EDIT ($record is hydrated) legacy types are allowed
-                            // so legacy data stays correctable.
                             if ($record !== null && $record->exists) {
-                                return;
+                                return; // edit: legacy stays editable
                             }
                             if ($value !== null && in_array((string) $value, Box::LEGACY_TYPES, true)) {
-                                $fail("Box type '{$value}' is a legacy type and cannot be assigned to new boxes (RFQ rule #4). Allowed for create: " . implode(', ', array_diff(Box::TYPES, Box::LEGACY_TYPES)) . '.');
+                                $fail("Box type '{$value}' is a legacy type and cannot be assigned to new boxes (RFQ Appendix-1 rule #4). Allowed for create: " . implode(', ', array_diff(Box::TYPES, Box::LEGACY_TYPES)) . '.');
                             }
                         };
                     }),
                 Forms\Components\TextInput::make('box_number')
                     ->required()
                     ->maxLength(32),
-                Forms\Components\Select::make('batch.batch_number')
-                    ->relationship('batch', 'batch_number'),
-                Forms\Components\TextInput::make('parent_box_id')
-                    ->numeric(),
+                Forms\Components\Select::make('batch_id')
+                    ->relationship('batch', 'batch_number')
+                    ->searchable()
+                    ->preload(),
+
+                // RFQ Appendix-1 rule #3: In Situ boxes must reference a previous
+                // RAS box, unless the user explicitly opts-out via the "no parent
+                // (provenance lost)" toggle. The toggle is the documented escape
+                // hatch for the few legacy records described in Requirements §ii
+                // ("there are only a few exceptions where this rule is broken, as
+                // the provenance of the document was lost ie: Unknown/NULL RAS box").
+                Forms\Components\Toggle::make('_parent_explicitly_unknown')
+                    ->label('Provenance lost (no parent RAS box)')
+                    ->helperText('Only tick this if the RAS box of origin is genuinely unknown — RFQ Appendix-1 rule #3 escape hatch. Use sparingly.')
+                    ->dehydrated(false)  // not persisted; control-only field
+                    ->default(false)
+                    ->visible(fn (Forms\Get $get) => $get('box_type') === 'IN_SITU'),
+                Forms\Components\Select::make('parent_box_id')
+                    ->label('Parent RAS box')
+                    ->relationship(
+                        'parent',
+                        'box_number',
+                        fn ($query) => $query->where('box_type', 'RAS')
+                    )
+                    ->getOptionLabelFromRecordUsing(fn (Box $r) => "RAS Box #{$r->box_number} (batch " . ($r->batch?->batch_number ?? '?') . ', id ' . $r->id . ')')
+                    ->searchable()
+                    ->preload()
+                    ->visible(fn (Forms\Get $get) => $get('box_type') === 'IN_SITU')
+                    ->required(fn (Forms\Get $get) => $get('box_type') === 'IN_SITU' && ! $get('_parent_explicitly_unknown'))
+                    ->rule(function (Forms\Get $get) {
+                        return function (string $attribute, $value, \Closure $fail) use ($get) {
+                            // Strict enforcement at validation time (defence in depth
+                            // vs the ->required() above; covers API/bulk-import paths
+                            // that don't go through the Filament Required validator).
+                            if ($get('box_type') !== 'IN_SITU') {
+                                return;
+                            }
+                            if (! $get('_parent_explicitly_unknown') && empty($value)) {
+                                $fail('IN_SITU boxes must reference a parent RAS box (RFQ Appendix-1 rule #3). Tick "Provenance lost" only if the origin RAS box is genuinely unknown.');
+                            }
+                        };
+                    }),
+
                 Forms\Components\TextInput::make('barcode')
                     ->maxLength(64),
-                Forms\Components\TextInput::make('barcode_status')
-                    ->required(),
-                Forms\Components\DatePicker::make('disinfestation_date'),
+                Forms\Components\Select::make('barcode_status')
+                    ->options(collect(Box::BARCODE_STATUSES)->mapWithKeys(fn ($s) => [$s => $s]))
+                    ->required()
+                    ->live()
+                    ->default('IN'),
+                // RFQ Appendix-1 rule #2: a record cannot be marked PERM OUT
+                // unless it has a disinfestation_date.
+                Forms\Components\DatePicker::make('disinfestation_date')
+                    ->required(fn (Forms\Get $get) => $get('barcode_status') === 'PERM_OUT')
+                    ->helperText(fn (Forms\Get $get) => $get('barcode_status') === 'PERM_OUT'
+                        ? 'Required when status is PERM OUT (RFQ Appendix-1 rule #2).'
+                        : null)
+                    ->rule(function (Forms\Get $get) {
+                        return function (string $attribute, $value, \Closure $fail) use ($get) {
+                            if ($get('barcode_status') === 'PERM_OUT' && empty($value)) {
+                                $fail('Disinfestation date is required when status is PERM OUT (RFQ Appendix-1 rule #2).');
+                            }
+                        };
+                    }),
+
+                // RFQ §3.1.9 — Configurable Location Hierarchies.
+                // Boxes may be pinned to a configurable Location (room /
+                // work-area / shelf / showcase / temp-holding / …). The
+                // option list is scoped to the user's default repository AND
+                // global locations (repository_id IS NULL) — see
+                // Location::scopeForRepository().
+                Forms\Components\Select::make('location_id')
+                    ->label('Location (RFQ §3.1.9)')
+                    ->relationship(
+                        'location',
+                        'name',
+                        fn ($query) => $query
+                            ->active()
+                            ->forRepository(auth()->user()?->default_repository_id),
+                    )
+                    ->getOptionLabelFromRecordUsing(fn (Location $r) => $r->breadcrumb())
+                    ->searchable(['name', 'code'])
+                    ->preload()
+                    ->nullable()
+                    ->helperText('Repository / room / shelf / showcase / temp-holding hierarchy.'),
+
                 Forms\Components\Toggle::make('is_legacy')
+                    ->helperText('Flags legacy data; required true when box_type is MAV or STVC.')
                     ->required(),
                 Forms\Components\Textarea::make('notes')
                     ->columnSpanFull(),

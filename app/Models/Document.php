@@ -2,8 +2,10 @@
 
 namespace App\Models;
 
+use App\Models\Builders\DocumentBuilder;
 use App\Models\Concerns\BelongsToRepository;
 use App\Models\Concerns\ConditionallyPreloadsRelations;
+use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Database\Eloquent\Factories\HasFactory;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
@@ -51,7 +53,7 @@ class Document extends Model implements AuditableContract, HasMedia, Sortable
         'sort_order',
         // Normalised columns
         'identifier', 'document_type', 'series_id', 'accession_id',
-        'current_box_id', 'batch_id', 'repository_id', 'volume_label',
+        'current_box_id', 'location_id', 'batch_id', 'repository_id', 'volume_label',
         'dates_start', 'dates_end', 'dates_year_start', 'dates_year_end',
         'disinfestation_date', 'extra', 'notes',
         // Legacy POC columns (parity with raw-PHP schema)
@@ -110,6 +112,17 @@ class Document extends Model implements AuditableContract, HasMedia, Sortable
         return $this->belongsTo(Box::class, 'current_box_id');
     }
 
+    /**
+     * RFQ §3.1.9 — Document can be pinned to a configurable Location
+     * independently of (or in addition to) its current Box. Useful when a
+     * document is on display in a museum showcase or temporarily on a
+     * conservation work-area without being re-boxed.
+     */
+    public function location(): BelongsTo
+    {
+        return $this->belongsTo(Location::class);
+    }
+
     public function batch(): BelongsTo
     {
         return $this->belongsTo(Batch::class);
@@ -138,10 +151,37 @@ class Document extends Model implements AuditableContract, HasMedia, Sortable
     }
 
     /**
+     * All issue flags ever raised against this document — newest first.
+     *
+     * RFQ §3.1.12 — structured replacement for the legacy spreadsheet
+     * colour-coding. See {@see DocumentFlag}.
+     */
+    public function flags(): HasMany
+    {
+        return $this->hasMany(DocumentFlag::class)->latest('flagged_at');
+    }
+
+    /**
+     * Only the flags that still need attention (`open` + `acknowledged`).
+     * Used by the Document detail page, the alerts dashboard, and the
+     * search-index summary built by {@see self::toSearchableArray()}.
+     */
+    public function openFlags(): HasMany
+    {
+        return $this->flags()->open();
+    }
+
+    /**
      * F-011 alignment: this MUST mirror the attributes exposed in
      * DocumentResource::getGloballySearchableAttributes() so that swapping
      * Scout drivers (database / Meilisearch / Algolia) does not change
      * which fields the user sees in global search.
+     *
+     * The trailing `flag_tokens` field is a space-separated list of
+     * `flag:<type>` tokens (one per open flag) so an operator searching
+     * for "flag:duplicate_suspect" lands on every document with an open
+     * duplicate-suspect flag. Closed (resolved/dismissed) flags are not
+     * indexed — they're noise once handled.
      */
     public function toSearchableArray(): array
     {
@@ -158,6 +198,10 @@ class Document extends Model implements AuditableContract, HasMedia, Sortable
             'series_title' => $this->series?->title,
             'authorities_surnames' => $this->authorities()->pluck('surname')->implode(' '),
             'authorities_idents' => $this->authorities()->pluck('identifier')->implode(' '),
+            'flag_tokens' => $this->openFlags()
+                ->pluck('type')
+                ->map(fn (string $t): string => 'flag:' . $t)
+                ->implode(' '),
         ];
     }
 
