@@ -12,6 +12,7 @@ use Illuminate\Database\Eloquent\SoftDeletes;
 use OwenIt\Auditing\Auditable;
 use OwenIt\Auditing\Contracts\Auditable as AuditableContract;
 use Spatie\EloquentSortable\Sortable;
+use Spatie\EloquentSortable\SortableTrait;
 
 class Box extends Model implements AuditableContract, Sortable
 {
@@ -19,6 +20,7 @@ class Box extends Model implements AuditableContract, Sortable
     use ConditionallyPreloadsRelations;
     use HasFactory;
     use SoftDeletes;
+    use SortableTrait;
 
     // NOTE: Box has no direct repository_id column — scoping derives via batch.repository_id.
     // Filament Resource for Box should filter on batch.repository_id manually if needed.

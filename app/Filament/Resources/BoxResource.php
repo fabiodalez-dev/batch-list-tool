@@ -27,7 +27,23 @@ class BoxResource extends Resource
         return $form
             ->schema([
                 Forms\Components\TextInput::make('box_type')
-                    ->required(),
+                    ->required()
+                    ->maxLength(16)
+                    // RFQ rule #4: legacy box types (MAV, STVC) cannot be
+                    // assigned to *new* boxes. Existing legacy records must
+                    // stay editable, so we only enforce this on CREATE.
+                    ->rule(function (?Box $record) {
+                        return function (string $attribute, $value, \Closure $fail) use ($record) {
+                            // On EDIT ($record is hydrated) legacy types are allowed
+                            // so legacy data stays correctable.
+                            if ($record !== null && $record->exists) {
+                                return;
+                            }
+                            if ($value !== null && in_array((string) $value, Box::LEGACY_TYPES, true)) {
+                                $fail("Box type '{$value}' is a legacy type and cannot be assigned to new boxes (RFQ rule #4). Allowed for create: " . implode(', ', array_diff(Box::TYPES, Box::LEGACY_TYPES)) . '.');
+                            }
+                        };
+                    }),
                 Forms\Components\TextInput::make('box_number')
                     ->required()
                     ->maxLength(32),

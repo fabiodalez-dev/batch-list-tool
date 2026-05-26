@@ -2,17 +2,14 @@
 
 namespace App\Models;
 
-use App\Models\Builders\DocumentBuilder;
 use App\Models\Concerns\BelongsToRepository;
 use App\Models\Concerns\ConditionallyPreloadsRelations;
-use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Database\Eloquent\Factories\HasFactory;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
 use Illuminate\Database\Eloquent\Relations\BelongsToMany;
 use Illuminate\Database\Eloquent\Relations\HasMany;
 use Illuminate\Database\Eloquent\SoftDeletes;
-use Illuminate\Support\Collection;
 use Laravel\Scout\Searchable;
 use OwenIt\Auditing\Auditable;
 use OwenIt\Auditing\Contracts\Auditable as AuditableContract;
@@ -34,18 +31,6 @@ class Document extends Model implements AuditableContract, HasMedia, Sortable
     use Searchable;
     use SoftDeletes;
     use SortableTrait;
-
-    /**
-     * Whitelist of columns that {@see scopeSearchFullText()} is allowed to
-     * search. Kept as a class constant so callers (Filament filters, API
-     * endpoints, tests) can introspect it and so a typo at the call-site
-     * fails fast with an InvalidArgumentException instead of generating a
-     * MySQL error about a missing FULLTEXT index at query time.
-     *
-     * Must stay in sync with the FULLTEXT indexes created by
-     * database/migrations/2026_05_25_190000_add_fulltext_indexes_to_searchable_tables.php.
-     */
-    public const FULLTEXT_COLUMNS = ['notes', 'deeds', 'museum_reference'];
 
     public array $sortable = [
         'order_column_name' => 'sort_order',
@@ -150,28 +135,6 @@ class Document extends Model implements AuditableContract, HasMedia, Sortable
     public function movements(): HasMany
     {
         return $this->hasMany(BoxMovement::class)->latest('movement_date');
-    }
-
-    /**
-     * Chronological identifier-change log for this document (newest first).
-     */
-    public function identifierHistory(): HasMany
-    {
-        return $this->hasMany(DocumentIdentifierHistory::class)
-            ->orderByDesc('changed_at');
-    }
-
-    /**
-     * Distinct list of previous_identifier values from the history, useful for
-     * surfacing "also known as" labels and feeding the global search index.
-     */
-    public function previousIdentifiers(): Collection
-    {
-        return $this->identifierHistory()
-            ->pluck('previous_identifier')
-            ->filter(fn ($v) => $v !== null && $v !== '')
-            ->unique()
-            ->values();
     }
 
     /**

@@ -29,7 +29,23 @@ class BatchResource extends Resource
             ->schema([
                 Forms\Components\TextInput::make('batch_number')
                     ->required()
-                    ->numeric(),
+                    ->numeric()
+                    ->minValue(1)
+                    // RFQ rule #1: batches 33, 34, 36 are reserved/forbidden.
+                    // The Batch model defines FORBIDDEN_NUMBERS — we use the
+                    // model helper so the rule has a single source of truth
+                    // (model const + form validator + DB CHECK on MySQL).
+                    ->rule(function () {
+                        return function (string $attribute, $value, \Closure $fail) {
+                            if ($value === null || $value === '') {
+                                return;
+                            }
+                            $candidate = new Batch(['batch_number' => (int) $value]);
+                            if ($candidate->isForbidden()) {
+                                $fail("Batch number {$value} is reserved/forbidden (RFQ rule).");
+                            }
+                        };
+                    }),
                 Forms\Components\TextInput::make('description')
                     ->maxLength(255),
                 Forms\Components\TextInput::make('type')
