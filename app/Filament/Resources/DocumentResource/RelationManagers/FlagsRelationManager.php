@@ -28,7 +28,7 @@ use Illuminate\Database\Eloquent\Model;
  *
  * Write actions (create, mark resolved/dismissed/acknowledged) are gated on
  * the Filament-Shield-generated permissions for the DocumentFlag resource;
- * a custom `resolve_document::flag` permission gates the workflow
+ * a custom `resolve_document_flag` permission gates the workflow
  * transitions specifically so reviewers can be allowed to close flags
  * without being able to update their content.
  */
@@ -235,7 +235,7 @@ class FlagsRelationManager extends RelationManager
         }
 
         return method_exists($user, 'can')
-            ? (bool) $user->can('view_any_document::flag')
+            ? (bool) $user->can('view_any_document_flag')
             : false;
     }
 
@@ -308,7 +308,7 @@ class FlagsRelationManager extends RelationManager
             return true;
         }
 
-        return method_exists($user, 'can') && $user->can('create_document::flag');
+        return method_exists($user, 'can') && $user->can('create_document_flag');
     }
 
     protected static function userCanUpdate(): bool
@@ -322,7 +322,7 @@ class FlagsRelationManager extends RelationManager
             return true;
         }
 
-        return method_exists($user, 'can') && $user->can('update_document::flag');
+        return method_exists($user, 'can') && $user->can('update_document_flag');
     }
 
     protected static function userCanResolve(): bool
@@ -340,7 +340,7 @@ class FlagsRelationManager extends RelationManager
         // for installs where the permission hasn't been seeded yet, so the
         // workflow doesn't break on a fresh deploy.
         if (method_exists($user, 'can')) {
-            return $user->can('resolve_document::flag') || $user->can('update_document::flag');
+            return $user->can('resolve_document_flag') || $user->can('update_document_flag');
         }
 
         return false;

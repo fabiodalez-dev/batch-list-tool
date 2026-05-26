@@ -245,15 +245,20 @@ class DocumentResource extends Resource
                 SelectFilter::make('series')
                     ->relationship('series', 'code')->searchable()->preload()->multiple(),
 
+                // Heavy relations (669 boxes, 669 batches, 808 authorities):
+                // server-side searchable() WITHOUT preload() to avoid
+                // dumping the entire option list into the filter dropdown.
+                // Same pattern as the form-side fix in SearchableSelects
+                // (PR feat/ux-searchable-selects).
                 SelectFilter::make('batch')
-                    ->relationship('batch', 'batch_number')->searchable()->preload()->multiple(),
+                    ->relationship('batch', 'batch_number')->searchable()->multiple(),
 
                 SelectFilter::make('repository')
                     ->relationship('repository', 'code')->searchable()->preload(),
 
                 SelectFilter::make('current_box_id')
                     ->label('Current box')
-                    ->relationship('currentBox', 'box_number')->searchable()->preload()->multiple(),
+                    ->relationship('currentBox', 'box_number')->searchable()->multiple(),
 
                 SelectFilter::make('accession_id')
                     ->label('Accession')
@@ -261,7 +266,7 @@ class DocumentResource extends Resource
 
                 SelectFilter::make('authorities')
                     ->label('Creators')
-                    ->relationship('authorities', 'surname')->searchable()->preload()->multiple(),
+                    ->relationship('authorities', 'surname')->searchable()->multiple(),
 
                 // Free-text search per field (POC-style filtri puntuali).
                 // For columns covered by a single-column FULLTEXT index
