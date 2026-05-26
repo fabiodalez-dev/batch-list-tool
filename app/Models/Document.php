@@ -12,6 +12,7 @@ use Illuminate\Database\Eloquent\Relations\BelongsTo;
 use Illuminate\Database\Eloquent\Relations\BelongsToMany;
 use Illuminate\Database\Eloquent\Relations\HasMany;
 use Illuminate\Database\Eloquent\SoftDeletes;
+use Illuminate\Support\Collection;
 use Laravel\Scout\Searchable;
 use OwenIt\Auditing\Auditable;
 use OwenIt\Auditing\Contracts\Auditable as AuditableContract;
@@ -33,6 +34,26 @@ class Document extends Model implements AuditableContract, HasMedia, Sortable
     use Searchable;
     use SoftDeletes;
     use SortableTrait;
+
+    /**
+     * Canonical whitelist of columns that participate in the FULLTEXT
+     * search index (MySQL) and the LIKE-based fallback (SQLite / Postgres).
+     *
+     * Any column passed to {@see self::scopeSearchFullText()} that is NOT in
+     * this list triggers an InvalidArgumentException at the call-site —
+     * fail-fast over silently scanning the wrong index or rejecting at
+     * query time. Keep this in sync with the migration that creates the
+     * matching `idx_documents_*_ft` indexes on MySQL.
+     *
+     * @var array<int,string>
+     */
+    public const FULLTEXT_COLUMNS = [
+        'notes',
+        'deeds',
+        'museum_reference',
+        'practice',
+        'dates',
+    ];
 
     public array $sortable = [
         'order_column_name' => 'sort_order',
@@ -148,6 +169,31 @@ class Document extends Model implements AuditableContract, HasMedia, Sortable
     public function movements(): HasMany
     {
         return $this->hasMany(BoxMovement::class)->latest('movement_date');
+    }
+
+    /**
+     * Append-only log of identifier transitions for this document (PR #8).
+     * Returns rows ordered descending by `changed_at` so the most recent
+     * change is first — callers can override with `->orderBy(...)`.
+     */
+    public function identifierHistory(): HasMany
+    {
+        return $this->hasMany(DocumentIdentifierHistory::class)->latest('changed_at');
+    }
+
+    /**
+     * Distinct list of previous identifiers this document has ever held.
+     * Built from the `identifierHistory` log; uniqueness is enforced in PHP
+     * so the result is stable across DB drivers (SQLite collation quirks).
+     *
+     * @return Collection<int,string>
+     */
+    public function previousIdentifiers(): Collection
+    {
+        return $this->identifierHistory()
+            ->pluck('previous_identifier')
+            ->unique()
+            ->values();
     }
 
     /**

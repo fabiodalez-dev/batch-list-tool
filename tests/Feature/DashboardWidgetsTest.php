@@ -25,7 +25,9 @@ use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Support\Facades\Artisan;
 use Illuminate\Support\Facades\Cache;
 use Livewire\Livewire;
+use OwenIt\Auditing\AuditableObserver;
 use OwenIt\Auditing\Models\Audit;
+use Spatie\Permission\Models\Permission;
 use Spatie\Permission\Models\Role;
 use Symfony\Component\HttpFoundation\StreamedResponse;
 use Symfony\Component\HttpKernel\Exception\HttpException;
@@ -55,6 +57,28 @@ function ensureRolesExist(): void
     Role::firstOrCreate(['name' => 'admin',       'guard_name' => 'web']);
     Role::firstOrCreate(['name' => 'editor',      'guard_name' => 'web']);
     Role::firstOrCreate(['name' => 'viewer',      'guard_name' => 'web']);
+}
+
+/**
+ * Grant the spatie-permission permissions required for the admin user to
+ * mount Filament resources (DocumentResource, etc.) and to invoke the CSV
+ * export action. Idempotent — safe to call multiple times.
+ */
+function ensureAdminPermissions(User $user): void
+{
+    $permissions = [
+        // Document policy
+        'view_any_document', 'view_document', 'create_document', 'update_document',
+        'delete_document', 'delete_any_document', 'force_delete_document',
+        'force_delete_any_document', 'restore_document', 'restore_any_document',
+        'replicate_document', 'reorder_document',
+    ];
+    foreach ($permissions as $name) {
+        $p = Permission::firstOrCreate(
+            ['name' => $name, 'guard_name' => 'web']
+        );
+        $user->givePermissionTo($p);
+    }
 }
 
 function makeRepository(string $prefix): Repository
@@ -100,6 +124,10 @@ function adminUser(): User
         'is_active' => true,
     ]);
     $u->assignRole('admin');
+    // Grant Document policy permissions so the admin can mount
+    // ListDocuments / use exportToCsv (the page checks viewAny + the action
+    // re-checks view_any_document in defense-in-depth).
+    ensureAdminPermissions($u);
 
     return $u;
 }
@@ -350,6 +378,13 @@ test('PendingDisinfestationTable markDisinfested action writes date + creates au
     // Auditing is suppressed in console context by default — enable it for
     // this test so we can assert the audit row is created on the action path.
     config(['audit.console' => true]);
+    // owen-it/laravel-auditing checks isAuditingEnabled() ONCE in bootAuditable()
+    // when the model class is first booted. By the time this individual test
+    // runs and flips the config, Document::bootAuditable() has long since run
+    // and the observer was never attached. Re-attach it explicitly so the
+    // `$record->update(...)` inside the Filament action goes through the
+    // audit pipeline.
+    Document::observe(AuditableObserver::class);
 
     $repo = makeRepository('MD');
     $series = makeSeries('MD');
