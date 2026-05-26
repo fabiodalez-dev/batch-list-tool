@@ -9,7 +9,7 @@ use Illuminate\Database\Eloquent\Factories\Factory;
 use Illuminate\Support\Str;
 
 /**
- * @extends \Illuminate\Database\Eloquent\Factories\Factory<\App\Models\Repository>
+ * @extends Factory<Repository>
  */
 class RepositoryFactory extends Factory
 {
@@ -19,10 +19,10 @@ class RepositoryFactory extends Factory
     {
         // RFQ §3.5.1 — code is the tenant key, must be unique and short.
         return [
-            'code'        => strtoupper(Str::random(6)),
-            'name'        => $this->faker->company() . ' Archive',
+            'code' => strtoupper(Str::random(6)),
+            'name' => $this->faker->company() . ' Archive',
             'description' => $this->faker->sentence(),
-            'is_active'   => true,
+            'is_active' => true,
         ];
     }
 }

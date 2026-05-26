@@ -22,7 +22,6 @@ use Illuminate\Support\Facades\DB;
  *   F-009 — on duplicate-surname collisions, SKIP and log the candidate count
  *           so the operator can resolve manually. NEVER pick arbitrarily.
  */
-
 uses(DatabaseTransactions::class);
 
 beforeEach(function () {
@@ -52,11 +51,11 @@ test('F-009 — ambiguous surname does NOT create a document_authority row and I
 
     // Document with that ambiguous surname stored in extra.legacy_creator_text
     $doc = Document::withoutGlobalScope(RepositoryScope::class)->create([
-        'identifier'    => 'CRL-AMB-' . uniqid(),
+        'identifier' => 'CRL-AMB-' . uniqid(),
         'document_type' => 'TEST',
-        'series_id'     => $this->series->id,
+        'series_id' => $this->series->id,
         'repository_id' => $this->repository->id,
-        'extra'         => ['legacy_creator_text' => $surname],
+        'extra' => ['legacy_creator_text' => $surname],
     ]);
 
     // Run the command — it MUST NOT pick any of the 3 candidates.
@@ -81,7 +80,7 @@ test('F-001 — fuzzy match on a token shorter than 4 chars returns null', funct
     // the fuzzy LIKE expansion (would otherwise falsely link "Foo" → "Fontana").
     Authority::create([
         'identifier' => 'FT_' . uniqid('', false),
-        'surname'    => 'Fontana',
+        'surname' => 'Fontana',
         'entity_type' => 'PERSON',
     ]);
 

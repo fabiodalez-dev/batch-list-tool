@@ -11,7 +11,6 @@ use App\Models\Series;
 use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Support\Facades\DB;
-use Illuminate\Support\Facades\Schema;
 
 uses(RefreshDatabase::class);
 
@@ -61,8 +60,8 @@ function makeFtDocument(array $attrs = []): Document
     [$repo, $series] = bootstrapRefData();
 
     return Document::create(array_merge([
-        'identifier'    => 'DOC-' . str_pad((string) $counter, 6, '0', STR_PAD_LEFT),
-        'series_id'     => $series->id,
+        'identifier' => 'DOC-' . str_pad((string) $counter, 6, '0', STR_PAD_LEFT),
+        'series_id' => $series->id,
         'repository_id' => $repo->id,
     ], $attrs));
 }
@@ -216,17 +215,17 @@ describe('FULLTEXT search', function () {
         [$mainRepo, $series] = bootstrapRefData();
 
         Document::create([
-            'identifier'    => 'TENANT-1',
-            'series_id'     => $series->id,
+            'identifier' => 'TENANT-1',
+            'series_id' => $series->id,
             'repository_id' => $mainRepo->id,
-            'notes'         => 'shared keyword discovery',
+            'notes' => 'shared keyword discovery',
         ]);
 
         Document::create([
-            'identifier'    => 'TENANT-2',
-            'series_id'     => $series->id,
+            'identifier' => 'TENANT-2',
+            'series_id' => $series->id,
             'repository_id' => $repo2->id,
-            'notes'         => 'shared keyword discovery',
+            'notes' => 'shared keyword discovery',
         ]);
 
         // Simulate a multi-tenant scope: a where() restricting to a
@@ -242,7 +241,7 @@ describe('FULLTEXT search', function () {
     });
 
     it('scope searchFullText is registered on the Document model', function () {
-        $document = new Document();
+        $document = new Document;
 
         // Eloquent exposes local scopes via `newQuery()->{scope}()`. If
         // the scope wasn't registered (typo, missing method, ...) this
@@ -269,7 +268,7 @@ describe('FULLTEXT search', function () {
         // must throw immediately rather than producing a MySQL error at
         // execution time (or, worse, silently scanning the wrong index).
         expect(fn () => Document::query()->searchFullText('foo', ['barcode_in']))
-            ->toThrow(\InvalidArgumentException::class);
+            ->toThrow(InvalidArgumentException::class);
 
         // The exception message must enumerate both the whitelist and the
         // offending columns so the operator can fix the call-site fast.
@@ -277,7 +276,7 @@ describe('FULLTEXT search', function () {
             Document::query()->searchFullText('foo', ['barcode_in']);
             // Unreachable — the previous line throws.
             expect(true)->toBeFalse();
-        } catch (\InvalidArgumentException $e) {
+        } catch (InvalidArgumentException $e) {
             expect($e->getMessage())->toContain('barcode_in');
             expect($e->getMessage())->toContain('notes');
         }
@@ -312,6 +311,7 @@ describe('FULLTEXT search', function () {
         //    issued — only the bare COUNT(*) from the assertion above.
         $hasFulltextOrLike = $queries->contains(function ($q) {
             $sql = strtolower($q['query']);
+
             return str_contains($sql, 'match')
                 || str_contains($sql, 'against')
                 || str_contains($sql, 'like ?')
@@ -431,7 +431,7 @@ describe('ConditionallyPreloadsRelations trait', function () {
         // Seed a single authority so the threshold(0) comparison passes.
         Authority::create([
             'identifier' => 'AUTH-A1',
-            'surname'    => 'Borg',
+            'surname' => 'Borg',
         ]);
 
         $query = Authority::query()->conditionallyWith(['documents'], threshold: 0);
@@ -551,6 +551,7 @@ describe('ConditionallyPreloadsRelations trait', function () {
         // characteristic `select * from "series" where ... in (...)`).
         $hasEagerSmall = collect($logSmall)->contains(function ($q) {
             $sql = strtolower($q['query']);
+
             return str_contains($sql, 'from "series"') || str_contains($sql, 'from `series`');
         });
 
@@ -571,6 +572,7 @@ describe('ConditionallyPreloadsRelations trait', function () {
 
         $hasEagerBig = collect($logBig)->contains(function ($q) {
             $sql = strtolower($q['query']);
+
             return str_contains($sql, 'from "series"') || str_contains($sql, 'from `series`');
         });
 

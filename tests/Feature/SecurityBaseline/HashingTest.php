@@ -18,7 +18,6 @@ use Illuminate\Support\Facades\Hash;
  *     2. asserting `config/hashing.php` defaults to 12 when the env var is unset
  *     3. exercising Hash::make + Hash::needsRehash with rounds=12 explicitly
  */
-
 test('config/hashing defaults to bcrypt cost 12 and the deployed .env declares 12', function () {
     // 1. Compiled hashing config must read the env var with a default of 12 — i.e. the
     //    fail-safe is always at least 12 even if BCRYPT_ROUNDS gets unset in production.

@@ -43,6 +43,7 @@ class RepositoryScope implements Scope
         if (empty($allowed)) {
             // User assigned to no repository → see nothing
             $builder->whereRaw('1 = 0');
+
             return;
         }
 

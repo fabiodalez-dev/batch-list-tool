@@ -2,7 +2,6 @@
 
 namespace App\Filament\Resources\DocumentResource\RelationManagers;
 
-use App\Models\DocumentIdentifierHistory;
 use Filament\Forms;
 use Filament\Forms\Form;
 use Filament\Resources\RelationManagers\RelationManager;
@@ -96,6 +95,7 @@ class IdentifierHistoryRelationManager extends RelationManager
                         if (! empty($data['to'])) {
                             $i[] = 'Changed ≤ ' . $data['to'];
                         }
+
                         return $i;
                     }),
             ])
@@ -107,6 +107,7 @@ class IdentifierHistoryRelationManager extends RelationManager
                         $data['document_id'] = $owner->getKey();
                         $data['repository_id'] = $owner->repository_id;
                         $data['changed_by_user_id'] = auth()->id();
+
                         return $data;
                     }),
             ])
@@ -114,6 +115,11 @@ class IdentifierHistoryRelationManager extends RelationManager
                 Tables\Actions\ViewAction::make(),
             ])
             ->bulkActions([]);
+    }
+
+    public static function canViewForRecord(Model $ownerRecord, string $pageClass): bool
+    {
+        return true;
     }
 
     /**
@@ -132,10 +138,5 @@ class IdentifierHistoryRelationManager extends RelationManager
         }
 
         return false;
-    }
-
-    public static function canViewForRecord(Model $ownerRecord, string $pageClass): bool
-    {
-        return true;
     }
 }

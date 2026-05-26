@@ -3,6 +3,7 @@
 namespace App\Models;
 
 use App\Models\Concerns\ConditionallyPreloadsRelations;
+use App\Models\Scopes\ThroughBatchRepositoryScope;
 use Illuminate\Database\Eloquent\Factories\HasFactory;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
@@ -11,7 +12,6 @@ use Illuminate\Database\Eloquent\SoftDeletes;
 use OwenIt\Auditing\Auditable;
 use OwenIt\Auditing\Contracts\Auditable as AuditableContract;
 use Spatie\EloquentSortable\Sortable;
-use Spatie\EloquentSortable\SortableTrait;
 
 class Box extends Model implements AuditableContract, Sortable
 {
@@ -113,9 +113,9 @@ class Box extends Model implements AuditableContract, Sortable
      */
     protected static function booted(): void
     {
-        static::addGlobalScope(new \App\Models\Scopes\ThroughBatchRepositoryScope(
+        static::addGlobalScope(new ThroughBatchRepositoryScope(
             foreignTable: 'batches',
-            foreignKey:   'batch_id',
+            foreignKey: 'batch_id',
         ));
     }
 }

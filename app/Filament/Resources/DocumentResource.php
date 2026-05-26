@@ -50,7 +50,7 @@ class DocumentResource extends Resource
                                 fn ($query) => $query->whereIn(
                                     'id',
                                     auth()->user()?->hasAnyRole(['super_admin', 'admin'])
-                                        ? \App\Models\Repository::query()->pluck('id')->all()
+                                        ? Repository::query()->pluck('id')->all()
                                         : (auth()->user()?->repositories()->pluck('repositories.id')->all() ?? [])
                                 )
                             )
@@ -223,11 +223,11 @@ class DocumentResource extends Resource
                 // practice) keep the LIKE filter because they're already covered
                 // by B-tree indexes and a FULLTEXT index on a VARCHAR(50) gives
                 // no measurable gain.
-                self::likeFilter('barcode_in',           'Search in Barcode (IN)'),
+                self::likeFilter('barcode_in', 'Search in Barcode (IN)'),
                 self::likeFilter('catalogue_identifier', 'Search in Catalogue ID'),
-                self::likeFilter('practice',             'Search in Practice'),
-                self::fullTextFilter('notes',            'Search in Notes'),
-                self::fullTextFilter('deeds',            'Search in Deeds'),
+                self::likeFilter('practice', 'Search in Practice'),
+                self::fullTextFilter('notes', 'Search in Notes'),
+                self::fullTextFilter('deeds', 'Search in Deeds'),
                 self::fullTextFilter('museum_reference', 'Search in Museum Reference'),
 
                 // volume_label is special — also searches the JSON path extra->volume; kept inline.
@@ -339,44 +339,6 @@ class DocumentResource extends Resource
             ]);
     }
 
-    /**
-     * Build a leading-/trailing-wildcard LIKE filter on a single column.
-     * Centralises the form + query shape shared by all "Search in X" filters.
-     */
-    private static function likeFilter(string $name, string $label, ?string $column = null): Filter
-    {
-        $col = $column ?? $name;
-
-        return Filter::make($name)
-            ->form([Forms\Components\TextInput::make('value')->label($label)])
-            ->query(fn (Builder $q, array $data) =>
-                $q->when($data['value'] ?? null, fn ($q, $v) =>
-                    $q->where($col, 'like', '%' . trim($v) . '%')));
-    }
-
-    /**
-     * Build a FULLTEXT-backed filter on a single column. Delegates to
-     * Document::scopeSearchFullText() which handles the MySQL/non-MySQL
-     * driver split (MATCH...AGAINST vs LIKE) and the empty-term no-op.
-     *
-     * One column per filter is intentional: MySQL only uses a FULLTEXT
-     * index when the MATCH() column list exactly matches the index's
-     * column list, and the migration creates one single-column index
-     * per searchable column.
-     */
-    private static function fullTextFilter(string $name, string $label, ?string $column = null): Filter
-    {
-        $col = $column ?? $name;
-
-        return Filter::make($name)
-            ->form([Forms\Components\TextInput::make('value')->label($label)])
-            ->query(fn (Builder $q, array $data) =>
-                $q->when(
-                    $data['value'] ?? null,
-                    fn (Builder $q, string $v) => $q->searchFullText($v, [$col]),
-                ));
-    }
-
     public static function getRelations(): array
     {
         return [
@@ -455,6 +417,41 @@ class DocumentResource extends Resource
             'view' => Pages\ViewDocument::route('/{record}'),
             'edit' => Pages\EditDocument::route('/{record}/edit'),
         ];
+    }
+
+    /**
+     * Build a leading-/trailing-wildcard LIKE filter on a single column.
+     * Centralises the form + query shape shared by all "Search in X" filters.
+     */
+    private static function likeFilter(string $name, string $label, ?string $column = null): Filter
+    {
+        $col = $column ?? $name;
+
+        return Filter::make($name)
+            ->form([Forms\Components\TextInput::make('value')->label($label)])
+            ->query(fn (Builder $q, array $data) => $q->when($data['value'] ?? null, fn ($q, $v) => $q->where($col, 'like', '%' . trim($v) . '%')));
+    }
+
+    /**
+     * Build a FULLTEXT-backed filter on a single column. Delegates to
+     * Document::scopeSearchFullText() which handles the MySQL/non-MySQL
+     * driver split (MATCH...AGAINST vs LIKE) and the empty-term no-op.
+     *
+     * One column per filter is intentional: MySQL only uses a FULLTEXT
+     * index when the MATCH() column list exactly matches the index's
+     * column list, and the migration creates one single-column index
+     * per searchable column.
+     */
+    private static function fullTextFilter(string $name, string $label, ?string $column = null): Filter
+    {
+        $col = $column ?? $name;
+
+        return Filter::make($name)
+            ->form([Forms\Components\TextInput::make('value')->label($label)])
+            ->query(fn (Builder $q, array $data) => $q->when(
+                $data['value'] ?? null,
+                fn (Builder $q, string $v) => $q->searchFullText($v, [$col]),
+            ));
     }
 
     /**

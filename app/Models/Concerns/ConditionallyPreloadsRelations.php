@@ -24,7 +24,7 @@ use Illuminate\Database\Eloquent\Builder;
 trait ConditionallyPreloadsRelations
 {
     /**
-     * @param  array<int, string>  $relations  e.g. ['authorities', 'series', 'currentBox.batch']
+     * @param array<int, string> $relations e.g. ['authorities', 'series', 'currentBox.batch']
      */
     public function scopeConditionallyWith(
         Builder $query,

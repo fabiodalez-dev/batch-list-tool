@@ -5,9 +5,9 @@ use App\Filament\Resources\DocumentResource\RelationManagers\IdentifierHistoryRe
 use App\Models\Document;
 use App\Models\DocumentIdentifierHistory;
 use App\Models\Repository;
-use App\Models\Series;
 use App\Models\User;
 use App\Observers\DocumentObserver;
+use Illuminate\Database\Eloquent\Relations\HasMany;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Support\Facades\Schema;
 use OwenIt\Auditing\Models\Audit;
@@ -59,7 +59,7 @@ test('migration creates document_identifier_history table with all expected colu
 
 // 2 ---------------------------------------------------------------------------
 test('model exposes the correct fillable and casts', function () {
-    $m = new DocumentIdentifierHistory();
+    $m = new DocumentIdentifierHistory;
 
     expect($m->getFillable())->toEqualCanonicalizing([
         'document_id',
@@ -242,7 +242,7 @@ test('audit trail: inserting a history row triggers an owen-it Audit record', fu
 
     $doc->update(['identifier' => 'R15-new']);
 
-    $audits = Audit::where('auditable_type', (new DocumentIdentifierHistory())->getMorphClass())->get();
+    $audits = Audit::where('auditable_type', (new DocumentIdentifierHistory)->getMorphClass())->get();
     expect($audits)->not->toBeEmpty();
 });
 
@@ -329,7 +329,7 @@ test('null -> null transition is skipped by the observer', function () {
     $doc = makeDocument(['identifier' => 'R22']);
 
     // Simulate the observer directly with both values null.
-    $observer = new DocumentObserver();
+    $observer = new DocumentObserver;
     $skipReflection = new ReflectionMethod(DocumentObserver::class, 'shouldSkip');
     $skipReflection->setAccessible(true);
 
@@ -371,7 +371,7 @@ test('Document model exposes identifierHistory() returning a HasMany', function 
     $doc = makeDocument();
     $rel = $doc->identifierHistory();
 
-    expect($rel)->toBeInstanceOf(\Illuminate\Database\Eloquent\Relations\HasMany::class);
+    expect($rel)->toBeInstanceOf(HasMany::class);
     expect($rel->getRelated())->toBeInstanceOf(DocumentIdentifierHistory::class);
 });
 
@@ -382,7 +382,7 @@ test('Document model exposes identifierHistory() returning a HasMany', function 
 it('blocks bulk identifier updates with a LogicException by default', function () {
     $doc = makeDocument(['identifier' => 'R1']);
     expect(fn () => Document::query()->where('id', $doc->id)->update(['identifier' => 'R1-NEW']))
-        ->toThrow(\LogicException::class, 'Bulk update of Document.identifier is forbidden');
+        ->toThrow(LogicException::class, 'Bulk update of Document.identifier is forbidden');
 });
 
 // 27 --------------------------------------------------------------------------

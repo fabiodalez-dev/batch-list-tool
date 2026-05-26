@@ -11,9 +11,13 @@ use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
 use Illuminate\Database\Eloquent\Relations\BelongsToMany;
 use Illuminate\Database\Eloquent\Relations\HasMany;
+use Illuminate\Database\Eloquent\SoftDeletes;
+use Illuminate\Support\Collection;
+use Laravel\Scout\Searchable;
 use OwenIt\Auditing\Auditable;
 use OwenIt\Auditing\Contracts\Auditable as AuditableContract;
 use Spatie\EloquentSortable\Sortable;
+use Spatie\EloquentSortable\SortableTrait;
 use Spatie\MediaLibrary\HasMedia;
 use Spatie\MediaLibrary\InteractsWithMedia;
 use Spatie\SchemalessAttributes\Casts\SchemalessAttributes;
@@ -22,22 +26,14 @@ use Spatie\Tags\HasTags;
 class Document extends Model implements AuditableContract, HasMedia, Sortable
 {
     use Auditable;
+    use BelongsToRepository;  // RFQ §3.5.1 — multi-tenant scope
     use ConditionallyPreloadsRelations;
     use HasFactory;
     use HasTags;
     use InteractsWithMedia;
-    use BelongsToRepository;  // RFQ §3.5.1 — multi-tenant scope
     use Searchable;
     use SoftDeletes;
-
-    /**
-     * When true, the DocumentBuilder bulk-update guard is suspended so a
-     * caller can intentionally run a query-level update that touches the
-     * `identifier` column (e.g., a one-off back-fill migration where the
-     * audit row is written manually). Always flipped back to false in the
-     * `finally` block of withoutAuditGuards().
-     */
-    private static bool $bypassAuditGuard = false;
+    use SortableTrait;
 
     /**
      * Whitelist of columns that {@see scopeSearchFullText()} is allowed to
@@ -51,6 +47,11 @@ class Document extends Model implements AuditableContract, HasMedia, Sortable
      */
     public const FULLTEXT_COLUMNS = ['notes', 'deeds', 'museum_reference'];
 
+    public array $sortable = [
+        'order_column_name' => 'sort_order',
+        'sort_when_creating' => true,
+    ];
+
     /**
      * `repository_id` is mass-assignable so Filament admins (who legitimately
      * pick a target tenant from the Repository Select) can write it through
@@ -59,7 +60,7 @@ class Document extends Model implements AuditableContract, HasMedia, Sortable
      * and throws \DomainException for any non-privileged write that targets a
      * foreign tenant. Defence-in-depth here is the hook, NOT $guarded.
      *
-     * @see \App\Models\Concerns\BelongsToRepository
+     * @see BelongsToRepository
      */
     protected $fillable = [
         'sort_order',
@@ -97,13 +98,7 @@ class Document extends Model implements AuditableContract, HasMedia, Sortable
         'metadata' => 'array',
     ];
 
-    /**
-     * When true, the DocumentBuilder bulk-update guard is suspended so a
-     * caller can intentionally run a query-level update that touches the
-     * `identifier` column (e.g., a one-off back-fill migration where the
-     * audit row is written manually). Always flipped back to false in the
-     * `finally` block of withoutAuditGuards().
-     */
+    /** @internal DocumentBuilder bulk-update guard bypass flag */
     private static bool $bypassAuditGuard = false;
 
     /**
@@ -170,7 +165,7 @@ class Document extends Model implements AuditableContract, HasMedia, Sortable
      * Distinct list of previous_identifier values from the history, useful for
      * surfacing "also known as" labels and feeding the global search index.
      */
-    public function previousIdentifiers(): \Illuminate\Support\Collection
+    public function previousIdentifiers(): Collection
     {
         return $this->identifierHistory()
             ->pluck('previous_identifier')
@@ -188,18 +183,18 @@ class Document extends Model implements AuditableContract, HasMedia, Sortable
     public function toSearchableArray(): array
     {
         return [
-            'identifier'           => $this->identifier,
+            'identifier' => $this->identifier,
             'catalogue_identifier' => $this->catalogue_identifier,
-            'document_type'        => $this->document_type,
-            'practice'             => $this->practice,
-            'volume_label'         => $this->volume_label,
-            'dates'                => $this->dates,
-            'notes'                => $this->notes,
-            'barcode_in'           => $this->barcode_in,
-            'series_code'          => $this->series?->code,
-            'series_title'         => $this->series?->title,
+            'document_type' => $this->document_type,
+            'practice' => $this->practice,
+            'volume_label' => $this->volume_label,
+            'dates' => $this->dates,
+            'notes' => $this->notes,
+            'barcode_in' => $this->barcode_in,
+            'series_code' => $this->series?->code,
+            'series_title' => $this->series?->title,
             'authorities_surnames' => $this->authorities()->pluck('surname')->implode(' '),
-            'authorities_idents'   => $this->authorities()->pluck('identifier')->implode(' '),
+            'authorities_idents' => $this->authorities()->pluck('identifier')->implode(' '),
         ];
     }
 
@@ -222,26 +217,6 @@ class Document extends Model implements AuditableContract, HasMedia, Sortable
     }
 
     /**
-     * Override performUpdate so single-model `save()` calls bypass the
-     * DocumentBuilder bulk-update guard. Per-instance saves DO fire the
-     * `updating`/`updated` events that DocumentObserver hooks into, so the
-     * identifier-history audit trail is preserved — only the guard, which
-     * exists for query-level bulk updates, must be temporarily suspended.
-     *
-     * @param  \Illuminate\Database\Eloquent\Builder  $query
-     */
-    protected function performUpdate(\Illuminate\Database\Eloquent\Builder $query)
-    {
-        $previous = static::$bypassAuditGuard;
-        static::$bypassAuditGuard = true;
-        try {
-            return parent::performUpdate($query);
-        } finally {
-            static::$bypassAuditGuard = $previous;
-        }
-    }
-
-    /**
      * Run a callback with the DocumentBuilder bulk-update guard temporarily
      * suspended. Intended for genuinely needed back-fill migrations where
      * the caller takes responsibility for recording the audit rows.
@@ -253,12 +228,14 @@ class Document extends Model implements AuditableContract, HasMedia, Sortable
      *   });
      *
      * @template T
+     *
      * @param callable(): T $callback
      * @return T
      */
     public static function withoutAuditGuards(callable $callback): mixed
     {
         static::$bypassAuditGuard = true;
+
         try {
             return $callback();
         } finally {
@@ -314,7 +291,7 @@ class Document extends Model implements AuditableContract, HasMedia, Sortable
      *   to these settings require a rebuild of the FULLTEXT indexes
      *   (`OPTIMIZE TABLE documents` after the restart).
      *
-     * @param  array<int, string>  $columns  Must be a subset of {@see self::FULLTEXT_COLUMNS}.
+     * @param array<int, string> $columns Must be a subset of {@see self::FULLTEXT_COLUMNS}.
      *
      * @throws \InvalidArgumentException when $columns contains a non-whitelisted column.
      */
@@ -382,5 +359,24 @@ class Document extends Model implements AuditableContract, HasMedia, Sortable
                     : $inner->orWhere($col, 'like', $needle);
             }
         });
+    }
+
+    /**
+     * Override performUpdate so single-model `save()` calls bypass the
+     * DocumentBuilder bulk-update guard. Per-instance saves DO fire the
+     * `updating`/`updated` events that DocumentObserver hooks into, so the
+     * identifier-history audit trail is preserved — only the guard, which
+     * exists for query-level bulk updates, must be temporarily suspended.
+     */
+    protected function performUpdate(Builder $query)
+    {
+        $previous = static::$bypassAuditGuard;
+        static::$bypassAuditGuard = true;
+
+        try {
+            return parent::performUpdate($query);
+        } finally {
+            static::$bypassAuditGuard = $previous;
+        }
     }
 }

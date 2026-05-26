@@ -23,8 +23,8 @@ use Illuminate\Database\Eloquent\Scope;
  * Unauthenticated context (CLI, queue) also bypasses, mirroring
  * RepositoryScope's behaviour.
  *
- * @see \App\Models\Scopes\RepositoryScope
- * @see \App\Models\Scopes\ThroughBoxBatchRepositoryScope
+ * @see RepositoryScope
+ * @see ThroughBoxBatchRepositoryScope
  */
 class ThroughBatchRepositoryScope implements Scope
 {
@@ -50,12 +50,13 @@ class ThroughBatchRepositoryScope implements Scope
 
         if (empty($allowedIds)) {
             $builder->whereRaw('1=0'); // user has no repos → no records visible
+
             return;
         }
 
         $foreignTable = $this->foreignTable;
-        $foreignKey   = $this->foreignKey;
-        $childTable   = $model->getTable();
+        $foreignKey = $this->foreignKey;
+        $childTable = $model->getTable();
 
         $builder->whereExists(function ($query) use ($foreignTable, $foreignKey, $childTable, $allowedIds) {
             $query->select($foreignTable . '.id')
