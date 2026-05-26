@@ -11,14 +11,14 @@ declare(strict_types=1);
  */
 
 test('response includes X-Content-Type-Options: nosniff', function () {
-    $response = $this->get('/');
+    $response = $this->get('/admin/login');
 
     $response->assertOk();
     $response->assertHeader('X-Content-Type-Options', 'nosniff');
 });
 
 test('response includes X-Frame-Options', function () {
-    $response = $this->get('/');
+    $response = $this->get('/admin/login');
 
     $response->assertOk();
     expect($response->headers->get('X-Frame-Options'))
@@ -28,7 +28,7 @@ test('response includes X-Frame-Options', function () {
 });
 
 test('response includes Referrer-Policy', function () {
-    $response = $this->get('/');
+    $response = $this->get('/admin/login');
 
     $response->assertOk();
     // Whitelist of privacy-preserving values (RFQ §11 security baseline)
@@ -44,7 +44,7 @@ test('response includes Referrer-Policy', function () {
 });
 
 test('response does NOT leak the Server / X-Powered-By identification headers', function () {
-    $response = $this->get('/');
+    $response = $this->get('/admin/login');
 
     $response->assertOk();
 
