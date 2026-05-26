@@ -30,21 +30,18 @@ return new class extends Migration
         Schema::create('document_flags', function (Blueprint $table) {
             $table->bigIncrements('id');
 
-            $table->foreignId('document_id')
-                ->constrained('documents')
-                ->cascadeOnDelete()
-                ->index();
+            $table->unsignedBigInteger('document_id')->index();
+            $table->foreign('document_id', 'doc_flags_doc_fk')
+                ->references('id')->on('documents')->cascadeOnDelete();
 
             // Mirrored from documents.repository_id so the RepositoryScope can
             // filter without a join. Nullable + nullOnDelete so we never orphan
             // a flag if the tenant row is wiped (the document's own cascade
             // would have removed the flag first anyway — this is defence in
             // depth for direct repository deletes).
-            $table->foreignId('repository_id')
-                ->nullable()
-                ->constrained('repositories')
-                ->nullOnDelete()
-                ->index();
+            $table->unsignedBigInteger('repository_id')->nullable()->index();
+            $table->foreign('repository_id', 'doc_flags_repo_fk')
+                ->references('id')->on('repositories')->nullOnDelete();
 
             $table->enum('type', [
                 'needs_review',
@@ -75,19 +72,17 @@ return new class extends Migration
             // expected vs actual values).
             $table->json('context')->nullable();
 
-            $table->foreignId('flagged_by_user_id')
-                ->nullable()
-                ->constrained('users')
-                ->nullOnDelete();
+            $table->unsignedBigInteger('flagged_by_user_id')->nullable();
+            $table->foreign('flagged_by_user_id', 'doc_flags_flagged_by_fk')
+                ->references('id')->on('users')->nullOnDelete();
 
             // Defaults to now() at the DB layer; the model and tests can still
             // override this for back-fills.
             $table->timestamp('flagged_at')->useCurrent()->index();
 
-            $table->foreignId('resolved_by_user_id')
-                ->nullable()
-                ->constrained('users')
-                ->nullOnDelete();
+            $table->unsignedBigInteger('resolved_by_user_id')->nullable();
+            $table->foreign('resolved_by_user_id', 'doc_flags_resolved_by_fk')
+                ->references('id')->on('users')->nullOnDelete();
 
             $table->timestamp('resolved_at')->nullable();
             $table->text('resolution_notes')->nullable();
