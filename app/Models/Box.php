@@ -4,6 +4,7 @@ namespace App\Models;
 
 use App\Models\Concerns\ConditionallyPreloadsRelations;
 use App\Models\Scopes\ThroughBatchRepositoryScope;
+use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Database\Eloquent\Factories\HasFactory;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
@@ -44,7 +45,7 @@ class Box extends Model implements AuditableContract, Sortable
     protected $fillable = [
         'sort_order',
         'box_type', 'box_number', 'batch_id', 'parent_box_id',
-        'barcode', 'barcode_status', 'disinfestation_date',
+        'barcode', 'barcode_status', 'location_id', 'disinfestation_date',
         'is_legacy', 'notes',
     ];
 
@@ -81,6 +82,16 @@ class Box extends Model implements AuditableContract, Sortable
     public function documents(): HasMany
     {
         return $this->hasMany(Document::class, 'current_box_id');
+    }
+
+    /**
+     * RFQ §3.1.9 — Box can be pinned to a configurable Location
+     * (room / work-area / shelf / showcase / temp-holding / …).
+     * Nullable: legacy data has no location_id yet.
+     */
+    public function location(): BelongsTo
+    {
+        return $this->belongsTo(Location::class);
     }
 
     public function movementsTo(): HasMany

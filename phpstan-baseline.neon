@@ -7,13 +7,151 @@ parameters:
 			path: app/Console/Commands/ImportSampleData.php
 
 		-
+			message: '#^Access to an undefined property Illuminate\\Database\\Eloquent\\Model\:\:\$extra\.$#'
+			identifier: property.notFound
+			count: 1
+			path: app/Console/Commands/LinkCreatorTextToAuthorities.php
+
+		-
+			message: '#^Call to an undefined method Illuminate\\Database\\Eloquent\\Model\:\:authorities\(\)\.$#'
+			identifier: method.notFound
+			count: 1
+			path: app/Console/Commands/LinkCreatorTextToAuthorities.php
+
+		-
 			message: '#^Method App\\Console\\Commands\\LinkCreatorTextToAuthorities\:\:resolveAuthority\(\) has parameter \$authoritiesBySurname with no type specified\.$#'
 			identifier: missingType.parameter
 			count: 1
 			path: app/Console/Commands/LinkCreatorTextToAuthorities.php
 
 		-
+			message: '#^Access to an undefined property Illuminate\\Database\\Eloquent\\Model\:\:\$repository_id\.$#'
+			identifier: property.notFound
+			count: 1
+			path: app/Filament/Resources/DocumentResource/RelationManagers/IdentifierHistoryRelationManager.php
+
+		-
+			message: '#^Access to an undefined property OwenIt\\Auditing\\Models\\Audit\:\:\$user_id\.$#'
+			identifier: property.notFound
+			count: 1
+			path: app/Filament/Widgets/RecentActivityWidget.php
+
+		-
+			message: '#^Using nullsafe property access "\?\-\>name" on left side of \?\? is unnecessary\. Use \-\> instead\.$#'
+			identifier: nullsafe.neverNull
+			count: 1
+			path: app/Filament/Widgets/RecentActivityWidget.php
+
+		-
+			message: '#^Access to an undefined property Illuminate\\Contracts\\Auth\\Authenticatable\:\:\$id\.$#'
+			identifier: property.notFound
+			count: 4
+			path: app/Listeners/LogImpersonation.php
+
+		-
+			message: '#^Parameter \$actor of method App\\Listeners\\LogImpersonation\:\:writeAudit\(\) expects App\\Models\\User, Illuminate\\Contracts\\Auth\\Authenticatable given\.$#'
+			identifier: argument.type
+			count: 2
+			path: app/Listeners/LogImpersonation.php
+
+		-
+			message: '#^Parameter \$target of method App\\Listeners\\LogImpersonation\:\:writeAudit\(\) expects App\\Models\\User, Illuminate\\Contracts\\Auth\\Authenticatable given\.$#'
+			identifier: argument.type
+			count: 2
+			path: app/Listeners/LogImpersonation.php
+
+		-
+			message: '#^Access to an undefined property Illuminate\\Database\\Eloquent\\Model\:\:\$repository_id\.$#'
+			identifier: property.notFound
+			count: 2
+			path: app/Models/Accession.php
+
+		-
+			message: '#^Access to an undefined property Illuminate\\Database\\Eloquent\\Model\:\:\$repository_id\.$#'
+			identifier: property.notFound
+			count: 2
+			path: app/Models/Batch.php
+
+		-
+			message: '#^Access to an undefined property Illuminate\\Database\\Eloquent\\Model\:\:\$code\.$#'
+			identifier: property.notFound
+			count: 1
+			path: app/Models/Document.php
+
+		-
+			message: '#^Access to an undefined property Illuminate\\Database\\Eloquent\\Model\:\:\$repository_id\.$#'
+			identifier: property.notFound
+			count: 2
+			path: app/Models/Document.php
+
+		-
+			message: '#^Access to an undefined property Illuminate\\Database\\Eloquent\\Model\:\:\$title\.$#'
+			identifier: property.notFound
+			count: 1
+			path: app/Models/Document.php
+
+		-
+			message: '#^Access to undefined constant App\\Models\\Document\:\:FULLTEXT_COLUMNS\.$#'
+			identifier: classConstant.notFound
+			count: 2
+			path: app/Models/Document.php
+
+		-
+			message: '#^Call to an undefined method Illuminate\\Database\\ConnectionInterface\:\:getDriverName\(\)\.$#'
+			identifier: method.notFound
+			count: 1
+			path: app/Models/Document.php
+
+		-
+			message: '#^Unsafe access to private property App\\Models\\Document\:\:\$bypassAuditGuard through static\:\:\.$#'
+			identifier: staticClassAccess.privateProperty
+			count: 6
+			path: app/Models/Document.php
+
+		-
+			message: '#^Access to an undefined property Illuminate\\Database\\Eloquent\\Model\:\:\$repository_id\.$#'
+			identifier: property.notFound
+			count: 2
+			path: app/Models/DocumentIdentifierHistory.php
+
+		-
+			message: '#^Access to an undefined property Illuminate\\Database\\Eloquent\\Model\:\:\$repository_id\.$#'
+			identifier: property.notFound
+			count: 2
+			path: app/Models/Location.php
+
+		-
+			message: '#^Call to an undefined method Illuminate\\Database\\Eloquent\\Relations\\HasMany\:\:withTrashed\(\)\.$#'
+			identifier: method.notFound
+			count: 3
+			path: app/Models/Location.php
+
+		-
 			message: '#^Property App\\Models\\User\:\:\$auditExclude has no type specified\.$#'
 			identifier: missingType.property
 			count: 1
 			path: app/Models/User.php
+
+		-
+			message: '#^The @use tag of class App\\Models\\User describes Illuminate\\Database\\Eloquent\\Factories\\HasFactory but the class uses OwenIt\\Auditing\\Auditable\.$#'
+			identifier: generics.wrongParent
+			count: 1
+			path: app/Models/User.php
+
+		-
+			message: '#^Access to an undefined property Illuminate\\Database\\Eloquent\\Model\:\:\$current_box_id\.$#'
+			identifier: property.notFound
+			count: 2
+			path: database/seeders/DemoDataSeeder.php
+
+		-
+			message: '#^Access to an undefined property Illuminate\\Database\\Eloquent\\Model\:\:\$id\.$#'
+			identifier: property.notFound
+			count: 1
+			path: database/seeders/DemoDataSeeder.php
+
+		-
+			message: '#^Property Illuminate\\Database\\Seeder\:\:\$command \(Illuminate\\Console\\Command\) in isset\(\) is not nullable\.$#'
+			identifier: isset.property
+			count: 1
+			path: database/seeders/DemoDataSeeder.php

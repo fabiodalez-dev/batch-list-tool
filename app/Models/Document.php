@@ -2,8 +2,10 @@
 
 namespace App\Models;
 
+use App\Models\Builders\DocumentBuilder;
 use App\Models\Concerns\BelongsToRepository;
 use App\Models\Concerns\ConditionallyPreloadsRelations;
+use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Database\Eloquent\Factories\HasFactory;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
@@ -51,7 +53,7 @@ class Document extends Model implements AuditableContract, HasMedia, Sortable
         'sort_order',
         // Normalised columns
         'identifier', 'document_type', 'series_id', 'accession_id',
-        'current_box_id', 'batch_id', 'repository_id', 'volume_label',
+        'current_box_id', 'location_id', 'batch_id', 'repository_id', 'volume_label',
         'dates_start', 'dates_end', 'dates_year_start', 'dates_year_end',
         'disinfestation_date', 'extra', 'notes',
         // Legacy POC columns (parity with raw-PHP schema)
@@ -108,6 +110,17 @@ class Document extends Model implements AuditableContract, HasMedia, Sortable
     public function currentBox(): BelongsTo
     {
         return $this->belongsTo(Box::class, 'current_box_id');
+    }
+
+    /**
+     * RFQ §3.1.9 — Document can be pinned to a configurable Location
+     * independently of (or in addition to) its current Box. Useful when a
+     * document is on display in a museum showcase or temporarily on a
+     * conservation work-area without being re-boxed.
+     */
+    public function location(): BelongsTo
+    {
+        return $this->belongsTo(Location::class);
     }
 
     public function batch(): BelongsTo

@@ -4,6 +4,7 @@ namespace App\Filament\Resources;
 
 use App\Filament\Resources\DocumentResource\Pages;
 use App\Models\Document;
+use App\Models\Location;
 use App\Models\Repository;
 use Filament\Forms;
 use Filament\Forms\Form;
@@ -80,9 +81,29 @@ class DocumentResource extends Resource
                         Forms\Components\Select::make('batch_id')->relationship('batch', 'batch_number')->searchable()->preload(),
                         Forms\Components\Select::make('current_box_id')->relationship('currentBox', 'box_number')->searchable()->preload(),
                         Forms\Components\Select::make('accession_id')->relationship('accession', 'code')->searchable()->preload(),
+                        // RFQ §3.1.9 — configurable Location hierarchy.
+                        // Lives next to the legacy `nra_location` / `museum_location` free-text
+                        // columns kept for POC parity; from now on this Select is the source of
+                        // truth and the legacy strings are slated for retirement (see PR body).
+                        Forms\Components\Select::make('location_id')
+                            ->label('Location (RFQ §3.1.9)')
+                            ->relationship(
+                                'location',
+                                'name',
+                                fn ($query) => $query
+                                    ->active()
+                                    ->forRepository(auth()->user()?->default_repository_id),
+                            )
+                            ->getOptionLabelFromRecordUsing(fn (Location $r) => $r->breadcrumb())
+                            ->searchable(['name', 'code'])
+                            ->preload()
+                            ->nullable()
+                            ->helperText('Repository / room / shelf / showcase / temp-holding hierarchy.'),
                         Forms\Components\TextInput::make('current_box_type')->maxLength(50),
-                        Forms\Components\TextInput::make('nra_location')->maxLength(500),
-                        Forms\Components\TextInput::make('museum_location')->maxLength(500),
+                        Forms\Components\TextInput::make('nra_location')->maxLength(500)
+                            ->helperText('Legacy free-text. New records should use the Location Select above.'),
+                        Forms\Components\TextInput::make('museum_location')->maxLength(500)
+                            ->helperText('Legacy free-text. New records should use the Location Select above.'),
                     ]),
 
                 Forms\Components\Section::make('Legacy box history (RAS / In Situ)')
@@ -452,18 +473,5 @@ class DocumentResource extends Resource
                 $data['value'] ?? null,
                 fn (Builder $q, string $v) => $q->searchFullText($v, [$col]),
             ));
-    }
-
-    /**
-     * Build a leading-/trailing-wildcard LIKE filter on a single column.
-     * Centralises the form + query shape shared by all "Search in X" filters.
-     */
-    private static function likeFilter(string $name, string $label, ?string $column = null): Filter
-    {
-        $col = $column ?? $name;
-
-        return Filter::make($name)
-            ->form([Forms\Components\TextInput::make('value')->label($label)])
-            ->query(fn (Builder $q, array $data) => $q->when($data['value'] ?? null, fn ($q, $v) => $q->where($col, 'like', '%' . trim($v) . '%')));
     }
 }
