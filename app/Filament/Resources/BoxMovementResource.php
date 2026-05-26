@@ -3,6 +3,7 @@
 namespace App\Filament\Resources;
 
 use App\Filament\Resources\BoxMovementResource\Pages;
+use App\Filament\Support\SearchableSelects;
 use App\Models\BoxMovement;
 use Filament\Actions\BulkActionGroup;
 use Filament\Actions\DeleteBulkAction;
@@ -26,21 +27,23 @@ class BoxMovementResource extends Resource
 
     public static function form(Schema $schema): Schema
     {
+        // All four FK Selects below use server-side autocomplete with
+        // `preload(false)` — the documents (3,000+) and boxes (600+) tables
+        // are too large to render as a flat `<select>` on the production
+        // dataset. See App\Filament\Support\SearchableSelects.
         return $schema
             ->schema([
-                Forms\Components\Select::make('document.identifier')
-                    ->relationship('document', 'identifier')
+                SearchableSelects::documentVia('document_id', 'document')
                     ->required(),
-                Forms\Components\Select::make('from_box_id')
-                    ->relationship('fromBox', 'box_number'),
-                Forms\Components\Select::make('to_box_id')
-                    ->relationship('toBox', 'box_number'),
+                SearchableSelects::box('from_box_id', 'fromBox')
+                    ->label('From box'),
+                SearchableSelects::box('to_box_id', 'toBox')
+                    ->label('To box'),
                 Forms\Components\DateTimePicker::make('movement_date')
                     ->required(),
                 Forms\Components\TextInput::make('reason')
                     ->maxLength(255),
-                Forms\Components\Select::make('user.name')
-                    ->relationship('user', 'name'),
+                SearchableSelects::user('user_id', 'user'),
             ]);
     }
 

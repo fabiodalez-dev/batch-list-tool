@@ -3,6 +3,7 @@
 namespace App\Filament\Resources;
 
 use App\Filament\Resources\AccessionResource\Pages;
+use App\Filament\Support\SearchableSelects;
 use App\Models\Accession;
 use App\Models\Repository;
 use Filament\Actions\BulkActionGroup;
@@ -35,27 +36,29 @@ class AccessionResource extends Resource
                     ->required()
                     ->maxLength(64),
                 Forms\Components\DatePicker::make('accession_date'),
-                Forms\Components\Select::make('authority.surname')
-                    ->relationship('authority', 'surname'),
-                Forms\Components\Select::make('batch.batch_number')
-                    ->relationship('batch', 'batch_number'),
-                Forms\Components\Select::make('repository_id')
+                // Authority dropdown: 808 rows in production → server-side
+                // search ("Abela" → top 50 matches by surname/identifier).
+                SearchableSelects::authority('authority_id', 'authority'),
+                // Batch dropdown: showing `Batch <N> — <type>` so operators
+                // can distinguish RAS_BATCH/NOTARY_ACCESSION at a glance.
+                SearchableSelects::batch('batch_id', 'batch'),
+                // Repository dropdown: scoped to the user's assigned tenants.
+                // Same tenant-scoping closure as before; only the search/label
+                // wiring is new.
+                SearchableSelects::repository(
+                    'repository_id',
+                    fn ($query) => $query->whereIn(
+                        'id',
+                        auth()->user()?->hasAnyRole(['super_admin', 'admin'])
+                            ? Repository::query()->pluck('id')->all()
+                            : (auth()->user()?->repositories()->pluck('repositories.id')->all() ?? [])
+                    ),
+                )
                     ->label('Repository')
-                    ->relationship(
-                        'repository',
-                        'name',
-                        fn ($query) => $query->whereIn(
-                            'id',
-                            auth()->user()?->hasAnyRole(['super_admin', 'admin'])
-                                ? Repository::query()->pluck('id')->all()
-                                : (auth()->user()?->repositories()->pluck('repositories.id')->all() ?? [])
-                        )
-                    )
                     ->required()
                     ->default(fn () => auth()->user()?->default_repository_id)
                     ->disabled(fn () => ! auth()->user()?->hasAnyRole(['super_admin', 'admin']))
-                    ->dehydrated()
-                    ->searchable()->preload(),
+                    ->dehydrated(),
                 Forms\Components\Textarea::make('notes')
                     ->columnSpanFull(),
             ]);

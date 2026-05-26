@@ -4,6 +4,7 @@ namespace App\Filament\Resources;
 
 use App\Filament\Concerns\AppliesFieldPermissions;
 use App\Filament\Resources\BatchResource\Pages;
+use App\Filament\Support\SearchableSelects;
 use App\Models\Batch;
 use App\Models\Repository;
 use Filament\Actions\BulkActionGroup;
@@ -66,21 +67,20 @@ class BatchResource extends Resource
                 // NOTE: tenant-scoping `disabled()` closure stays on the
                 // Select; the field-level gate adds a second layer. Both
                 // must allow for the input to be writable.
-                $g(Forms\Components\Select::make('repository_id')
+                //
+                // Server-side search (no preload) — see SearchableSelects.
+                $g(SearchableSelects::repository(
+                    'repository_id',
+                    fn ($query) => $query->whereIn(
+                        'id',
+                        auth()->user()?->hasAnyRole(['super_admin', 'admin'])
+                            ? Repository::query()->pluck('id')->all()
+                            : (auth()->user()?->repositories()->pluck('repositories.id')->all() ?? [])
+                    ),
+                )
                     ->label('Repository')
-                    ->relationship(
-                        'repository',
-                        'name',
-                        fn ($query) => $query->whereIn(
-                            'id',
-                            auth()->user()?->hasAnyRole(['super_admin', 'admin'])
-                                ? Repository::query()->pluck('id')->all()
-                                : (auth()->user()?->repositories()->pluck('repositories.id')->all() ?? [])
-                        )
-                    )
                     ->required()
-                    ->default(fn () => auth()->user()?->default_repository_id)
-                    ->searchable()->preload()),
+                    ->default(fn () => auth()->user()?->default_repository_id)),
                 $g(Forms\Components\Toggle::make('is_active')
                     ->required()),
             ]);

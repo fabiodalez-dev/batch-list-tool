@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace App\Filament\Resources;
 
 use App\Filament\Resources\LocationResource\Pages;
+use App\Filament\Support\SearchableSelects;
 use App\Models\Location;
 use App\Models\Repository;
 use Filament\Actions\BulkActionGroup;
@@ -68,12 +69,16 @@ class LocationResource extends Resource
                             ->required()
                             ->native(false)
                             ->helperText('Drives the icon/badge in the table and the type filters on Box/Document.'),
-                        Forms\Components\Select::make('parent_id')
+                        // Locations can grow large in big archives; server-side
+                        // autocomplete keeps the picker usable. Breadcrumb
+                        // label distinguishes "Room 3 under Repo A" from
+                        // "Room 3 under Repo B".
+                        SearchableSelects::location(
+                            'parent_id',
+                            null,
+                            'parent',
+                        )
                             ->label('Parent location')
-                            ->relationship('parent', 'name')
-                            ->getOptionLabelFromRecordUsing(fn (Location $r) => $r->breadcrumb())
-                            ->searchable(['name', 'code'])
-                            ->preload()
                             ->nullable()
                             ->helperText('Leave empty for a root node. Cycles are rejected; max depth is '
                                 . Location::MAX_DEPTH . '.'),

@@ -4,6 +4,7 @@ namespace App\Filament\Resources;
 
 use App\Filament\Resources\DocumentFlagResource\Pages;
 use App\Filament\Resources\DocumentResource\RelationManagers\FlagsRelationManager;
+use App\Filament\Support\SearchableSelects;
 use App\Models\DocumentFlag;
 use Filament\Actions\BulkAction;
 use Filament\Actions\BulkActionGroup;
@@ -53,10 +54,8 @@ class DocumentFlagResource extends Resource
             Schemas\Components\Section::make('What')
                 ->columns(2)
                 ->schema([
-                    Forms\Components\Select::make('document_id')
-                        ->relationship('document', 'identifier')
-                        ->searchable()
-                        ->preload()
+                    // 3,000+ documents → server-side autocomplete.
+                    SearchableSelects::document('document_id')
                         ->required()
                         ->columnSpanFull(),
 
