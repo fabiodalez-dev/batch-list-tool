@@ -9,6 +9,7 @@ use App\Models\Repository;
 use App\Models\Scopes\RepositoryScope;
 use App\Models\Series;
 use App\Models\User;
+use Illuminate\Database\QueryException;
 use Illuminate\Foundation\Testing\DatabaseTransactions;
 use Livewire\Livewire;
 use Spatie\Permission\Models\Role;
@@ -26,18 +27,19 @@ function actAsAdmin_series(): User
 {
     rolesExist_series();
     $u = User::factory()->create([
-        'email'     => 'series-admin+' . uniqid() . '@test.local',
+        'email' => 'series-admin+' . uniqid() . '@test.local',
         'is_active' => true,
     ]);
     $u->assignRole('super_admin');
+
     return $u;
 }
 
 function makeSeries_series(string $code = 'SR'): Series
 {
     return Series::create([
-        'code'      => $code . '_' . substr(uniqid(), -4),
-        'title'     => $code . ' title',
+        'code' => $code . '_' . substr(uniqid(), -4),
+        'title' => $code . ' title',
         'is_active' => true,
     ]);
 }
@@ -67,10 +69,10 @@ test('SeriesResource create persists row', function () {
 
     Livewire::test(CreateSeries::class)
         ->fillForm([
-            'code'            => $code,
-            'title'           => 'New series via Filament',
+            'code' => $code,
+            'title' => 'New series via Filament',
             'is_wills_series' => false,
-            'is_active'       => true,
+            'is_active' => true,
         ])
         ->call('create')
         ->assertHasNoFormErrors();
@@ -84,13 +86,13 @@ test('SeriesResource code is unique (DB constraint)', function () {
 
     try {
         Series::create([
-            'code'      => $existing->code,
-            'title'     => 'Duplicate code attempt',
+            'code' => $existing->code,
+            'title' => 'Duplicate code attempt',
             'is_active' => true,
         ]);
         $this->fail('Expected uniqueness violation on duplicate code.');
-    } catch (\Throwable $e) {
-        expect($e)->toBeInstanceOf(\Illuminate\Database\QueryException::class);
+    } catch (Throwable $e) {
+        expect($e)->toBeInstanceOf(QueryException::class);
         expect(strtolower($e->getMessage()))->toContain('unique');
     }
 });
@@ -101,9 +103,9 @@ test('Series cannot be hard-deleted while documents reference it', function () {
     $series = makeSeries_series('RFR');
 
     Document::withoutGlobalScope(RepositoryScope::class)->create([
-        'identifier'    => 'SR-DOC-' . uniqid(),
+        'identifier' => 'SR-DOC-' . uniqid(),
         'document_type' => 'TEST',
-        'series_id'     => $series->id,
+        'series_id' => $series->id,
         'repository_id' => $repo->id,
     ]);
 
@@ -116,8 +118,8 @@ test('Series cannot be hard-deleted while documents reference it', function () {
     try {
         $series->forceDelete();
         $this->fail('Expected restrictOnDelete FK violation when force-deleting a Series with documents.');
-    } catch (\Throwable $e) {
-        expect($e)->toBeInstanceOf(\Illuminate\Database\QueryException::class);
+    } catch (Throwable $e) {
+        expect($e)->toBeInstanceOf(QueryException::class);
         // SQLite says "FOREIGN KEY constraint failed", MySQL "Cannot delete or update a parent row"
         $msg = strtolower($e->getMessage());
         expect($msg)->toMatch('/foreign key|parent row|constraint/');

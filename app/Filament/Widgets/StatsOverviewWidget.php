@@ -137,15 +137,15 @@ class StatsOverviewWidget extends BaseStatsOverviewWidget
         $repositoriesTotal = $this->countRepositoriesForUser();
 
         return [
-            'documents_total'        => $documentsTotal,
-            'documents_last_7'       => $documentsLast7,
-            'documents_chart'        => $chart,
-            'authorities_total'      => $authoritiesTotal,
-            'batches_total'          => $batchesTotal,
-            'batches_active'         => $batchesActive,
+            'documents_total' => $documentsTotal,
+            'documents_last_7' => $documentsLast7,
+            'documents_chart' => $chart,
+            'authorities_total' => $authoritiesTotal,
+            'batches_total' => $batchesTotal,
+            'batches_active' => $batchesActive,
             'pending_disinfestation' => $pendingDisinfestation,
-            'boxes_in'               => $boxesIn,
-            'repositories_total'     => $repositoriesTotal,
+            'boxes_in' => $boxesIn,
+            'repositories_total' => $repositoriesTotal,
         ];
     }
 
@@ -178,6 +178,7 @@ class StatsOverviewWidget extends BaseStatsOverviewWidget
         if ($this->userIsAdmin($user)) {
             return Repository::query()->count();
         }
+
         return count($this->allowedRepositoryIds($user));
     }
 
@@ -199,6 +200,7 @@ class StatsOverviewWidget extends BaseStatsOverviewWidget
         if (! empty($user->default_repository_id)) {
             $ids = $ids->push($user->default_repository_id);
         }
+
         return $ids->unique()->values()->all();
     }
 

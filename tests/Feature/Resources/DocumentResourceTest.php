@@ -23,7 +23,6 @@ use Spatie\Permission\Models\Role;
  * the authorities pivot, and the cascade-on-delete behaviour at the
  * resource level (the model-level cascade is covered by PR #8).
  */
-
 uses(DatabaseTransactions::class);
 
 function rolesExist_doc(): void
@@ -37,10 +36,11 @@ function actAsAdmin_doc(): User
 {
     rolesExist_doc();
     $u = User::factory()->create([
-        'email'     => 'doc-admin+' . uniqid() . '@test.local',
+        'email' => 'doc-admin+' . uniqid() . '@test.local',
         'is_active' => true,
     ]);
     $u->assignRole('super_admin');
+
     return $u;
 }
 
@@ -66,20 +66,21 @@ function makeBatch_doc(int $repoId): Batch
     } while (in_array($n, [33, 34, 36], true)
         || Batch::withoutGlobalScope(RepositoryScope::class)
             ->where('batch_number', $n)->exists());
+
     return Batch::withoutGlobalScope(RepositoryScope::class)->create([
-        'batch_number'  => $n,
-        'type'          => 'NOTARY_ACCESSION',
+        'batch_number' => $n,
+        'type' => 'NOTARY_ACCESSION',
         'repository_id' => $repoId,
-        'is_active'     => true,
+        'is_active' => true,
     ]);
 }
 
 function makeDoc_doc(int $repoId, int $seriesId, array $attrs = []): Document
 {
     return Document::withoutGlobalScope(RepositoryScope::class)->create(array_merge([
-        'identifier'    => 'DOC-' . strtoupper(substr(uniqid(), -8)),
+        'identifier' => 'DOC-' . strtoupper(substr(uniqid(), -8)),
         'document_type' => 'TEST',
-        'series_id'     => $seriesId,
+        'series_id' => $seriesId,
         'repository_id' => $repoId,
     ], $attrs));
 }
@@ -87,8 +88,8 @@ function makeDoc_doc(int $repoId, int $seriesId, array $attrs = []): Document
 function makeAuthority_doc(array $attrs = []): Authority
 {
     return Authority::create(array_merge([
-        'identifier'  => 'A-' . strtoupper(substr(uniqid(), -8)),
-        'surname'     => 'Surname' . substr(uniqid(), -4),
+        'identifier' => 'A-' . strtoupper(substr(uniqid(), -8)),
+        'surname' => 'Surname' . substr(uniqid(), -4),
         'entity_type' => 'PERSON',
     ], $attrs));
 }
@@ -103,7 +104,7 @@ function makeAuthority_doc(array $attrs = []): Authority
 test('DocumentResource list page renders and paginates', function () {
     $this->actingAs(actAsAdmin_doc());
 
-    $repo   = makeRepo_doc();
+    $repo = makeRepo_doc();
     $series = makeSeries_doc();
     for ($i = 0; $i < 30; $i++) {
         makeDoc_doc($repo->id, $series->id);
@@ -121,11 +122,11 @@ test('DocumentResource list page renders and paginates', function () {
 test('DocumentResource search filter on identifier returns matching subset', function () {
     $this->actingAs(actAsAdmin_doc());
 
-    $repo   = makeRepo_doc();
+    $repo = makeRepo_doc();
     $series = makeSeries_doc();
-    $token  = 'SRCHTOKEN' . strtoupper(substr(uniqid(), -5));
+    $token = 'SRCHTOKEN' . strtoupper(substr(uniqid(), -5));
     $needle = makeDoc_doc($repo->id, $series->id, ['identifier' => $token . '-MATCH']);
-    $noise  = makeDoc_doc($repo->id, $series->id, ['identifier' => 'NOISE-' . uniqid()]);
+    $noise = makeDoc_doc($repo->id, $series->id, ['identifier' => 'NOISE-' . uniqid()]);
 
     Livewire::test(ListDocuments::class)
         ->set('tableSearch', $token)
@@ -137,7 +138,7 @@ test('DocumentResource search filter on identifier returns matching subset', fun
 test('DocumentResource filter by series narrows results to the chosen series', function () {
     $this->actingAs(actAsAdmin_doc());
 
-    $repo  = makeRepo_doc();
+    $repo = makeRepo_doc();
     $sX = Series::create(['code' => 'SX_' . substr(uniqid(), -4), 'title' => 'SX', 'is_active' => true]);
     $sY = Series::create(['code' => 'SY_' . substr(uniqid(), -4), 'title' => 'SY', 'is_active' => true]);
     $docX = makeDoc_doc($repo->id, $sX->id);
@@ -153,7 +154,7 @@ test('DocumentResource filter by series narrows results to the chosen series', f
 test('DocumentResource filter by batch narrows results to the chosen batch', function () {
     $this->actingAs(actAsAdmin_doc());
 
-    $repo  = makeRepo_doc();
+    $repo = makeRepo_doc();
     $series = makeSeries_doc();
     $bA = makeBatch_doc($repo->id);
     $bB = makeBatch_doc($repo->id);
@@ -170,9 +171,9 @@ test('DocumentResource filter by batch narrows results to the chosen batch', fun
 test('DocumentResource view page renders and shows attached authorities', function () {
     $this->actingAs(actAsAdmin_doc());
 
-    $repo   = makeRepo_doc();
+    $repo = makeRepo_doc();
     $series = makeSeries_doc();
-    $doc    = makeDoc_doc($repo->id, $series->id);
+    $doc = makeDoc_doc($repo->id, $series->id);
     $author = makeAuthority_doc(['surname' => 'PivotShow']);
     $doc->authorities()->attach($author->id, ['is_primary' => true]);
 
@@ -192,9 +193,9 @@ test('DocumentResource view page renders and shows attached authorities', functi
 test('Document has an audits relation usable by the future history tab', function () {
     config(['audit.console' => true]);
 
-    $repo   = makeRepo_doc();
+    $repo = makeRepo_doc();
     $series = makeSeries_doc();
-    $doc    = makeDoc_doc($repo->id, $series->id, ['notes' => 'v1']);
+    $doc = makeDoc_doc($repo->id, $series->id, ['notes' => 'v1']);
 
     // Trigger an updated audit row
     $doc->update(['notes' => 'v2']);
@@ -206,9 +207,9 @@ test('Document has an audits relation usable by the future history tab', functio
 
 /* 35. Create with multiple authorities → pivot populated */
 test('Document can be created with multiple authorities attached', function () {
-    $repo   = makeRepo_doc();
+    $repo = makeRepo_doc();
     $series = makeSeries_doc();
-    $doc    = makeDoc_doc($repo->id, $series->id);
+    $doc = makeDoc_doc($repo->id, $series->id);
 
     $a1 = makeAuthority_doc();
     $a2 = makeAuthority_doc();
@@ -228,18 +229,18 @@ test('Document can be created with multiple authorities attached', function () {
 
 /* 36. Delete cascades to pivot rows */
 test('Deleting a Document removes its document_authority pivot rows', function () {
-    $repo   = makeRepo_doc();
+    $repo = makeRepo_doc();
     $series = makeSeries_doc();
-    $doc    = makeDoc_doc($repo->id, $series->id);
-    $a      = makeAuthority_doc();
+    $doc = makeDoc_doc($repo->id, $series->id);
+    $a = makeAuthority_doc();
     $doc->authorities()->attach($a->id);
 
-    expect(\DB::table('document_authority')->where('document_id', $doc->id)->count())->toBe(1);
+    expect(DB::table('document_authority')->where('document_id', $doc->id)->count())->toBe(1);
 
     // Soft-delete the document, then force-delete to actually exercise
     // the FK cascade on the pivot. The model uses SoftDeletes so we
     // need forceDelete() to trigger the cascade.
     $doc->forceDelete();
 
-    expect(\DB::table('document_authority')->where('document_id', $doc->id)->count())->toBe(0);
+    expect(DB::table('document_authority')->where('document_id', $doc->id)->count())->toBe(0);
 });

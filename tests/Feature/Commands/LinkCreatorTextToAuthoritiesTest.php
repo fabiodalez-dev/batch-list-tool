@@ -2,7 +2,6 @@
 
 declare(strict_types=1);
 
-use App\Console\Commands\LinkCreatorTextToAuthorities;
 use App\Models\Authority;
 use App\Models\Document;
 use App\Models\Repository;
@@ -22,7 +21,6 @@ use Illuminate\Support\Facades\DB;
  *   61 - command output contains 'ambiguous' on collision
  *   62 - chunked execution (verifies the chunkById(500) contract via query log)
  */
-
 uses(DatabaseTransactions::class);
 
 function makeRepo_link(string $prefix = 'LK'): Repository
@@ -41,23 +39,23 @@ function makeSeries_link(): Series
 function makeDoc_link(int $repoId, int $seriesId, ?string $creatorText = null): Document
 {
     return Document::withoutGlobalScope(RepositoryScope::class)->create([
-        'identifier'    => 'LK-DOC-' . strtoupper(substr(uniqid(), -8)),
+        'identifier' => 'LK-DOC-' . strtoupper(substr(uniqid(), -8)),
         'document_type' => 'TEST',
-        'series_id'     => $seriesId,
+        'series_id' => $seriesId,
         'repository_id' => $repoId,
-        'extra'         => $creatorText !== null ? ['legacy_creator_text' => $creatorText] : null,
+        'extra' => $creatorText !== null ? ['legacy_creator_text' => $creatorText] : null,
     ]);
 }
 
 /* 59. --dry-run does not write pivot or persist match log */
 test('--dry-run does not write document_authority rows or modify extra.creator_match_log', function () {
-    $repo   = makeRepo_link();
+    $repo = makeRepo_link();
     $series = makeSeries_link();
 
     $unique = 'DRYRUN' . substr(uniqid(), -6);
     $authority = Authority::create([
-        'identifier'  => 'DR-' . $unique,
-        'surname'     => $unique,
+        'identifier' => 'DR-' . $unique,
+        'surname' => $unique,
         'entity_type' => 'PERSON',
     ]);
 
@@ -79,13 +77,13 @@ test('--dry-run does not write document_authority rows or modify extra.creator_m
 
 /* 60. Exact surname match → pivot row created */
 test('Exact surname match links the document to the authority via pivot', function () {
-    $repo   = makeRepo_link();
+    $repo = makeRepo_link();
     $series = makeSeries_link();
 
     $surname = 'Exact' . substr(uniqid(), -6);
     $authority = Authority::create([
-        'identifier'  => 'EX-' . $surname,
-        'surname'     => $surname,
+        'identifier' => 'EX-' . $surname,
+        'surname' => $surname,
         'entity_type' => 'PERSON',
     ]);
 
@@ -119,18 +117,18 @@ test('Exact surname match links the document to the authority via pivot', functi
  * operator-facing UX is preserved.
  */
 test('Command output reports ambiguous collisions on the operator console', function () {
-    $repo   = makeRepo_link();
+    $repo = makeRepo_link();
     $series = makeSeries_link();
 
     $surname = 'Coll' . substr(uniqid(), -4);
     Authority::create([
-        'identifier'  => 'C1-' . $surname,
-        'surname'     => $surname,
+        'identifier' => 'C1-' . $surname,
+        'surname' => $surname,
         'entity_type' => 'PERSON',
     ]);
     Authority::create([
-        'identifier'  => 'C2-' . $surname,
-        'surname'     => $surname,
+        'identifier' => 'C2-' . $surname,
+        'surname' => $surname,
         'entity_type' => 'PERSON',
     ]);
 
@@ -160,12 +158,12 @@ test('Command uses chunkById(500) with per-chunk transaction commits (F-002)', f
     expect($src)->toContain('DB::commit()');
 
     // Behavioural sanity: invoke against a tiny dataset and verify success.
-    $repo   = makeRepo_link('CH');
+    $repo = makeRepo_link('CH');
     $series = makeSeries_link();
-    $sn     = 'Chunk' . substr(uniqid(), -6);
+    $sn = 'Chunk' . substr(uniqid(), -6);
     Authority::create([
-        'identifier'  => 'CH-' . $sn,
-        'surname'     => $sn,
+        'identifier' => 'CH-' . $sn,
+        'surname' => $sn,
         'entity_type' => 'PERSON',
     ]);
     makeDoc_link($repo->id, $series->id, $sn);

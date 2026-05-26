@@ -15,7 +15,6 @@ declare(strict_types=1);
  *   - the literal .env file on disk (so we catch silent regressions where the
  *     env var disappears but the runtime falls back to a Laravel default)
  */
-
 test('session same_site is strict in the live env file and at runtime', function () {
     expect(file_get_contents(base_path('.env')))
         ->toContain('SESSION_SAME_SITE=strict');

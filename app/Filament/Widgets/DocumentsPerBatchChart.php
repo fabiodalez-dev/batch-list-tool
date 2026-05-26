@@ -23,15 +23,15 @@ use Illuminate\Support\Facades\DB;
  */
 class DocumentsPerBatchChart extends ChartWidget
 {
+    public ?string $filter = 'all';
+
     protected static ?int $sort = 4;
 
     protected static ?string $heading = 'Top 15 Batches by Document Count';
 
     protected static ?string $maxHeight = '300px';
 
-    protected int | string | array $columnSpan = 1;
-
-    public ?string $filter = 'all';
+    protected int|string|array $columnSpan = 1;
 
     protected function getType(): string
     {
@@ -44,10 +44,10 @@ class DocumentsPerBatchChart extends ChartWidget
     protected function getFilters(): ?array
     {
         return [
-            'all'               => 'All batches',
-            'main_collection'   => 'Main Collection (1-29)',
+            'all' => 'All batches',
+            'main_collection' => 'Main Collection (1-29)',
             'notary_accessions' => 'Notary Accessions (30+)',
-            'wills'             => 'Wills (50)',
+            'wills' => 'Wills (50)',
         ];
     }
 
@@ -62,12 +62,12 @@ class DocumentsPerBatchChart extends ChartWidget
                 // Constrain the batch set first (cheap), then aggregate documents.
                 $batchQuery = Batch::query();
                 match ($filter) {
-                    'main_collection'   => $batchQuery->whereBetween('batch_number', [1, Batch::MAIN_COLLECTION_MAX]),
+                    'main_collection' => $batchQuery->whereBetween('batch_number', [1, Batch::MAIN_COLLECTION_MAX]),
                     'notary_accessions' => $batchQuery
                         ->where('batch_number', '>=', 30)
                         ->where('batch_number', '!=', Batch::WILLS_BATCH),
-                    'wills'             => $batchQuery->where('batch_number', Batch::WILLS_BATCH),
-                    default             => null,
+                    'wills' => $batchQuery->where('batch_number', Batch::WILLS_BATCH),
+                    default => null,
                 };
 
                 $batchIds = $batchQuery->pluck('batch_number', 'id')->all();
@@ -88,6 +88,7 @@ class DocumentsPerBatchChart extends ChartWidget
                     $merged[$num] = (int) ($counts[$id] ?? 0);
                 }
                 arsort($merged);
+
                 return array_slice($merged, 0, 15, true);
             },
         );
@@ -98,8 +99,8 @@ class DocumentsPerBatchChart extends ChartWidget
                     'label' => 'Documents',
                     'data' => array_values($rows),
                     'backgroundColor' => 'rgba(59, 130, 246, 0.6)',
-                    'borderColor'     => 'rgb(59, 130, 246)',
-                    'borderWidth'     => 1,
+                    'borderColor' => 'rgb(59, 130, 246)',
+                    'borderWidth' => 1,
                 ],
             ],
             'labels' => array_map(fn ($n) => 'Batch ' . $n, array_keys($rows)),
@@ -125,6 +126,7 @@ class DocumentsPerBatchChart extends ChartWidget
     {
         $user = Auth::user();
         $uid = $user?->getKey() ?? 'guest';
+
         return "dashboard:chart:batch:u={$uid}:f={$filter}";
     }
 }

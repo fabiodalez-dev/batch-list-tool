@@ -11,6 +11,7 @@ use App\Models\Repository;
 use App\Models\Scopes\RepositoryScope;
 use App\Models\Series;
 use App\Models\User;
+use Illuminate\Database\QueryException;
 use Illuminate\Foundation\Testing\DatabaseTransactions;
 use Livewire\Livewire;
 use OwenIt\Auditing\Models\Audit;
@@ -34,7 +35,6 @@ use Spatie\Permission\Models\Role;
  *   - When this PR is later wired against MySQL, the constraint tests can
  *     be lifted to assert QueryException on insert.
  */
-
 uses(DatabaseTransactions::class);
 
 function rolesExist_batch(): void
@@ -48,10 +48,11 @@ function actAsAdmin_batch(): User
 {
     rolesExist_batch();
     $u = User::factory()->create([
-        'email'     => 'batch-admin+' . uniqid() . '@test.local',
+        'email' => 'batch-admin+' . uniqid() . '@test.local',
         'is_active' => true,
     ]);
     $u->assignRole('super_admin');
+
     return $u;
 }
 
@@ -65,10 +66,10 @@ function makeRepository_batch(string $prefix = 'BR'): Repository
 function makeBatch_batch(int $repoId, int $batchNumber, array $attrs = []): Batch
 {
     return Batch::withoutGlobalScope(RepositoryScope::class)->create(array_merge([
-        'batch_number'  => $batchNumber,
-        'type'          => $batchNumber <= 29 ? 'MAIN_COLLECTION' : 'NOTARY_ACCESSION',
+        'batch_number' => $batchNumber,
+        'type' => $batchNumber <= 29 ? 'MAIN_COLLECTION' : 'NOTARY_ACCESSION',
         'repository_id' => $repoId,
-        'is_active'     => true,
+        'is_active' => true,
     ], $attrs));
 }
 
@@ -80,6 +81,7 @@ function nextSafeBatchNumber(): int
     } while (in_array($n, [33, 34, 36, 50], true)
         || Batch::withoutGlobalScope(RepositoryScope::class)
             ->where('batch_number', $n)->exists());
+
     return $n;
 }
 
@@ -87,7 +89,7 @@ function nextSafeBatchNumber(): int
 test('BatchResource list page renders and shows existing batch', function () {
     $this->actingAs(actAsAdmin_batch());
 
-    $repo  = makeRepository_batch();
+    $repo = makeRepository_batch();
     $batch = makeBatch_batch($repo->id, nextSafeBatchNumber());
 
     Livewire::test(ListBatches::class)
@@ -109,11 +111,11 @@ test('BatchResource create persists row', function () {
 
     Livewire::test(CreateBatch::class)
         ->fillForm([
-            'batch_number'      => $n,
-            'description'       => 'New batch via Filament',
-            'type'              => 'MAIN_COLLECTION',
-            'repository.name'   => $repo->id,
-            'is_active'         => true,
+            'batch_number' => $n,
+            'description' => 'New batch via Filament',
+            'type' => 'MAIN_COLLECTION',
+            'repository.name' => $repo->id,
+            'is_active' => true,
         ])
         ->call('create')
         ->assertHasNoFormErrors();
@@ -197,17 +199,17 @@ test('Batch numbers >= 30 map to NOTARY_ACCESSION via factory convention', funct
  * pointed at the (trashed) batch. We pin that operational contract.
  */
 test('Batch soft-delete keeps existing documents pointing at the trashed batch', function () {
-    $repo   = makeRepository_batch();
+    $repo = makeRepository_batch();
     $series = Series::query()->first()
         ?? Series::create(['code' => 'BR-S', 'title' => 'BR series', 'is_active' => true]);
-    $batch  = makeBatch_batch($repo->id, nextSafeBatchNumber());
+    $batch = makeBatch_batch($repo->id, nextSafeBatchNumber());
 
     $doc = Document::withoutGlobalScope(RepositoryScope::class)->create([
-        'identifier'    => 'BR-DOC-' . uniqid(),
+        'identifier' => 'BR-DOC-' . uniqid(),
         'document_type' => 'TEST',
-        'series_id'     => $series->id,
+        'series_id' => $series->id,
         'repository_id' => $repo->id,
-        'batch_id'      => $batch->id,
+        'batch_id' => $batch->id,
     ]);
 
     $batch->delete(); // soft-delete
@@ -221,19 +223,19 @@ test('Batch soft-delete keeps existing documents pointing at the trashed batch',
 /* 16. duplicate batch_number → DB unique violation (schema declares ->unique()) */
 test('BatchResource duplicate batch_number is rejected (unique DB constraint)', function () {
     $repo = makeRepository_batch();
-    $n    = nextSafeBatchNumber();
+    $n = nextSafeBatchNumber();
     makeBatch_batch($repo->id, $n);
 
     try {
         Batch::withoutGlobalScope(RepositoryScope::class)->create([
-            'batch_number'  => $n,
-            'type'          => 'MAIN_COLLECTION',
+            'batch_number' => $n,
+            'type' => 'MAIN_COLLECTION',
             'repository_id' => $repo->id,
-            'is_active'     => true,
+            'is_active' => true,
         ]);
         $this->fail('Expected uniqueness violation on duplicate batch_number, but insert succeeded.');
-    } catch (\Throwable $e) {
-        expect($e)->toBeInstanceOf(\Illuminate\Database\QueryException::class);
+    } catch (Throwable $e) {
+        expect($e)->toBeInstanceOf(QueryException::class);
         expect(strtolower($e->getMessage()))->toContain('unique');
     }
 });
@@ -245,7 +247,7 @@ test('BatchResource update writes an owen-it audit row', function () {
     $admin = actAsAdmin_batch();
     $this->actingAs($admin);
 
-    $repo  = makeRepository_batch();
+    $repo = makeRepository_batch();
     $batch = makeBatch_batch($repo->id, nextSafeBatchNumber(), ['description' => 'pre']);
 
     $before = Audit::query()
@@ -275,8 +277,8 @@ test('Batch list respects RepositoryScope for an editor', function () {
     $bB = makeBatch_batch($repoB->id, nextSafeBatchNumber());
 
     $editor = User::factory()->create([
-        'email'                 => 'br-editor+' . uniqid() . '@test.local',
-        'is_active'             => true,
+        'email' => 'br-editor+' . uniqid() . '@test.local',
+        'is_active' => true,
         'default_repository_id' => $repoA->id,
     ]);
     $editor->assignRole('editor');

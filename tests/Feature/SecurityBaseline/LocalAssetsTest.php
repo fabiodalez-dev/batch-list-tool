@@ -15,28 +15,31 @@ use App\Support\Avatars\LocalAvatarProvider;
  * User avatars are generated server-side by laravolt/avatar as inline SVG
  * data: URIs — no ui-avatars.com round-trip.
  */
-
 test('public/fonts/inter/InterVariable.woff2 exists and is at least 100 KB', function () {
     $path = public_path('fonts/inter/InterVariable.woff2');
 
     expect(file_exists($path))->toBeTrue("missing font file at {$path}");
-    expect(filesize($path))->toBeGreaterThan(100 * 1024,
-        'InterVariable.woff2 must be the full variable font (> 100 KB), not an empty stub');
+    expect(filesize($path))->toBeGreaterThan(
+        100 * 1024,
+        'InterVariable.woff2 must be the full variable font (> 100 KB), not an empty stub'
+    );
 });
 
 test('public/fonts/inter/InterVariable-Italic.woff2 exists and is at least 100 KB', function () {
     $path = public_path('fonts/inter/InterVariable-Italic.woff2');
 
     expect(file_exists($path))->toBeTrue("missing font file at {$path}");
-    expect(filesize($path))->toBeGreaterThan(100 * 1024,
-        'InterVariable-Italic.woff2 must be the full italic variable font (> 100 KB)');
+    expect(filesize($path))->toBeGreaterThan(
+        100 * 1024,
+        'InterVariable-Italic.woff2 must be the full italic variable font (> 100 KB)'
+    );
 });
 
 test('LocalAvatarProvider returns a data:image/svg+xml;base64 URI with no external call', function () {
     // Build the user in-memory — no DB call, no HTTP call expected from the provider.
     $user = new User(['name' => 'Jane Notary', 'email' => 'jane@nra.local']);
 
-    $provider = new LocalAvatarProvider();
+    $provider = new LocalAvatarProvider;
     $uri = $provider->get($user);
 
     expect($uri)

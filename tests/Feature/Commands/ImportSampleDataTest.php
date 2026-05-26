@@ -22,7 +22,6 @@ use Illuminate\Support\Facades\Artisan;
  *    the canonical samples folder, and (c) it short-circuits cleanly
  *    when the samples folder is missing.
  */
-
 uses(DatabaseTransactions::class);
 
 /**
@@ -70,11 +69,11 @@ test('nra:import-samples supports --dry-run (no-op when set)', function () {
     }
 
     $beforeSeries = Series::count();
-    $beforeAuth   = Authority::count();
+    $beforeAuth = Authority::count();
 
     Artisan::call('nra:import-samples', [
         '--dry-run' => true,
-        '--path'    => $path,
+        '--path' => $path,
     ]);
 
     expect(Series::count())->toBe($beforeSeries);

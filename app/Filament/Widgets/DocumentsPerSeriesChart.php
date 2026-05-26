@@ -23,7 +23,7 @@ class DocumentsPerSeriesChart extends ChartWidget
 
     protected static ?string $maxHeight = '300px';
 
-    protected int | string | array $columnSpan = 1;
+    protected int|string|array $columnSpan = 1;
 
     protected function getType(): string
     {
@@ -61,6 +61,7 @@ class DocumentsPerSeriesChart extends ChartWidget
                     $merged[$code] = (int) $count;
                 }
                 arsort($merged);
+
                 return $merged;
             },
         );
@@ -80,6 +81,7 @@ class DocumentsPerSeriesChart extends ChartWidget
     {
         $user = Auth::user();
         $uid = $user?->getKey() ?? 'guest';
+
         return "dashboard:chart:series:u={$uid}";
     }
 }

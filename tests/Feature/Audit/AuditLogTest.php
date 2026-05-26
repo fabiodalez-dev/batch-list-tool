@@ -25,7 +25,6 @@ use Spatie\Permission\Models\Role;
  * These tests pin those behaviours for the Document model, which is the
  * highest-stakes auditable entity.
  */
-
 uses(DatabaseTransactions::class);
 
 function rolesExist_audit(): void
@@ -37,16 +36,17 @@ function rolesExist_audit(): void
 
 function makeAuditDoc(): array
 {
-    $repo   = Repository::factory()->create(['code' => 'AU_' . substr(uniqid(), -6)]);
+    $repo = Repository::factory()->create(['code' => 'AU_' . substr(uniqid(), -6)]);
     $series = Series::query()->first()
         ?? Series::create(['code' => 'AU-S', 'title' => 'AU series', 'is_active' => true]);
     $doc = Document::withoutGlobalScope(RepositoryScope::class)->create([
-        'identifier'    => 'AU-DOC-' . uniqid(),
+        'identifier' => 'AU-DOC-' . uniqid(),
         'document_type' => 'TEST',
-        'series_id'     => $series->id,
+        'series_id' => $series->id,
         'repository_id' => $repo->id,
-        'notes'         => 'before',
+        'notes' => 'before',
     ]);
+
     return [$repo, $series, $doc];
 }
 
@@ -174,7 +174,7 @@ test('audit.console=true makes console-context updates auditable', function () {
  */
 it('owen-it auditing baseline configuration is intact (impl class, sensitive-field exclusion)', function () {
     // (a) Implementation class is the one shipped by owen-it
-    expect(config('audit.implementation'))->toBe(\OwenIt\Auditing\Models\Audit::class);
+    expect(config('audit.implementation'))->toBe(Audit::class);
 
     // (b) Console-context auditing defaults OFF (security baseline)
     expect(config('audit.console'))->toBeFalse();

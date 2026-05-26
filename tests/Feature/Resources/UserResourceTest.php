@@ -4,7 +4,9 @@ declare(strict_types=1);
 
 use App\Models\User;
 use Filament\Facades\Filament;
+use Filament\Panel;
 use Illuminate\Foundation\Testing\DatabaseTransactions;
+use Illuminate\Hashing\BcryptHasher;
 use Illuminate\Support\Facades\Hash;
 use OwenIt\Auditing\Models\Audit;
 use Spatie\Permission\Models\Role;
@@ -27,7 +29,6 @@ use Spatie\Permission\Models\Role;
  *     so we assert via Hash::info() that the hash IS bcrypt and rehash
  *     detection works against the production config of cost=12)
  */
-
 uses(DatabaseTransactions::class);
 
 function rolesExist_user(): void
@@ -56,7 +57,7 @@ test('User::canAccessPanel honours is_active flag and role assignment', function
     $noRole = User::factory()->create(['is_active' => true]);
     expect($noRole->canAccessPanel($panel))->toBeFalse();
 })->skip(
-    fn () => ! class_exists(\Filament\Panel::class),
+    fn () => ! class_exists(Panel::class),
     'Filament Panel not available in this configuration',
 );
 
@@ -132,8 +133,8 @@ test('User password is bcrypt-hashed and the production baseline (cost=12) is en
     expect($info['algoName'])->toBe('bcrypt');
 
     // (c) The production hasher (rounds=12) detects a sub-12 cost as needing rehash
-    $prodHasher = new \Illuminate\Hashing\BcryptHasher(['rounds' => 12]);
+    $prodHasher = new BcryptHasher(['rounds' => 12]);
     // Generate a cost-4 hash explicitly (mirroring phpunit.xml)
-    $weakHash = (new \Illuminate\Hashing\BcryptHasher(['rounds' => 4]))->make('x');
+    $weakHash = (new BcryptHasher(['rounds' => 4]))->make('x');
     expect($prodHasher->needsRehash($weakHash))->toBeTrue();
 });

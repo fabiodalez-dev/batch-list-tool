@@ -34,7 +34,7 @@ use Illuminate\Database\Eloquent\Scope;
  *
  * Privileged roles (`super_admin`, `admin`) bypass the scope entirely.
  *
- * @see \App\Models\Scopes\ThroughBatchRepositoryScope
+ * @see ThroughBatchRepositoryScope
  */
 class ThroughBoxBatchRepositoryScope implements Scope
 {
@@ -59,10 +59,11 @@ class ThroughBoxBatchRepositoryScope implements Scope
 
         if (empty($allowedIds)) {
             $builder->whereRaw('1=0'); // user has no repos → no records visible
+
             return;
         }
 
-        $childTable    = $model->getTable();
+        $childTable = $model->getTable();
         $boxForeignKey = $this->boxForeignKey;
 
         $builder->whereExists(function ($query) use ($childTable, $boxForeignKey, $allowedIds) {

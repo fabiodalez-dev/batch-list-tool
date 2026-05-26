@@ -2,13 +2,14 @@
 
 declare(strict_types=1);
 
-use App\Filament\Resources\AuthorityResource;
 use App\Filament\Resources\AuthorityResource\Pages\CreateAuthority;
 use App\Filament\Resources\AuthorityResource\Pages\EditAuthority;
 use App\Filament\Resources\AuthorityResource\Pages\ListAuthorities;
 use App\Models\Authority;
+use App\Models\Concerns\BelongsToRepository;
 use App\Models\Repository;
 use App\Models\User;
+use Illuminate\Database\QueryException;
 use Illuminate\Foundation\Testing\DatabaseTransactions;
 use Livewire\Livewire;
 use OwenIt\Auditing\Models\Audit;
@@ -25,11 +26,10 @@ use Spatie\Permission\Models\Role;
  * Convention: DatabaseTransactions, mirroring the existing SecurityBaseline
  * tests so the dev seed survives.
  */
-
 uses(DatabaseTransactions::class);
 
 /* ----------------------------------------------------------------------- */
-/* Helpers (suffixed _auth to avoid name collisions with sibling files)    */
+/* Helpers (suffixed _auth to avoid name collisions with sibling files) */
 /* ----------------------------------------------------------------------- */
 
 function rolesExist_auth(): void
@@ -43,24 +43,25 @@ function actAsAdmin_auth(): User
 {
     rolesExist_auth();
     $u = User::factory()->create([
-        'email'     => 'auth-admin+' . uniqid() . '@test.local',
+        'email' => 'auth-admin+' . uniqid() . '@test.local',
         'is_active' => true,
     ]);
     $u->assignRole('super_admin');
+
     return $u;
 }
 
 function makeAuthority_auth(array $attrs = []): Authority
 {
     return Authority::create(array_merge([
-        'identifier'  => 'AT-' . strtoupper(substr(uniqid(), -8)),
-        'surname'     => 'Surname' . substr(uniqid(), -4),
+        'identifier' => 'AT-' . strtoupper(substr(uniqid(), -8)),
+        'surname' => 'Surname' . substr(uniqid(), -4),
         'entity_type' => 'PERSON',
     ], $attrs));
 }
 
 /* ----------------------------------------------------------------------- */
-/* 1. List page renders                                                     */
+/* 1. List page renders */
 /* ----------------------------------------------------------------------- */
 
 test('AuthorityResource list page renders', function () {
@@ -74,7 +75,7 @@ test('AuthorityResource list page renders', function () {
 });
 
 /* ----------------------------------------------------------------------- */
-/* 2. Create form renders with required fields                              */
+/* 2. Create form renders with required fields */
 /* ----------------------------------------------------------------------- */
 
 test('AuthorityResource create form renders with required fields', function () {
@@ -87,7 +88,7 @@ test('AuthorityResource create form renders with required fields', function () {
 });
 
 /* ----------------------------------------------------------------------- */
-/* 3. Valid create persists row                                             */
+/* 3. Valid create persists row */
 /* ----------------------------------------------------------------------- */
 
 test('AuthorityResource valid create persists row', function () {
@@ -97,8 +98,8 @@ test('AuthorityResource valid create persists row', function () {
 
     Livewire::test(CreateAuthority::class)
         ->fillForm([
-            'identifier'  => $identifier,
-            'surname'     => 'Borg',
+            'identifier' => $identifier,
+            'surname' => 'Borg',
             'entity_type' => 'PERSON',
         ])
         ->call('create')
@@ -108,7 +109,7 @@ test('AuthorityResource valid create persists row', function () {
 });
 
 /* ----------------------------------------------------------------------- */
-/* 4. Duplicate identifier validation                                       */
+/* 4. Duplicate identifier validation */
 /* ----------------------------------------------------------------------- */
 
 test('AuthorityResource rejects duplicate identifier (unique DB constraint)', function () {
@@ -121,20 +122,20 @@ test('AuthorityResource rejects duplicate identifier (unique DB constraint)', fu
     // same identifier fails at the DB layer.
     try {
         Authority::create([
-            'identifier'  => $existing->identifier,
-            'surname'     => 'Another',
+            'identifier' => $existing->identifier,
+            'surname' => 'Another',
             'entity_type' => 'PERSON',
         ]);
         // If we reach here, uniqueness is NOT enforced — fail the test.
         $this->fail('Expected uniqueness violation on duplicate identifier, but insert succeeded.');
-    } catch (\Throwable $e) {
-        expect($e)->toBeInstanceOf(\Illuminate\Database\QueryException::class);
+    } catch (Throwable $e) {
+        expect($e)->toBeInstanceOf(QueryException::class);
         expect(strtolower($e->getMessage()))->toContain('unique');
     }
 });
 
 /* ----------------------------------------------------------------------- */
-/* 5. Edit page loads existing record                                       */
+/* 5. Edit page loads existing record */
 /* ----------------------------------------------------------------------- */
 
 test('AuthorityResource edit page loads existing record', function () {
@@ -148,7 +149,7 @@ test('AuthorityResource edit page loads existing record', function () {
 });
 
 /* ----------------------------------------------------------------------- */
-/* 6. Update persists changes + writes audit row                            */
+/* 6. Update persists changes + writes audit row */
 /* ----------------------------------------------------------------------- */
 
 test('AuthorityResource update persists changes + writes owen-it audit row', function () {
@@ -180,7 +181,7 @@ test('AuthorityResource update persists changes + writes owen-it audit row', fun
 });
 
 /* ----------------------------------------------------------------------- */
-/* 7. Delete soft-deletes                                                   */
+/* 7. Delete soft-deletes */
 /* ----------------------------------------------------------------------- */
 
 test('AuthorityResource delete soft-deletes the record', function () {
@@ -197,7 +198,7 @@ test('AuthorityResource delete soft-deletes the record', function () {
 });
 
 /* ----------------------------------------------------------------------- */
-/* 8. Multi-tenant scope                                                    */
+/* 8. Multi-tenant scope */
 /* ----------------------------------------------------------------------- */
 
 test('Authority is intentionally NOT repository-scoped (shared reference data)', function () {
@@ -206,11 +207,11 @@ test('Authority is intentionally NOT repository-scoped (shared reference data)',
     // documents owned by different repos. This test pins that contract so a
     // future refactor that adds the trait would break visibly.
     expect(in_array(
-        \App\Models\Concerns\BelongsToRepository::class,
+        BelongsToRepository::class,
         class_uses_recursive(Authority::class),
         true,
     ))->toBeFalse();
 
     // And the table has no `repository_id` column.
-    expect(\Schema::hasColumn('authorities', 'repository_id'))->toBeFalse();
+    expect(Schema::hasColumn('authorities', 'repository_id'))->toBeFalse();
 });

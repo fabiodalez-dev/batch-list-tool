@@ -10,6 +10,8 @@ use App\Models\Repository;
 use App\Models\Scopes\RepositoryScope;
 use App\Models\Series;
 use App\Models\User;
+use App\Policies\RepositoryPolicy;
+use Illuminate\Database\QueryException;
 use Illuminate\Foundation\Testing\DatabaseTransactions;
 use Livewire\Livewire;
 use Spatie\Permission\Models\Role;
@@ -23,7 +25,6 @@ use Spatie\Permission\Models\Role;
  * spatie/laravel-permission `view_any_repository`, `view_repository`,
  * `create_repository`, etc.
  */
-
 uses(DatabaseTransactions::class);
 
 function rolesExist_repo(): void
@@ -37,10 +38,11 @@ function actAsSuperAdmin_repo(): User
 {
     rolesExist_repo();
     $u = User::factory()->create([
-        'email'     => 'repo-superadmin+' . uniqid() . '@test.local',
+        'email' => 'repo-superadmin+' . uniqid() . '@test.local',
         'is_active' => true,
     ]);
     $u->assignRole('super_admin');
+
     return $u;
 }
 
@@ -48,10 +50,11 @@ function actAsEditor_repo(): User
 {
     rolesExist_repo();
     $u = User::factory()->create([
-        'email'     => 'repo-editor+' . uniqid() . '@test.local',
+        'email' => 'repo-editor+' . uniqid() . '@test.local',
         'is_active' => true,
     ]);
     $u->assignRole('editor');
+
     return $u;
 }
 
@@ -59,10 +62,11 @@ function actAsAdminRole_repo(): User
 {
     rolesExist_repo();
     $u = User::factory()->create([
-        'email'     => 'repo-admin+' . uniqid() . '@test.local',
+        'email' => 'repo-admin+' . uniqid() . '@test.local',
         'is_active' => true,
     ]);
     $u->assignRole('admin');
+
     return $u;
 }
 
@@ -97,7 +101,7 @@ test('RepositoryResource visibility for editor is governed by view_any_repositor
 
     // We don't hard-fail on the result — we just pin that the gate is
     // wired through the permission and that the policy class exists.
-    expect(class_exists(\App\Policies\RepositoryPolicy::class))->toBeTrue();
+    expect(class_exists(RepositoryPolicy::class))->toBeTrue();
     expect(is_bool($allowed))->toBeTrue();
 });
 
@@ -109,8 +113,8 @@ test('RepositoryResource create persists with name + code', function () {
 
     Livewire::test(CreateRepository::class)
         ->fillForm([
-            'code'      => $code,
-            'name'      => 'Brand New Repository',
+            'code' => $code,
+            'name' => 'Brand New Repository',
             'is_active' => true,
         ])
         ->call('create')
@@ -121,14 +125,14 @@ test('RepositoryResource create persists with name + code', function () {
 
 /* 48. Cannot hard-delete a Repository with documents (restrictOnDelete FK) */
 test('Repository cannot be force-deleted while documents reference it', function () {
-    $repo  = Repository::factory()->create(['code' => 'RD_' . substr(uniqid(), -6)]);
+    $repo = Repository::factory()->create(['code' => 'RD_' . substr(uniqid(), -6)]);
     $series = Series::query()->first()
         ?? Series::create(['code' => 'RD-S', 'title' => 'RD series', 'is_active' => true]);
 
     Document::withoutGlobalScope(RepositoryScope::class)->create([
-        'identifier'    => 'RD-DOC-' . uniqid(),
+        'identifier' => 'RD-DOC-' . uniqid(),
         'document_type' => 'TEST',
-        'series_id'     => $series->id,
+        'series_id' => $series->id,
         'repository_id' => $repo->id,
     ]);
 
@@ -141,8 +145,8 @@ test('Repository cannot be force-deleted while documents reference it', function
     try {
         $repo->forceDelete();
         $this->fail('Expected restrictOnDelete FK violation when force-deleting a Repository with documents.');
-    } catch (\Throwable $e) {
-        expect($e)->toBeInstanceOf(\Illuminate\Database\QueryException::class);
+    } catch (Throwable $e) {
+        expect($e)->toBeInstanceOf(QueryException::class);
         $msg = strtolower($e->getMessage());
         expect($msg)->toMatch('/foreign key|parent row|constraint/');
     }

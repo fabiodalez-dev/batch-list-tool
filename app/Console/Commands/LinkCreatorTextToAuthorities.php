@@ -59,8 +59,13 @@ class LinkCreatorTextToAuthorities extends Command
         Document::whereNotNull('extra')
             ->orderBy('id')
             ->chunkById(500, function (Collection $documents) use (
-                &$linked, &$ambiguous, &$methodCounts, &$unresolved,
-                $authoritiesBySurname, $isDryRun, $progressBar
+                &$linked,
+                &$ambiguous,
+                &$methodCounts,
+                &$unresolved,
+                $authoritiesBySurname,
+                $isDryRun,
+                $progressBar
             ) {
                 // F-002: commit per chunk (no long-running transaction).
                 if (! $isDryRun) {
@@ -128,6 +133,7 @@ class LinkCreatorTextToAuthorities extends Command
                     if (! $isDryRun) {
                         DB::rollBack();
                     }
+
                     throw $e;
                 }
             });
@@ -139,8 +145,11 @@ class LinkCreatorTextToAuthorities extends Command
         $this->info('═══════════════════════════════════════════════════');
         $this->info(sprintf(
             ' %s Document → Authority pivot rows: %d (exact %d, last_word %d, fuzzy %d)',
-            $verb, $linked,
-            $methodCounts['exact'], $methodCounts['last_word'], $methodCounts['fuzzy']
+            $verb,
+            $linked,
+            $methodCounts['exact'],
+            $methodCounts['last_word'],
+            $methodCounts['fuzzy']
         ));
         if ($methodCounts['fuzzy'] > 0) {
             $sv = $isDryRun ? 'would be stored' : 'stored';
@@ -180,6 +189,7 @@ class LinkCreatorTextToAuthorities extends Command
             if ($candidates->count() > 1) {
                 return ['ambiguous' => $candidates->count()];  // F-009
             }
+
             return ['id' => $candidates->first()->id, 'method' => 'exact'];
         }
 
@@ -190,6 +200,7 @@ class LinkCreatorTextToAuthorities extends Command
             if ($candidates->count() > 1) {
                 return ['ambiguous' => $candidates->count()];  // F-009
             }
+
             return ['id' => $candidates->first()->id, 'method' => 'last_word'];
         }
 

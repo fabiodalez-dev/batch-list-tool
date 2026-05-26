@@ -26,10 +26,11 @@ function actAsAdmin_acc(): User
 {
     rolesExist_acc();
     $u = User::factory()->create([
-        'email'     => 'acc-admin+' . uniqid() . '@test.local',
+        'email' => 'acc-admin+' . uniqid() . '@test.local',
         'is_active' => true,
     ]);
     $u->assignRole('super_admin');
+
     return $u;
 }
 
@@ -43,7 +44,7 @@ function makeRepo_acc(string $prefix = 'AC'): Repository
 function makeAcc(int $repoId, array $attrs = []): Accession
 {
     return Accession::withoutGlobalScope(RepositoryScope::class)->create(array_merge([
-        'code'          => 'ACC-' . strtoupper(substr(uniqid(), -6)),
+        'code' => 'ACC-' . strtoupper(substr(uniqid(), -6)),
         'repository_id' => $repoId,
     ], $attrs));
 }
@@ -53,7 +54,7 @@ test('AccessionResource list page renders', function () {
     $this->actingAs(actAsAdmin_acc());
 
     $repo = makeRepo_acc();
-    $acc  = makeAcc($repo->id);
+    $acc = makeAcc($repo->id);
 
     Livewire::test(ListAccessions::class)
         ->assertOk()
@@ -63,8 +64,8 @@ test('AccessionResource list page renders', function () {
 /* 42. create persists with code/source field */
 test('AccessionResource create persists with code and notes', function () {
     $repo = makeRepo_acc();
-    $acc  = makeAcc($repo->id, [
-        'notes'          => 'Source: Notary office Borg, 2026',
+    $acc = makeAcc($repo->id, [
+        'notes' => 'Source: Notary office Borg, 2026',
         'accession_date' => '2026-01-15',
     ]);
 
@@ -78,14 +79,14 @@ test('A Document points back to its Accession via accession_id FK', function () 
     $repo = makeRepo_acc();
     $series = Series::query()->first()
         ?? Series::create(['code' => 'AC-S', 'title' => 'AC series', 'is_active' => true]);
-    $acc  = makeAcc($repo->id);
+    $acc = makeAcc($repo->id);
 
     $doc = Document::withoutGlobalScope(RepositoryScope::class)->create([
-        'identifier'    => 'AC-DOC-' . uniqid(),
+        'identifier' => 'AC-DOC-' . uniqid(),
         'document_type' => 'TEST',
-        'series_id'     => $series->id,
+        'series_id' => $series->id,
         'repository_id' => $repo->id,
-        'accession_id'  => $acc->id,
+        'accession_id' => $acc->id,
     ]);
 
     expect($doc->accession_id)->toBe($acc->id);
@@ -103,8 +104,8 @@ test('AccessionResource respects RepositoryScope for an editor', function () {
     $aB = makeAcc($rB->id);
 
     $editor = User::factory()->create([
-        'email'                 => 'ac-editor+' . uniqid() . '@test.local',
-        'is_active'             => true,
+        'email' => 'ac-editor+' . uniqid() . '@test.local',
+        'is_active' => true,
         'default_repository_id' => $rA->id,
     ]);
     $editor->assignRole('editor');

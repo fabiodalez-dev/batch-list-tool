@@ -10,6 +10,14 @@ use App\Models\Document;
 use App\Models\Repository;
 use App\Models\Series;
 use App\Models\User;
+use App\Policies\AccessionPolicy;
+use App\Policies\AuthorityPolicy;
+use App\Policies\BatchPolicy;
+use App\Policies\BoxPolicy;
+use App\Policies\DocumentPolicy;
+use App\Policies\RepositoryPolicy;
+use App\Policies\SeriesPolicy;
+use Filament\Facades\Filament;
 use Illuminate\Foundation\Testing\DatabaseTransactions;
 use Illuminate\Support\Facades\Gate;
 use Spatie\Permission\Models\Role;
@@ -38,7 +46,6 @@ use Spatie\Permission\Models\Role;
  *
  * These tests pin those properties at the Gate level.
  */
-
 uses(DatabaseTransactions::class);
 
 function rolesExist_pol(): void
@@ -52,10 +59,11 @@ function user_pol(string $role): User
 {
     rolesExist_pol();
     $u = User::factory()->create([
-        'email'     => $role . '+' . uniqid() . '@test.local',
+        'email' => $role . '+' . uniqid() . '@test.local',
         'is_active' => true,
     ]);
     $u->assignRole($role);
+
     return $u;
 }
 
@@ -150,13 +158,13 @@ test('viewer can only view — no create/update/delete', function () {
 /* 73. A Policy class exists for every resource model. */
 test('Shield has generated a Policy class for every Filament Resource', function () {
     $expected = [
-        Document::class    => \App\Policies\DocumentPolicy::class,
-        Authority::class   => \App\Policies\AuthorityPolicy::class,
-        Box::class         => \App\Policies\BoxPolicy::class,
-        Batch::class       => \App\Policies\BatchPolicy::class,
-        Series::class      => \App\Policies\SeriesPolicy::class,
-        Accession::class   => \App\Policies\AccessionPolicy::class,
-        Repository::class  => \App\Policies\RepositoryPolicy::class,
+        Document::class => DocumentPolicy::class,
+        Authority::class => AuthorityPolicy::class,
+        Box::class => BoxPolicy::class,
+        Batch::class => BatchPolicy::class,
+        Series::class => SeriesPolicy::class,
+        Accession::class => AccessionPolicy::class,
+        Repository::class => RepositoryPolicy::class,
     ];
 
     foreach ($expected as $model => $policy) {
@@ -189,7 +197,7 @@ test('Authenticated user without any role cannot access /admin', function () {
     rolesExist_pol();
     $u = User::factory()->create(['is_active' => true]); // NO ->assignRole(...)
 
-    expect($u->canAccessPanel(\Filament\Facades\Filament::getPanel('admin')))
+    expect($u->canAccessPanel(Filament::getPanel('admin')))
         ->toBeFalse();
 
     $this->actingAs($u);

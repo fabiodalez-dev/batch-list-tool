@@ -2,8 +2,8 @@
 
 namespace App\Models\Concerns;
 
-use App\Models\Scopes\RepositoryScope;
 use App\Models\Repository;
+use App\Models\Scopes\RepositoryScope;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
 
@@ -42,6 +42,7 @@ trait BelongsToRepository
                 if (empty($model->repository_id) && ! empty($user->default_repository_id)) {
                     $model->repository_id = $user->default_repository_id;
                 }
+
                 return;
             }
 
