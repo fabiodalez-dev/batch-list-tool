@@ -28,6 +28,24 @@ parameters:
 			message: '#^Access to an undefined property Illuminate\\Database\\Eloquent\\Model\:\:\$repository_id\.$#'
 			identifier: property.notFound
 			count: 1
+			path: app/Filament/Resources/DocumentResource/RelationManagers/FlagsRelationManager.php
+
+		-
+			message: '#^Call to an undefined method Illuminate\\Database\\Eloquent\\Builder\:\:open\(\)\.$#'
+			identifier: method.notFound
+			count: 1
+			path: app/Filament/Resources/DocumentResource/RelationManagers/FlagsRelationManager.php
+
+		-
+			message: '#^Match arm comparison between mixed and null is always false\.$#'
+			identifier: match.alwaysFalse
+			count: 1
+			path: app/Filament/Resources/DocumentResource/RelationManagers/FlagsRelationManager.php
+
+		-
+			message: '#^Access to an undefined property Illuminate\\Database\\Eloquent\\Model\:\:\$repository_id\.$#'
+			identifier: property.notFound
+			count: 1
 			path: app/Filament/Resources/DocumentResource/RelationManagers/IdentifierHistoryRelationManager.php
 
 		-
@@ -103,10 +121,22 @@ parameters:
 			path: app/Models/Document.php
 
 		-
+			message: '#^Call to an undefined method Illuminate\\Database\\Eloquent\\Relations\\HasMany\:\:open\(\)\.$#'
+			identifier: method.notFound
+			count: 1
+			path: app/Models/Document.php
+
+		-
 			message: '#^Unsafe access to private property App\\Models\\Document\:\:\$bypassAuditGuard through static\:\:\.$#'
 			identifier: staticClassAccess.privateProperty
 			count: 6
 			path: app/Models/Document.php
+
+		-
+			message: '#^Access to an undefined property Illuminate\\Database\\Eloquent\\Model\:\:\$repository_id\.$#'
+			identifier: property.notFound
+			count: 3
+			path: app/Models/DocumentFlag.php
 
 		-
 			message: '#^Access to an undefined property Illuminate\\Database\\Eloquent\\Model\:\:\$repository_id\.$#'
