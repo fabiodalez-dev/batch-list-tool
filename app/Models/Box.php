@@ -10,6 +10,8 @@ use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
 use Illuminate\Database\Eloquent\Relations\HasMany;
 use Illuminate\Database\Eloquent\SoftDeletes;
+use Illuminate\Support\Collection;
+use Illuminate\Support\Facades\Auth;
 use OwenIt\Auditing\Auditable;
 use OwenIt\Auditing\Contracts\Auditable as AuditableContract;
 use Spatie\EloquentSortable\Sortable;
@@ -55,6 +57,15 @@ class Box extends Model implements AuditableContract, Sortable
     ];
 
     /**
+     * Pending barcode/status transitions, keyed by box primary key.
+     * Populated in `updating`, consumed in `updated` — this avoids the
+     * "isDirty returns false after save" pitfall.
+     *
+     * @var array<int|string, array{previous_barcode: ?string, new_barcode: ?string, previous_status: ?string, new_status: ?string}>
+     */
+    private static array $pendingBarcodeTransitions = [];
+
+    /**
      * Scope sort_order computation to siblings inside the same batch.
      * Without this override the package would compute MAX(sort_order)+1 across
      * ALL boxes, breaking per-batch ordering.
@@ -82,6 +93,31 @@ class Box extends Model implements AuditableContract, Sortable
     public function documents(): HasMany
     {
         return $this->hasMany(Document::class, 'current_box_id');
+    }
+
+    /**
+     * Append-only log of barcode / barcode_status transitions for this box
+     * (RFQ §3.1.5). Returns rows ordered descending by `changed_at` so the
+     * most recent change is first — callers can override with `->orderBy(...)`.
+     */
+    public function barcodeHistory(): HasMany
+    {
+        return $this->hasMany(BoxBarcodeHistory::class)->latest('changed_at');
+    }
+
+    /**
+     * Distinct list of previous barcodes this box has ever held.
+     * Built from the `barcodeHistory` log; uniqueness is enforced in PHP
+     * so the result is stable across DB drivers (SQLite collation quirks).
+     *
+     * @return Collection<int,string>
+     */
+    public function previousBarcodes(): Collection
+    {
+        return $this->barcodeHistory()
+            ->pluck('previous_barcode')
+            ->unique()
+            ->values();
     }
 
     /**
@@ -117,12 +153,45 @@ class Box extends Model implements AuditableContract, Sortable
     }
 
     /**
+     * Insert a row into `box_barcode_history` for this box.
+     *
+     * Public surface so back-fills, importers, or one-off scripts can
+     * append history rows directly without going through the observer.
+     * The observer pipeline calls this internally on every change to
+     * `barcode` or `barcode_status`.
+     */
+    public function recordBarcodeChange(
+        ?string $previousBarcode,
+        ?string $newBarcode,
+        ?string $previousStatus = null,
+        ?string $newStatus = null,
+        ?string $reason = null,
+    ): void {
+        BoxBarcodeHistory::create([
+            'box_id' => $this->getKey(),
+            'previous_barcode' => (string) $previousBarcode,
+            'new_barcode' => $newBarcode,
+            'previous_status' => $previousStatus,
+            'new_status' => $newStatus,
+            'changed_at' => now(),
+            'changed_by_user_id' => Auth::id(),
+            'reason' => $reason,
+            'repository_id' => $this->batch?->repository_id,
+        ]);
+    }
+
+    /**
      * Multi-tenant scoping (RFQ §3.5.1).
      *
      * `boxes` has no `repository_id` column — tenancy is derived from
      * `boxes.batch_id → batches.repository_id`. The scope restricts queries
      * to the repositories the authenticated user has been assigned to.
      * Admin / super_admin bypass the scope (cross-repo oversight).
+     *
+     * Also wires the barcode-history observer (RFQ §3.1.5): every change to
+     * `barcode` or `barcode_status` is captured into the `box_barcode_history`
+     * table by reading the dirty state in `updating` and writing the history
+     * row in `updated`.
      */
     protected static function booted(): void
     {
@@ -130,5 +199,77 @@ class Box extends Model implements AuditableContract, Sortable
             foreignTable: 'batches',
             foreignKey: 'batch_id',
         ));
+
+        static::updating(function (self $box): void {
+            $box->captureBarcodeTransition();
+        });
+
+        static::updated(function (self $box): void {
+            $box->flushPendingBarcodeTransition();
+        });
+    }
+
+    /**
+     * Capture a pending barcode/status transition into the static buffer.
+     * Called from the `updating` event — at this point `getOriginal(...)`
+     * still returns the pre-update value and the new value is on the model.
+     *
+     * Skipped cases (noise we don't want to log):
+     *   - neither `barcode` nor `barcode_status` is dirty,
+     *   - the only "change" on `barcode` is leading/trailing whitespace
+     *     AND `barcode_status` is unchanged.
+     */
+    protected function captureBarcodeTransition(): void
+    {
+        $barcodeDirty = $this->isDirty('barcode');
+        $statusDirty = $this->isDirty('barcode_status');
+
+        if (! $barcodeDirty && ! $statusDirty) {
+            return;
+        }
+
+        $previousBarcode = $this->getOriginal('barcode');
+        $newBarcode = $this->barcode;
+        $previousStatus = $this->getOriginal('barcode_status');
+        $newStatus = $this->barcode_status;
+
+        // Whitespace-only barcode change with no status change → noise, skip.
+        if (
+            ! $statusDirty
+            && trim((string) $previousBarcode) === trim((string) $newBarcode)
+        ) {
+            return;
+        }
+
+        self::$pendingBarcodeTransitions[$this->getKey()] = [
+            'previous_barcode' => $previousBarcode,
+            'new_barcode' => $newBarcode,
+            'previous_status' => $previousStatus,
+            'new_status' => $newStatus,
+        ];
+    }
+
+    /**
+     * Persist the buffered transition (if any) as a row in
+     * `box_barcode_history`. Called from the `updated` event so that the
+     * Box has already been saved and a FK to its id is valid.
+     */
+    protected function flushPendingBarcodeTransition(): void
+    {
+        $key = $this->getKey();
+
+        if (! array_key_exists($key, self::$pendingBarcodeTransitions)) {
+            return;
+        }
+
+        $transition = self::$pendingBarcodeTransitions[$key];
+        unset(self::$pendingBarcodeTransitions[$key]);
+
+        $this->recordBarcodeChange(
+            previousBarcode: $transition['previous_barcode'],
+            newBarcode: $transition['new_barcode'],
+            previousStatus: $transition['previous_status'],
+            newStatus: $transition['new_status'],
+        );
     }
 }

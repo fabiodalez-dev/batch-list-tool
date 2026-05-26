@@ -2,6 +2,7 @@
 
 namespace App\Filament\Resources;
 
+use App\Filament\Concerns\AppliesFieldPermissions;
 use App\Filament\Resources\SeriesResource\Pages;
 use App\Models\Series;
 use Filament\Forms;
@@ -12,6 +13,11 @@ use Filament\Tables\Table;
 
 class SeriesResource extends Resource
 {
+    use AppliesFieldPermissions;
+
+    /** RFQ §3.1.8 — see config/field_permissions.php */
+    private const FIELD_PERMISSIONS_KEY = 'series';
+
     protected static ?string $model = Series::class;
 
     protected static ?string $navigationIcon = 'heroicon-o-tag';
@@ -24,35 +30,39 @@ class SeriesResource extends Resource
 
     public static function form(Form $form): Form
     {
+        $g = fn (Forms\Components\Component $c): Forms\Components\Component => self::gateField($c, self::FIELD_PERMISSIONS_KEY);
+
         return $form
             ->schema([
-                Forms\Components\TextInput::make('code')
+                $g(Forms\Components\TextInput::make('code')
                     ->required()
-                    ->maxLength(16),
-                Forms\Components\TextInput::make('title')
+                    ->maxLength(16)),
+                $g(Forms\Components\TextInput::make('title')
                     ->required()
-                    ->maxLength(255),
-                Forms\Components\Textarea::make('description')
-                    ->columnSpanFull(),
-                Forms\Components\Toggle::make('is_wills_series')
-                    ->required(),
-                Forms\Components\Toggle::make('is_active')
-                    ->required(),
+                    ->maxLength(255)),
+                $g(Forms\Components\Textarea::make('description')
+                    ->columnSpanFull()),
+                $g(Forms\Components\Toggle::make('is_wills_series')
+                    ->required()),
+                $g(Forms\Components\Toggle::make('is_active')
+                    ->required()),
             ]);
     }
 
     public static function table(Table $table): Table
     {
+        $gc = fn (mixed $col, ?string $fieldOverride = null): mixed => self::gateColumn($col, self::FIELD_PERMISSIONS_KEY, $fieldOverride);
+
         return $table
             ->columns([
-                Tables\Columns\TextColumn::make('code')
-                    ->searchable(),
-                Tables\Columns\TextColumn::make('title')
-                    ->searchable(),
-                Tables\Columns\IconColumn::make('is_wills_series')
-                    ->boolean(),
-                Tables\Columns\IconColumn::make('is_active')
-                    ->boolean(),
+                $gc(Tables\Columns\TextColumn::make('code')
+                    ->searchable()),
+                $gc(Tables\Columns\TextColumn::make('title')
+                    ->searchable()),
+                $gc(Tables\Columns\IconColumn::make('is_wills_series')
+                    ->boolean()),
+                $gc(Tables\Columns\IconColumn::make('is_active')
+                    ->boolean()),
                 Tables\Columns\TextColumn::make('created_at')
                     ->dateTime()
                     ->sortable()

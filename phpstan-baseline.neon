@@ -61,6 +61,12 @@ parameters:
 			path: app/Filament/Resources/DocumentResource/RelationManagers/IdentifierHistoryRelationManager.php
 
 		-
+			message: '#^Access to an undefined property Illuminate\\Database\\Eloquent\\Model\:\:\$repository_id\.$#'
+			identifier: property.notFound
+			count: 1
+			path: app/Filament/Resources/DocumentResource/RelationManagers/SealNumberHistoryRelationManager.php
+
+		-
 			message: '#^Access to an undefined property OwenIt\\Auditing\\Models\\Audit\:\:\$user_id\.$#'
 			identifier: property.notFound
 			count: 1
@@ -101,6 +107,18 @@ parameters:
 			identifier: property.notFound
 			count: 2
 			path: app/Models/Batch.php
+
+		-
+			message: '#^Access to an undefined property Illuminate\\Database\\Eloquent\\Model\:\:\$repository_id\.$#'
+			identifier: property.notFound
+			count: 1
+			path: app/Models/Box.php
+
+		-
+			message: '#^Access to an undefined property Illuminate\\Database\\Eloquent\\Model\:\:\$repository_id\.$#'
+			identifier: property.notFound
+			count: 3
+			path: app/Models/BoxBarcodeHistory.php
 
 		-
 			message: '#^Access to an undefined property Illuminate\\Database\\Eloquent\\Model\:\:\$code\.$#'
@@ -155,6 +173,12 @@ parameters:
 			identifier: property.notFound
 			count: 2
 			path: app/Models/DocumentIdentifierHistory.php
+
+		-
+			message: '#^Access to an undefined property Illuminate\\Database\\Eloquent\\Model\:\:\$repository_id\.$#'
+			identifier: property.notFound
+			count: 2
+			path: app/Models/DocumentSealNumberHistory.php
 
 		-
 			message: '#^Access to an undefined property Illuminate\\Database\\Eloquent\\Model\:\:\$repository_id\.$#'

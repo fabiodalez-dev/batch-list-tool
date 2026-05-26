@@ -2,6 +2,7 @@
 
 namespace App\Filament\Resources;
 
+use App\Filament\Concerns\AppliesFieldPermissions;
 use App\Filament\Resources\AuthorityResource\Pages;
 use App\Models\Authority;
 use Filament\Forms;
@@ -12,6 +13,11 @@ use Filament\Tables\Table;
 
 class AuthorityResource extends Resource
 {
+    use AppliesFieldPermissions;
+
+    /** RFQ §3.1.8 — see config/field_permissions.php */
+    private const FIELD_PERMISSIONS_KEY = 'authority';
+
     protected static ?string $model = Authority::class;
 
     protected static ?string $navigationIcon = 'heroicon-o-user-circle';
@@ -24,51 +30,55 @@ class AuthorityResource extends Resource
 
     public static function form(Form $form): Form
     {
+        $g = fn (Forms\Components\Component $c): Forms\Components\Component => self::gateField($c, self::FIELD_PERMISSIONS_KEY);
+
         return $form
             ->schema([
-                Forms\Components\TextInput::make('identifier')
+                $g(Forms\Components\TextInput::make('identifier')
                     ->required()
-                    ->maxLength(32),
-                Forms\Components\TextInput::make('alternative_identifier')
-                    ->maxLength(32),
-                Forms\Components\TextInput::make('surname')
+                    ->maxLength(32)),
+                $g(Forms\Components\TextInput::make('alternative_identifier')
+                    ->maxLength(32)),
+                $g(Forms\Components\TextInput::make('surname')
                     ->required()
-                    ->maxLength(255),
-                Forms\Components\TextInput::make('given_names')
-                    ->maxLength(255),
-                Forms\Components\TextInput::make('entity_type')
+                    ->maxLength(255)),
+                $g(Forms\Components\TextInput::make('given_names')
+                    ->maxLength(255)),
+                $g(Forms\Components\TextInput::make('entity_type')
                     ->required()
                     ->maxLength(16)
-                    ->default('PERSON'),
-                Forms\Components\TextInput::make('practice_dates_start')
-                    ->numeric(),
-                Forms\Components\TextInput::make('practice_dates_end')
-                    ->numeric(),
-                Forms\Components\Textarea::make('notes')
-                    ->columnSpanFull(),
+                    ->default('PERSON')),
+                $g(Forms\Components\TextInput::make('practice_dates_start')
+                    ->numeric()),
+                $g(Forms\Components\TextInput::make('practice_dates_end')
+                    ->numeric()),
+                $g(Forms\Components\Textarea::make('notes')
+                    ->columnSpanFull()),
             ]);
     }
 
     public static function table(Table $table): Table
     {
+        $gc = fn (mixed $col, ?string $fieldOverride = null): mixed => self::gateColumn($col, self::FIELD_PERMISSIONS_KEY, $fieldOverride);
+
         return $table
             ->columns([
-                Tables\Columns\TextColumn::make('identifier')
-                    ->searchable(),
-                Tables\Columns\TextColumn::make('alternative_identifier')
-                    ->searchable(),
-                Tables\Columns\TextColumn::make('surname')
-                    ->searchable(),
-                Tables\Columns\TextColumn::make('given_names')
-                    ->searchable(),
-                Tables\Columns\TextColumn::make('entity_type')
-                    ->searchable(),
-                Tables\Columns\TextColumn::make('practice_dates_start')
+                $gc(Tables\Columns\TextColumn::make('identifier')
+                    ->searchable()),
+                $gc(Tables\Columns\TextColumn::make('alternative_identifier')
+                    ->searchable()),
+                $gc(Tables\Columns\TextColumn::make('surname')
+                    ->searchable()),
+                $gc(Tables\Columns\TextColumn::make('given_names')
+                    ->searchable()),
+                $gc(Tables\Columns\TextColumn::make('entity_type')
+                    ->searchable()),
+                $gc(Tables\Columns\TextColumn::make('practice_dates_start')
                     ->numeric()
-                    ->sortable(),
-                Tables\Columns\TextColumn::make('practice_dates_end')
+                    ->sortable()),
+                $gc(Tables\Columns\TextColumn::make('practice_dates_end')
                     ->numeric()
-                    ->sortable(),
+                    ->sortable()),
                 Tables\Columns\TextColumn::make('created_at')
                     ->dateTime()
                     ->sortable()
