@@ -40,4 +40,21 @@ class BoxMovement extends Model implements AuditableContract
     {
         return $this->belongsTo(User::class);
     }
+
+    /**
+     * Multi-tenant scoping (RFQ §3.5.1).
+     *
+     * `box_movements` has no `repository_id` column — tenancy is derived from
+     * `box_movements.to_box_id → boxes.batch_id → batches.repository_id`.
+     *
+     * Implemented as a dedicated 2-hop scope (NOT through Box's own scope) so
+     * a future `Box::withoutGlobalScopes()` call cannot silently widen the
+     * visibility of `BoxMovement` rows.
+     */
+    protected static function booted(): void
+    {
+        static::addGlobalScope(new \App\Models\Scopes\ThroughBoxBatchRepositoryScope(
+            boxForeignKey: 'to_box_id',
+        ));
+    }
 }

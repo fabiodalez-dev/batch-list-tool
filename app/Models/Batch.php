@@ -27,6 +27,14 @@ class Batch extends Model implements AuditableContract
     /** Main collection batches range */
     public const MAIN_COLLECTION_MAX = 29;
 
+    /**
+     * `repository_id` is mass-assignable so Filament admins can write it via
+     * `create()` — but the BelongsToRepository `creating` hook is the security
+     * gate: it validates the value against the user's pivot and throws for
+     * any non-privileged attempt to write to a foreign tenant.
+     *
+     * @see \App\Models\Concerns\BelongsToRepository
+     */
     protected $fillable = [
         'batch_number', 'description', 'type', 'repository_id', 'is_active',
     ];

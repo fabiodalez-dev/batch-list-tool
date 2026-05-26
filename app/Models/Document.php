@@ -27,6 +27,16 @@ class Document extends Model implements AuditableContract, HasMedia
     use InteractsWithMedia;
     use BelongsToRepository;  // RFQ §3.5.1 — multi-tenant scope
 
+    /**
+     * `repository_id` is mass-assignable so Filament admins (who legitimately
+     * pick a target tenant from the Repository Select) can write it through
+     * `create()` — but the BelongsToRepository `creating` hook is the security
+     * gate: it validates the chosen `repository_id` against the user's pivot
+     * and throws \DomainException for any non-privileged write that targets a
+     * foreign tenant. Defence-in-depth here is the hook, NOT $guarded.
+     *
+     * @see \App\Models\Concerns\BelongsToRepository
+     */
     protected $fillable = [
         // Normalised columns
         'identifier', 'document_type', 'series_id', 'accession_id',

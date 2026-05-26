@@ -74,4 +74,20 @@ class Box extends Model implements AuditableContract
     {
         return in_array($this->box_type, ['IN_SITU', 'NRA'], true);
     }
+
+    /**
+     * Multi-tenant scoping (RFQ §3.5.1).
+     *
+     * `boxes` has no `repository_id` column — tenancy is derived from
+     * `boxes.batch_id → batches.repository_id`. The scope restricts queries
+     * to the repositories the authenticated user has been assigned to.
+     * Admin / super_admin bypass the scope (cross-repo oversight).
+     */
+    protected static function booted(): void
+    {
+        static::addGlobalScope(new \App\Models\Scopes\ThroughBatchRepositoryScope(
+            foreignTable: 'batches',
+            foreignKey:   'batch_id',
+        ));
+    }
 }

@@ -18,6 +18,14 @@ class Accession extends Model implements AuditableContract
     use Auditable;
     use BelongsToRepository;
 
+    /**
+     * `repository_id` is mass-assignable so Filament admins can write it via
+     * `create()` — but the BelongsToRepository `creating` hook is the security
+     * gate: it validates the value against the user's pivot and throws for
+     * any non-privileged attempt to write to a foreign tenant.
+     *
+     * @see \App\Models\Concerns\BelongsToRepository
+     */
     protected $fillable = [
         'code', 'accession_date', 'authority_id', 'batch_id', 'repository_id', 'notes',
     ];
