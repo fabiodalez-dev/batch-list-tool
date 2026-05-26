@@ -2,6 +2,9 @@
 
 namespace App\Filament\Resources;
 
+use App\Filament\Actions\Documents\DocumentActionGroup;
+use App\Filament\Actions\Documents\MarkDisinfestedAction;
+use App\Filament\Actions\Documents\MoveToBoxAction;
 use App\Filament\Concerns\AppliesFieldPermissions;
 use App\Filament\Resources\DocumentResource\Pages;
 use App\Filament\Support\SearchableSelects;
@@ -387,8 +390,26 @@ class DocumentResource extends Resource
             ->actions([
                 ViewAction::make(),
                 EditAction::make(),
+                // The two most-frequent single-record power-actions are
+                // exposed as row actions for one-click access from the list.
+                // The rest live behind the "Actions" dropdown on the Edit /
+                // View page header to keep the row toolbar uncluttered.
+                MoveToBoxAction::make('rowMoveToBox')
+                    ->label('Move box')
+                    ->iconButton(),
+                MarkDisinfestedAction::make('rowMarkDisinfested')
+                    ->label('Disinfested')
+                    ->iconButton(),
             ])
             ->bulkActions([
+                // The 14 Document power-actions (RFQ §3.1.1 / §3.1.4 /
+                // §3.1.5) live in a dedicated bulk-action group so the
+                // operator can act on tens-of-rows-at-a-time selections
+                // without leaving the list page.
+                BulkActionGroup::make(DocumentActionGroup::bulkActions())
+                    ->label('Power actions')
+                    ->icon('heroicon-o-bolt')
+                    ->color('primary'),
                 BulkActionGroup::make([
                     DeleteBulkAction::make(),
                 ]),
