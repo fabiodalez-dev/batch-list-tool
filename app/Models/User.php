@@ -11,18 +11,19 @@ use Illuminate\Database\Eloquent\Relations\BelongsToMany;
 use Illuminate\Database\Eloquent\SoftDeletes;
 use Illuminate\Foundation\Auth\User as Authenticatable;
 use Illuminate\Notifications\Notifiable;
+use Lab404\Impersonate\Models\Impersonate;
 use OwenIt\Auditing\Auditable;
 use OwenIt\Auditing\Contracts\Auditable as AuditableContract;
 use Spatie\Permission\Traits\HasRoles;
 
 class User extends Authenticatable implements AuditableContract, FilamentUser
 {
+    /** @use HasFactory<UserFactory> */
     use Auditable;
 
-    /** @use HasFactory<UserFactory> */
     use HasFactory;
-
     use HasRoles;
+    use Impersonate;
     use Notifiable;
     use SoftDeletes;
 
@@ -58,6 +59,25 @@ class User extends Authenticatable implements AuditableContract, FilamentUser
             $this->hasRole('super_admin')
             || $this->hasAnyRole(['admin', 'editor', 'viewer'])
         );
+    }
+
+    /**
+     * Impersonation gate — only super_admin may impersonate.
+     * Used by lab404/laravel-impersonate.
+     */
+    public function canImpersonate(): bool
+    {
+        return $this->hasRole('super_admin');
+    }
+
+    /**
+     * Privilege-escalation guard: super_admin can NEVER be impersonated.
+     * If we ever allowed it, an admin could "become" super_admin and bypass
+     * the canImpersonate() check above. Other roles are fair game.
+     */
+    public function canBeImpersonated(): bool
+    {
+        return ! $this->hasRole('super_admin');
     }
 
     protected function casts(): array
