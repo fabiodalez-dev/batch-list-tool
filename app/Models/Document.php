@@ -12,17 +12,17 @@ use Illuminate\Database\Eloquent\SoftDeletes;
 use Laravel\Scout\Searchable;
 use OwenIt\Auditing\Auditable;
 use OwenIt\Auditing\Contracts\Auditable as AuditableContract;
+use Spatie\EloquentSortable\Sortable;
+use Spatie\EloquentSortable\SortableTrait;
 use Spatie\MediaLibrary\HasMedia;
 use Spatie\MediaLibrary\InteractsWithMedia;
 use Spatie\SchemalessAttributes\Casts\SchemalessAttributes;
 use Spatie\Tags\HasTags;
 
-class Document extends Model implements AuditableContract, HasMedia
+class Document extends Model implements AuditableContract, HasMedia, Sortable
 {
-    use HasFactory;
-    use SoftDeletes;
     use Auditable;
-    use Searchable;
+    use HasFactory;
     use HasTags;
     use InteractsWithMedia;
     use BelongsToRepository;  // RFQ §3.5.1 — multi-tenant scope
@@ -38,6 +38,7 @@ class Document extends Model implements AuditableContract, HasMedia
      * @see \App\Models\Concerns\BelongsToRepository
      */
     protected $fillable = [
+        'sort_order',
         // Normalised columns
         'identifier', 'document_type', 'series_id', 'accession_id',
         'current_box_id', 'batch_id', 'repository_id', 'volume_label',
@@ -71,6 +72,15 @@ class Document extends Model implements AuditableContract, HasMedia
         'custom_fields' => 'array',
         'metadata' => 'array',
     ];
+
+    /**
+     * Sort within the current_box. Documents in box A and documents in box B
+     * each have their own 1..N sequence.
+     */
+    public function buildSortQuery(): Builder
+    {
+        return static::query()->where('current_box_id', $this->current_box_id);
+    }
 
     public function series(): BelongsTo
     {

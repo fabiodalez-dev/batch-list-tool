@@ -2999,6 +2999,73 @@
             "time": "2026-03-29T12:05:03+00:00"
         },
         {
+            "name": "lab404/laravel-impersonate",
+            "version": "1.7.8",
+            "source": {
+                "type": "git",
+                "url": "https://github.com/404labfr/laravel-impersonate.git",
+                "reference": "0008a39da8914cc946b6a5ed211230708ee736b3"
+            },
+            "dist": {
+                "type": "zip",
+                "url": "https://api.github.com/repos/404labfr/laravel-impersonate/zipball/0008a39da8914cc946b6a5ed211230708ee736b3",
+                "reference": "0008a39da8914cc946b6a5ed211230708ee736b3",
+                "shasum": ""
+            },
+            "require": {
+                "laravel/framework": "^6.0 | ^7.0 | ^8.0 | ^9.0 | ^10.0 | ^11.0 | ^12.0 | ^13.0",
+                "php": "^7.2 | ^8.0"
+            },
+            "require-dev": {
+                "mockery/mockery": "^1.3.3",
+                "orchestra/testbench": "^4.0 | ^5.0 | ^6.0 | ^7.0 | ^8.0 | ^9.0 | ^10.0 | ^11.0",
+                "phpunit/phpunit": "^7.5 | ^8.0 | ^9.0 | ^10.0 | ^11.0"
+            },
+            "type": "library",
+            "extra": {
+                "laravel": {
+                    "providers": [
+                        "Lab404\\Impersonate\\ImpersonateServiceProvider"
+                    ]
+                }
+            },
+            "autoload": {
+                "files": [
+                    "src/helpers.php"
+                ],
+                "psr-4": {
+                    "Lab404\\Impersonate\\": "src/"
+                }
+            },
+            "notification-url": "https://packagist.org/downloads/",
+            "license": [
+                "MIT"
+            ],
+            "authors": [
+                {
+                    "name": "Marceau Casals",
+                    "email": "marceau@casals.fr"
+                }
+            ],
+            "description": "Laravel Impersonate is a plugin that allows to you to authenticate as your users.",
+            "keywords": [
+                "auth",
+                "impersonate",
+                "impersonation",
+                "laravel",
+                "laravel-package",
+                "laravel-plugin",
+                "package",
+                "plugin",
+                "user"
+            ],
+            "support": {
+                "issues": "https://github.com/404labfr/laravel-impersonate/issues",
+                "source": "https://github.com/404labfr/laravel-impersonate/tree/1.7.8"
+            },
+            "time": "2026-03-17T15:24:14+00:00"
+        },
+        {
             "name": "laravel/fortify",
             "version": "v1.37.2",
             "source": {
@@ -14066,6 +14133,72 @@
                 }
             ],
             "time": "2026-02-21T00:29:45+00:00"
+        },
+        {
+            "name": "pestphp/pest-plugin-livewire",
+            "version": "v4.1.0",
+            "source": {
+                "type": "git",
+                "url": "https://github.com/pestphp/pest-plugin-livewire.git",
+                "reference": "0b5a137ec6ceadd19dd2c59b9b60039d64f6b4d2"
+            },
+            "dist": {
+                "type": "zip",
+                "url": "https://api.github.com/repos/pestphp/pest-plugin-livewire/zipball/0b5a137ec6ceadd19dd2c59b9b60039d64f6b4d2",
+                "reference": "0b5a137ec6ceadd19dd2c59b9b60039d64f6b4d2",
+                "shasum": ""
+            },
+            "require": {
+                "livewire/livewire": "^3.7.4|^4.0.1",
+                "pestphp/pest": "^4.3.1",
+                "php": "^8.3"
+            },
+            "require-dev": {
+                "orchestra/testbench": "^10.9.0",
+                "pestphp/pest-dev-tools": "^4.0.0"
+            },
+            "type": "library",
+            "autoload": {
+                "files": [
+                    "src/Autoload.php"
+                ],
+                "psr-4": {
+                    "Pest\\Livewire\\": "src/"
+                }
+            },
+            "notification-url": "https://packagist.org/downloads/",
+            "license": [
+                "MIT"
+            ],
+            "description": "The Pest Livewire Plugin",
+            "keywords": [
+                "framework",
+                "livewire",
+                "pest",
+                "php",
+                "plugin",
+                "test",
+                "testing",
+                "unit"
+            ],
+            "support": {
+                "source": "https://github.com/pestphp/pest-plugin-livewire/tree/v4.1.0"
+            },
+            "funding": [
+                {
+                    "url": "https://www.paypal.com/cgi-bin/webscr?cmd=_s-xclick&hosted_button_id=66BYDWAT92N6L",
+                    "type": "custom"
+                },
+                {
+                    "url": "https://github.com/nunomaduro",
+                    "type": "github"
+                },
+                {
+                    "url": "https://www.patreon.com/nunomaduro",
+                    "type": "patreon"
+                }
+            ],
+            "time": "2026-01-16T00:56:22+00:00"
         },
         {
             "name": "pestphp/pest-plugin-mutate",

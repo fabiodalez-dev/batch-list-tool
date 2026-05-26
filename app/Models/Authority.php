@@ -13,10 +13,10 @@ use OwenIt\Auditing\Contracts\Auditable as AuditableContract;
 
 class Authority extends Model implements AuditableContract
 {
-    use HasFactory;
-    use SoftDeletes;
     use Auditable;
+    use HasFactory;
     use Searchable;
+    use SoftDeletes;
 
     protected $table = 'authorities';
 

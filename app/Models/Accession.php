@@ -13,6 +13,7 @@ use OwenIt\Auditing\Contracts\Auditable as AuditableContract;
 
 class Accession extends Model implements AuditableContract
 {
+    use Auditable;
     use HasFactory;
     use SoftDeletes;
     use Auditable;

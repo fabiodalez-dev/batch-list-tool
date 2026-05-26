@@ -212,22 +212,23 @@ class DocumentResource extends Resource
                     ->relationship('authorities', 'surname')->searchable()->preload()->multiple(),
 
                 // Free-text search per field (POC-style filtri puntuali)
-                self::likeFilter('barcode_in',           'Search in Barcode (IN)'),
+                self::likeFilter('barcode_in', 'Search in Barcode (IN)'),
                 self::likeFilter('catalogue_identifier', 'Search in Catalogue ID'),
-                self::likeFilter('practice',             'Search in Practice'),
-                self::likeFilter('notes',                'Search in Notes'),
+                self::likeFilter('practice', 'Search in Practice'),
+                self::likeFilter('notes', 'Search in Notes'),
 
                 // volume_label is special — also searches the JSON path extra->volume; kept inline.
                 Filter::make('volume_label')
                     ->form([
                         Forms\Components\TextInput::make('value')->label('Search in Volume'),
                     ])
-                    ->query(fn (Builder $q, array $data) =>
-                        $q->when($data['value'] ?? null,
+                    ->query(
+                        fn (Builder $q, array $data) => $q->when(
+                            $data['value'] ?? null,
                             fn ($q, $v) => $q->where(function ($q) use ($v) {
                                 $needle = '%' . trim($v) . '%';
                                 $q->where('volume_label', 'like', $needle)
-                                  ->orWhere('extra->volume', 'like', $needle);
+                                    ->orWhere('extra->volume', 'like', $needle);
                             })
                         )
                     ),
@@ -240,17 +241,20 @@ class DocumentResource extends Resource
                     ])
                     ->query(function (Builder $q, array $data) {
                         return $q
-                            ->when($data['year_from'] ?? null, fn ($q, $v) =>
-                                $q->where(fn ($q) => $q->whereNull('dates_year_end')
-                                                        ->orWhere('dates_year_end', '>=', (int) $v)))
-                            ->when($data['year_to'] ?? null, fn ($q, $v) =>
-                                $q->where(fn ($q) => $q->whereNull('dates_year_start')
-                                                        ->orWhere('dates_year_start', '<=', (int) $v)));
+                            ->when($data['year_from'] ?? null, fn ($q, $v) => $q->where(fn ($q) => $q->whereNull('dates_year_end')
+                                ->orWhere('dates_year_end', '>=', (int) $v)))
+                            ->when($data['year_to'] ?? null, fn ($q, $v) => $q->where(fn ($q) => $q->whereNull('dates_year_start')
+                                ->orWhere('dates_year_start', '<=', (int) $v)));
                     })
                     ->indicateUsing(function (array $data): array {
                         $i = [];
-                        if (! empty($data['year_from'])) $i[] = "Year ≥ {$data['year_from']}";
-                        if (! empty($data['year_to'])) $i[] = "Year ≤ {$data['year_to']}";
+                        if (! empty($data['year_from'])) {
+                            $i[] = "Year ≥ {$data['year_from']}";
+                        }
+                        if (! empty($data['year_to'])) {
+                            $i[] = "Year ≤ {$data['year_to']}";
+                        }
+
                         return $i;
                     }),
 
@@ -262,10 +266,14 @@ class DocumentResource extends Resource
                     ])
                     ->query(function (Builder $q, array $data) {
                         return $q
-                            ->when($data['disinfested_from'] ?? null,
-                                fn ($q, $v) => $q->whereDate('disinfestation_date', '>=', $v))
-                            ->when($data['disinfested_to'] ?? null,
-                                fn ($q, $v) => $q->whereDate('disinfestation_date', '<=', $v));
+                            ->when(
+                                $data['disinfested_from'] ?? null,
+                                fn ($q, $v) => $q->whereDate('disinfestation_date', '>=', $v)
+                            )
+                            ->when(
+                                $data['disinfested_to'] ?? null,
+                                fn ($q, $v) => $q->whereDate('disinfestation_date', '<=', $v)
+                            );
                     }),
 
                 // Ternary filters
@@ -318,21 +326,6 @@ class DocumentResource extends Resource
             ]);
     }
 
-    /**
-     * Build a leading-/trailing-wildcard LIKE filter on a single column.
-     * Centralises the form + query shape shared by all "Search in X" filters.
-     */
-    private static function likeFilter(string $name, string $label, ?string $column = null): Filter
-    {
-        $col = $column ?? $name;
-
-        return Filter::make($name)
-            ->form([Forms\Components\TextInput::make('value')->label($label)])
-            ->query(fn (Builder $q, array $data) =>
-                $q->when($data['value'] ?? null, fn ($q, $v) =>
-                    $q->where($col, 'like', '%' . trim($v) . '%')));
-    }
-
     public static function getRelations(): array
     {
         return [];
@@ -365,5 +358,18 @@ class DocumentResource extends Resource
             'view' => Pages\ViewDocument::route('/{record}'),
             'edit' => Pages\EditDocument::route('/{record}/edit'),
         ];
+    }
+
+    /**
+     * Build a leading-/trailing-wildcard LIKE filter on a single column.
+     * Centralises the form + query shape shared by all "Search in X" filters.
+     */
+    private static function likeFilter(string $name, string $label, ?string $column = null): Filter
+    {
+        $col = $column ?? $name;
+
+        return Filter::make($name)
+            ->form([Forms\Components\TextInput::make('value')->label($label)])
+            ->query(fn (Builder $q, array $data) => $q->when($data['value'] ?? null, fn ($q, $v) => $q->where($col, 'like', '%' . trim($v) . '%')));
     }
 }
