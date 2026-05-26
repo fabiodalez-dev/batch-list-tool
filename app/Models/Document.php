@@ -151,6 +151,26 @@ class Document extends Model implements AuditableContract, HasMedia, Sortable
     }
 
     /**
+     * Operational flags / alerts attached to this document (RFQ §3.1.12).
+     * Replaces the legacy spreadsheet colour-coding with a structured,
+     * searchable, filterable, resolvable issue list.
+     */
+    public function flags(): HasMany
+    {
+        return $this->hasMany(DocumentFlag::class)->latest('flagged_at');
+    }
+
+    /**
+     * Subset: only flags that are still actionable (open or acknowledged).
+     * Resolved/dismissed flags are filtered out — operators care about the
+     * inbox, not the historical resolved set.
+     */
+    public function openFlags(): HasMany
+    {
+        return $this->flags()->open();
+    }
+
+    /**
      * F-011 alignment: this MUST mirror the attributes exposed in
      * DocumentResource::getGloballySearchableAttributes() so that swapping
      * Scout drivers (database / Meilisearch / Algolia) does not change
@@ -171,6 +191,9 @@ class Document extends Model implements AuditableContract, HasMedia, Sortable
             'series_title' => $this->series?->title,
             'authorities_surnames' => $this->authorities()->pluck('surname')->implode(' '),
             'authorities_idents' => $this->authorities()->pluck('identifier')->implode(' '),
+            // RFQ §3.1.12 — only open flags are indexed; resolved/dismissed
+            // flags would pollute the search inbox.
+            'flag_tokens' => $this->openFlags->pluck('type')->map(fn ($t) => "flag:{$t}")->implode(' '),
         ];
     }
 

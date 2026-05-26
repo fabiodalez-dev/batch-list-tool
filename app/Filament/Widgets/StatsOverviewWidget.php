@@ -8,6 +8,7 @@ use App\Models\Authority;
 use App\Models\Batch;
 use App\Models\Box;
 use App\Models\Document;
+use App\Models\DocumentFlag;
 use App\Models\Repository;
 use Carbon\CarbonImmutable;
 use Filament\Widgets\StatsOverviewWidget as BaseStatsOverviewWidget;
@@ -71,6 +72,19 @@ class StatsOverviewWidget extends BaseStatsOverviewWidget
                 ->description('barcode status IN')
                 ->descriptionIcon('heroicon-m-cube')
                 ->color('success'),
+
+            // RFQ §3.1.12 — issue flags replace spreadsheet colour-coding.
+            // Card colour is `danger` if any critical flag is open, `warning`
+            // if there are open flags but none are critical, `success` when
+            // the inbox is empty.
+            Stat::make('Open flags', number_format($stats['open_flags_total']))
+                ->description($stats['open_flags_critical'] > 0
+                    ? $stats['open_flags_critical'] . ' critical'
+                    : 'none critical')
+                ->descriptionIcon('heroicon-m-flag')
+                ->color($stats['open_flags_critical'] > 0
+                    ? 'danger'
+                    : ($stats['open_flags_total'] > 0 ? 'warning' : 'success')),
         ];
 
         if ($this->shouldShowRepositoryCard()) {
@@ -136,6 +150,15 @@ class StatsOverviewWidget extends BaseStatsOverviewWidget
         // it IS the tenant). For non-admin we just count their attached repos.
         $repositoriesTotal = $this->countRepositoriesForUser();
 
+        // RFQ §3.1.12 — open issue flags (= "actionable inbox"). The
+        // RepositoryScope on DocumentFlag already restricts non-admin reads
+        // to the user's tenants, so the count is automatically tenant-correct.
+        $openFlagsTotal = DocumentFlag::query()->open()->count();
+        $openFlagsCritical = DocumentFlag::query()
+            ->open()
+            ->where('severity', 'critical')
+            ->count();
+
         return [
             'documents_total' => $documentsTotal,
             'documents_last_7' => $documentsLast7,
@@ -146,6 +169,8 @@ class StatsOverviewWidget extends BaseStatsOverviewWidget
             'pending_disinfestation' => $pendingDisinfestation,
             'boxes_in' => $boxesIn,
             'repositories_total' => $repositoriesTotal,
+            'open_flags_total' => $openFlagsTotal,
+            'open_flags_critical' => $openFlagsCritical,
         ];
     }
 
