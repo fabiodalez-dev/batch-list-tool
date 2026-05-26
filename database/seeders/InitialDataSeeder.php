@@ -2,15 +2,12 @@
 
 namespace Database\Seeders;
 
-use App\Models\Authority;
-use App\Models\Batch;
-use App\Models\Box;
 use App\Models\Repository;
-use App\Models\Series;
 use App\Models\User;
 use Illuminate\Database\Seeder;
 use Illuminate\Support\Facades\Artisan;
 use Illuminate\Support\Facades\Hash;
+use Spatie\Permission\Models\Permission;
 use Spatie\Permission\Models\Role;
 
 class InitialDataSeeder extends Seeder
@@ -35,12 +32,12 @@ class InitialDataSeeder extends Seeder
 
         // ----- Roles (Shield's super_admin is created on the fly; we add operational roles) -----
         $superAdmin = Role::firstOrCreate(['name' => 'super_admin', 'guard_name' => 'web']);
-        $admin      = Role::firstOrCreate(['name' => 'admin', 'guard_name' => 'web']);
-        $editor     = Role::firstOrCreate(['name' => 'editor', 'guard_name' => 'web']);
-        $viewer     = Role::firstOrCreate(['name' => 'viewer', 'guard_name' => 'web']);
+        $admin = Role::firstOrCreate(['name' => 'admin', 'guard_name' => 'web']);
+        $editor = Role::firstOrCreate(['name' => 'editor', 'guard_name' => 'web']);
+        $viewer = Role::firstOrCreate(['name' => 'viewer', 'guard_name' => 'web']);
 
         // Assign Shield-generated permissions per role (admin = all; editor = view+create+update; viewer = view only)
-        $allPerms = \Spatie\Permission\Models\Permission::pluck('name')->all();
+        $allPerms = Permission::pluck('name')->all();
         $admin->syncPermissions($allPerms);
         $editor->syncPermissions(
             collect($allPerms)->filter(fn ($p) => str_starts_with($p, 'view_') || str_starts_with($p, 'create_') || str_starts_with($p, 'update_') || str_starts_with($p, 'reorder_'))->all()
