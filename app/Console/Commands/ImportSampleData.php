@@ -261,7 +261,7 @@ class ImportSampleData extends Command
 
                 [$yearStart, $yearEnd] = $this->parseYearRange($datesStr);
 
-                Document::create([
+                $document = Document::create([
                     // Normalised
                     'identifier' => $identifier ?: $catalogueId ?: 'AUTO-' . ($rowIdx + 2),
                     'document_type' => $docType ?: null,
@@ -324,6 +324,18 @@ class ImportSampleData extends Command
                     'tracking' => trim((string) ($row[47] ?? '')) ?: null,
                     'museum_reference' => trim((string) ($row[48] ?? '')) ?: null,
                 ]);
+
+                // Link Document to Authority via R<identifier> match
+                // (legacy Excel's "Identifier" column is a number like "574"
+                // which maps to Authority.identifier "R574" 1:1).
+                if ($identifier !== '' && ctype_digit($identifier)) {
+                    $authority = Authority::where('identifier', 'R' . $identifier)->first();
+                    if ($authority !== null) {
+                        $document->authorities()->syncWithoutDetaching([
+                            $authority->id => ['is_primary' => true],
+                        ]);
+                    }
+                }
 
                 $count++;
                 if ($count % 500 === 0) {
