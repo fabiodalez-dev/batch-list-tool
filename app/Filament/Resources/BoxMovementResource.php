@@ -10,7 +10,9 @@ use Filament\Actions\DeleteBulkAction;
 use Filament\Actions\EditAction;
 use Filament\Actions\ViewAction;
 use Filament\Forms;
+use Filament\Infolists\Components\TextEntry;
 use Filament\Resources\Resource;
+use Filament\Schemas\Components\Section;
 use Filament\Schemas\Schema;
 use Filament\Tables;
 use Filament\Tables\Table;
@@ -27,23 +29,110 @@ class BoxMovementResource extends Resource
 
     public static function form(Schema $schema): Schema
     {
+        // Layout rule (user mandate): root columns(1) → full-width Sections;
+        // atomic-field Sections use ['default' => 1, 'md' => 2]; non-atomic
+        // children → columnSpanFull.
+        $twoCols = ['default' => 1, 'md' => 2];
+
         // All four FK Selects below use server-side autocomplete with
         // `preload(false)` — the documents (3,000+) and boxes (600+) tables
         // are too large to render as a flat `<select>` on the production
         // dataset. See App\Filament\Support\SearchableSelects.
         return $schema
+            ->columns(1)
             ->schema([
-                SearchableSelects::documentVia('document_id', 'document')
-                    ->required(),
-                SearchableSelects::box('from_box_id', 'fromBox')
-                    ->label('From box'),
-                SearchableSelects::box('to_box_id', 'toBox')
-                    ->label('To box'),
-                Forms\Components\DateTimePicker::make('movement_date')
-                    ->required(),
-                Forms\Components\TextInput::make('reason')
-                    ->maxLength(255),
-                SearchableSelects::user('user_id', 'user'),
+                Section::make('Document')
+                    ->columns(1)
+                    ->schema([
+                        SearchableSelects::documentVia('document_id', 'document')
+                            ->required()
+                            ->columnSpanFull(),
+                    ]),
+
+                Section::make('Movement')
+                    ->columns($twoCols)
+                    ->schema([
+                        SearchableSelects::box('from_box_id', 'fromBox')
+                            ->label('From box'),
+                        SearchableSelects::box('to_box_id', 'toBox')
+                            ->label('To box'),
+                        Forms\Components\DateTimePicker::make('movement_date')
+                            ->required(),
+                        SearchableSelects::user('user_id', 'user'),
+                        Forms\Components\TextInput::make('reason')
+                            ->maxLength(255)
+                            ->columnSpanFull(),
+                    ]),
+            ]);
+    }
+
+    public static function infolist(Schema $schema): Schema
+    {
+        // Layout rule (user mandate): root columns(1) → full-width Sections;
+        // atomic entries on ['default' => 1, 'md' => 2]; non-atomic content
+        // → columnSpanFull. Every FK gets a ->url() to its Resource view.
+        $twoCols = ['default' => 1, 'md' => 2];
+
+        return $schema
+            ->columns(1)
+            ->components([
+                Section::make('Document')
+                    ->columns(1)
+                    ->schema([
+                        TextEntry::make('document.identifier')
+                            ->label('Document')
+                            ->badge()
+                            ->color('primary')
+                            ->url(fn (?BoxMovement $record): ?string => $record?->document_id
+                                ? route('filament.admin.resources.documents.view', ['record' => $record->document_id])
+                                : null)
+                            ->openUrlInNewTab(false)
+                            ->placeholder('—')
+                            ->columnSpanFull(),
+                    ]),
+
+                Section::make('Movement')
+                    ->columns($twoCols)
+                    ->schema([
+                        TextEntry::make('fromBox.box_number')
+                            ->label('From box')
+                            ->badge()
+                            ->color('gray')
+                            ->url(fn (?BoxMovement $record): ?string => $record?->from_box_id
+                                ? route('filament.admin.resources.boxes.view', ['record' => $record->from_box_id])
+                                : null)
+                            ->openUrlInNewTab(false)
+                            ->placeholder('—'),
+                        TextEntry::make('toBox.box_number')
+                            ->label('To box')
+                            ->badge()
+                            ->color('success')
+                            ->url(fn (?BoxMovement $record): ?string => $record?->to_box_id
+                                ? route('filament.admin.resources.boxes.view', ['record' => $record->to_box_id])
+                                : null)
+                            ->openUrlInNewTab(false)
+                            ->placeholder('—'),
+                        TextEntry::make('movement_date')
+                            ->label('When')
+                            ->dateTime()
+                            ->placeholder('—'),
+                        TextEntry::make('user.name')
+                            ->label('By user')
+                            ->placeholder('—'),
+                        TextEntry::make('reason')
+                            ->label('Reason')
+                            ->placeholder('—')
+                            ->columnSpanFull(),
+                    ]),
+
+                Section::make('Audit info')
+                    ->columns($twoCols)
+                    ->collapsed()
+                    ->schema([
+                        TextEntry::make('created_at')->dateTime()->label('Created'),
+                        TextEntry::make('updated_at')->dateTime()->label('Updated'),
+                    ])
+                    ->visible(fn (): bool => (bool) auth()->user()?->hasRole('super_admin')),
             ]);
     }
 

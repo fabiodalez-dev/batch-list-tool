@@ -12,8 +12,9 @@ use Filament\Actions\DeleteBulkAction;
 use Filament\Actions\EditAction;
 use Filament\Actions\ViewAction;
 use Filament\Forms;
+use Filament\Infolists\Components\TextEntry;
 use Filament\Resources\Resource;
-use Filament\Schemas;
+use Filament\Schemas\Components\Section;
 use Filament\Schemas\Components\Utilities\Get;
 use Filament\Schemas\Schema;
 use Filament\Tables;
@@ -50,62 +51,180 @@ class DocumentFlagResource extends Resource
 
     public static function form(Schema $schema): Schema
     {
-        return $schema->schema([
-            Schemas\Components\Section::make('What')
-                ->columns(2)
-                ->schema([
-                    // 3,000+ documents → server-side autocomplete.
-                    SearchableSelects::document('document_id')
-                        ->required()
-                        ->columnSpanFull(),
+        // Layout rule (user mandate): root columns(1) → full-width Sections;
+        // atomic-field Sections use ['default' => 1, 'md' => 2]; non-atomic
+        // children (Textarea with rows>1, helperText-heavy inputs) → columnSpanFull.
+        $twoCols = ['default' => 1, 'md' => 2];
 
-                    Forms\Components\Select::make('type')
-                        ->options(FlagsRelationManager::typeOptions())
-                        ->required()
-                        ->native(false)
-                        ->searchable(),
+        return $schema
+            ->columns(1)
+            ->schema([
+                Section::make('What')
+                    ->columns($twoCols)
+                    ->schema([
+                        // 3,000+ documents → server-side autocomplete.
+                        SearchableSelects::document('document_id')
+                            ->required()
+                            ->columnSpanFull(),
 
-                    Forms\Components\Select::make('severity')
-                        ->options(FlagsRelationManager::severityOptions())
-                        ->default('warning')
-                        ->required()
-                        ->native(false),
+                        Forms\Components\Select::make('type')
+                            ->options(FlagsRelationManager::typeOptions())
+                            ->required()
+                            ->native(false)
+                            ->searchable(),
 
-                    Forms\Components\TextInput::make('title')
-                        ->required()
-                        ->maxLength(200)
-                        ->columnSpanFull(),
+                        Forms\Components\Select::make('severity')
+                            ->options(FlagsRelationManager::severityOptions())
+                            ->default('warning')
+                            ->required()
+                            ->native(false),
 
-                    Forms\Components\Textarea::make('description')
-                        ->rows(3)
-                        ->maxLength(5000)
-                        ->columnSpanFull(),
-                ]),
+                        Forms\Components\TextInput::make('title')
+                            ->required()
+                            ->maxLength(200)
+                            ->columnSpanFull(),
 
-            Schemas\Components\Section::make('Workflow')
-                ->columns(2)
-                ->schema([
-                    Forms\Components\Select::make('status')
-                        ->options(FlagsRelationManager::statusOptions())
-                        ->default('open')
-                        ->required()
-                        ->native(false),
+                        Forms\Components\Textarea::make('description')
+                            ->rows(3)
+                            ->maxLength(5000)
+                            ->columnSpanFull(),
+                    ]),
 
-                    Forms\Components\DateTimePicker::make('flagged_at')
-                        ->default(now())
-                        ->required(),
+                Section::make('Workflow')
+                    ->columns($twoCols)
+                    ->schema([
+                        Forms\Components\Select::make('status')
+                            ->options(FlagsRelationManager::statusOptions())
+                            ->default('open')
+                            ->required()
+                            ->native(false),
 
-                    Forms\Components\Textarea::make('resolution_notes')
-                        ->rows(2)
-                        ->maxLength(5000)
-                        ->columnSpanFull()
-                        ->visible(fn (Get $get): bool => in_array(
-                            $get('status'),
-                            ['resolved', 'dismissed'],
-                            true,
-                        )),
-                ]),
-        ]);
+                        Forms\Components\DateTimePicker::make('flagged_at')
+                            ->default(now())
+                            ->required(),
+
+                        Forms\Components\Textarea::make('resolution_notes')
+                            ->rows(2)
+                            ->maxLength(5000)
+                            ->columnSpanFull()
+                            ->visible(fn (Get $get): bool => in_array(
+                                $get('status'),
+                                ['resolved', 'dismissed'],
+                                true,
+                            )),
+                    ]),
+            ]);
+    }
+
+    public static function infolist(Schema $schema): Schema
+    {
+        // Layout rule (user mandate): root columns(1), atomic Sections on
+        // ['default' => 1, 'md' => 2]; non-atomic content uses columnSpanFull.
+        // Every FK gets a clickable URL to its Resource view.
+        $twoCols = ['default' => 1, 'md' => 2];
+
+        return $schema
+            ->columns(1)
+            ->components([
+                Section::make('Flag')
+                    ->columns($twoCols)
+                    ->schema([
+                        TextEntry::make('severity')
+                            ->label('Severity')
+                            ->badge()
+                            ->color(fn (?string $state): string => match ($state) {
+                                'critical' => 'danger',
+                                'warning' => 'warning',
+                                'info' => 'info',
+                                default => 'gray',
+                            })
+                            ->placeholder('—'),
+                        TextEntry::make('type')
+                            ->label('Type')
+                            ->badge()
+                            ->color('gray')
+                            ->formatStateUsing(fn (?string $state): string => $state
+                                ? FlagsRelationManager::typeLabel($state)
+                                : '—')
+                            ->placeholder('—'),
+                        TextEntry::make('status')
+                            ->label('Status')
+                            ->badge()
+                            ->color(fn (?string $state): string => match ($state) {
+                                'open' => 'warning',
+                                'acknowledged' => 'info',
+                                'resolved' => 'success',
+                                'dismissed' => 'gray',
+                                default => 'gray',
+                            })
+                            ->placeholder('—'),
+                        TextEntry::make('document.identifier')
+                            ->label('Document')
+                            ->badge()
+                            ->color('primary')
+                            ->url(fn (?DocumentFlag $record): ?string => $record?->document_id
+                                ? route('filament.admin.resources.documents.view', ['record' => $record->document_id])
+                                : null)
+                            ->openUrlInNewTab(false)
+                            ->placeholder('—'),
+                        TextEntry::make('title')
+                            ->label('Title')
+                            ->placeholder('—')
+                            ->columnSpanFull(),
+                        TextEntry::make('description')
+                            ->label('Description')
+                            ->prose()
+                            ->placeholder('—')
+                            ->columnSpanFull(),
+                    ]),
+
+                Section::make('Workflow')
+                    ->columns($twoCols)
+                    ->schema([
+                        TextEntry::make('flagged_at')
+                            ->label('Flagged at')
+                            ->dateTime()
+                            ->placeholder('—'),
+                        TextEntry::make('flaggedBy.name')
+                            ->label('Flagged by')
+                            ->placeholder('—'),
+                        TextEntry::make('resolved_at')
+                            ->label('Resolved at')
+                            ->dateTime()
+                            ->placeholder('—'),
+                        TextEntry::make('resolvedBy.name')
+                            ->label('Resolved by')
+                            ->placeholder('—'),
+                        TextEntry::make('resolution_notes')
+                            ->label('Resolution notes')
+                            ->prose()
+                            ->placeholder('—')
+                            ->columnSpanFull(),
+                    ]),
+
+                Section::make('Scope')
+                    ->columns($twoCols)
+                    ->schema([
+                        TextEntry::make('repository.code')
+                            ->label('Repository')
+                            ->badge()
+                            ->color('info')
+                            ->url(fn (?DocumentFlag $record): ?string => $record?->repository_id
+                                ? route('filament.admin.resources.repositories.view', ['record' => $record->repository_id])
+                                : null)
+                            ->openUrlInNewTab(false)
+                            ->placeholder('—'),
+                    ]),
+
+                Section::make('Audit info')
+                    ->columns($twoCols)
+                    ->collapsed()
+                    ->schema([
+                        TextEntry::make('created_at')->dateTime()->label('Created'),
+                        TextEntry::make('updated_at')->dateTime()->label('Updated'),
+                    ])
+                    ->visible(fn (): bool => (bool) auth()->user()?->hasRole('super_admin')),
+            ]);
     }
 
     public static function table(Table $table): Table
