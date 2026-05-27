@@ -70,7 +70,14 @@
     RewriteRule ^(.*)$ public/$1 [L]
 
     # Otherwise forward to Laravel's front controller.
-    RewriteCond %{REQUEST_FILENAME} !-d
+    # NOTE: we deliberately drop the `!-d` precondition that the stock Laravel
+    # `.htaccess` carries. Reason: with this app checked out AT the cPanel
+    # document root (rather than a parent dir), `%{REQUEST_FILENAME}` for the
+    # request "/" resolves to `/home/archivet/public_html/` which IS a
+    # directory, so `!-d` fails and the request falls through to Apache's
+    # default handler, which returns 403 (Options -Indexes is on). Forwarding
+    # everything that isn't a real file under public/ to the front controller
+    # is correct: Laravel's router will 404 anything that isn't a route.
     RewriteCond %{REQUEST_FILENAME} !-f
     RewriteRule ^ public/index.php [L]
 </IfModule>
@@ -98,10 +105,8 @@
 # bypass.
 RedirectMatch 404 ^/(\.git|\.github|app|bootstrap|config|database|deploy|docs|node_modules|resources|routes|storage|tests|vendor)(/|$)
 
-# ---------------------------------------------------------------------------
-# PHP handler
-# ---------------------------------------------------------------------------
-# Default to PHP 8.3 on cPanel CloudLinux EL8.
-<IfModule mime_module>
-    AddHandler application/x-httpd-ea-php83 .php .php8 .phtml
-</IfModule>
+# PHP handler is set in the cPanel-generated block at the TOP of this file
+# (ea-php84). Do NOT add a second AddHandler block here: Apache's last
+# AddHandler for a given extension wins, so a duplicate in this position
+# would silently downgrade the app to PHP 8.3 and break Composer's
+# platform check at request time.
