@@ -259,6 +259,39 @@ test('Box::destroyed() and Box::notDestroyed() scopes partition the table', func
  |  Test 7 — Shield permission gate on DestroyBoxAction
  * ------------------------------------------------------------------------- */
 
+/* -------------------------------------------------------------------------
+ |  Test 8 — race-condition guard: stale in-memory instance is rejected
+ |  -----
+ |  SQLite has no real row locking but the safety the lockForUpdate +
+ |  re-read guarantees is observable functionally: if another writer
+ |  destroys the row between the first canBeDestroyed() pass and the
+ |  second markDestroyed() call, the re-read inside the transaction must
+ |  see destroyed_at set and bail with DomainException — never overwrite.
+ * ------------------------------------------------------------------------- */
+
+test('a stale in-memory Box instance cannot overwrite an already-destroyed row', function () {
+    $user = bd_actAs();
+    $this->actingAs($user);
+
+    $repo = bd_repo();
+    $batch = bd_batch($repo->id);
+    $box = bd_box($batch->id);
+
+    $stale = Box::query()->whereKey($box->id)->first();
+
+    // Simulate a concurrent operator that wins the race.
+    $box->markDestroyed('first writer', $user->id);
+
+    // The stale instance still believes destroyed_at is null. The lock-and-
+    // re-read inside markDestroyed() must catch the divergence.
+    expect(fn () => $stale->markDestroyed('second writer (stale)', $user->id))
+        ->toThrow(DomainException::class, 'already marked destroyed');
+
+    // The DB row still carries the FIRST writer's metadata.
+    $box->refresh();
+    expect($box->destroyed_reason)->toBe('first writer');
+});
+
 test('DestroyBoxAction is authorized for delete_box holders and refused otherwise', function () {
     $repo = bd_repo();
     $batch = bd_batch($repo->id);

@@ -34,9 +34,12 @@ class AdminPanelProvider extends PanelProvider
             ->id('admin')
             ->path('admin')
             ->brandName('Batch List Tool')
-            // Solid-color wordmark in Fraunces (no gradient text per project rules).
-            ->brandLogo(asset('images/brand-logo.svg'))
-            ->brandLogoHeight('1.75rem')
+            // Square NAf foundation mark (raster). Square aspect ratio needs a
+            // taller height than the previous horizontal wordmark would have
+            // tolerated; 2.25rem keeps the mark legible without breaking the
+            // 64-px topbar vertical rhythm.
+            ->brandLogo(asset('images/brand-logo.png'))
+            ->brandLogoHeight('2.25rem')
             // RFQ §3.1.7 hardening — TwoFactorLogin is a stock Login subclass
             // that re-routes users with a confirmed TOTP secret to Fortify's
             // /two-factor-challenge endpoint after their password is validated.
