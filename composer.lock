@@ -4,7 +4,7 @@
         "Read more about it at https://getcomposer.org/doc/01-basic-usage.md#installing-dependencies",
         "This file is @generated automatically"
     ],
-    "content-hash": "eb32fcf67971ea26566054d72338453e",
+    "content-hash": "74848442216a4d12c5a2c48cfaf7cc20",
     "packages": [
         {
             "name": "bacon/bacon-qr-code",
@@ -2927,7 +2927,7 @@
             "version": "dev-main",
             "source": {
                 "type": "git",
-                "url": "https://github.com/rianorie/filament-excel-import.git",
+                "url": "git@github.com:rianorie/filament-excel-import.git",
                 "reference": "33ebca0d54cdb3d1ecc0b59111733274be176220"
             },
             "dist": {
@@ -16927,7 +16927,7 @@
     "prefer-stable": true,
     "prefer-lowest": false,
     "platform": {
-        "php": "^8.3"
+        "php": "^8.4"
     },
     "platform-dev": {},
     "plugin-api-version": "2.6.0"
