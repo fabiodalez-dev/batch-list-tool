@@ -166,7 +166,10 @@ class DocumentResource extends Resource
                             ->label('Location (RFQ §3.1.9)')
                             ->nullable()
                             ->helperText('Repository / room / shelf / showcase / temp-holding hierarchy.')),
-                        $g(Forms\Components\TextInput::make('current_box_type')->maxLength(50)),
+                        $g(Forms\Components\Select::make('current_box_type')
+                            ->options(array_combine(Document::CURRENT_BOX_TYPES, Document::CURRENT_BOX_TYPES))
+                            ->nullable()
+                            ->helperText('Used for disinfestation planning: Big Brown Box counts as 2 boxes in the 250-box cycle limit.')),
                         $g(Forms\Components\TextInput::make('nra_location')->maxLength(500)
                             ->helperText('Legacy free-text. New records should use the Location Select above.')
                             ->columnSpanFull()),
@@ -206,7 +209,10 @@ class DocumentResource extends Resource
                     ->columns(2)
                     ->schema([
                         $g(Forms\Components\TextInput::make('colour_code')->maxLength(32)),
-                        $g(Forms\Components\TextInput::make('digitised')->maxLength(100)),
+                        $g(Forms\Components\Select::make('digitised')
+                            ->options(['VHMML' => 'VHMML', 'NRA' => 'NRA', 'none' => 'None'])
+                            ->nullable()
+                            ->helperText('Digitisation source per RFQ APP2-xiii.')),
                         $g(Forms\Components\Toggle::make('torre')->columnSpanFull()),
                         $g(Forms\Components\TextInput::make('accession_code_legacy')->label('Accession (legacy text)')->maxLength(191)),
                         $g(Forms\Components\TextInput::make('object_reference_number')->maxLength(500)),
