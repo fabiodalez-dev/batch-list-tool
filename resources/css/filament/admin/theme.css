@@ -296,9 +296,17 @@ pre,
     box-shadow: none;
 }
 
+/* User-spec colour for the table header band: the whole <thead> must read
+   as a single uniform cream surface (#F9F3E9), regardless of column tint,
+   sort state or selection checkbox cell. */
+.fi-ta-table thead,
+.fi-ta-table > thead,
+.fi-ta-table thead tr,
+.fi-ta-table thead th,
+.fi-ta-header-row,
 .fi-ta-header,
 .fi-ta-header-cell {
-    background-color: var(--cream-100);
+    background-color: #F9F3E9;
     color: var(--coffee-700);
     font-weight: 600;
     letter-spacing: 0.01em;
