@@ -59,23 +59,24 @@ class AdminPanelProvider extends PanelProvider
             ->plugins([
                 FilamentShieldPlugin::make(),
             ])
-            // Brand palette — pinned to the exact menubello.com terracotta
-            // brick #D46039 at the 500 step. Steps mirror the
-            // --brand-orange-* CSS variables in
-            // resources/css/filament/admin/theme.css.
+            // Brand palette — dialed-down terracotta. The 500 step
+            // (#B25434) reads "thoughtful brand accent" not "shouty
+            // restaurant menu". Chroma cut ~40% from the previous
+            // #D46039 brick. Steps mirror the --brand-orange-* CSS
+            // variables in resources/css/filament/admin/theme.css.
             ->colors([
                 'primary' => [
-                    50  => '#FBEEE8',
-                    100 => '#F5D9CC',
-                    200 => '#ECB59C',
-                    300 => '#E18E6A',
-                    400 => '#D87148',
-                    500 => '#D46039',
-                    600 => '#B14C2A',
-                    700 => '#8D3B20',
-                    800 => '#682B17',
-                    900 => '#451B0E',
-                    950 => '#270E07',
+                    50  => '#FAF1E8',
+                    100 => '#F1E0D5',
+                    200 => '#E3C0AB',
+                    300 => '#D29B7E',
+                    400 => '#C57658',
+                    500 => '#B25434',
+                    600 => '#93432A',
+                    700 => '#6D3220',
+                    800 => '#4A2317',
+                    900 => '#2D160E',
+                    950 => '#180B06',
                 ],
             ])
             ->discoverResources(in: app_path('Filament/Resources'), for: 'App\\Filament\\Resources')
