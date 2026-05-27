@@ -38,3 +38,13 @@ Schedule::command('health:check')
     ->everyFiveMinutes()
     ->withoutOverlapping()
     ->onOneServer();
+
+// Weekly operations digest emailed Monday 08:00 to super_admin + admin.
+// Replaces "did anyone log in this week?" with a proactive single-page
+// summary (RFQ-2026-06 value-add beyond §3.2).
+Schedule::command('nra:send-weekly-digest')
+    ->mondays()
+    ->at('08:00')
+    ->withoutOverlapping()
+    ->onOneServer()
+    ->emailOutputOnFailure(env('MAIL_BACKUP_RECIPIENT'));
