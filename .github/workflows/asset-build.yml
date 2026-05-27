@@ -1,0 +1,72 @@
+name: Build & commit production assets
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - 'resources/js/**'
+      - 'resources/css/**'
+      - 'vite.config.js'
+      - 'package.json'
+      - 'package-lock.json'
+      - 'tailwind.config.js'
+      - 'postcss.config.js'
+  workflow_dispatch:
+
+# Only one build at a time on main, but DO let it finish (don't cancel
+# in-progress) — we don't want a half-committed public/build/ directory.
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: false
+
+permissions:
+  contents: write
+
+jobs:
+  build-and-commit:
+    name: Build assets and push to main
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    # Skip the job if the commit was made by the auto-commit action itself
+    # to avoid infinite loops.
+    if: >-
+      github.actor != 'github-actions[bot]' &&
+      !contains(github.event.head_commit.message, 'chore(assets): rebuild')
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          # Need write access + full history so the auto-commit action can push
+          token: ${{ secrets.GITHUB_TOKEN }}
+          persist-credentials: true
+
+      - name: Setup Node 20
+        uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+          cache: 'npm'
+
+      - name: Install dependencies
+        run: |
+          if [ -f package-lock.json ]; then
+            npm ci
+          else
+            npm install --no-audit --no-fund
+          fi
+
+      - name: Build assets with Vite (production)
+        run: npm run build
+
+      - name: Commit built assets back to main
+        uses: stefanzweifel/git-auto-commit-action@v5
+        with:
+          commit_message: 'chore(assets): rebuild public/build via CI'
+          file_pattern: 'public/build/**'
+          # public/build/ is in .gitignore — force-add so CI can commit it
+          # for the production host (archivetool.eu has no Node).
+          add_options: '--force'
+          commit_user_name: 'github-actions[bot]'
+          commit_user_email: '41898282+github-actions[bot]@users.noreply.github.com'
+          commit_author: 'github-actions[bot] <41898282+github-actions[bot]@users.noreply.github.com>'
+          skip_dirty_check: false
+          skip_fetch: true

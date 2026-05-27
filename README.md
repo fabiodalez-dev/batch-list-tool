@@ -1,5 +1,9 @@
 # Batch List Tool
 
+[![tests](https://github.com/fabiodalez-dev/batch-list-tool/actions/workflows/test.yml/badge.svg)](https://github.com/fabiodalez-dev/batch-list-tool/actions/workflows/test.yml)
+[![static analysis](https://github.com/fabiodalez-dev/batch-list-tool/actions/workflows/phpstan.yml/badge.svg)](https://github.com/fabiodalez-dev/batch-list-tool/actions/workflows/phpstan.yml)
+[![security](https://github.com/fabiodalez-dev/batch-list-tool/actions/workflows/security.yml/badge.svg)](https://github.com/fabiodalez-dev/batch-list-tool/actions/workflows/security.yml)
+
 Web application for the **Notarial Archives Foundation (NAF)**, Malta, under contract **RFQ-2026-06**. Replaces the legacy Excel-based "Batch List" with a structured, auditable, multi-repository system.
 
 - **Production go-live**: 30 November 2026
