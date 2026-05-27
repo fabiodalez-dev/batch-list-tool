@@ -1,25 +1,753 @@
-@import '../../../../vendor/filament/filament/resources/css/theme.css';
-
 /*
- * Local Inter Variable font — no CDN. RFQ-2026-06 / Security Baseline §15.
- * Files in public/fonts/inter/ are shipped from rsms/inter v4.1 (OFL-1.1 licence).
+ * Batch List Tool — Warm Cream / Coffee / Orange theme.
+ * Filament 5 panel theme (Tailwind v4).
+ *
+ * Constraints (RFQ Security Baseline §15 + project rules):
+ *  - No CDN at runtime. Every font file is served from /fonts/<family>/.
+ *  - No #000 / #fff. Every neutral is tinted toward the brand hue using OKLCH.
+ *  - No left/right colored borders as accents (full borders or background tints).
+ *  - No gradient text.
+ *
+ * The dominant surface is cream (h≈78), text/accents lean coffee (h≈48),
+ * primary accent is a warm orange (h≈50) used sparingly.
  */
+
+/* ------------------------------------------------------------------ */
+/* Block 1 — local font face declarations                              */
+/* ------------------------------------------------------------------ */
+
+@font-face {
+    font-family: 'Fraunces';
+    src: url('/fonts/fraunces/Fraunces-Variable.woff2') format('woff2-variations'),
+         url('/fonts/fraunces/Fraunces-Variable.woff2') format('woff2');
+    font-weight: 100 900;
+    font-style: normal;
+    font-display: swap;
+}
+
+@font-face {
+    font-family: 'JetBrains Mono';
+    src: url('/fonts/jetbrains-mono/JetBrainsMono-Variable.woff2') format('woff2-variations'),
+         url('/fonts/jetbrains-mono/JetBrainsMono-Variable.woff2') format('woff2');
+    font-weight: 100 800;
+    font-style: normal;
+    font-display: swap;
+}
+
+/* Inter Variable — already shipped under /fonts/inter/.
+ * Kept here so the theme stylesheet is self-sufficient if Filament's panel
+ * provider font() call is ever removed. Upright + italic axes. */
 @font-face {
     font-family: 'Inter';
-    font-style: normal;
-    font-weight: 100 900;
-    font-display: swap;
     src: url('/fonts/inter/InterVariable.woff2') format('woff2-variations'),
          url('/fonts/inter/InterVariable.woff2') format('woff2');
+    font-weight: 100 900;
+    font-style: normal;
+    font-display: swap;
 }
 
 @font-face {
     font-family: 'Inter';
-    font-style: italic;
-    font-weight: 100 900;
-    font-display: swap;
     src: url('/fonts/inter/InterVariable-Italic.woff2') format('woff2-variations'),
          url('/fonts/inter/InterVariable-Italic.woff2') format('woff2');
+    font-weight: 100 900;
+    font-style: italic;
+    font-display: swap;
 }
 
-@config '../../../../tailwind.config.js';
+/* ------------------------------------------------------------------ */
+/* Block 2 — Tailwind + Filament base import                            */
+/* ------------------------------------------------------------------ */
+
+@import '../../../../vendor/filament/filament/resources/css/theme.css';
+
+@source '../../../../app/Filament';
+@source '../../../../resources/views/filament';
+
+/* ------------------------------------------------------------------ */
+/* Block 3 — OKLCH palette (light + dark)                              */
+/* ------------------------------------------------------------------ */
+
+:root {
+    /* Cream — dominant surface, panna napoletana */
+    --cream-50:  oklch(98.5% 0.008 78);
+    --cream-100: oklch(96.5% 0.015 78);
+    --cream-200: oklch(93%   0.022 76);
+    --cream-300: oklch(88%   0.028 74);
+    --cream-400: oklch(78%   0.040 70);
+    --cream-500: oklch(65%   0.050 65);
+    --cream-600: oklch(52%   0.050 60);
+    --cream-700: oklch(40%   0.050 55);
+    --cream-800: oklch(30%   0.045 50);
+    --cream-900: oklch(22%   0.040 48);
+    --cream-950: oklch(15%   0.035 46);
+
+    /* Coffee — warm brown for text and structural accents */
+    --coffee-50:  oklch(96% 0.013 48);
+    --coffee-100: oklch(91% 0.025 48);
+    --coffee-200: oklch(82% 0.050 48);
+    --coffee-300: oklch(70% 0.070 48);
+    --coffee-400: oklch(56% 0.075 48);
+    --coffee-500: oklch(45% 0.075 48);
+    --coffee-600: oklch(36% 0.070 48);
+    --coffee-700: oklch(28% 0.060 48);
+    --coffee-800: oklch(22% 0.050 48);
+    --coffee-900: oklch(16% 0.040 48);
+    --coffee-950: oklch(10% 0.030 48);
+
+    /* Orange — warm primary accent, used sparingly (~10% of surface) */
+    --brand-orange-50:  oklch(97% 0.025 65);
+    --brand-orange-100: oklch(93% 0.050 60);
+    --brand-orange-200: oklch(86% 0.100 56);
+    --brand-orange-300: oklch(78% 0.130 54);
+    --brand-orange-400: oklch(72% 0.155 52);
+    --brand-orange-500: oklch(66% 0.175 50);
+    --brand-orange-600: oklch(58% 0.185 48);
+    --brand-orange-700: oklch(50% 0.170 46);
+    --brand-orange-800: oklch(40% 0.140 44);
+    --brand-orange-900: oklch(30% 0.100 42);
+    --brand-orange-950: oklch(20% 0.070 42);
+
+    /* Warm danger / success / warning that harmonize with the cream surface */
+    --warm-danger-500:  oklch(60% 0.180 25);
+    --warm-danger-600:  oklch(52% 0.180 25);
+    --warm-success-500: oklch(60% 0.140 145);
+    --warm-success-600: oklch(50% 0.140 145);
+    --warm-warning-500: oklch(75% 0.150 80);
+    --warm-warning-600: oklch(66% 0.150 80);
+
+    /* Filament gray-* override. Filament's own theme exposes --gray-50..950
+     * as the structural neutral scale. Re-pointing each step to a warm
+     * cream/coffee equivalent lets the chrome pick up the new register
+     * everywhere without rewriting every selector. */
+    --gray-50:  var(--cream-50);
+    --gray-100: var(--cream-100);
+    --gray-200: var(--cream-200);
+    --gray-300: var(--cream-300);
+    --gray-400: var(--cream-400);
+    --gray-500: var(--coffee-500);
+    --gray-600: var(--coffee-600);
+    --gray-700: var(--coffee-700);
+    --gray-800: var(--coffee-800);
+    --gray-900: var(--coffee-900);
+    --gray-950: var(--coffee-950);
+
+    /* Typography stacks */
+    --font-display: 'Fraunces', 'Times New Roman', Georgia, serif;
+    --font-sans: 'Inter', system-ui, -apple-system, 'Segoe UI', sans-serif;
+    --font-mono: 'JetBrains Mono', ui-monospace, SFMono-Regular, Menlo, Monaco, monospace;
+}
+
+/* Dark mode keeps the warmth — never falls back to cold gray. */
+.dark {
+    --gray-50:  oklch(22% 0.040 48);
+    --gray-100: oklch(18% 0.038 48);
+    --gray-200: oklch(24% 0.045 48);
+    --gray-300: oklch(32% 0.050 48);
+    --gray-400: oklch(50% 0.060 48);
+    --gray-500: oklch(62% 0.060 48);
+    --gray-600: oklch(74% 0.055 48);
+    --gray-700: oklch(82% 0.045 48);
+    --gray-800: oklch(90% 0.030 48);
+    --gray-900: oklch(95% 0.020 48);
+    --gray-950: oklch(98% 0.012 48);
+}
+
+/* ------------------------------------------------------------------ */
+/* Block 4 — Typography                                                */
+/* ------------------------------------------------------------------ */
+
+body,
+.fi-body {
+    font-family: var(--font-sans);
+    color: var(--coffee-800);
+    background-color: var(--cream-100);
+    -webkit-font-smoothing: antialiased;
+    -moz-osx-font-smoothing: grayscale;
+}
+
+h1, h2, h3,
+.fi-section-header-heading,
+.fi-header-heading,
+.fi-modal-heading,
+.fi-page-heading {
+    font-family: var(--font-display);
+    font-weight: 500;
+    color: var(--coffee-800);
+    font-optical-sizing: auto;
+    font-variation-settings: 'opsz' 24;
+    letter-spacing: -0.005em;
+}
+
+.fi-page-heading,
+h1 { font-size: 1.75rem; line-height: 1.2; }
+.fi-section-header-heading,
+.fi-header-heading,
+h2 { font-size: 1.375rem; line-height: 1.3; }
+h3 { font-size: 1.125rem; line-height: 1.35; }
+
+/* Inline mono surfaces — keep numerals tabular for ledger columns */
+code,
+kbd,
+samp,
+pre,
+.fi-badge-monospace,
+[data-mono] {
+    font-family: var(--font-mono);
+    font-variant-numeric: tabular-nums;
+}
+
+/* ------------------------------------------------------------------ */
+/* Block 5 — Component restyle                                         */
+/* ------------------------------------------------------------------ */
+
+/* --- Shells: body, sidebar, topbar, main ---------------------------- */
+
+.fi-sidebar {
+    background-color: var(--cream-50);
+    border-right: 1px solid var(--cream-200);
+}
+
+.fi-sidebar-nav-groups {
+    color: var(--coffee-700);
+}
+
+.fi-sidebar-item-button {
+    color: var(--coffee-700);
+    border-radius: 8px;
+}
+
+.fi-sidebar-item-button:hover {
+    background-color: var(--cream-100);
+    color: var(--coffee-800);
+}
+
+.fi-sidebar-item-active .fi-sidebar-item-button,
+.fi-sidebar-item-button[aria-current="page"] {
+    background-color: var(--brand-orange-100);
+    color: var(--brand-orange-800);
+    font-weight: 600;
+}
+
+.fi-sidebar-item-icon {
+    color: var(--coffee-500);
+}
+
+.fi-sidebar-item-active .fi-sidebar-item-icon,
+.fi-sidebar-item-button[aria-current="page"] .fi-sidebar-item-icon {
+    color: var(--brand-orange-600);
+}
+
+.fi-sidebar-group-label {
+    color: var(--coffee-500);
+    font-size: 0.6875rem;
+    letter-spacing: 0.06em;
+    text-transform: uppercase;
+    font-weight: 600;
+}
+
+.fi-main,
+.fi-main-ctn {
+    background-color: var(--cream-100);
+}
+
+.fi-topbar > nav,
+.fi-topbar {
+    background-color: var(--cream-50);
+    box-shadow: 0 1px 0 var(--cream-200);
+    border-bottom: 0;
+}
+
+/* --- Sections (cards) ---------------------------------------------- */
+
+.fi-section,
+.fi-fo-section,
+.fi-section-content-ctn {
+    background-color: var(--cream-50);
+    border: 1px solid var(--cream-200);
+    border-radius: 10px;
+    box-shadow: none;
+}
+
+.fi-section:hover {
+    border-color: var(--cream-300);
+}
+
+.fi-section-header {
+    background-color: transparent;
+    border-bottom: 1px solid var(--cream-100);
+    padding: 1rem 1.25rem;
+}
+
+.fi-section-header-description {
+    color: var(--coffee-500);
+    font-family: var(--font-sans);
+    font-size: 0.8125rem;
+}
+
+/* --- Tables (the most visible surface) ------------------------------ */
+
+.fi-ta,
+.fi-ta-ctn {
+    background-color: var(--cream-50);
+    border: 1px solid var(--cream-200);
+    border-radius: 12px;
+    overflow: hidden;
+    box-shadow: none;
+}
+
+.fi-ta-header,
+.fi-ta-header-cell {
+    background-color: var(--cream-100);
+    color: var(--coffee-700);
+    font-weight: 600;
+    letter-spacing: 0.01em;
+    text-transform: none;
+    font-size: 0.75rem;
+    border-bottom: 1px solid var(--cream-200);
+}
+
+.fi-ta-header-cell {
+    padding: 0.875rem 1rem;
+}
+
+.fi-ta-row {
+    background-color: var(--cream-50);
+    border-bottom: 1px solid var(--cream-100);
+    transition: background-color 120ms ease;
+}
+
+.fi-ta-row:last-child {
+    border-bottom: 0;
+}
+
+.fi-ta-row:hover {
+    background-color: var(--cream-100);
+}
+
+/* Selected row — accent via inset shadow, NOT a left border (rule §4) */
+.fi-ta-row[data-selected="true"],
+.fi-ta-row.fi-selected {
+    background-color: var(--brand-orange-50);
+    box-shadow: inset 2px 0 0 var(--brand-orange-500);
+}
+
+.fi-ta-cell {
+    padding: 0.75rem 1rem;
+    color: var(--coffee-700);
+    font-size: 0.875rem;
+}
+
+.fi-ta-cell a {
+    color: var(--brand-orange-700);
+    text-decoration: none;
+}
+
+.fi-ta-cell a:hover {
+    color: var(--brand-orange-800);
+    text-decoration: underline;
+    text-underline-offset: 2px;
+    text-decoration-color: var(--brand-orange-300);
+}
+
+/* Identifier cells: monospace badge for R1, R12, MS511 etc. */
+.fi-ta-cell[data-mono] .fi-ta-text-item,
+.fi-ta-cell .font-mono,
+.fi-ta-text-item[data-mono] {
+    font-family: var(--font-mono);
+    font-variant-numeric: tabular-nums;
+    color: var(--coffee-800);
+    background-color: var(--brand-orange-100);
+    padding: 0.125rem 0.5rem;
+    border-radius: 6px;
+    font-size: 0.8125rem;
+    font-weight: 500;
+}
+
+/* Sort indicator chevrons */
+.fi-ta-header-cell-sort-button svg {
+    color: var(--coffee-500);
+}
+
+.fi-ta-header-cell-sort-button[aria-sort]:not([aria-sort="none"]) svg {
+    color: var(--brand-orange-600);
+}
+
+/* Pagination footer */
+.fi-pagination,
+.fi-ta-footer {
+    background-color: var(--cream-100);
+    border-top: 1px solid var(--cream-200);
+    color: var(--coffee-600);
+}
+
+/* --- Inputs --------------------------------------------------------- */
+
+.fi-input,
+.fi-select-input,
+.fi-input-wrp,
+textarea.fi-input,
+input.fi-input {
+    background-color: var(--cream-50);
+    color: var(--coffee-800);
+    border: 1px solid var(--cream-300);
+    border-radius: 8px;
+    font-size: 0.875rem;
+    font-family: var(--font-sans);
+    transition: border-color 120ms ease, outline-color 120ms ease;
+}
+
+.fi-input-wrp {
+    padding: 0;
+}
+
+.fi-input-wrp .fi-input,
+.fi-input-wrp input,
+.fi-input-wrp textarea,
+.fi-input-wrp select {
+    background-color: transparent;
+    border: 0;
+    padding: 0.625rem 0.875rem;
+}
+
+.fi-input:not(textarea),
+.fi-select-input,
+input.fi-input {
+    padding: 0.625rem 0.875rem;
+}
+
+.fi-input:hover,
+.fi-input-wrp:hover {
+    border-color: var(--coffee-400);
+}
+
+.fi-input:focus,
+.fi-input:focus-visible,
+.fi-input-wrp:focus-within {
+    outline: 2px solid var(--brand-orange-300);
+    outline-offset: 1px;
+    border-color: var(--brand-orange-500);
+    box-shadow: none;
+}
+
+.fi-input::placeholder,
+.fi-input-wrp input::placeholder,
+.fi-input-wrp textarea::placeholder {
+    color: var(--cream-500);
+    opacity: 1;
+}
+
+.fi-input:disabled,
+.fi-input[disabled] {
+    background-color: var(--cream-100);
+    color: var(--cream-500);
+    cursor: not-allowed;
+}
+
+/* Filament dropdowns inherit the surface */
+.fi-dropdown-list,
+.fi-dropdown-panel {
+    background-color: var(--cream-50);
+    border: 1px solid var(--cream-200);
+    border-radius: 10px;
+    box-shadow: 0 8px 24px -12px oklch(40% 0.05 48 / 0.18);
+}
+
+.fi-dropdown-list-item-button:hover {
+    background-color: var(--cream-100);
+}
+
+/* --- Buttons -------------------------------------------------------- */
+
+.fi-btn {
+    font-family: var(--font-sans);
+    font-weight: 500;
+    border-radius: 8px;
+    padding: 0.625rem 1.125rem;
+    transition: background-color 120ms ease, border-color 120ms ease,
+                color 120ms ease;
+    letter-spacing: 0.005em;
+}
+
+.fi-btn[data-color="primary"],
+.fi-btn-color-primary {
+    background-color: var(--brand-orange-500);
+    color: var(--cream-50);
+    border: 0;
+}
+
+.fi-btn[data-color="primary"]:hover,
+.fi-btn-color-primary:hover {
+    background-color: var(--brand-orange-600);
+    color: var(--cream-50);
+}
+
+.fi-btn[data-color="primary"]:active,
+.fi-btn-color-primary:active {
+    background-color: var(--brand-orange-700);
+}
+
+.fi-btn[data-color="gray"],
+.fi-btn-color-gray {
+    background-color: var(--cream-100);
+    color: var(--coffee-700);
+    border: 1px solid var(--cream-300);
+}
+
+.fi-btn[data-color="gray"]:hover,
+.fi-btn-color-gray:hover {
+    background-color: var(--cream-200);
+    color: var(--coffee-800);
+    border-color: var(--cream-400);
+}
+
+.fi-btn[data-color="danger"],
+.fi-btn-color-danger {
+    background-color: var(--warm-danger-500);
+    color: var(--cream-50);
+    border: 0;
+}
+
+.fi-btn[data-color="danger"]:hover,
+.fi-btn-color-danger:hover {
+    background-color: var(--warm-danger-600);
+}
+
+.fi-btn[data-color="success"],
+.fi-btn-color-success {
+    background-color: var(--warm-success-500);
+    color: var(--cream-50);
+    border: 0;
+}
+
+.fi-btn[data-color="success"]:hover,
+.fi-btn-color-success:hover {
+    background-color: var(--warm-success-600);
+}
+
+.fi-btn[data-color="warning"],
+.fi-btn-color-warning {
+    background-color: var(--warm-warning-500);
+    color: var(--coffee-900);
+    border: 0;
+}
+
+.fi-btn[data-color="warning"]:hover,
+.fi-btn-color-warning:hover {
+    background-color: var(--warm-warning-600);
+}
+
+.fi-link {
+    color: var(--brand-orange-700);
+    font-weight: 500;
+}
+
+.fi-link:hover {
+    color: var(--brand-orange-800);
+    text-decoration: underline;
+    text-underline-offset: 2px;
+}
+
+/* --- Badges / status pills ----------------------------------------- */
+
+.fi-badge {
+    background-color: var(--cream-200);
+    color: var(--coffee-800);
+    border-radius: 6px;
+    padding: 0.125rem 0.5rem;
+    font-size: 0.75rem;
+    font-weight: 500;
+    border: 0;
+}
+
+.fi-badge[data-color="primary"] {
+    background-color: var(--brand-orange-100);
+    color: var(--brand-orange-800);
+}
+
+.fi-badge[data-color="success"] {
+    background-color: oklch(94% 0.05 145);
+    color: oklch(30% 0.10 145);
+}
+
+.fi-badge[data-color="warning"] {
+    background-color: oklch(94% 0.07 80);
+    color: oklch(35% 0.12 80);
+}
+
+.fi-badge[data-color="danger"] {
+    background-color: oklch(94% 0.05 25);
+    color: oklch(35% 0.15 25);
+}
+
+.fi-badge[data-color="gray"] {
+    background-color: var(--cream-200);
+    color: var(--coffee-700);
+}
+
+/* --- Forms / labels ------------------------------------------------- */
+
+.fi-fo-field-wrp-label,
+.fi-fo-field-wrp label,
+label.fi-fo-field-wrp-label {
+    color: var(--coffee-600);
+    font-weight: 500;
+    font-size: 0.8125rem;
+    margin-bottom: 0.375rem;
+    font-family: var(--font-sans);
+}
+
+.fi-fo-field-wrp-hint,
+.fi-fo-field-wrp-helper-text {
+    color: var(--coffee-500);
+    font-size: 0.75rem;
+}
+
+.fi-fo-field-wrp-error-message {
+    color: var(--warm-danger-600);
+    font-size: 0.75rem;
+}
+
+.fi-fo-field-wrp-label sup {
+    color: var(--brand-orange-600);
+}
+
+/* --- Modals --------------------------------------------------------- */
+
+.fi-modal-window {
+    background-color: var(--cream-50);
+    border: 1px solid var(--cream-200);
+    border-radius: 14px;
+    box-shadow: 0 20px 50px -20px oklch(20% 0.04 48 / 0.35);
+}
+
+.fi-modal-header {
+    border-bottom: 1px solid var(--cream-100);
+}
+
+.fi-modal-footer {
+    background-color: var(--cream-100);
+    border-top: 1px solid var(--cream-200);
+}
+
+/* --- Stat / dashboard widgets -------------------------------------- */
+
+.fi-wi-stats-overview-stat {
+    background-color: var(--cream-50);
+    border: 1px solid var(--cream-200);
+    border-radius: 12px;
+    padding: 1.25rem;
+}
+
+.fi-wi-stats-overview-stat-value {
+    font-family: var(--font-display);
+    font-weight: 500;
+    color: var(--coffee-800);
+    font-variant-numeric: tabular-nums;
+}
+
+.fi-wi-stats-overview-stat-label,
+.fi-wi-stats-overview-stat-description {
+    color: var(--coffee-500);
+    font-size: 0.8125rem;
+}
+
+/* --- Tabs ----------------------------------------------------------- */
+
+.fi-tabs-item {
+    color: var(--coffee-600);
+    font-weight: 500;
+}
+
+.fi-tabs-item:hover {
+    color: var(--coffee-800);
+}
+
+.fi-tabs-item[aria-selected="true"] {
+    color: var(--brand-orange-700);
+    box-shadow: inset 0 -2px 0 var(--brand-orange-500);
+}
+
+/* --- Notifications (toast) ----------------------------------------- */
+
+.fi-no-notification {
+    background-color: var(--cream-50);
+    border: 1px solid var(--cream-200);
+    border-radius: 10px;
+    box-shadow: 0 12px 32px -16px oklch(20% 0.04 48 / 0.25);
+}
+
+/* ------------------------------------------------------------------ */
+/* Block 6 — Login (the showpiece)                                     */
+/* ------------------------------------------------------------------ */
+
+body:has(.fi-simple-main),
+.fi-simple-main {
+    background: linear-gradient(180deg, var(--cream-100) 0%, var(--cream-200) 100%);
+}
+
+.fi-simple-main-ctn {
+    background: transparent;
+}
+
+.fi-simple-card {
+    background-color: var(--cream-50);
+    border: 1px solid var(--cream-200);
+    border-radius: 16px;
+    box-shadow: 0 8px 24px -12px oklch(40% 0.05 48 / 0.18),
+                0 2px 6px -3px oklch(40% 0.05 48 / 0.12);
+    padding: 2rem;
+}
+
+.fi-simple-header-heading,
+.fi-simple-layout h1 {
+    font-family: var(--font-display);
+    font-weight: 500;
+    font-size: 1.75rem;
+    color: var(--coffee-800);
+    font-variation-settings: 'opsz' 36;
+    letter-spacing: -0.01em;
+}
+
+.fi-simple-header-subheading,
+.fi-simple-layout p {
+    color: var(--coffee-500);
+}
+
+/* Solid color brand heading on login (NO gradient text per rule §5) */
+.fi-logo,
+.fi-simple-page .fi-logo {
+    color: var(--brand-orange-700);
+    font-family: var(--font-display);
+    font-weight: 500;
+}
+
+/* ------------------------------------------------------------------ */
+/* Block 7 — Misc polish                                               */
+/* ------------------------------------------------------------------ */
+
+/* Scrollbars (WebKit) — tinted, not gray */
+::-webkit-scrollbar {
+    width: 10px;
+    height: 10px;
+}
+
+::-webkit-scrollbar-track {
+    background-color: var(--cream-100);
+}
+
+::-webkit-scrollbar-thumb {
+    background-color: var(--cream-300);
+    border-radius: 8px;
+    border: 2px solid var(--cream-100);
+}
+
+::-webkit-scrollbar-thumb:hover {
+    background-color: var(--coffee-400);
+}
+
+/* Selection — match brand */
+::selection {
+    background-color: var(--brand-orange-200);
+    color: var(--coffee-900);
+}

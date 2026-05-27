@@ -1,0 +1,24 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<svg xmlns="http://www.w3.org/2000/svg"
+     viewBox="0 0 200 40"
+     width="200"
+     height="40"
+     role="img"
+     aria-label="Batch List Tool">
+    <title>Batch List Tool</title>
+    <!-- Solid color only (no gradient text, no #000/#fff). -->
+    <!-- coffee-800 equivalent: oklch(22% 0.05 48) -->
+    <text x="0"
+          y="28"
+          font-family="Fraunces, 'Times New Roman', Georgia, serif"
+          font-size="22"
+          font-weight="500"
+          font-style="normal"
+          letter-spacing="-0.005em"
+          fill="oklch(22% 0.05 48)">Batch List Tool</text>
+    <!-- Small dot accent in brand-orange-500 -->
+    <circle cx="148.5"
+            cy="22"
+            r="2.6"
+            fill="oklch(66% 0.175 50)" />
+</svg>
