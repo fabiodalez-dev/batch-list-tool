@@ -4,9 +4,11 @@ declare(strict_types=1);
 
 namespace App\Filament\Pages\Reports;
 
+use App\Filament\Pages\Reports\Concerns\HasReportTemplates;
 use App\Filament\Pages\Reports\Filters\DateRangeFilter;
 use App\Models\Concerns\BelongsToRepository;
 use App\Models\Document;
+use App\Models\ReportTemplate;
 use App\Support\Reports\ReportRenderer;
 use Filament\Actions\Action;
 use Filament\Pages\Page;
@@ -35,7 +37,11 @@ use Symfony\Component\HttpFoundation\StreamedResponse;
  */
 class DocumentsByBatchReport extends Page implements HasTable
 {
+    use HasReportTemplates;
     use InteractsWithTable;
+
+    /** @see ReportTemplate::SOURCES */
+    public const REPORT_SOURCE = ReportTemplate::SOURCE_DOCUMENTS_BY_BATCH;
 
     protected string $view = 'filament.pages.reports.table';
 
@@ -289,6 +295,11 @@ class DocumentsByBatchReport extends Page implements HasTable
         return 'documents-by-batch';
     }
 
+    public function mount(): void
+    {
+        $this->applyTemplateFromQuery();
+    }
+
     /**
      * Distinct, non-null document_type values harvested from the live
      * dataset — keeps the dropdown current without a hard-coded enum.
@@ -379,6 +390,8 @@ class DocumentsByBatchReport extends Page implements HasTable
     protected function getHeaderActions(): array
     {
         return [
+            $this->saveAsTemplateAction(),
+
             Action::make('exportCsv')
                 ->label('Export CSV')
                 ->icon('heroicon-o-arrow-down-tray')

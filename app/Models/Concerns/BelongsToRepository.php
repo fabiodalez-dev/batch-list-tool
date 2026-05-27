@@ -38,9 +38,15 @@ trait BelongsToRepository
             // Privileged roles bypass tenant check, but we still default the
             // repository_id to their own default if omitted (UX nicety, not a
             // security check).
+            //
+            // We use `getAttribute()`/`setAttribute()` instead of magic property
+            // access throughout this closure so PHPStan/Larastan don't have to
+            // refine `$model` (typed as the abstract `Model`) to the concrete
+            // consumer class to know `repository_id` exists — every Eloquent
+            // model accepts arbitrary attribute names through these methods.
             if (method_exists($user, 'hasAnyRole') && $user->hasAnyRole(['super_admin', 'admin'])) {
-                if (empty($model->repository_id) && ! empty($user->default_repository_id)) {
-                    $model->repository_id = $user->default_repository_id;
+                if (empty($model->getAttribute('repository_id')) && ! empty($user->default_repository_id)) {
+                    $model->setAttribute('repository_id', $user->default_repository_id);
                 }
 
                 return;
@@ -51,17 +57,19 @@ trait BelongsToRepository
                 ? $user->repositories()->pluck('repositories.id')->all()
                 : [];
 
-            if (empty($model->repository_id)) {
+            if (empty($model->getAttribute('repository_id'))) {
                 // Fall back to default, then first accessible
-                $model->repository_id = $user->default_repository_id
-                    ?? ($allowedIds[0] ?? null);
+                $model->setAttribute(
+                    'repository_id',
+                    $user->default_repository_id ?? ($allowedIds[0] ?? null),
+                );
             }
 
-            if (! in_array((int) $model->repository_id, array_map('intval', $allowedIds), true)) {
+            if (! in_array((int) $model->getAttribute('repository_id'), array_map('intval', $allowedIds), true)) {
                 throw new \DomainException(
                     'Multi-tenant violation: cannot create '
                     . $model::class
-                    . ' in repository_id=' . ($model->repository_id ?? 'null')
+                    . ' in repository_id=' . ($model->getAttribute('repository_id') ?? 'null')
                     . ' — user only has access to: ' . implode(',', $allowedIds)
                 );
             }
