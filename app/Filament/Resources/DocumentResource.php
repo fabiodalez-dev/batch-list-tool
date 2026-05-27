@@ -890,6 +890,33 @@ class DocumentResource extends Resource
                         false: fn ($q) => $q->whereRaw("TRIM(COALESCE(notes, '')) = ''"),
                     ),
 
+                // RFQ APP2-xviii — narrow the list to docs carrying at least one
+                // unresolved flag (status IN open|acknowledged). The false branch
+                // surfaces docs that are either flag-free or whose flags have all
+                // been resolved/dismissed.
+                TernaryFilter::make('has_open_flags')
+                    ->label('Open flags')
+                    ->placeholder('All documents')
+                    ->trueLabel('Has open flags')
+                    ->falseLabel('No open flags')
+                    ->queries(
+                        true: fn ($q) => $q->whereHas('flags', fn ($f) => $f->whereIn('status', ['open', 'acknowledged'])),
+                        false: fn ($q) => $q->whereDoesntHave('flags', fn ($f) => $f->whereIn('status', ['open', 'acknowledged'])),
+                    ),
+
+                // RFQ APP2-viii / REQ-3.2.2 — catalogue progress filter. The
+                // operator needs to triage docs that still need a catalogue
+                // identifier assigned. NULL is the "not yet catalogued" state.
+                TernaryFilter::make('uncatalogued')
+                    ->label('Catalogued?')
+                    ->placeholder('All documents')
+                    ->trueLabel('Catalogued (has catalogue_identifier)')
+                    ->falseLabel('Uncatalogued (no catalogue_identifier yet)')
+                    ->queries(
+                        true: fn ($q) => $q->whereNotNull('catalogue_identifier'),
+                        false: fn ($q) => $q->whereNull('catalogue_identifier'),
+                    ),
+
                 // Soft-deleted records filter
                 TrashedFilter::make(),
             ])
@@ -1010,6 +1037,9 @@ class DocumentResource extends Resource
             'authorities.alternative_identifier',
             'currentBox.box_number',
             'currentBox.barcode',
+            // Accession (RFQ §3.2.1) — symmetric with applyOmniSearch so the
+            // Cmd+K spotlight and the in-table bar return the same docs.
+            'accession.code',
             // Identifier history (PR #8) — searching for "R7-old" finds the document
             // whose identifier was previously "R7-old", even after re-classification.
             'identifierHistory.previous_identifier',
@@ -1138,6 +1168,16 @@ class DocumentResource extends Resource
             $q->orWhereHas('series', static function (Builder $s) use ($needle, $likeEsc): void {
                 $likeEsc($s, 'series.code', $needle, false);
                 $likeEsc($s, 'series.title', $needle, true);
+            });
+
+            // Accession (RFQ §3.2.1) — operator must be able to find every
+            // document acquired under accession "ACC-2026-001" by typing the
+            // accession code (or any substring) directly into the omni-search
+            // bar. Accessions has no `title` column in the canonical schema —
+            // `code` is the human label and `notes` carries free-form context.
+            $q->orWhereHas('accession', static function (Builder $acc) use ($needle, $likeEsc): void {
+                $likeEsc($acc, 'accessions.code', $needle, false);
+                $likeEsc($acc, 'accessions.notes', $needle, true);
             });
 
             // Batch — numeric match when possible; LIKE fallback covers

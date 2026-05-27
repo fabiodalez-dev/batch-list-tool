@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 use App\Filament\Resources\DocumentResource;
 use App\Filament\Resources\DocumentResource\Pages\ListDocuments;
+use App\Models\Accession;
 use App\Models\Authority;
 use App\Models\Batch;
 use App\Models\Box;
@@ -568,4 +569,77 @@ test('getGloballySearchableAttributes includes authorities, series, currentBox',
         ->toContain('authorities.surname')
         ->toContain('series.code')
         ->toContain('currentBox.box_number');
+});
+
+/*
+ * Test 16 — Accession code match (RFQ §3.2.1).
+ *
+ * The operator must be able to surface every document acquired under
+ * accession "ACC-2026-001" by typing the accession code (or substring)
+ * into the omni-search. Mirrors the series/batch/box pattern.
+ */
+test('omni-search by accession code returns the linked document', function (): void {
+    $this->actingAs(omni_actAsAdmin());
+
+    $repo = omni_makeRepo();
+    $series = omni_makeSeries();
+
+    $accHit = Accession::create([
+        'code' => 'ACC-2026-001',
+        'repository_id' => $repo->id,
+    ]);
+    $accMiss = Accession::create([
+        'code' => 'ACC-2026-999',
+        'repository_id' => $repo->id,
+    ]);
+
+    $hit = omni_makeDoc($repo->id, $series->id, [
+        'identifier' => 'ACC-HIT-DOC',
+        'accession_id' => $accHit->id,
+    ]);
+    $miss = omni_makeDoc($repo->id, $series->id, [
+        'identifier' => 'ACC-MISS-DOC',
+        'accession_id' => $accMiss->id,
+    ]);
+
+    Livewire::test(ListDocuments::class)
+        ->set('tableSearch', 'ACC-2026')
+        ->assertCanSeeTableRecords([$hit, $miss]);
+
+    Livewire::test(ListDocuments::class)
+        ->set('tableSearch', 'ACC-2026-001')
+        ->assertCanSeeTableRecords([$hit])
+        ->assertCanNotSeeTableRecords([$miss]);
+});
+
+/*
+ * Test 17 — Accession code with no match returns an empty set.
+ *
+ * Guards against a regression where the new whereHas('accession', ...) block
+ * accidentally widens the OR-group (e.g. a stray comma turning the EXISTS
+ * subquery into a constant TRUE).
+ */
+test('omni-search by nonexistent accession code returns empty result', function (): void {
+    $this->actingAs(omni_actAsAdmin());
+
+    $repo = omni_makeRepo();
+    $series = omni_makeSeries();
+
+    $acc = Accession::create([
+        'code' => 'ACC-2026-001',
+        'repository_id' => $repo->id,
+    ]);
+    $doc = omni_makeDoc($repo->id, $series->id, [
+        'identifier' => 'ACC-DOC-X',
+        'accession_id' => $acc->id,
+    ]);
+
+    $component = Livewire::test(ListDocuments::class)
+        ->set('tableSearch', 'ACC-NONEXISTENT');
+
+    // The matching doc should not appear, and no spurious docs either.
+    $component->assertCanNotSeeTableRecords([$doc]);
+
+    $records = $component->instance()->getTableRecords();
+    expect(count($records->items()))->toBe(0);
 });
