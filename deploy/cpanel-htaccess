@@ -1,20 +1,39 @@
-# cPanel public_html/.htaccess — archivetool.eu
+# cPanel public_html/.htaccess - archivetool.eu
 #
-# Routes every request that isn't an existing file or directory to the cPanel
-# bootstrap shim (public_html/index.php), which in turn includes the real
-# Laravel entrypoint at /home/archivet/laravel-app/public/index.php.
+# Layout after the 2026-05-27 pivot: the Laravel project is checked out
+# DIRECTLY at /home/archivet/public_html/ (cPanel's document root), with
+# Laravel's own front controller living at /home/archivet/public_html/public/
+# index.php.
 #
-# Mirrors the directives shipped in laravel-app/public/.htaccess so that
-# behavior at the cPanel document root matches Laravel's expectations.
+# This is a deliberate trade-off vs. the conventional "Laravel outside the
+# web root" pattern:
+#
+#   PRO   - simpler bootstrap, no shim, no symlinks across home subtrees,
+#           git pulls land exactly where the deploy script expects them.
+#   CON   - app/, bootstrap/, config/, vendor/, .env, etc. are all under
+#           public_html/, so HTTP requests can reach those paths unless we
+#           explicitly forbid them.
+#
+# This .htaccess is therefore the CRITICAL SECURITY LAYER for the deploy.
+# It must (a) rewrite every public request to public/index.php (the real
+# Laravel entrypoint) and (b) hard-deny HTTP access to every sensitive
+# file or directory that now lives next to public/.
+#
+# Mirrors the directives in public/.htaccess so behavior at the cPanel
+# document root matches Laravel's expectations.
 
+# ---------------------------------------------------------------------------
+# (a) Routing: forward every request to Laravel's front controller.
+# ---------------------------------------------------------------------------
 <IfModule mod_rewrite.c>
     <IfModule mod_negotiation.c>
         Options -MultiViews -Indexes
     </IfModule>
 
     RewriteEngine On
+    RewriteBase /
 
-    # Force HTTPS — production runs behind a valid TLS cert on archivetool.eu.
+    # Force HTTPS - production runs behind a valid TLS cert on archivetool.eu.
     RewriteCond %{HTTPS} !=on [NC]
     RewriteCond %{HTTP:X-Forwarded-Proto} !=https [NC]
     RewriteRule ^ https://%{HTTP_HOST}%{REQUEST_URI} [L,R=301]
@@ -32,18 +51,46 @@
     RewriteCond %{REQUEST_URI} (.+)/$
     RewriteRule ^ %1 [L,R=301]
 
-    # Send all other requests to the bootstrap shim
+    # If the request maps to an actual file or symlink inside public/, serve
+    # it (CSS, JS, images, the storage symlink, etc.).
+    RewriteCond %{REQUEST_FILENAME} !-d
+    RewriteCond %{DOCUMENT_ROOT}/public%{REQUEST_URI} -f [OR]
+    RewriteCond %{DOCUMENT_ROOT}/public%{REQUEST_URI} -l
+    RewriteRule ^(.*)$ public/$1 [L]
+
+    # Otherwise forward to Laravel's front controller.
     RewriteCond %{REQUEST_FILENAME} !-d
     RewriteCond %{REQUEST_FILENAME} !-f
-    RewriteRule ^ index.php [L]
+    RewriteRule ^ public/index.php [L]
 </IfModule>
 
-# Hard-deny direct access to sensitive files even if they leak into public_html
-<FilesMatch "^(\.env|\.env\..*|composer\.(json|lock)|package(-lock)?\.json|\.git.*|deploy\.sh|post-deploy\.sh)$">
+# ---------------------------------------------------------------------------
+# (b) Hard-deny access to sensitive files / directories.
+# ---------------------------------------------------------------------------
+# Block dotfiles wholesale - this catches .env, .env.production, .git/*,
+# .github/*, .editorconfig, .gitignore, .gitattributes, anything that starts
+# with a dot and is therefore likely to be configuration or credentials.
+<FilesMatch "^\.">
     Require all denied
 </FilesMatch>
 
-# Default to PHP 8.3 on cPanel CloudLinux EL8
+# Block sensitive top-level files that ship with a Laravel repo (and any
+# *.sh / *.md / *.yml / *.yaml at the project root - those are runbooks,
+# CI configs, or deploy scripts, never legitimate web responses).
+<FilesMatch "(composer\.(json|lock)|package(-lock)?\.json|artisan|phpunit\.xml|pint\.json|phpstan\.neon.*|webpack\.mix\.js|vite\.config\.js|README\.md|CONTRIBUTING\.md|tailwind\.config\.js|postcss\.config\.js|.*\.sh|.*\.md|.*\.ya?ml)$">
+    Require all denied
+</FilesMatch>
+
+# Block sensitive directories. RedirectMatch 404 is preferable to a 403
+# here because it (a) doesn't reveal that the path exists and (b) survives
+# misconfigured Require directives - a 404 from Apache itself is hard to
+# bypass.
+RedirectMatch 404 ^/(\.git|\.github|app|bootstrap|config|database|deploy|docs|node_modules|resources|routes|storage|tests|vendor)(/|$)
+
+# ---------------------------------------------------------------------------
+# PHP handler
+# ---------------------------------------------------------------------------
+# Default to PHP 8.3 on cPanel CloudLinux EL8.
 <IfModule mime_module>
     AddHandler application/x-httpd-ea-php83 .php .php8 .phtml
 </IfModule>

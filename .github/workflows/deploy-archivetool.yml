@@ -8,7 +8,7 @@ name: Deploy to archivetool.eu
 #   SSH_PRIVATE_KEY_DEPLOY  - private key matching ~/.ssh/authorized_keys on the server
 #   SSH_HOST                - cpanel19.vhosting-it.com
 #   SSH_USER                - archivet
-#   DEPLOY_PATH             - /home/archivet/laravel-app
+#   DEPLOY_PATH             - /home/archivet/public_html
 #
 # Optional secrets (no-op if absent):
 #   SLACK_WEBHOOK_URL       - send a deploy notification
@@ -100,7 +100,7 @@ jobs:
           ssh -o ServerAliveInterval=30 \
               -o ServerAliveCountMax=6 \
               "${SSH_USER}@${SSH_HOST}" \
-              "APP_DIR='${DEPLOY_PATH}' BRANCH='${DEPLOY_BRANCH}' bash -s" \
+              "DEPLOY_PATH='${DEPLOY_PATH}' BRANCH='${DEPLOY_BRANCH}' bash -s" \
               < deploy/post-deploy.sh
 
       - name: Smoke test admin panel

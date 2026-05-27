@@ -1,4 +1,4 @@
-# Deploy procedure — archivetool.eu
+# Deploy procedure - archivetool.eu
 
 Production deployment of the Batch List Tool (Laravel 13 + Filament 5) on
 **archivetool.eu**, a cPanel shared-hosting account at VHosting Italia
@@ -18,6 +18,19 @@ This document covers:
 
 ---
 
+## TODO - action required before the next deploy
+
+> **The GitHub secret `DEPLOY_PATH` must be updated.**
+> Old value: `/home/archivet/laravel-app`
+> New value: `/home/archivet/public_html`
+>
+> Go to **Settings -> Secrets and variables -> Actions** on the
+> `fabiodalez-dev/batch-list-tool` repository, edit `DEPLOY_PATH`, and
+> save. The deploy workflow will fail with `DEPLOY_PATH does not exist`
+> until this is done.
+
+---
+
 ## 1. Server facts
 
 | Item             | Value                                                          |
@@ -28,20 +41,95 @@ This document covers:
 | User             | `archivet`                                                     |
 | Home             | `/home/archivet/`                                              |
 | cPanel web root  | `/home/archivet/public_html/` (cannot be changed in shared hosting) |
-| Laravel app dir  | `/home/archivet/laravel-app/` (lives OUTSIDE web root)         |
+| Laravel app dir  | `/home/archivet/public_html/` (same as web root - see below)   |
+| Front controller | `/home/archivet/public_html/public/index.php`                  |
 | PHP CLI          | `/usr/local/bin/php` (8.3.31)                                  |
 | Composer         | `/usr/local/bin/composer` (2.9.8)                              |
 | Git              | `/usr/local/cpanel/3rdparty/lib/path-bin/git` (2.48.2)         |
-| Node / npm       | NOT installed — Filament assets must be pre-built and committed |
+| Node / npm       | NOT installed - Filament assets must be pre-built and committed |
 | Database         | MySQL `archivet_nra` (4.7 MB), user `archivet_nrauser`         |
 | TLS              | terminated at the cPanel reverse proxy (X-Forwarded-Proto)     |
 
-The cPanel web root **cannot be moved** to a subdirectory like
-`public_html/public/`, so the deploy uses a "bootstrap shim" pattern: the
-real Laravel project lives in `/home/archivet/laravel-app/`, and a small
-`public_html/index.php` (`deploy/cpanel-bootstrap-index.php`) re-routes
-requests into `laravel-app/public/index.php`. This keeps `vendor/`,
-`storage/`, and `.env` outside the document root.
+### 1.1. Layout: Laravel directly in `public_html/`
+
+Since the 2026-05-27 pivot, the Laravel project lives **directly inside**
+the cPanel document root:
+
+```text
+/home/archivet/
+`-- public_html/                         <-- cPanel document root AND Laravel root
+    |-- .htaccess                        <-- copy of deploy/cpanel-htaccess (SECURITY)
+    |-- .env                             <-- secrets (denied by .htaccess)
+    |-- app/                             <-- denied by RedirectMatch 404
+    |-- bootstrap/                       <-- denied
+    |-- config/                          <-- denied
+    |-- database/                        <-- denied
+    |-- deploy/                          <-- denied
+    |-- docs/                            <-- denied
+    |-- public/                          <-- ONLY directory served by Apache
+    |   |-- index.php                    <-- Laravel front controller
+    |   |-- .htaccess                    <-- Laravel's own htaccess
+    |   |-- css/  js/  build/            <-- compiled assets
+    |   `-- storage -> ../storage/app/public    (symlink from `artisan storage:link`)
+    |-- resources/                       <-- denied
+    |-- routes/                          <-- denied
+    |-- storage/                         <-- denied
+    |-- tests/                           <-- denied
+    |-- vendor/                          <-- denied
+    |-- artisan                          <-- denied (FilesMatch)
+    |-- composer.json composer.lock      <-- denied
+    `-- ...
+```
+
+**Why this layout instead of "Laravel outside public_html"?**
+
+- **Pro**: zero bootstrap complexity. `git pull` lands exactly where the
+  deploy script expects. No shim PHP file, no symlinks across home
+  subtrees, no `chdir()` games.
+- **Con**: `app/`, `vendor/`, `.env`, etc. are physically reachable by
+  HTTP. **A misconfigured `.htaccess` would expose `.env` at
+  `https://archivetool.eu/.env`.**
+
+The trade-off is acceptable **only** because `deploy/cpanel-htaccess` is
+the explicit, audited security layer that closes that hole. See section 1.2.
+
+### 1.2. The `.htaccess` is the critical security layer
+
+`deploy/cpanel-htaccess` (installed as `/home/archivet/public_html/.htaccess`)
+does two jobs. Both are mandatory.
+
+**(a) Routing** - rewrites every request to `public/index.php`:
+
+- If the URI maps to an actual file or symlink inside `public/` (CSS, JS,
+  images, `storage/`), serve it.
+- Otherwise forward to `public/index.php` (Laravel's front controller).
+
+**(b) Hard-deny of sensitive paths** - the part that makes this layout
+safe:
+
+- `<FilesMatch "^\.">` blocks every dotfile - `.env`, `.env.production`,
+  `.git`, `.github`, `.editorconfig`, etc.
+- `<FilesMatch>` on `composer.{json,lock}`, `package*.json`, `artisan`,
+  `phpunit.xml`, `*.sh`, `*.md`, `*.yml`, `*.yaml` blocks the rest of the
+  project-root metadata files.
+- `RedirectMatch 404 ^/(\.git|\.github|app|bootstrap|config|database|`
+  `deploy|docs|node_modules|resources|routes|storage|tests|vendor)(/|$)`
+  returns 404 (not 403) for the sensitive directories. 404 is preferable
+  because it doesn't reveal that the path exists.
+
+After every deploy, `deploy/post-deploy.sh` re-copies
+`deploy/cpanel-htaccess` to `public_html/.htaccess` so any drift between
+the repo and the live file is auto-corrected.
+
+**Smoke test the security layer after every deploy:**
+
+```bash
+for path in /.env /composer.json /artisan /app/ /vendor/ /storage/logs/laravel.log /.git/config; do
+    code=$(curl -sS -o /dev/null -w "%{http_code}" "https://archivetool.eu${path}")
+    echo "${code}  https://archivetool.eu${path}"
+done
+# Expected: 403 or 404 on EVERY line. Anything that returns 200 is a leak.
+```
 
 ---
 
@@ -57,7 +145,7 @@ Configure under **Settings -> Secrets and variables -> Actions** in the
 | `SSH_PRIVATE_KEY_DEPLOY` | private OpenSSH key (no passphrase)                  | authenticate the deploy workflow as `archivet` |
 | `SSH_HOST`               | `cpanel19.vhosting-it.com`                           | host the workflow SSHs into             |
 | `SSH_USER`               | `archivet`                                           | remote user                              |
-| `DEPLOY_PATH`            | `/home/archivet/laravel-app`                         | absolute path of the Laravel project on the server |
+| `DEPLOY_PATH`            | `/home/archivet/public_html`                         | absolute path of the Laravel project on the server (now == web root) |
 | `SLACK_WEBHOOK_URL`      | *(optional)* Slack incoming webhook URL              | post deploy notifications               |
 
 The matching public key must be installed in
@@ -95,11 +183,11 @@ section 3.4.
 > Actions workflow (section 4). Every command below runs as the `archivet`
 > user from your workstation (`ssh archivetool '...'`).
 
-### 3.1. Backup the legacy raw-PHP app
+### 3.1. Backup the current `public_html/`
 
-`public_html/` currently contains an OLD raw-PHP MVC app
-(`composer.json`, `app/`, `config/`, `database/`, `.env` dated 2026-05-25).
-Move it aside before touching anything:
+`public_html/` currently contains either (a) the OLD raw-PHP MVC app or
+(b) the previous Laravel deploy with the bootstrap shim. Move it aside
+before touching anything:
 
 ```bash
 ssh archivetool '
@@ -108,7 +196,10 @@ ssh archivetool '
     if [[ -d public_html && ! -L public_html ]]; then
         mv public_html "public_html.legacy_$(date -u +%Y-%m-%d)"
     fi
-    mkdir -p public_html
+    # Also archive the laravel-app/ directory from the previous PR if present
+    if [[ -d laravel-app && ! -L laravel-app ]]; then
+        mv laravel-app "laravel-app.legacy_$(date -u +%Y-%m-%d)"
+    fi
 '
 ```
 
@@ -137,7 +228,21 @@ ssh archivetool '
 > ```
 > Then `chmod 600 ~/.my.cnf`.
 
-### 3.3. Clone the repository
+A schema-only safety backup is also useful in case the migrate step
+clobbers something unexpected:
+
+```bash
+ssh archivetool '
+    cd /home/archivet
+    mysqldump --defaults-file=~/.my.cnf --no-data archivet_nra \
+              > "archivet_nra_schema_$(date -u +%Y-%m-%d).sql"
+'
+```
+
+### 3.3. Clone the repository DIRECTLY into `public_html/`
+
+The pivot moves Laravel into the cPanel document root, so the clone target
+is `public_html/` itself - NOT `laravel-app/` anymore.
 
 ```bash
 ssh archivetool '
@@ -145,8 +250,8 @@ ssh archivetool '
     cd /home/archivet
     git clone --branch main \
               https://github.com/fabiodalez-dev/batch-list-tool.git \
-              laravel-app
-    cd laravel-app
+              public_html
+    cd public_html
     /usr/local/bin/composer install --no-dev --optimize-autoloader \
                                     --no-interaction --prefer-dist
 '
@@ -154,12 +259,12 @@ ssh archivetool '
 
 ### 3.4. Populate `.env`
 
-Generate `/home/archivet/laravel-app/.env` from `.env.example` and edit:
+Generate `/home/archivet/public_html/.env` from `.env.example` and edit:
 
 ```bash
 ssh archivetool '
     set -euo pipefail
-    cd /home/archivet/laravel-app
+    cd /home/archivet/public_html
     cp .env.example .env
     chmod 600 .env
 '
@@ -215,7 +320,7 @@ Generate the application key:
 
 ```bash
 ssh archivetool '
-    cd /home/archivet/laravel-app
+    cd /home/archivet/public_html
     /usr/local/bin/php artisan key:generate --force
 '
 ```
@@ -225,43 +330,67 @@ ssh archivetool '
 ```bash
 ssh archivetool '
     set -euo pipefail
-    cd /home/archivet/laravel-app
+    cd /home/archivet/public_html
     /usr/local/bin/php artisan migrate --force
     /usr/local/bin/php artisan shield:generate --all --panel=admin
     /usr/local/bin/php artisan db:seed --class=InitialDataSeeder --force
 '
 ```
 
-### 3.6. Install the cPanel bootstrap shim
+### 3.6. Install the `.htaccess` + storage symlink
 
-Wire `public_html/` to the Laravel app:
+This step installs the security-critical `.htaccess` and wires Laravel's
+`public/storage` symlink. **Do not skip the `.htaccess` step** - without
+it, every file under `public_html/` (including `.env`) becomes reachable
+over HTTP.
 
 ```bash
 ssh archivetool '
     set -euo pipefail
-    cd /home/archivet
-    cp laravel-app/deploy/cpanel-bootstrap-index.php public_html/index.php
-    cp laravel-app/deploy/cpanel-htaccess          public_html/.htaccess
-    chmod 644 public_html/index.php public_html/.htaccess
-
-    # Expose storage/app/public to the web (laravel-app is OUTSIDE public_html)
-    ln -snf ../laravel-app/storage/app/public public_html/storage
+    cd /home/archivet/public_html
+    cp deploy/cpanel-htaccess .htaccess
+    chmod 644 .htaccess
+    /usr/local/bin/php artisan storage:link
 '
 ```
 
-Verify the layout:
+The complete first-time bootstrap, as a single block, is:
 
-```text
-/home/archivet/
-|-- laravel-app/
-|   |-- app/  bootstrap/  config/  database/  resources/  routes/
-|   |-- public/index.php                <-- real Laravel entrypoint
-|   |-- storage/  vendor/
-|   `-- .env                            <-- secrets, NEVER reachable from the web
-`-- public_html/
-    |-- index.php                       <-- bootstrap shim (sec. 3.6)
-    |-- .htaccess                       <-- bootstrap shim (sec. 3.6)
-    `-- storage -> ../laravel-app/storage/app/public
+```bash
+ssh archivet@cpanel19.vhosting-it.com '
+    set -euo pipefail
+    cd ~
+
+    # Backup
+    [[ -d public_html && ! -L public_html ]] && \
+        mv public_html "public_html.legacy_$(date -u +%Y-%m-%d)"
+    mysqldump --defaults-file=~/.my.cnf --no-data archivet_nra \
+              > "archivet_nra_schema_$(date -u +%Y-%m-%d).sql"
+
+    # Clone directly into public_html
+    git clone --branch main \
+              https://github.com/fabiodalez-dev/batch-list-tool.git \
+              public_html
+    cd public_html
+
+    /usr/local/bin/composer install --no-dev --optimize-autoloader \
+                                    --no-interaction --prefer-dist
+
+    cp .env.example .env
+    # MANUAL STEP: edit .env to set DB_PASSWORD, APP_URL, SMTP, ...
+    /usr/local/bin/php artisan key:generate --force
+    /usr/local/bin/php artisan migrate --force
+    /usr/local/bin/php artisan shield:generate --all --panel=admin
+    /usr/local/bin/php artisan db:seed --class=InitialDataSeeder --force
+    /usr/local/bin/php artisan storage:link
+
+    cp deploy/cpanel-htaccess .htaccess
+
+    # Hardening
+    chmod -R 775 storage bootstrap/cache
+    chmod 600 .env
+    chmod 644 .htaccess
+'
 ```
 
 ### 3.7. Optimize and verify
@@ -269,7 +398,7 @@ Verify the layout:
 ```bash
 ssh archivetool '
     set -euo pipefail
-    cd /home/archivet/laravel-app
+    cd /home/archivet/public_html
     /usr/local/bin/php artisan optimize
     /usr/local/bin/php artisan filament:cache-components || true
     /usr/local/bin/php artisan icons:cache               || true
@@ -279,12 +408,21 @@ ssh archivetool '
 Smoke test from your workstation:
 
 ```bash
+# (1) Filament admin login page must respond 200
 curl -sS -o /dev/null -w "HTTP %{http_code}\n" https://archivetool.eu/admin/login
 # Expected: HTTP 200
+
+# (2) Sensitive paths must NOT be reachable
+for path in /.env /composer.json /artisan /app/ /vendor/ /.git/config; do
+    code=$(curl -sS -o /dev/null -w "%{http_code}" "https://archivetool.eu${path}")
+    echo "${code}  https://archivetool.eu${path}"
+done
+# Expected: 403 or 404 on EVERY line. Any 200 is a security regression.
 ```
 
-If you get anything other than `200`, do NOT enable the GitHub Actions
-workflow — fix the issue first (see section 6).
+If the admin login test returns anything other than `200`, OR if any of
+the sensitive paths returns `200`, do NOT enable the GitHub Actions
+workflow - fix the issue first (see section 6).
 
 ---
 
@@ -295,21 +433,27 @@ After the first-time bootstrap succeeds, every push to `main` triggers
 
 1. checks out the repository at the pushed SHA,
 2. opens an SSH agent with `SSH_PRIVATE_KEY_DEPLOY`,
-3. runs `deploy/post-deploy.sh` over SSH on the server.
+3. runs `deploy/post-deploy.sh` over SSH on the server with
+   `DEPLOY_PATH=/home/archivet/public_html`.
 
 The remote script (`deploy/post-deploy.sh`) does:
 
-- `artisan down` (enter maintenance mode);
+- `artisan down --refresh=15` (enter maintenance mode);
 - `git fetch && git reset --hard origin/main`;
 - `composer install --no-dev --optimize-autoloader`;
 - `artisan migrate --force`;
 - `artisan optimize:clear && artisan optimize`;
 - `artisan filament:cache-components` and `artisan icons:cache`;
+- `artisan storage:link` (idempotent);
 - chmod hardening on `storage/`, `bootstrap/cache/`, and `.env`;
+- re-copies `deploy/cpanel-htaccess` to `.htaccess`;
 - `artisan up` (leave maintenance mode).
 
-A workflow `workflow_dispatch` trigger is also wired so you can re-deploy a
-specific branch from the GitHub UI in an emergency.
+The workflow also runs a post-deploy smoke test against
+`https://archivetool.eu/admin/login` and fails if it doesn't return 200.
+
+A workflow `workflow_dispatch` trigger is also wired so you can re-deploy
+a specific branch from the GitHub UI in an emergency.
 
 ### 4.1. Manual trigger
 
@@ -326,7 +470,7 @@ previous good SHA:
 ```bash
 ssh archivetool '
     set -euo pipefail
-    cd /home/archivet/laravel-app
+    cd /home/archivet/public_html
     /usr/local/bin/php artisan down
     git fetch --all
     git reset --hard <PREVIOUS_GOOD_SHA>
@@ -357,7 +501,7 @@ ssh archivetool '
 
 ### 6.1. `HTTP 500` after deploy
 
-Check `/home/archivet/laravel-app/storage/logs/laravel.log` and the latest
+Check `/home/archivet/public_html/storage/logs/laravel.log` and the latest
 `deploy-<timestamp>.log` next to it. Most common causes:
 
 - `.env` missing a key (e.g. `APP_KEY` empty -> 500 on every page);
@@ -367,57 +511,71 @@ Check `/home/archivet/laravel-app/storage/logs/laravel.log` and the latest
 ### 6.2. `HTTP 403` or directory listing
 
 The `public_html/.htaccess` file is missing or malformed. Re-copy it from
-`/home/archivet/laravel-app/deploy/cpanel-htaccess` (section 3.6).
+`/home/archivet/public_html/deploy/cpanel-htaccess` (section 3.6).
 
-### 6.3. CSS / JS not loading
+### 6.3. `HTTP 200` on `/.env` or `/composer.json` (CRITICAL)
 
-Filament assets must be present at `laravel-app/public/css/filament/` and
-`laravel-app/public/js/filament/`. If they're missing, the Filament
+A `200` response on any sensitive path means the security `.htaccess` is
+missing or has been overwritten. Treat this as a security incident:
+
+1. Immediately re-copy `deploy/cpanel-htaccess` to `public_html/.htaccess`.
+2. Verify Apache picked it up: re-run the smoke test from section 3.7.
+3. Rotate `APP_KEY` and any DB / SMTP credentials that may have leaked:
+   `php artisan key:generate --force` and reset the MySQL password via
+   cPanel.
+4. Audit `storage/logs/access_log*` for any IP that hit the exposed path.
+
+### 6.4. CSS / JS not loading
+
+Filament assets must be present at `public_html/public/css/filament/` and
+`public_html/public/js/filament/`. If they're missing, the Filament
 asset-build PR was not merged before deploy. Run on the server:
 
 ```bash
-cd /home/archivet/laravel-app
+cd /home/archivet/public_html
 /usr/local/bin/php artisan filament:assets
 ```
 
-If that command also fails, the Filament asset bundle is stale; the fix is
-to run `npm run build` locally, commit `public/build/` and `public/css/`
+If that command also fails, the Filament asset bundle is stale; the fix
+is to run `npm run build` locally, commit `public/build/`, `public/css/`,
 and `public/js/`, and push.
 
-### 6.4. `SSH_HOST` rejected by `ssh-keyscan`
+### 6.5. `SSH_HOST` rejected by `ssh-keyscan`
 
-Some cPanel hosts rate-limit incoming connections. Re-run the workflow; if
-it still fails, generate `~/.ssh/known_hosts` once manually and store it
-as a base64-encoded secret instead of letting the workflow scan on every
-run.
+Some cPanel hosts rate-limit incoming connections. Re-run the workflow;
+if it still fails, generate `~/.ssh/known_hosts` once manually and store
+it as a base64-encoded secret instead of letting the workflow scan on
+every run.
 
-### 6.5. Bootstrap shim returns "Application offline"
+### 6.6. Storage symlink missing or broken
 
-`/home/archivet/laravel-app/public/index.php` is missing or unreadable.
-Confirm `laravel-app/` exists and is owned by `archivet:archivet`, then
-re-run `chmod 755 laravel-app laravel-app/public`.
-
-### 6.6. Storage symlink "loops"
-
-If `public_html/storage` is a relative symlink (`../laravel-app/...`) and
-the resolution loops, replace it with an absolute one:
+If `public_html/public/storage` is not a valid symlink, re-create it:
 
 ```bash
 ssh archivetool '
-    ln -snf /home/archivet/laravel-app/storage/app/public \
-            /home/archivet/public_html/storage
+    cd /home/archivet/public_html
+    /usr/local/bin/php artisan storage:link
+'
+```
+
+If `artisan storage:link` complains that the link already exists but
+points to the wrong place, remove it and re-run:
+
+```bash
+ssh archivetool '
+    rm -f /home/archivet/public_html/public/storage
+    cd /home/archivet/public_html && /usr/local/bin/php artisan storage:link
 '
 ```
 
 ---
 
-## Appendix A — Files shipped with this PR
+## Appendix A - Files shipped with this PR
 
 | File                                            | Purpose                                                                       |
 |-------------------------------------------------|-------------------------------------------------------------------------------|
-| `deploy/cpanel-bootstrap-index.php`             | Copied to `public_html/index.php`; pivots to `laravel-app/public/index.php`.  |
-| `deploy/cpanel-htaccess`                        | Copied to `public_html/.htaccess`; HTTPS redirect + rewrite to the shim.      |
+| `deploy/cpanel-htaccess`                        | Copied to `public_html/.htaccess`; (a) routes to `public/index.php`, (b) hard-denies sensitive files / dirs. |
 | `deploy/post-deploy.sh`                         | Idempotent incremental deploy script executed over SSH by GitHub Actions.    |
 | `.github/workflows/deploy-archivetool.yml`      | CI workflow that runs `post-deploy.sh` on push to `main`.                     |
 | `docs/deploy/archivetool.md`                    | This document.                                                                 |
-| `tests/Feature/DeployArtifactsTest.php`         | Sanity tests on the deploy artifacts (syntax, permissions, references).      |
+| `tests/Feature/DeployArtifactsTest.php`         | Sanity tests on the deploy artifacts (syntax, permissions, security rules).  |
