@@ -17,6 +17,7 @@ use Filament\Actions\DeleteBulkAction;
 use Filament\Actions\EditAction;
 use Filament\Actions\ViewAction;
 use Filament\Forms;
+use Filament\Forms\Components\SpatieMediaLibraryFileUpload;
 use Filament\Infolists\Components\IconEntry;
 use Filament\Infolists\Components\RepeatableEntry;
 use Filament\Infolists\Components\TextEntry;
@@ -242,6 +243,22 @@ class DocumentResource extends Resource
                         $g(Forms\Components\TextInput::make('object_reference_number')->maxLength(500)),
                         $g(Forms\Components\TextInput::make('tracking')->maxLength(500)->columnSpanFull()),
                         $g(Forms\Components\TextInput::make('museum_reference')->maxLength(500)->columnSpanFull()),
+                    ]),
+
+                Section::make('Attachments')
+                    ->columnSpanFull()
+                    ->description('Scans of the document (PDF, JPG, PNG, TIFF). Files are stored in the spatie/medialibrary `attachments` collection on this document.')
+                    ->schema([
+                        SpatieMediaLibraryFileUpload::make('attachments')
+                            ->collection('attachments')
+                            ->multiple()
+                            ->acceptedFileTypes(['application/pdf', 'image/jpeg', 'image/png', 'image/tiff'])
+                            ->maxSize(20 * 1024)
+                            ->downloadable()
+                            ->openable()
+                            ->reorderable()
+                            ->preserveFilenames()
+                            ->columnSpanFull(),
                     ]),
 
                 Section::make('Legacy box history (RAS / In Situ)')
