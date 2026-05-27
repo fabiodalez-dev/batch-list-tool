@@ -1,0 +1,104 @@
+name: RFQ-2026-06 Compliance Suite
+
+# Dedicated workflow that runs the 148-test compliance matrix (4 tests per
+# RFQ requirement × 37 requirements). Runs on every push + PR so contract
+# regressions surface immediately. Also runs weekly to catch drift from
+# external dependency updates.
+
+on:
+  push:
+    branches: ['**']
+    paths:
+      - 'app/**'
+      - 'config/**'
+      - 'database/**'
+      - 'routes/**'
+      - 'tests/Compliance/**'
+      - 'tests/Feature/RfqCompliance/**'
+      - 'composer.json'
+      - 'composer.lock'
+      - '.github/workflows/rfq-compliance.yml'
+  pull_request:
+    branches: ['**']
+  schedule:
+    # Sunday 03:00 UTC — catches dependency-update regressions overnight.
+    - cron: '0 3 * * 0'
+  workflow_dispatch:
+    inputs:
+      section:
+        description: 'Optional section filter (e.g. "rfq:3.1.1", "rfq:app2-vii", "rfq:3.4")'
+        required: false
+        default: ''
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  compliance:
+    name: RFQ-2026-06 (PHP ${{ matrix.php }})
+    runs-on: ubuntu-latest
+    timeout-minutes: 25
+
+    strategy:
+      fail-fast: false
+      matrix:
+        php: ['8.4']
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup PHP ${{ matrix.php }}
+        uses: shivammathur/setup-php@v2
+        with:
+          php-version: ${{ matrix.php }}
+          extensions: mbstring, intl, pdo_sqlite, pdo_mysql, gd, zip, bcmath
+          coverage: none
+          tools: composer:v2
+
+      - name: Cache Composer
+        uses: actions/cache@v4
+        with:
+          path: ~/.composer/cache
+          key: composer-${{ matrix.php }}-${{ hashFiles('composer.lock') }}
+          restore-keys: composer-${{ matrix.php }}-
+
+      - name: Install dependencies
+        run: composer install --no-interaction --no-progress --prefer-dist
+
+      - name: Prepare test environment
+        run: |
+          cp .env.example .env || true
+          php artisan key:generate --ansi
+          php artisan config:clear
+
+      - name: Run RFQ Compliance suite (full)
+        if: ${{ github.event_name != 'workflow_dispatch' || inputs.section == '' }}
+        run: vendor/bin/pest --testsuite=Compliance --compact
+
+      - name: Run RFQ Compliance suite (filtered)
+        if: ${{ github.event_name == 'workflow_dispatch' && inputs.section != '' }}
+        env:
+          SECTION_FILTER: ${{ inputs.section }}
+        # Validate section format with shell parameter expansion to neutralise
+        # injection attempts before passing to pest. Allowlist: alnum, dash,
+        # colon, dot, underscore.
+        run: |
+          if printf '%s' "$SECTION_FILTER" | grep -Eq '^[a-zA-Z0-9._:-]+$'; then
+            vendor/bin/pest --testsuite=Compliance --group="$SECTION_FILTER" --compact
+          else
+            echo "Refusing section filter '$SECTION_FILTER' — only [a-zA-Z0-9._:-] allowed." >&2
+            exit 1
+          fi
+
+      - name: Compliance summary
+        if: always()
+        run: |
+          {
+            echo "## RFQ-2026-06 Compliance Status"
+            echo ""
+            echo "37 requirements x 4 tests = 148 total."
+            echo ""
+            echo "See \`nra/ops/test_plan.md\` for the requirement->test mapping."
+          } >> "$GITHUB_STEP_SUMMARY"
