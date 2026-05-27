@@ -78,7 +78,7 @@ class Document extends Model implements AuditableContract, HasMedia, Sortable
         'identifier', 'document_type', 'series_id', 'accession_id',
         'current_box_id', 'location_id', 'batch_id', 'repository_id', 'volume_label',
         'dates_start', 'dates_end', 'dates_year_start', 'dates_year_end',
-        'disinfestation_date', 'extra', 'notes',
+        'disinfestation_date', 'is_in_disinfestation', 'extra', 'notes',
         // Legacy POC columns (parity with raw-PHP schema)
         'ras_batch_1', 'ras_box_1', 'ras_batch_2', 'ras_box_2',
         'in_situ_box_1', 'in_situ_box_2', 'in_situ_box_3',
@@ -102,6 +102,7 @@ class Document extends Model implements AuditableContract, HasMedia, Sortable
         'disinfestation_date_1' => 'date',
         'disinfestation_date_2' => 'date',
         'disinfestation_date_3' => 'date',
+        'is_in_disinfestation' => 'boolean',
         'torre' => 'boolean',
         'extra' => SchemalessAttributes::class,
         'custom_fields' => 'array',

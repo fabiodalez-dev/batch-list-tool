@@ -181,6 +181,10 @@ class DocumentResource extends Resource
                     ->schema([
                         $g(Forms\Components\TextInput::make('seal_number')->maxLength(50)),
                         $g(Forms\Components\DatePicker::make('disinfestation_date')->label('Disinfestation (current)')),
+                        $g(Forms\Components\Toggle::make('is_in_disinfestation')
+                            ->label('Currently in disinfestation')
+                            ->helperText("Set when the document is physically out for disinfestation. The 'Send to disinfestation' bulk action sets this automatically.")
+                            ->columnSpanFull()),
                         $g(Forms\Components\DatePicker::make('disinfestation_date_1')->label('Legacy disinfestation #1')),
                         $g(Forms\Components\DatePicker::make('disinfestation_date_2')->label('Legacy disinfestation #2')),
                         $g(Forms\Components\DatePicker::make('disinfestation_date_3')->label('Legacy disinfestation #3')),
@@ -560,6 +564,12 @@ class DocumentResource extends Resource
                             ->badge()
                             ->color(fn (?string $state): string => $state ? 'success' : 'warning')
                             ->placeholder('Pending'),
+                        TextEntry::make('is_in_disinfestation')
+                            ->label('Currently in disinfestation')
+                            ->badge()
+                            ->formatStateUsing(fn ($state): string => $state ? 'Yes' : 'No')
+                            ->color(fn ($state): string => $state ? 'warning' : 'gray')
+                            ->columnSpanFull(),
                         TextEntry::make('seal_number')
                             ->label('Current seal #')
                             ->badge()
@@ -840,6 +850,15 @@ class DocumentResource extends Resource
                         true: fn ($q) => $q->whereNotNull('disinfestation_date'),
                         false: fn ($q) => $q->whereNull('disinfestation_date'),
                     ),
+
+                // Workflow filter (RFQ App.1 #5 — disinfestation lifecycle).
+                // Narrows to documents physically out for fumigation, so the
+                // operator can bulk-close the cycle via "Mark disinfested".
+                TernaryFilter::make('is_in_disinfestation')
+                    ->label('Currently in disinfestation')
+                    ->placeholder('Any')
+                    ->trueLabel('Currently out for disinfestation')
+                    ->falseLabel('Not currently out'),
 
                 TernaryFilter::make('has_barcode')
                     ->label('Has barcode?')

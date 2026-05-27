@@ -98,7 +98,34 @@ final class MarkDisinfestedAction
         $result = ActionSupport::performBulk(
             $records,
             function (Document $doc) use ($date): void {
+                // Capture old values BEFORE writing — they go into the audit
+                // diff so the "Mark disinfested" event is queryable end-to-end
+                // (date stamped, in-flight flag cleared, barcode back to IN).
+                $oldValues = [
+                    'disinfestation_date' => optional($doc->getOriginal('disinfestation_date'))->toString() ?? $doc->getOriginal('disinfestation_date'),
+                    'is_in_disinfestation' => (bool) $doc->getOriginal('is_in_disinfestation'),
+                    'barcode_status' => $doc->getOriginal('barcode_status'),
+                ];
+
                 $doc->disinfestation_date = $date;
+                // The bulk workflow ("Send to disinfestation" → fumigation →
+                // "Mark disinfested") expects this action to be the closing
+                // bookend: clear the in-flight flag and return barcode to IN.
+                $doc->is_in_disinfestation = false;
+                $doc->barcode_status = 'IN';
+
+                ActionSupport::logPivotChange(
+                    document: $doc,
+                    event: 'document.marked_disinfested',
+                    newValues: [
+                        'disinfestation_date' => $date,
+                        'is_in_disinfestation' => false,
+                        'barcode_status' => 'IN',
+                    ],
+                    oldValues: $oldValues,
+                    tags: 'disinfestation,document',
+                );
+
                 $doc->save();
             },
         );

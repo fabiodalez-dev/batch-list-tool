@@ -836,12 +836,12 @@ test('Audit metadata captures user_id and event', function () {
  |  Wiring on the resource pages
  * ------------------------------------------------------------------------- */
 
-test('DocumentActionGroup exposes 13 single-record header actions and 14 bulk actions', function () {
+test('DocumentActionGroup exposes 14 single-record header actions and 15 bulk actions', function () {
     $single = DocumentActionGroup::singleHeaderActions();
     $bulk = DocumentActionGroup::bulkActions();
 
-    expect($single)->toHaveCount(13);
-    expect($bulk)->toHaveCount(14);
+    expect($single)->toHaveCount(14);
+    expect($bulk)->toHaveCount(15);
 });
 
 test('Every single-record action exposes a Filament Action instance', function () {
