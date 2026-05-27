@@ -69,53 +69,53 @@
 /* ------------------------------------------------------------------ */
 
 :root {
-    /* Cream — dominant surface, "warm bone / spa magazine" register.
-       Dialed down from the previous panna-napoletana so the panel
-       reads professional + minimal instead of restaurant-menu warm.
-       Hue stays in the 75-78 family but chroma is reduced ~30% so
-       the neutrals whisper instead of speak.
-         #FAF6F1 — main page body  (was #FDF7F3, less pink)
-         #F4EFE7 — sidebar/topbar  (was #F9F3E9, ΔL≈3 not 4) */
-    --cream-50:  #FAF6F1;
-    --cream-100: #F4EFE7;
-    --cream-200: #E7E0D2;
-    --cream-300: #D8CFBD;
-    --cream-400: #A89F8C;
-    --cream-500: #7E7565;
-    --cream-600: oklch(40% 0.018 65);
-    --cream-700: oklch(32% 0.020 60);
-    --cream-800: oklch(24% 0.018 55);
-    --cream-900: oklch(18% 0.015 50);
-    --cream-950: oklch(12% 0.012 48);
+    /* Cream — paper-white tinted, ultra-light. The previous pass still
+       read as "mustard / senape" because hue 75-78 with chroma 0.010+
+       leans yellow-warm under most monitors. Bumped lightness to near
+       paper and dropped chroma to 0.004-0.008 so the warmth is felt,
+       not seen.
+         #FCFBF8 — main page body (paper, h shifted neutral)
+         #F7F4EE — sidebar/topbar (ΔL≈2.5, almost-imperceptible lift) */
+    --cream-50:  #FCFBF8;
+    --cream-100: #F7F4EE;
+    --cream-200: #EDE8DE;
+    --cream-300: #DCD5C6;
+    --cream-400: #B0AA9B;
+    --cream-500: #87826F;
+    --cream-600: oklch(45% 0.012 60);
+    --cream-700: oklch(36% 0.013 55);
+    --cream-800: oklch(27% 0.012 50);
+    --cream-900: oklch(20% 0.010 48);
+    --cream-950: oklch(13% 0.008 46);
 
-    /* Coffee — warm brown for text and structural accents.
-       Same scale family but chroma trimmed across the board so the
-       text colour reads "serif body" not "espresso splash". */
-    --coffee-50:  oklch(96% 0.010 50);
-    --coffee-100: oklch(90% 0.018 50);
-    --coffee-200: oklch(80% 0.030 50);
-    --coffee-300: oklch(68% 0.038 50);
-    --coffee-400: oklch(54% 0.040 50);
-    --coffee-500: oklch(42% 0.038 50);
-    --coffee-600: #4A3F33;
-    --coffee-700: #4A3F33;
-    --coffee-800: #2F2820;
-    --coffee-900: #1C1812;
-    --coffee-950: oklch(8%  0.012 48);
+    /* Coffee — text and structural accent. Hue shifted from 48 (warm
+       brown-yellow, "mustard") to 35 (slate-warm, "newspaper") so the
+       text reads neutral with just a hint of warmth instead of
+       espresso splash. Chroma also cut ~40%. */
+    --coffee-50:  oklch(96% 0.005 38);
+    --coffee-100: oklch(90% 0.010 38);
+    --coffee-200: oklch(80% 0.018 36);
+    --coffee-300: oklch(68% 0.022 36);
+    --coffee-400: oklch(54% 0.025 35);
+    --coffee-500: oklch(44% 0.025 35);
+    --coffee-600: oklch(36% 0.023 34);
+    --coffee-700: oklch(30% 0.020 33);
+    --coffee-800: oklch(22% 0.016 32);
+    --coffee-900: oklch(15% 0.012 30);
+    --coffee-950: oklch(8%  0.008 28);
 
-    /* Terracotta — single accent, ≤10% of surface, dialed-down.
-       Hue shifted to 42 (a touch redder, less neon-orange) and
-       chroma cut from 0.175 to 0.105 so the 500 step reads
-       "thoughtful brand" not "shouty button". */
-    --brand-orange-50:  #FAF1E8;
-    --brand-orange-100: #F1E0D5;
-    --brand-orange-200: #E3C0AB;
-    --brand-orange-300: #D29B7E;
-    --brand-orange-400: #C57658;
-    --brand-orange-500: #B25434;
-    --brand-orange-600: #93432A;
-    --brand-orange-700: #6D3220;
-    --brand-orange-800: oklch(24% 0.060 38);
+    /* Terracotta — single accent, used sparingly. Dialed further
+       toward dusty-sandstone, hue 38 with chroma 0.085 — closer to
+       a thoughtful spice than a brand-shouty orange. */
+    --brand-orange-50:  #FBF3EC;
+    --brand-orange-100: #F4E2D5;
+    --brand-orange-200: #E5C2A8;
+    --brand-orange-300: #D29D7A;
+    --brand-orange-400: #BF7B55;
+    --brand-orange-500: #A5613D;
+    --brand-orange-600: #874C2E;
+    --brand-orange-700: #663823;
+    --brand-orange-800: oklch(22% 0.045 36);
     --brand-orange-900: oklch(26% 0.085 38);
     --brand-orange-950: oklch(18% 0.060 36);
 
