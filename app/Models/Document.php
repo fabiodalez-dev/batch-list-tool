@@ -365,10 +365,13 @@ class Document extends Model implements AuditableContract, HasMedia, Sortable
 
     public function registerMediaCollections(): void
     {
+        // image/tif AND image/tiff: RFC 3302 lists both as valid; some
+        // Windows tools + iOS Files app emit image/tif. Accept both so a
+        // legitimate scan isn't silently rejected at upload time.
         $this->addMediaCollection('attachments')
             ->acceptsMimeTypes([
                 'application/pdf',
-                'image/jpeg', 'image/png', 'image/tiff',
+                'image/jpeg', 'image/png', 'image/tiff', 'image/tif',
             ]);
     }
 
@@ -412,6 +415,27 @@ class Document extends Model implements AuditableContract, HasMedia, Sortable
      * Used by DocumentBuilder to decide whether to enforce the bulk-update
      * guard on the `identifier` column.
      */
+    /**
+     * Return the canonical case spelling of `$raw` if it matches any value in
+     * the `$allowed` list case-insensitively (trimmed). Returns null if the
+     * value isn't in the enum at all. Used by the booted() enum gate so that
+     * legacy spreadsheet data carrying mixed case ('Vhmml' vs 'VHMML') is
+     * accepted and normalised on save instead of being rejected.
+     *
+     * @param array<int, string> $allowed
+     */
+    public static function canonicalEnumValue(string $raw, array $allowed): ?string
+    {
+        $needle = mb_strtolower(trim($raw));
+        foreach ($allowed as $value) {
+            if (mb_strtolower($value) === $needle) {
+                return $value;
+            }
+        }
+
+        return null;
+    }
+
     public static function shouldBypassAuditGuard(): bool
     {
         return static::$bypassAuditGuard;
@@ -545,23 +569,32 @@ class Document extends Model implements AuditableContract, HasMedia, Sortable
         // so the constraint is enforced on every driver (SQLite test runs
         // included, where a DB-level CHECK cannot be retro-fitted).
         // Runs on both create and update via the `saving` event.
+        //
+        // Legacy data accepts mixed case ('Vhmml', 'vhmml', 'VHMML') and the
+        // sample spreadsheet uses 'Vhmml' — normalise case-insensitively to
+        // the canonical value before the strict membership check, so the
+        // import survives without rewriting the source data.
         static::saving(function (Document $document): void {
-            if ($document->digitised !== null
-                && ! in_array($document->digitised, self::DIGITISED_VALUES, true)
-            ) {
-                throw new \DomainException(
-                    "Invalid digitised value '{$document->digitised}'. Allowed: "
-                    . implode(', ', self::DIGITISED_VALUES)
-                );
+            if ($document->digitised !== null) {
+                $normalized = self::canonicalEnumValue($document->digitised, self::DIGITISED_VALUES);
+                if ($normalized === null) {
+                    throw new \DomainException(
+                        "Invalid digitised value '{$document->digitised}'. Allowed: "
+                        . implode(', ', self::DIGITISED_VALUES)
+                    );
+                }
+                $document->digitised = $normalized;
             }
 
-            if ($document->current_box_type !== null
-                && ! in_array($document->current_box_type, self::CURRENT_BOX_TYPES, true)
-            ) {
-                throw new \DomainException(
-                    "Invalid current_box_type '{$document->current_box_type}'. Allowed: "
-                    . implode(', ', self::CURRENT_BOX_TYPES)
-                );
+            if ($document->current_box_type !== null) {
+                $normalized = self::canonicalEnumValue($document->current_box_type, self::CURRENT_BOX_TYPES);
+                if ($normalized === null) {
+                    throw new \DomainException(
+                        "Invalid current_box_type '{$document->current_box_type}'. Allowed: "
+                        . implode(', ', self::CURRENT_BOX_TYPES)
+                    );
+                }
+                $document->current_box_type = $normalized;
             }
         });
 

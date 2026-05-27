@@ -107,6 +107,9 @@ final class TemplateGenerator
         'box' => [
             // No legacy sample; synthesised from BoxImporter columns + Box::TYPES.
         ],
+        'location' => [
+            // No legacy sample; synthesised from LocationImporter columns + Location::TYPES.
+        ],
         'document' => [
             'source' => 'Batch_List_Sample.xlsx',
             'sheet' => 0,
@@ -174,8 +177,11 @@ final class TemplateGenerator
             ),
             'batch' => self::synthesiseBatchHeaders(),
             'box' => self::synthesiseBoxHeaders(),
-            default => throw new \InvalidArgumentException("Unknown template entity: {$entity}"),
+            'location' => self::synthesiseLocationHeaders(),
         };
+        // Note: the `array_key_exists` guard above narrows $entity to the
+        // exact key set covered by the match arms, so PHPStan correctly
+        // flags any `default` here as unreachable.
     }
 
     /**
@@ -288,6 +294,28 @@ final class TemplateGenerator
             'disinfestation_date',
             'is_legacy',
             'notes',
+        ];
+    }
+
+    /**
+     * Location template — driven by LocationImporter columns + Location::TYPES.
+     * Operators describe their tree top-down: roots first (parent_name blank),
+     * then children. Re-runs are safe; missing-parent rows fail but the next
+     * run picks them up once the parent exists.
+     *
+     * @return array<int, string>
+     */
+    private static function synthesiseLocationHeaders(): array
+    {
+        return [
+            'name',
+            'type',             // repository | room | work_area | shelf | museum | showcase | conservation | temp_holding | other
+            'parent_name',      // blank for root rows
+            'repository_code',  // e.g. NRA
+            'code',
+            'notes',
+            'sort_order',
+            'is_active',
         ];
     }
 
