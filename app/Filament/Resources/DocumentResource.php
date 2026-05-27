@@ -963,9 +963,22 @@ class DocumentResource extends Resource
             ->conditionallyWith([
                 'series',
                 'batch',
+                // `currentBox.batch` lets the "Box" column render
+                // "Batch X / Box Y" without firing a second query per row.
                 'currentBox.batch',
                 'repository',
                 'authorities',
+                // RFQ §3.1.9 — the Location column displays
+                // `location.full_path`, an accessor that calls
+                // `breadcrumb()` → `ancestors()` and runs a single
+                // `whereIn` against `locations`. Without eager-loading
+                // the Location itself, each row would also have to load
+                // the relation BEFORE the accessor could walk it.
+                'location',
+                // The Accession column displays `accession.code`; on the
+                // 3,113-row sample where most rows share ~10 accessions
+                // this avoids 25 round-trips per page render.
+                'accession',
             ]);
     }
 
