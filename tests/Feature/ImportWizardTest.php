@@ -88,8 +88,13 @@ test('findMissingRequiredColumns reports columns whose mapping is null', functio
 });
 
 test('IMPORTERS map covers every advertised wizard option', function () {
+    // 'locations' added in PR #85 (LocationImporter) — keep this list in
+    // sync with ImportWizard::IMPORTERS / TEMPLATE_KEYS so a future drop
+    // or rename of an entity surfaces as a hard test failure.
+    $expected = ['series', 'authorities', 'locations', 'batches', 'boxes', 'documents'];
+
     expect(array_keys(ImportWizard::IMPORTERS))
-        ->toEqualCanonicalizing(['series', 'authorities', 'batches', 'boxes', 'documents'])
+        ->toEqualCanonicalizing($expected)
         ->and(array_keys(ImportWizard::TEMPLATE_KEYS))
-        ->toEqualCanonicalizing(['series', 'authorities', 'batches', 'boxes', 'documents']);
+        ->toEqualCanonicalizing($expected);
 });

@@ -836,12 +836,15 @@ test('Audit metadata captures user_id and event', function () {
  |  Wiring on the resource pages
  * ------------------------------------------------------------------------- */
 
-test('DocumentActionGroup exposes 14 single-record header actions and 15 bulk actions', function () {
+test('DocumentActionGroup exposes 15 single-record header actions and 16 bulk actions', function () {
+    // +1 single / +1 bulk after SetMuseumLocationAction was added in
+    // PR #85 (APP2-vi). Bump these counts whenever an action joins the
+    // group so a future regression that DROPS an action surfaces here.
     $single = DocumentActionGroup::singleHeaderActions();
     $bulk = DocumentActionGroup::bulkActions();
 
-    expect($single)->toHaveCount(14);
-    expect($bulk)->toHaveCount(15);
+    expect($single)->toHaveCount(15);
+    expect($bulk)->toHaveCount(16);
 });
 
 test('Every single-record action exposes a Filament Action instance', function () {
