@@ -101,28 +101,28 @@ class DocumentResource extends Resource
         // repeating the resource key constant 40+ times.
         $g = fn (Schemas\Components\Component $c): Schemas\Components\Component => self::gateField($c, self::FIELD_PERMISSIONS_KEY);
 
+        // Layout rule (user mandate, do NOT regress):
+        //   - root schema is single-column (columns(1)) — no Filament-default
+        //     2-col where two Sections end up side-by-side.
+        //   - each Section is a full-width band.
+        //   - inside a Section, atomic inputs (Text/Select/Date/Toggle) may
+        //     sit in columns(2) or columns(3); any non-atomic child
+        //     (Textarea, KeyValue, multi-Select with chips, helperText-heavy
+        //     input, Repeater) must take columnSpanFull() so it never sits
+        //     in a sub-cell of a grid-in-a-grid.
         return $schema
+            ->columns(1)
             ->schema([
                 Section::make('Identification')
+                    ->columnSpanFull()
                     ->columns(3)
                     ->schema([
                         $g(Forms\Components\TextInput::make('identifier')->required()->maxLength(64)),
                         $g(Forms\Components\TextInput::make('catalogue_identifier')->maxLength(191)),
                         $g(Forms\Components\TextInput::make('document_type')->maxLength(100)),
-                        // Series ≈ 4–30 rows but still wired through the
-                        // SearchableSelects helper for label consistency
-                        // ("<code> — <title>") across the whole panel.
                         $g(SearchableSelects::series('series_id')
                             ->label('Series')
                             ->required()),
-                        // NOTE: this Select kept its existing role-aware
-                        // `disabled()` closure (tenant scoping for admins
-                        // who legitimately pick a target Repository). The
-                        // field-level gate adds an ADDITIONAL layer: if
-                        // the role is also denied by the matrix, the gate
-                        // wins (both closures must allow for the input to
-                        // be writable). The visible/hidden side comes
-                        // entirely from the gate.
                         $g(SearchableSelects::repository(
                             'repository_id',
                             fn ($query) => $query->whereIn(
@@ -138,34 +138,25 @@ class DocumentResource extends Resource
                         $g(Forms\Components\TextInput::make('volume_label')->label('Volume label')->maxLength(64)),
                         $g(Forms\Components\TextInput::make('practice')->maxLength(100)),
                         $g(Forms\Components\TextInput::make('dates')->label('Dates (text)')->maxLength(191)
-                            ->helperText('Free-text dates as in POC, e.g. "1607-1629" or "Jun 1997 - Nov 1998"')),
-                        $g(Forms\Components\TextInput::make('deeds')->maxLength(2000)),
+                            ->helperText('Free-text dates as in POC, e.g. "1607-1629" or "Jun 1997 - Nov 1998"')
+                            ->columnSpanFull()),
+                        $g(Forms\Components\TextInput::make('deeds')->maxLength(2000)->columnSpanFull()),
                     ]),
 
                 Section::make('Authorities (Creators)')
+                    ->columnSpanFull()
+                    ->columns(1)
                     ->schema([
-                        // `authorities` is a BelongsToMany relation, not a
-                        // column on documents — it has no matrix entry and
-                        // falls back to the `_default` (allow all editors).
-                        //
-                        // 808 rows in production → server-side search (label:
-                        // "<identifier> — <surname> <given_names> (<dates>)").
-                        $g(SearchableSelects::authoritiesMulti('authorities')),
+                        $g(SearchableSelects::authoritiesMulti('authorities')->columnSpanFull()),
                     ]),
 
                 Section::make('Current location')
-                    ->columns(3)
+                    ->columnSpanFull()
+                    ->columns(2)
                     ->schema([
-                        // Server-side autocompletes (3,000+ documents,
-                        // 600+ boxes, ~30 batches in production). Helpers
-                        // do the boring search/label wiring.
                         $g(SearchableSelects::batch('batch_id', 'batch')),
                         $g(SearchableSelects::box('current_box_id', 'currentBox')),
                         $g(SearchableSelects::accession('accession_id')),
-                        // RFQ §3.1.9 — configurable Location hierarchy.
-                        // Lives next to the legacy `nra_location` / `museum_location` free-text
-                        // columns kept for POC parity; from now on this Select is the source of
-                        // truth and the legacy strings are slated for retirement (see PR body).
                         $g(SearchableSelects::location(
                             'location_id',
                             fn ($query) => $query
@@ -177,61 +168,27 @@ class DocumentResource extends Resource
                             ->helperText('Repository / room / shelf / showcase / temp-holding hierarchy.')),
                         $g(Forms\Components\TextInput::make('current_box_type')->maxLength(50)),
                         $g(Forms\Components\TextInput::make('nra_location')->maxLength(500)
-                            ->helperText('Legacy free-text. New records should use the Location Select above.')),
+                            ->helperText('Legacy free-text. New records should use the Location Select above.')
+                            ->columnSpanFull()),
                         $g(Forms\Components\TextInput::make('museum_location')->maxLength(500)
-                            ->helperText('Legacy free-text. New records should use the Location Select above.')),
-                    ]),
-
-                Section::make('Legacy box history (RAS / In Situ)')
-                    ->collapsed()
-                    ->columns(4)
-                    ->schema([
-                        $g(Forms\Components\TextInput::make('ras_batch_1')->label('RAS Batch 1')->maxLength(50)),
-                        $g(Forms\Components\TextInput::make('ras_box_1')->label('RAS Box 1')->maxLength(50)),
-                        $g(Forms\Components\TextInput::make('ras_1_box_destroyed')->label('RAS 1 Destroyed?')->maxLength(10)),
-                        $g(Forms\Components\TextInput::make('in_situ_box_1')->label('In Situ Box 1')->maxLength(50)),
-                        $g(Forms\Components\TextInput::make('ras_batch_2')->label('RAS Batch 2')->maxLength(50)),
-                        $g(Forms\Components\TextInput::make('ras_box_2')->label('RAS Box 2')->maxLength(50)),
-                        $g(Forms\Components\TextInput::make('ras_2_box_destroyed')->label('RAS 2 Destroyed?')->maxLength(10)),
-                        $g(Forms\Components\TextInput::make('in_situ_box_2')->label('In Situ Box 2')->maxLength(50)),
-                        $g(Forms\Components\TextInput::make('in_situ_box_1_destroyed')->label('In Situ 1 Destroyed?')->maxLength(10)),
-                        $g(Forms\Components\TextInput::make('in_situ_box_2_destroyed')->label('In Situ 2 Destroyed?')->maxLength(10)),
-                        $g(Forms\Components\TextInput::make('in_situ_box_3')->label('In Situ Box 3')->maxLength(50)),
-                        $g(Forms\Components\TextInput::make('in_situ_box_3_destroyed')->label('In Situ 3 Destroyed?')->maxLength(10)),
-                    ]),
-
-                Section::make('Legacy barcodes & status')
-                    ->collapsed()
-                    ->columns(4)
-                    ->schema([
-                        $g(Forms\Components\TextInput::make('barcode_in')->label('Barcode (IN)')->maxLength(50)),
-                        $g(Forms\Components\TextInput::make('barcode_ras_1')->label('Barcode RAS 1')->maxLength(50)),
-                        $g(Forms\Components\TextInput::make('status_1')->label('Status 1')->maxLength(20)),
-                        $g(Forms\Components\TextInput::make('barcode_ras_2')->label('Barcode RAS 2')->maxLength(50)),
-                        $g(Forms\Components\TextInput::make('status_2')->label('Status 2')->maxLength(20)),
-                        $g(Forms\Components\TextInput::make('barcode_ras_3')->label('Barcode RAS 3')->maxLength(50)),
-                        $g(Forms\Components\TextInput::make('status_3')->label('Status 3')->maxLength(20)),
-                        $g(Forms\Components\TextInput::make('barcode_ras_4')->label('Barcode RAS 4')->maxLength(50)),
-                        $g(Forms\Components\TextInput::make('status_4')->label('Status 4')->maxLength(20)),
-                        $g(Forms\Components\TextInput::make('barcode_in_2')->label('Barcode (IN) #2')->maxLength(50)),
-                        $g(Forms\Components\TextInput::make('barcode_ras_2_alt')->label('Barcode RAS 2 alt')->maxLength(50)),
-                        $g(Forms\Components\TextInput::make('status_1_alt')->label('Status 1 alt')->maxLength(20)),
-                        $g(Forms\Components\TextInput::make('barcode_ras_2_alt2')->label('Barcode RAS 2 alt 2')->maxLength(50)),
-                        $g(Forms\Components\TextInput::make('status_2_alt')->label('Status 2 alt')->maxLength(20)),
+                            ->helperText('Legacy free-text. New records should use the Location Select above.')
+                            ->columnSpanFull()),
                     ]),
 
                 Section::make('Seal & disinfestation')
-                    ->columns(4)
+                    ->columnSpanFull()
+                    ->columns(3)
                     ->schema([
                         $g(Forms\Components\TextInput::make('seal_number')->maxLength(50)),
-                        $g(Forms\Components\DatePicker::make('disinfestation_date_1')->label('Disinfestation 1')),
-                        $g(Forms\Components\DatePicker::make('disinfestation_date_2')->label('Disinfestation 2')),
-                        $g(Forms\Components\DatePicker::make('disinfestation_date_3')->label('Disinfestation 3')),
                         $g(Forms\Components\DatePicker::make('disinfestation_date')->label('Disinfestation (current)')),
+                        $g(Forms\Components\DatePicker::make('disinfestation_date_1')->label('Legacy disinfestation #1')),
+                        $g(Forms\Components\DatePicker::make('disinfestation_date_2')->label('Legacy disinfestation #2')),
+                        $g(Forms\Components\DatePicker::make('disinfestation_date_3')->label('Legacy disinfestation #3')),
                     ]),
 
                 Section::make('Dates (precise)')
-                    ->columns(4)
+                    ->columnSpanFull()
+                    ->columns(2)
                     ->schema([
                         $g(Forms\Components\TextInput::make('dates_year_start')->label('Year start')->numeric()),
                         $g(Forms\Components\TextInput::make('dates_year_end')->label('Year end')->numeric()),
@@ -240,20 +197,63 @@ class DocumentResource extends Resource
                     ]),
 
                 Section::make('Cataloguing extras')
+                    ->columnSpanFull()
                     ->collapsed()
-                    ->columns(3)
+                    ->columns(2)
                     ->schema([
                         $g(Forms\Components\TextInput::make('colour_code')->maxLength(32)),
                         $g(Forms\Components\TextInput::make('digitised')->maxLength(100)),
-                        $g(Forms\Components\Toggle::make('torre')),
+                        $g(Forms\Components\Toggle::make('torre')->columnSpanFull()),
                         $g(Forms\Components\TextInput::make('accession_code_legacy')->label('Accession (legacy text)')->maxLength(191)),
                         $g(Forms\Components\TextInput::make('object_reference_number')->maxLength(500)),
-                        $g(Forms\Components\TextInput::make('tracking')->maxLength(500)),
-                        $g(Forms\Components\TextInput::make('museum_reference')->maxLength(500)),
+                        $g(Forms\Components\TextInput::make('tracking')->maxLength(500)->columnSpanFull()),
+                        $g(Forms\Components\TextInput::make('museum_reference')->maxLength(500)->columnSpanFull()),
+                    ]),
+
+                Section::make('Legacy box history (RAS / In Situ)')
+                    ->columnSpanFull()
+                    ->collapsed()
+                    ->columns(2)
+                    ->schema([
+                        $g(Forms\Components\TextInput::make('ras_batch_1')->label('RAS Batch 1')->maxLength(50)),
+                        $g(Forms\Components\TextInput::make('ras_box_1')->label('RAS Box 1')->maxLength(50)),
+                        $g(Forms\Components\TextInput::make('ras_1_box_destroyed')->label('RAS 1 Destroyed?')->maxLength(10)),
+                        $g(Forms\Components\TextInput::make('in_situ_box_1')->label('In Situ Box 1')->maxLength(50)),
+                        $g(Forms\Components\TextInput::make('in_situ_box_1_destroyed')->label('In Situ 1 Destroyed?')->maxLength(10)),
+                        $g(Forms\Components\TextInput::make('ras_batch_2')->label('RAS Batch 2')->maxLength(50)),
+                        $g(Forms\Components\TextInput::make('ras_box_2')->label('RAS Box 2')->maxLength(50)),
+                        $g(Forms\Components\TextInput::make('ras_2_box_destroyed')->label('RAS 2 Destroyed?')->maxLength(10)),
+                        $g(Forms\Components\TextInput::make('in_situ_box_2')->label('In Situ Box 2')->maxLength(50)),
+                        $g(Forms\Components\TextInput::make('in_situ_box_2_destroyed')->label('In Situ 2 Destroyed?')->maxLength(10)),
+                        $g(Forms\Components\TextInput::make('in_situ_box_3')->label('In Situ Box 3')->maxLength(50)),
+                        $g(Forms\Components\TextInput::make('in_situ_box_3_destroyed')->label('In Situ 3 Destroyed?')->maxLength(10)),
+                    ]),
+
+                Section::make('Legacy barcodes & status')
+                    ->columnSpanFull()
+                    ->collapsed()
+                    ->columns(2)
+                    ->schema([
+                        $g(Forms\Components\TextInput::make('barcode_in')->label('Barcode (IN)')->maxLength(50)),
+                        $g(Forms\Components\TextInput::make('barcode_in_2')->label('Barcode (IN) #2')->maxLength(50)),
+                        $g(Forms\Components\TextInput::make('barcode_ras_1')->label('Barcode RAS 1')->maxLength(50)),
+                        $g(Forms\Components\TextInput::make('status_1')->label('Status 1')->maxLength(20)),
+                        $g(Forms\Components\TextInput::make('barcode_ras_2')->label('Barcode RAS 2')->maxLength(50)),
+                        $g(Forms\Components\TextInput::make('status_2')->label('Status 2')->maxLength(20)),
+                        $g(Forms\Components\TextInput::make('barcode_ras_3')->label('Barcode RAS 3')->maxLength(50)),
+                        $g(Forms\Components\TextInput::make('status_3')->label('Status 3')->maxLength(20)),
+                        $g(Forms\Components\TextInput::make('barcode_ras_4')->label('Barcode RAS 4')->maxLength(50)),
+                        $g(Forms\Components\TextInput::make('status_4')->label('Status 4')->maxLength(20)),
+                        $g(Forms\Components\TextInput::make('barcode_ras_2_alt')->label('Barcode RAS 2 alt')->maxLength(50)),
+                        $g(Forms\Components\TextInput::make('status_1_alt')->label('Status 1 alt')->maxLength(20)),
+                        $g(Forms\Components\TextInput::make('barcode_ras_2_alt2')->label('Barcode RAS 2 alt 2')->maxLength(50)),
+                        $g(Forms\Components\TextInput::make('status_2_alt')->label('Status 2 alt')->maxLength(20)),
                     ]),
 
                 Section::make('Notes & custom fields')
+                    ->columnSpanFull()
                     ->collapsed()
+                    ->columns(1)
                     ->schema([
                         $g(Forms\Components\Textarea::make('notes')->columnSpanFull()->rows(3)),
                         $g(Forms\Components\KeyValue::make('extra')->label('Extra (schemaless)')->columnSpanFull()),
@@ -281,22 +281,18 @@ class DocumentResource extends Resource
      */
     public static function infolist(Schema $schema): Schema
     {
+        // Layout rule (user mandate, hard enforced):
+        //   ZERO multi-column anywhere. Every Section is columns(1); every
+        //   entry (TextEntry / IconEntry / RepeatableEntry) is full-width.
+        //   No grid-in-a-grid, no side-by-side fields, no 5-col hero, no
+        //   columns([...]) array. Every value sits under its label, one
+        //   row at a time, top-to-bottom — operator scans straight down.
         return $schema
+            ->columns(1)
             ->components([
-                /* ====================================================
-                 |  Hero card (full width, top of page)
-                 |  5-col grid: identifier · author · current box ·
-                 |  status · disinfestation
-                 * ==================================================*/
-                Section::make()
-                    ->columns([
-                        'default' => 1,
-                        'md' => 2,
-                        'lg' => 5,
-                    ])
-                    ->extraAttributes([
-                        'class' => 'fi-section-hero rounded-xl bg-primary-50 dark:bg-primary-900/20',
-                    ])
+                Section::make('Summary')
+                    ->columns(1)
+                    ->extraAttributes(['class' => 'fi-section-hero'])
                     ->schema([
                         TextEntry::make('identifier')
                             ->label('Identifier')
@@ -305,7 +301,8 @@ class DocumentResource extends Resource
                             ->size(TextSize::Large)
                             ->weight(FontWeight::Bold)
                             ->copyable()
-                            ->placeholder('—'),
+                            ->placeholder('—')
+                            ->columnSpanFull(),
 
                         TextEntry::make('primary_author_display')
                             ->label('Primary author')
@@ -332,7 +329,8 @@ class DocumentResource extends Resource
                                     : ($name !== '' ? $name : $ident);
                             })
                             ->placeholder('No author attached')
-                            ->weight(FontWeight::SemiBold),
+                            ->weight(FontWeight::SemiBold)
+                            ->columnSpanFull(),
 
                         TextEntry::make('current_box_display')
                             ->label('Current box')
@@ -348,7 +346,8 @@ class DocumentResource extends Resource
                                     ? "Batch {$batchNo} / Box {$boxNo}"
                                     : (string) ($boxNo ?? '—');
                             })
-                            ->placeholder('Unboxed'),
+                            ->placeholder('Unboxed')
+                            ->columnSpanFull(),
 
                         TextEntry::make('barcode_status')
                             ->label('Status')
@@ -359,27 +358,23 @@ class DocumentResource extends Resource
                                 'PERM_OUT' => 'danger',
                                 default => 'gray',
                             })
-                            ->placeholder('—'),
+                            ->placeholder('—')
+                            ->columnSpanFull(),
 
                         TextEntry::make('disinfestation_date')
                             ->label('Disinfestation')
                             ->date()
                             ->badge()
                             ->color(fn (?string $state): string => $state ? 'success' : 'warning')
-                            ->placeholder('Pending'),
+                            ->placeholder('Pending')
+                            ->columnSpanFull(),
                     ]),
 
-                /* ====================================================
-                 |  Document
-                 * ==================================================*/
                 Section::make('Document')
-                    ->columns(3)
+                    ->columns(1)
                     ->schema([
-                        TextEntry::make('catalogue_identifier')
-                            ->label('Catalogue ID')
-                            ->copyable()
-                            ->placeholder('—'),
-                        TextEntry::make('document_type')->placeholder('—'),
+                        TextEntry::make('catalogue_identifier')->label('Catalogue ID')->copyable()->placeholder('—')->columnSpanFull(),
+                        TextEntry::make('document_type')->placeholder('—')->columnSpanFull(),
                         TextEntry::make('series.code')
                             ->label('Series')
                             ->badge()
@@ -387,16 +382,11 @@ class DocumentResource extends Resource
                                 ? route('filament.admin.resources.series.view', ['record' => $record->series_id])
                                 : null)
                             ->openUrlInNewTab(false)
-                            ->placeholder('—'),
-                        TextEntry::make('practice')
                             ->placeholder('—')
-                            ->columnSpan(1),
-                        TextEntry::make('volume_label')
-                            ->label('Volume')
-                            ->placeholder('—'),
-                        TextEntry::make('dates')
-                            ->label('Dates (free text)')
-                            ->placeholder('—'),
+                            ->columnSpanFull(),
+                        TextEntry::make('practice')->placeholder('—')->columnSpanFull(),
+                        TextEntry::make('volume_label')->label('Volume')->placeholder('—')->columnSpanFull(),
+                        TextEntry::make('dates')->label('Dates (free text)')->placeholder('—')->columnSpanFull(),
                         TextEntry::make('year_range_display')
                             ->label('Year range')
                             ->state(function (?Document $record): string {
@@ -413,49 +403,44 @@ class DocumentResource extends Resource
                                 }
 
                                 return '—';
-                            }),
-                        TextEntry::make('dates_start')
-                            ->label('Date start')
-                            ->date()
-                            ->placeholder('—'),
-                        TextEntry::make('dates_end')
-                            ->label('Date end')
-                            ->date()
-                            ->placeholder('—'),
-                        TextEntry::make('deeds')
-                            ->placeholder('—')
+                            })
                             ->columnSpanFull(),
+                        TextEntry::make('dates_start')->label('Date start')->date()->placeholder('—')->columnSpanFull(),
+                        TextEntry::make('dates_end')->label('Date end')->date()->placeholder('—')->columnSpanFull(),
+                        TextEntry::make('deeds')->placeholder('—')->columnSpanFull(),
                     ]),
 
-                /* ====================================================
-                 |  Authorities (Creators) — RepeatableEntry
-                 * ==================================================*/
                 Section::make('Authorities (Creators)')
+                    ->columns(1)
                     ->description(fn (?Document $record): ?string => ($record && $record->authorities->isEmpty())
                         ? 'No authorities assigned to this document.'
                         : null)
                     ->schema([
                         RepeatableEntry::make('authorities')
                             ->hiddenLabel()
-                            ->columns(2)
-                            ->grid(2)
+                            ->columns(1)
+                            ->columnSpanFull()
                             ->schema([
                                 TextEntry::make('identifier')
                                     ->badge()
                                     ->color('primary')
                                     ->weight(FontWeight::Bold)
-                                    ->placeholder('—'),
+                                    ->placeholder('—')
+                                    ->columnSpanFull(),
                                 IconEntry::make('pivot.is_primary')
                                     ->label('Primary')
                                     ->boolean()
                                     ->trueColor('success')
-                                    ->falseColor('gray'),
+                                    ->falseColor('gray')
+                                    ->columnSpanFull(),
                                 TextEntry::make('surname')
                                     ->weight(FontWeight::SemiBold)
-                                    ->placeholder('—'),
+                                    ->placeholder('—')
+                                    ->columnSpanFull(),
                                 TextEntry::make('given_names')
                                     ->label('Given names')
-                                    ->placeholder('—'),
+                                    ->placeholder('—')
+                                    ->columnSpanFull(),
                                 TextEntry::make('practice_dates_display')
                                     ->label('Practice dates')
                                     ->state(function (Model $record): string {
@@ -477,11 +462,8 @@ class DocumentResource extends Resource
                             ]),
                     ]),
 
-                /* ====================================================
-                 |  Storage location
-                 * ==================================================*/
                 Section::make('Storage location')
-                    ->columns(3)
+                    ->columns(1)
                     ->schema([
                         TextEntry::make('batch.batch_number')
                             ->label('Batch')
@@ -490,7 +472,8 @@ class DocumentResource extends Resource
                             ->url(fn (?Document $record): ?string => $record?->batch_id
                                 ? route('filament.admin.resources.batches.view', ['record' => $record->batch_id])
                                 : null)
-                            ->placeholder('—'),
+                            ->placeholder('—')
+                            ->columnSpanFull(),
                         TextEntry::make('currentBox.box_number')
                             ->label('Current box')
                             ->badge()
@@ -498,58 +481,44 @@ class DocumentResource extends Resource
                             ->url(fn (?Document $record): ?string => $record?->current_box_id
                                 ? route('filament.admin.resources.boxes.view', ['record' => $record->current_box_id])
                                 : null)
-                            ->placeholder('—'),
-                        TextEntry::make('current_box_type')
-                            ->label('Box type')
-                            ->badge()
-                            ->placeholder('—'),
-                        TextEntry::make('repository.code')
-                            ->label('Repository')
-                            ->badge()
-                            ->color('info')
-                            ->placeholder('—'),
-                        TextEntry::make('location.full_path')
-                            ->label('Location')
                             ->placeholder('—')
-                            ->columnSpan(2),
+                            ->columnSpanFull(),
+                        TextEntry::make('current_box_type')->label('Box type')->badge()->placeholder('—')->columnSpanFull(),
+                        TextEntry::make('repository.code')->label('Repository')->badge()->color('info')->placeholder('—')->columnSpanFull(),
+                        TextEntry::make('location.full_path')->label('Location')->placeholder('—')->columnSpanFull(),
                         TextEntry::make('nra_location')
                             ->label('NRA location (legacy)')
                             ->placeholder('—')
-                            ->columnSpan(2)
+                            ->columnSpanFull()
                             ->visible(fn (?Document $record): bool => filled($record?->nra_location)),
                         TextEntry::make('museum_location')
                             ->label('Museum location (legacy)')
                             ->placeholder('—')
-                            ->columnSpan(2)
+                            ->columnSpanFull()
                             ->visible(fn (?Document $record): bool => filled($record?->museum_location)),
-                        TextEntry::make('accession.code')
-                            ->label('Accession')
-                            ->badge()
-                            ->color('gray')
-                            ->placeholder('—'),
+                        TextEntry::make('accession.code')->label('Accession')->badge()->color('gray')->placeholder('—')->columnSpanFull(),
                     ]),
 
-                /* ====================================================
-                 |  Disinfestation timeline
-                 * ==================================================*/
                 Section::make('Disinfestation timeline')
+                    ->columns(1)
                     ->description(fn (?Document $record): ?string => ($record && $record->disinfestationTimeline()->isEmpty())
                         ? 'Document has never been disinfested — pending.'
                         : null)
-                    ->columns(2)
                     ->schema([
                         TextEntry::make('disinfestation_date')
                             ->label('Canonical (current)')
                             ->date()
                             ->badge()
                             ->color(fn (?string $state): string => $state ? 'success' : 'warning')
-                            ->placeholder('Pending'),
+                            ->placeholder('Pending')
+                            ->columnSpanFull(),
                         TextEntry::make('seal_number')
                             ->label('Current seal #')
                             ->badge()
                             ->color('primary')
                             ->copyable()
-                            ->placeholder('—'),
+                            ->placeholder('—')
+                            ->columnSpanFull(),
                         RepeatableEntry::make('disinfestation_timeline_rows')
                             ->label('History')
                             ->state(fn (?Document $record): array => $record
@@ -560,117 +529,78 @@ class DocumentResource extends Resource
                                     ])
                                     ->all()
                                 : [])
+                            ->columns(1)
                             ->columnSpanFull()
-                            ->columns(2)
-                            ->grid(2)
                             ->schema([
-                                TextEntry::make('date')
-                                    ->label('Date')
-                                    ->badge()
-                                    ->color('success'),
-                                TextEntry::make('label')
-                                    ->label('Round'),
+                                TextEntry::make('date')->label('Date')->badge()->color('success')->columnSpanFull(),
+                                TextEntry::make('label')->label('Round')->columnSpanFull(),
                             ])
                             ->visible(fn (?Document $record): bool => $record !== null
                                 && $record->disinfestationTimeline()->isNotEmpty()),
                     ]),
 
-                /* ====================================================
-                 |  Identifier / seal — compact 4-col grid
-                 * ==================================================*/
                 Section::make('Identifiers')
-                    ->columns(4)
+                    ->columns(1)
                     ->schema([
-                        TextEntry::make('identifier')
-                            ->badge()
-                            ->color('primary')
-                            ->copyable()
-                            ->placeholder('—'),
-                        TextEntry::make('catalogue_identifier')
-                            ->label('Catalogue ID')
-                            ->copyable()
-                            ->placeholder('—'),
-                        TextEntry::make('barcode_in')
-                            ->label('Barcode (IN)')
-                            ->copyable()
-                            ->placeholder('—'),
-                        TextEntry::make('seal_number')
-                            ->label('Seal #')
-                            ->copyable()
-                            ->placeholder('—'),
+                        TextEntry::make('identifier')->badge()->color('primary')->copyable()->placeholder('—')->columnSpanFull(),
+                        TextEntry::make('catalogue_identifier')->label('Catalogue ID')->copyable()->placeholder('—')->columnSpanFull(),
+                        TextEntry::make('barcode_in')->label('Barcode (IN)')->copyable()->placeholder('—')->columnSpanFull(),
+                        TextEntry::make('seal_number')->label('Seal #')->copyable()->placeholder('—')->columnSpanFull(),
                     ]),
 
-                /* ====================================================
-                 |  Legacy box history (collapsed)
-                 * ==================================================*/
                 Section::make('Legacy box history (RAS / In Situ)')
+                    ->columns(1)
                     ->collapsed()
-                    ->columns(2)
                     ->schema([
-                        TextEntry::make('ras_batch_1')->label('RAS Batch 1')->placeholder('—'),
-                        TextEntry::make('ras_box_1')->label('RAS Box 1')->placeholder('—'),
-                        TextEntry::make('ras_batch_2')->label('RAS Batch 2')->placeholder('—'),
-                        TextEntry::make('ras_box_2')->label('RAS Box 2')->placeholder('—'),
-                        TextEntry::make('in_situ_box_1')->label('In Situ Box 1')->placeholder('—'),
-                        TextEntry::make('in_situ_box_2')->label('In Situ Box 2')->placeholder('—'),
-                        TextEntry::make('in_situ_box_3')->label('In Situ Box 3')->placeholder('—'),
-                        TextEntry::make('ras_1_box_destroyed')->label('RAS 1 destroyed?')->placeholder('—'),
-                        TextEntry::make('ras_2_box_destroyed')->label('RAS 2 destroyed?')->placeholder('—'),
-                        TextEntry::make('in_situ_box_1_destroyed')->label('In Situ 1 destroyed?')->placeholder('—'),
-                        TextEntry::make('in_situ_box_2_destroyed')->label('In Situ 2 destroyed?')->placeholder('—'),
-                        TextEntry::make('in_situ_box_3_destroyed')->label('In Situ 3 destroyed?')->placeholder('—'),
+                        TextEntry::make('ras_batch_1')->label('RAS Batch 1')->placeholder('—')->columnSpanFull(),
+                        TextEntry::make('ras_box_1')->label('RAS Box 1')->placeholder('—')->columnSpanFull(),
+                        TextEntry::make('ras_1_box_destroyed')->label('RAS 1 destroyed?')->placeholder('—')->columnSpanFull(),
+                        TextEntry::make('ras_batch_2')->label('RAS Batch 2')->placeholder('—')->columnSpanFull(),
+                        TextEntry::make('ras_box_2')->label('RAS Box 2')->placeholder('—')->columnSpanFull(),
+                        TextEntry::make('ras_2_box_destroyed')->label('RAS 2 destroyed?')->placeholder('—')->columnSpanFull(),
+                        TextEntry::make('in_situ_box_1')->label('In Situ Box 1')->placeholder('—')->columnSpanFull(),
+                        TextEntry::make('in_situ_box_1_destroyed')->label('In Situ 1 destroyed?')->placeholder('—')->columnSpanFull(),
+                        TextEntry::make('in_situ_box_2')->label('In Situ Box 2')->placeholder('—')->columnSpanFull(),
+                        TextEntry::make('in_situ_box_2_destroyed')->label('In Situ 2 destroyed?')->placeholder('—')->columnSpanFull(),
+                        TextEntry::make('in_situ_box_3')->label('In Situ Box 3')->placeholder('—')->columnSpanFull(),
+                        TextEntry::make('in_situ_box_3_destroyed')->label('In Situ 3 destroyed?')->placeholder('—')->columnSpanFull(),
                     ]),
 
-                /* ====================================================
-                 |  Legacy barcodes & status (collapsed)
-                 * ==================================================*/
                 Section::make('Legacy barcodes & status')
+                    ->columns(1)
                     ->collapsed()
-                    ->columns(2)
                     ->schema([
-                        TextEntry::make('barcode_in')->label('Barcode (IN)')->placeholder('—'),
-                        TextEntry::make('barcode_ras_1')->label('Barcode RAS 1')->placeholder('—'),
-                        TextEntry::make('status_1')->label('Status 1')->placeholder('—'),
-                        TextEntry::make('barcode_ras_2')->label('Barcode RAS 2')->placeholder('—'),
-                        TextEntry::make('status_2')->label('Status 2')->placeholder('—'),
-                        TextEntry::make('barcode_ras_3')->label('Barcode RAS 3')->placeholder('—'),
-                        TextEntry::make('status_3')->label('Status 3')->placeholder('—'),
-                        TextEntry::make('barcode_ras_4')->label('Barcode RAS 4')->placeholder('—'),
-                        TextEntry::make('status_4')->label('Status 4')->placeholder('—'),
-                        TextEntry::make('barcode_in_2')->label('Barcode (IN) #2')->placeholder('—'),
-                        TextEntry::make('barcode_ras_2_alt')->label('Barcode RAS 2 alt')->placeholder('—'),
-                        TextEntry::make('status_1_alt')->label('Status 1 alt')->placeholder('—'),
-                        TextEntry::make('barcode_ras_2_alt2')->label('Barcode RAS 2 alt 2')->placeholder('—'),
-                        TextEntry::make('status_2_alt')->label('Status 2 alt')->placeholder('—'),
+                        TextEntry::make('barcode_in')->label('Barcode (IN)')->placeholder('—')->columnSpanFull(),
+                        TextEntry::make('barcode_in_2')->label('Barcode (IN) #2')->placeholder('—')->columnSpanFull(),
+                        TextEntry::make('barcode_ras_1')->label('Barcode RAS 1')->placeholder('—')->columnSpanFull(),
+                        TextEntry::make('status_1')->label('Status 1')->placeholder('—')->columnSpanFull(),
+                        TextEntry::make('barcode_ras_2')->label('Barcode RAS 2')->placeholder('—')->columnSpanFull(),
+                        TextEntry::make('status_2')->label('Status 2')->placeholder('—')->columnSpanFull(),
+                        TextEntry::make('barcode_ras_3')->label('Barcode RAS 3')->placeholder('—')->columnSpanFull(),
+                        TextEntry::make('status_3')->label('Status 3')->placeholder('—')->columnSpanFull(),
+                        TextEntry::make('barcode_ras_4')->label('Barcode RAS 4')->placeholder('—')->columnSpanFull(),
+                        TextEntry::make('status_4')->label('Status 4')->placeholder('—')->columnSpanFull(),
+                        TextEntry::make('barcode_ras_2_alt')->label('Barcode RAS 2 alt')->placeholder('—')->columnSpanFull(),
+                        TextEntry::make('status_1_alt')->label('Status 1 alt')->placeholder('—')->columnSpanFull(),
+                        TextEntry::make('barcode_ras_2_alt2')->label('Barcode RAS 2 alt 2')->placeholder('—')->columnSpanFull(),
+                        TextEntry::make('status_2_alt')->label('Status 2 alt')->placeholder('—')->columnSpanFull(),
                     ]),
 
-                /* ====================================================
-                 |  Cataloguing extras (collapsed)
-                 * ==================================================*/
                 Section::make('Cataloguing extras')
+                    ->columns(1)
                     ->collapsed()
-                    ->columns(3)
                     ->schema([
-                        TextEntry::make('colour_code')->label('Colour code')->placeholder('—'),
-                        TextEntry::make('digitised')->placeholder('—'),
-                        IconEntry::make('torre')->boolean(),
-                        TextEntry::make('accession_code_legacy')
-                            ->label('Accession (legacy)')
-                            ->placeholder('—'),
-                        TextEntry::make('object_reference_number')
-                            ->label('Object reference #')
-                            ->placeholder('—'),
-                        TextEntry::make('tracking')->placeholder('—'),
-                        TextEntry::make('museum_reference')
-                            ->label('Museum reference')
-                            ->placeholder('—')
-                            ->columnSpanFull(),
+                        TextEntry::make('colour_code')->label('Colour code')->placeholder('—')->columnSpanFull(),
+                        TextEntry::make('digitised')->placeholder('—')->columnSpanFull(),
+                        IconEntry::make('torre')->boolean()->columnSpanFull(),
+                        TextEntry::make('accession_code_legacy')->label('Accession (legacy)')->placeholder('—')->columnSpanFull(),
+                        TextEntry::make('object_reference_number')->label('Object reference #')->placeholder('—')->columnSpanFull(),
+                        TextEntry::make('tracking')->placeholder('—')->columnSpanFull(),
+                        TextEntry::make('museum_reference')->label('Museum reference')->placeholder('—')->columnSpanFull(),
                     ]),
 
-                /* ====================================================
-                 |  Notes (collapsed)
-                 * ==================================================*/
                 Section::make('Notes')
+                    ->columns(1)
                     ->collapsed()
                     ->schema([
                         TextEntry::make('notes')
@@ -680,16 +610,13 @@ class DocumentResource extends Resource
                             ->columnSpanFull(),
                     ]),
 
-                /* ====================================================
-                 |  Audit info (collapsed, super_admin only)
-                 * ==================================================*/
                 Section::make('Audit info')
+                    ->columns(1)
                     ->collapsed()
-                    ->columns(3)
                     ->schema([
-                        TextEntry::make('created_at')->dateTime()->label('Created'),
-                        TextEntry::make('updated_at')->dateTime()->label('Updated'),
-                        TextEntry::make('deleted_at')->dateTime()->label('Trashed')->placeholder('—'),
+                        TextEntry::make('created_at')->dateTime()->label('Created')->columnSpanFull(),
+                        TextEntry::make('updated_at')->dateTime()->label('Updated')->columnSpanFull(),
+                        TextEntry::make('deleted_at')->dateTime()->label('Trashed')->placeholder('—')->columnSpanFull(),
                     ])
                     ->visible(fn (): bool => (bool) auth()->user()?->hasRole('super_admin')),
             ]);
