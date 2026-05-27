@@ -2,6 +2,7 @@
 
 namespace App\Filament\Resources;
 
+use App\Filament\Actions\Boxes\DestroyBoxAction;
 use App\Filament\Concerns\AppliesFieldPermissions;
 use App\Filament\Resources\BoxResource\Pages;
 use App\Filament\Support\SearchableSelects;
@@ -19,6 +20,7 @@ use Filament\Schemas\Components\Section;
 use Filament\Schemas\Components\Utilities\Get;
 use Filament\Schemas\Schema;
 use Filament\Tables;
+use Filament\Tables\Filters\TernaryFilter;
 use Filament\Tables\Table;
 
 class BoxResource extends Resource
@@ -318,6 +320,32 @@ class BoxResource extends Resource
                             ->columnSpanFull(),
                     ]),
 
+                // RFQ App.2 §vii — "Box destroyed" provenance block.
+                // Only rendered after the box has been physically destroyed:
+                // before that point there's nothing to show, and the action
+                // itself is offered from the page header / row action.
+                Section::make('Destruction')
+                    ->columns($twoCols)
+                    ->visible(fn (?Box $record): bool => (bool) $record?->isDestroyed())
+                    ->schema([
+                        TextEntry::make('destroyed_at')
+                            ->label('Destroyed at')
+                            ->dateTime()
+                            ->badge()
+                            ->color('danger')
+                            ->placeholder('—'),
+                        TextEntry::make('destroyedBy.name')
+                            ->label('Destroyed by')
+                            ->badge()
+                            ->color('gray')
+                            ->placeholder('—'),
+                        TextEntry::make('destroyed_reason')
+                            ->label('Reason / where destroyed')
+                            ->prose()
+                            ->placeholder('No reason recorded.')
+                            ->columnSpanFull(),
+                    ]),
+
                 Section::make('Audit info')
                     ->columns($twoCols)
                     ->collapsed()
@@ -353,6 +381,19 @@ class BoxResource extends Resource
                     ->sortable()),
                 $gc(Tables\Columns\IconColumn::make('is_legacy')
                     ->boolean()),
+                // RFQ App.2 §vii — "destroyed" badge. Shown as a red
+                // chip on the row so operators can spot artefacts that
+                // physically no longer exist without opening the record.
+                // Hidden when null (no badge at all) to keep the table
+                // visually quiet for the common "active" case.
+                Tables\Columns\TextColumn::make('destroyed_at')
+                    ->label('Destroyed')
+                    ->dateTime()
+                    ->badge()
+                    ->color('danger')
+                    ->placeholder('')
+                    ->sortable()
+                    ->toggleable(),
                 Tables\Columns\TextColumn::make('created_at')
                     ->dateTime()
                     ->sortable()
@@ -367,11 +408,27 @@ class BoxResource extends Resource
                     ->toggleable(isToggledHiddenByDefault: true),
             ])
             ->filters([
-                //
+                // RFQ App.2 §vii — destroyed / active filter. Default is
+                // "All" so users see the full archive; flip to "Active"
+                // to restrict to the physical inventory.
+                TernaryFilter::make('destroyed_at')
+                    ->label('Destruction')
+                    ->placeholder('All')
+                    ->trueLabel('Destroyed')
+                    ->falseLabel('Active')
+                    ->queries(
+                        true: fn ($query) => $query->whereNotNull('destroyed_at'),
+                        false: fn ($query) => $query->whereNull('destroyed_at'),
+                        blank: fn ($query) => $query,
+                    ),
             ])
             ->actions([
                 ViewAction::make(),
                 EditAction::make(),
+                // RFQ App.2 §vii — single-record "Mark as destroyed" row
+                // action. The action's own visible() callback hides it on
+                // already-destroyed rows, so we always register it here.
+                DestroyBoxAction::make(),
             ])
             ->bulkActions([
                 BulkActionGroup::make([
