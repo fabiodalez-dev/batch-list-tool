@@ -1,3 +1,14 @@
+# php -- BEGIN cPanel-generated handler, do not edit
+# Force EA-PHP 8.4 for this app: Laravel 13 + Symfony 8.x require >= 8.4.
+# Without this directive cPanel/LiteSpeed defaults to the account's
+# MultiPHP-selected version (currently 8.3 on cpanel19.vhosting-it.com),
+# which would fail Composer's platform check and return HTTP 500 with
+# "Your Composer dependencies require a PHP version >= 8.4.0".
+<IfModule mime_module>
+  AddHandler application/x-httpd-ea-php84 .php .php8 .phtml
+</IfModule>
+# php -- END cPanel-generated handler, do not edit
+
 # cPanel public_html/.htaccess - archivetool.eu
 #
 # Layout after the 2026-05-27 pivot: the Laravel project is checked out

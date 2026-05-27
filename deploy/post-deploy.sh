@@ -31,7 +31,14 @@ set -Eeuo pipefail
 DEPLOY_PATH="${DEPLOY_PATH:-/home/archivet/public_html}"
 # Back-compat: older invocations passed APP_DIR instead of DEPLOY_PATH.
 APP_DIR="${APP_DIR:-${DEPLOY_PATH}}"
-PHP_BIN="${PHP_BIN:-/usr/local/bin/php}"
+# Laravel 13 + Symfony 8.x require PHP >= 8.4. The cPanel default
+# `/usr/local/bin/php` on cpanel19.vhosting-it.com still points at 8.3 —
+# pin EA-PHP 8.4 explicitly. Fall back to the default if 8.4 isn't
+# installed (which would mean we need to upgrade the server first).
+PHP_BIN="${PHP_BIN:-/opt/cpanel/ea-php84/root/usr/bin/php}"
+if [[ ! -x "${PHP_BIN}" ]]; then
+    PHP_BIN="/usr/local/bin/php"
+fi
 COMPOSER_BIN="${COMPOSER_BIN:-/usr/local/bin/composer}"
 GIT_BIN="${GIT_BIN:-/usr/local/cpanel/3rdparty/lib/path-bin/git}"
 BRANCH="${BRANCH:-main}"
@@ -90,7 +97,9 @@ run "${GIT_BIN}" reset --hard "origin/${BRANCH}"
 run "${GIT_BIN}" clean -fd -e storage -e .env -e bootstrap/cache -e .htaccess
 
 # ---- composer install -------------------------------------------------------
-run "${COMPOSER_BIN}" install \
+# Invoke composer via PHP_BIN so the platform-check satisfies the >= 8.4
+# composer.json requirement even when the default shell `php` is 8.3.
+run "${PHP_BIN}" "${COMPOSER_BIN}" install \
     --no-dev \
     --optimize-autoloader \
     --no-interaction \
