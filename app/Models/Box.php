@@ -47,11 +47,14 @@ class Box extends Model implements AuditableContract, Sortable
         'box_type', 'box_number', 'batch_id', 'parent_box_id',
         'barcode', 'barcode_status', 'location_id', 'disinfestation_date',
         'is_legacy', 'notes',
+        // RFQ Appendix 2 §vii — "box destroyed" business state.
+        'destroyed_at', 'destroyed_by_user_id', 'destroyed_reason',
     ];
 
     protected $casts = [
         'disinfestation_date' => 'date',
         'is_legacy' => 'boolean',
+        'destroyed_at' => 'datetime',
     ];
 
     /**
@@ -148,6 +151,114 @@ class Box extends Model implements AuditableContract, Sortable
     public function requiresParent(): bool
     {
         return in_array($this->box_type, ['IN_SITU', 'NRA'], true);
+    }
+
+    /**
+     * RFQ Appendix 2 §vii — author of the destruction event.
+     *
+     * Nullable because the FK is `nullOnDelete()`: if the user record is
+     * eventually purged, the destruction event itself stays on the row but
+     * the author reference is cleared.
+     */
+    public function destroyedBy(): BelongsTo
+    {
+        return $this->belongsTo(User::class, 'destroyed_by_user_id');
+    }
+
+    /**
+     * RFQ Appendix 2 §vii — true once the physical box has been destroyed.
+     *
+     * Distinct from `deleted_at` (SoftDeletes): a destroyed box keeps its
+     * row visible in the archive for provenance, it is only the *physical
+     * artefact* that no longer exists.
+     */
+    public function isDestroyed(): bool
+    {
+        return $this->destroyed_at !== null;
+    }
+
+    /**
+     * Query scope — boxes marked physically destroyed.
+     *
+     * Uses the `boxes_destroyed_at_idx` index from the
+     * 2026_05_27_170000 migration; safe to combine with `notDestroyed()`
+     * elsewhere (the two scopes are mutually exclusive).
+     */
+    public function scopeDestroyed(Builder $q): Builder
+    {
+        return $q->whereNotNull('destroyed_at');
+    }
+
+    /**
+     * Query scope — boxes still physically present (default operational view).
+     */
+    public function scopeNotDestroyed(Builder $q): Builder
+    {
+        return $q->whereNull('destroyed_at');
+    }
+
+    /**
+     * RFQ Appendix 2 §vii — eligibility gate for `markDestroyed()`.
+     *
+     * A box can be destroyed iff (a) it has not already been destroyed and
+     * (b) every document that ever lived in it has a `catalogue_identifier`
+     * (i.e. has been catalogued and removed). Soft-deleted documents still
+     * count — a doc that was trashed without ever being catalogued blocks
+     * the destruction, because the physical artefact may still be in the
+     * box waiting to be re-attached after un-trash.
+     *
+     * Returns a tuple-shaped array so the UI can surface the precise reason
+     * to the operator (single string), instead of a bare boolean.
+     *
+     * @return array{ok: bool, reason: ?string}
+     */
+    public function canBeDestroyed(): array
+    {
+        if ($this->isDestroyed()) {
+            return ['ok' => false, 'reason' => 'Box is already marked destroyed.'];
+        }
+
+        // Count uncatalogued docs INCLUDING soft-deleted rows. The
+        // `documents` relation is defined as a plain HasMany; we re-issue
+        // the query through the Document model so we can opt into withTrashed.
+        $uncatalogued = Document::withTrashed()
+            ->where('current_box_id', $this->getKey())
+            ->whereNull('catalogue_identifier')
+            ->count();
+
+        if ($uncatalogued > 0) {
+            return [
+                'ok' => false,
+                'reason' => "Box still contains {$uncatalogued} uncatalogued document(s); destroy is allowed only once every document has a catalogue identifier (RFQ Appendix 2 §vii).",
+            ];
+        }
+
+        return ['ok' => true, 'reason' => null];
+    }
+
+    /**
+     * RFQ Appendix 2 §vii — record the physical destruction of this box.
+     *
+     * Stamps `destroyed_at = now()`, the acting user and an optional
+     * free-text reason, then persists. The Auditable trait picks up the
+     * column diff and writes an `updated` audit row, which is the audit
+     * trail for the event (no extra manual log needed).
+     *
+     * @throws \DomainException if {@see canBeDestroyed()} returns ok=false.
+     */
+    public function markDestroyed(?string $reason, ?int $userId): void
+    {
+        $check = $this->canBeDestroyed();
+        if (! $check['ok']) {
+            throw new \DomainException(
+                $check['reason'] ?? 'Box cannot be destroyed.'
+            );
+        }
+
+        $this->destroyed_at = now();
+        $this->destroyed_by_user_id = $userId;
+        $this->destroyed_reason = $reason;
+        $this->save();
     }
 
     /**
