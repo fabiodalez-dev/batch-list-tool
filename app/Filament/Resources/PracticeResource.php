@@ -6,8 +6,8 @@ namespace App\Filament\Resources;
 
 use App\Filament\Resources\PracticeResource\Pages;
 use App\Models\Practice;
+use Filament\Actions\BulkAction;
 use Filament\Actions\BulkActionGroup;
-use Filament\Actions\DeleteBulkAction;
 use Filament\Actions\EditAction;
 use Filament\Forms;
 use Filament\Resources\Resource;
@@ -63,7 +63,17 @@ class PracticeResource extends Resource
             ])
             ->recordActions([EditAction::make()])
             ->toolbarActions([
-                BulkActionGroup::make([DeleteBulkAction::make()]),
+                BulkActionGroup::make([
+                    BulkAction::make('deactivate')
+                        ->label('Deactivate selected')
+                        ->icon('heroicon-o-no-symbol')
+                        ->color('warning')
+                        ->requiresConfirmation()
+                        ->modalDescription('Selected vocabulary entries will be hidden from new Document forms but historical references stay readable.')
+                        ->action(fn ($records) => Practice::query()
+                            ->whereKey($records->modelKeys())
+                            ->update(['is_active' => false])),
+                ]),
             ]);
     }
 

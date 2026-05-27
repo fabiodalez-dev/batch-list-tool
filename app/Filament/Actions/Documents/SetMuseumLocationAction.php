@@ -99,12 +99,24 @@ final class SetMuseumLocationAction
         $reference = trim((string) ($data['museum_reference'] ?? ''));
         $notes = trim((string) ($data['notes'] ?? ''));
 
+        // Server-side guard against forms that bypass the Filament required()
+        // (e.g. crafted POSTs). The reference is operator-facing metadata —
+        // an empty string would be invisible in the audit log diff.
+        if ($reference === '') {
+            Notification::make()
+                ->title('Museum reference is required')
+                ->danger()->send();
+
+            return;
+        }
+
         /** @var Location|null $location */
         $location = Location::withoutGlobalScopes()->find($locationId);
         if ($location === null || $location->trashed()
+            || ! (bool) $location->is_active
             || ! in_array($location->type, self::MUSEUM_LOCATION_TYPES, true)) {
             Notification::make()
-                ->title('Cannot send — target is not a museum / showcase location')
+                ->title('Cannot send — target is not an active museum / showcase location')
                 ->danger()->send();
 
             return;

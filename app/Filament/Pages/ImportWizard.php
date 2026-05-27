@@ -42,6 +42,7 @@ use Illuminate\Support\Facades\Bus;
 use Illuminate\Support\Facades\Storage;
 use Illuminate\Support\HtmlString;
 use League\Csv\Reader;
+use Livewire\Attributes\Locked;
 use Livewire\Attributes\Url;
 use Livewire\Features\SupportFileUploads\TemporaryUploadedFile;
 use PhpOffice\PhpSpreadsheet\IOFactory;
@@ -235,9 +236,14 @@ class ImportWizard extends Page
     /**
      * ID of the most recent import dispatched by THIS wizard instance.
      * Powers the "Download failed rows" header action — null until the
-     * first import in the session runs. Not persisted (Livewire keeps it
-     * in component state across re-renders).
+     * first import in the session runs.
+     *
+     * `#[Locked]` is defence-in-depth: downloadFailedRows() already enforces
+     * an ownership check against `Import.user_id`, but locking the property
+     * prevents a tampered Livewire payload from even reaching that check
+     * with a foreign id.
      */
+    #[Locked]
     public ?int $lastImportId = null;
 
     protected string $view = 'filament.pages.import-wizard';
@@ -479,8 +485,20 @@ class ImportWizard extends Page
             // UTF-8 BOM for Excel compatibility on Windows / Maltese accents.
             fwrite($out, "\xEF\xBB\xBF");
 
+            // CSV formula injection defence: cells beginning with =/+/-/@ are
+            // interpreted as formulas by Excel/LibreOffice/Sheets. Prefix
+            // a single quote so the cell stays literal text.
+            $sanitizeForCsv = static function (string $value): string {
+                $trimmed = ltrim($value);
+                if ($trimmed !== '' && in_array($trimmed[0], ['=', '+', '-', '@', "\t", "\r"], true)) {
+                    return "'" . $value;
+                }
+
+                return $value;
+            };
+
             $first = true;
-            $import->failedRows()->chunk(500, function ($rows) use ($out, &$first): void {
+            $import->failedRows()->chunk(500, function ($rows) use ($out, &$first, $sanitizeForCsv): void {
                 foreach ($rows as $row) {
                     $rawData = $row->getAttribute('data');
                     $data = is_array($rawData) ? $rawData : (array) json_decode((string) $rawData, true);
@@ -490,10 +508,12 @@ class ImportWizard extends Page
                     }
                     fputcsv($out, array_merge(
                         array_map(
-                            static fn ($v): string => is_scalar($v) ? (string) $v : (string) json_encode($v),
+                            static fn ($v): string => $sanitizeForCsv(
+                                is_scalar($v) ? (string) $v : (string) json_encode($v),
+                            ),
                             $data,
                         ),
-                        [(string) $row->getAttribute('validation_error')],
+                        [$sanitizeForCsv((string) $row->getAttribute('validation_error'))],
                     ));
                 }
             });

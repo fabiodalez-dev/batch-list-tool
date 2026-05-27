@@ -365,10 +365,13 @@ class Document extends Model implements AuditableContract, HasMedia, Sortable
 
     public function registerMediaCollections(): void
     {
+        // image/tif AND image/tiff: RFC 3302 lists both as valid; some
+        // Windows tools + iOS Files app emit image/tif. Accept both so a
+        // legitimate scan isn't silently rejected at upload time.
         $this->addMediaCollection('attachments')
             ->acceptsMimeTypes([
                 'application/pdf',
-                'image/jpeg', 'image/png', 'image/tiff',
+                'image/jpeg', 'image/png', 'image/tiff', 'image/tif',
             ]);
     }
 

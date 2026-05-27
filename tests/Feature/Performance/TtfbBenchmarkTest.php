@@ -72,7 +72,7 @@ function ttfb_seedDataset(int $documentCount): User
         'barcode_status' => 'IN',
     ]);
 
-    $authority = Authority::create([
+    Authority::create([
         'identifier' => 'R-TTFB-' . substr(uniqid(), -4),
         'surname' => 'TTFB',
         'entity_type' => 'PERSON',

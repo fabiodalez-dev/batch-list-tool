@@ -10,8 +10,8 @@ use Filament\Forms\Components\TextInput;
 use Filament\Notifications\Notification;
 use Filament\Pages\Page;
 use Filament\Schemas\Schema;
+use Illuminate\Contracts\Encryption\DecryptException;
 use Illuminate\Contracts\View\View;
-use Illuminate\Validation\ValidationException;
 use Laravel\Fortify\Actions\ConfirmTwoFactorAuthentication;
 use Laravel\Fortify\Actions\DisableTwoFactorAuthentication;
 use Laravel\Fortify\Actions\EnableTwoFactorAuthentication;
@@ -91,11 +91,9 @@ class TwoFactorEnrolment extends Page
 
     public function confirm(ConfirmTwoFactorAuthentication $confirm): void
     {
-        try {
-            $confirm($this->user(), (string) ($this->data['code'] ?? ''));
-        } catch (ValidationException $e) {
-            throw $e;
-        }
+        // ValidationException already propagates naturally to Livewire +
+        // surfaces under the `data.code` form field — no try/catch needed.
+        $confirm($this->user(), (string) ($this->data['code'] ?? ''));
 
         Notification::make()
             ->title('Two-factor authentication confirmed')
@@ -131,6 +129,10 @@ class TwoFactorEnrolment extends Page
     /**
      * SVG QR code for the otpauth URI. Inline SVG, no external requests
      * — bacon-qr-code renders fully locally per the no-CDN rule.
+     *
+     * Wraps `decrypt()` in a try/catch so a corrupt or APP_KEY-mismatched
+     * `two_factor_secret` does not crash the enrolment page with HTTP 500.
+     * On failure the operator gets a clear nudge to disable + re-enable.
      */
     public function qrSvg(): ?View
     {
@@ -138,9 +140,21 @@ class TwoFactorEnrolment extends Page
             return null;
         }
 
+        try {
+            $secret = decrypt($this->user()->two_factor_secret);
+        } catch (DecryptException) {
+            Notification::make()
+                ->title('Could not decrypt 2FA secret')
+                ->body('Disable 2FA and re-enable it to regenerate the secret. This usually means APP_KEY was rotated after enrolment.')
+                ->danger()
+                ->send();
+
+            return null;
+        }
+
         return view('filament.pages.auth.partials.two-factor-qr', [
             'svg' => $this->user()->twoFactorQrCodeSvg(),
-            'secret' => decrypt($this->user()->two_factor_secret),
+            'secret' => $secret,
         ]);
     }
 
@@ -153,7 +167,15 @@ class TwoFactorEnrolment extends Page
             return [];
         }
 
-        return json_decode(decrypt($this->user()->two_factor_recovery_codes), true) ?? [];
+        try {
+            $decrypted = decrypt($this->user()->two_factor_recovery_codes);
+        } catch (DecryptException) {
+            return [];
+        }
+
+        $decoded = json_decode($decrypted, true);
+
+        return is_array($decoded) ? $decoded : [];
     }
 
     protected function getHeaderActions(): array

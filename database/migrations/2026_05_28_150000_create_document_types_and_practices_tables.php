@@ -51,10 +51,13 @@ return new class extends Migration
 
         $now = now();
 
+        // TRIM at the SQL level: legacy data has trailing spaces + whitespace-
+        // only cells which would otherwise create dupes like 'Register' +
+        // 'Register ' as two separate lookup rows.
         $types = DB::table('documents')
             ->whereNotNull('document_type')
-            ->where('document_type', '!=', '')
-            ->select('document_type')
+            ->selectRaw('TRIM(document_type) AS document_type')
+            ->whereRaw("TRIM(document_type) != ''")
             ->distinct()
             ->pluck('document_type')
             ->all();
@@ -69,8 +72,8 @@ return new class extends Migration
 
         $practices = DB::table('documents')
             ->whereNotNull('practice')
-            ->where('practice', '!=', '')
-            ->select('practice')
+            ->selectRaw('TRIM(practice) AS practice')
+            ->whereRaw("TRIM(practice) != ''")
             ->distinct()
             ->pluck('practice')
             ->all();

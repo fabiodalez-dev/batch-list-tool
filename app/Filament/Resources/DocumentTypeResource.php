@@ -6,8 +6,8 @@ namespace App\Filament\Resources;
 
 use App\Filament\Resources\DocumentTypeResource\Pages;
 use App\Models\DocumentType;
+use Filament\Actions\BulkAction;
 use Filament\Actions\BulkActionGroup;
-use Filament\Actions\DeleteBulkAction;
 use Filament\Actions\EditAction;
 use Filament\Forms;
 use Filament\Resources\Resource;
@@ -62,7 +62,21 @@ class DocumentTypeResource extends Resource
             ])
             ->recordActions([EditAction::make()])
             ->toolbarActions([
-                BulkActionGroup::make([DeleteBulkAction::make()]),
+                BulkActionGroup::make([
+                    // Reference vocabulary — never hard-delete. Documents in
+                    // production may still reference these names by string;
+                    // deactivation hides them from new picks while keeping
+                    // historical references readable.
+                    BulkAction::make('deactivate')
+                        ->label('Deactivate selected')
+                        ->icon('heroicon-o-no-symbol')
+                        ->color('warning')
+                        ->requiresConfirmation()
+                        ->modalDescription('Selected vocabulary entries will be hidden from new Document forms but historical documents that reference them stay readable.')
+                        ->action(fn ($records) => DocumentType::query()
+                            ->whereKey($records->modelKeys())
+                            ->update(['is_active' => false])),
+                ]),
             ]);
     }
 

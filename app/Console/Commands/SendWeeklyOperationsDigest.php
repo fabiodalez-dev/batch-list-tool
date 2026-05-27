@@ -37,10 +37,15 @@ class SendWeeklyOperationsDigest extends Command
             return self::SUCCESS;
         }
 
+        // De-duplicate by lowercased email so two user rows that share an
+        // address don't get the same digest twice (test accounts, soft-
+        // deleted predecessors, etc.).
         $recipients = User::query()
             ->whereHas('roles', fn ($q) => $q->whereIn('name', ['super_admin', 'admin']))
             ->whereNotNull('email')
             ->pluck('email')
+            ->unique(fn (string $email): string => mb_strtolower(trim($email)))
+            ->values()
             ->all();
 
         if (empty($recipients)) {
@@ -49,7 +54,11 @@ class SendWeeklyOperationsDigest extends Command
             return self::SUCCESS;
         }
 
-        Mail::to($recipients)->send(new WeeklyOperationsDigest($stats));
+        // Send per-recipient (NOT Mail::to($array)->send()) so internal
+        // admin addresses never appear in another admin's "To:" header.
+        foreach ($recipients as $recipient) {
+            Mail::to($recipient)->send(new WeeklyOperationsDigest($stats));
+        }
         $this->info(sprintf('Digest sent to %d recipient(s).', count($recipients)));
 
         return self::SUCCESS;

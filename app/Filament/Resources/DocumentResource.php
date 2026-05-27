@@ -249,16 +249,16 @@ class DocumentResource extends Resource
                     ->columnSpanFull()
                     ->description('Scans of the document (PDF, JPG, PNG, TIFF). Files are stored in the spatie/medialibrary `attachments` collection on this document.')
                     ->schema([
-                        SpatieMediaLibraryFileUpload::make('attachments')
+                        $g(SpatieMediaLibraryFileUpload::make('attachments')
                             ->collection('attachments')
                             ->multiple()
-                            ->acceptedFileTypes(['application/pdf', 'image/jpeg', 'image/png', 'image/tiff'])
+                            ->acceptedFileTypes(['application/pdf', 'image/jpeg', 'image/png', 'image/tiff', 'image/tif'])
                             ->maxSize(20 * 1024)
                             ->downloadable()
                             ->openable()
                             ->reorderable()
                             ->preserveFilenames()
-                            ->columnSpanFull(),
+                            ->columnSpanFull()),
                     ]),
 
                 Section::make('Legacy box history (RAS / In Situ)')

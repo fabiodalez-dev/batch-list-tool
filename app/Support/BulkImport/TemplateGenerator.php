@@ -178,8 +178,10 @@ final class TemplateGenerator
             'batch' => self::synthesiseBatchHeaders(),
             'box' => self::synthesiseBoxHeaders(),
             'location' => self::synthesiseLocationHeaders(),
-            default => throw new \InvalidArgumentException("Unknown template entity: {$entity}"),
         };
+        // Note: the `array_key_exists` guard above narrows $entity to the
+        // exact key set covered by the match arms, so PHPStan correctly
+        // flags any `default` here as unreachable.
     }
 
     /**

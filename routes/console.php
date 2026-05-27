@@ -37,7 +37,10 @@ Schedule::command('backup:monitor')
 Schedule::command('health:check')
     ->everyFiveMinutes()
     ->withoutOverlapping()
-    ->onOneServer();
+    ->onOneServer()
+    // If health:check itself fails (db down, disk full) we want a paging
+    // signal — without this the /health JSON serves stale results silently.
+    ->emailOutputOnFailure(env('MAIL_BACKUP_RECIPIENT'));
 
 // Weekly operations digest emailed Monday 08:00 to super_admin + admin.
 // Replaces "did anyone log in this week?" with a proactive single-page
