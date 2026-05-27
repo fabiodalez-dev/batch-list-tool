@@ -40,6 +40,20 @@ jobs:
           token: ${{ secrets.GITHUB_TOKEN }}
           persist-credentials: true
 
+      - name: Setup PHP 8.4
+        # composer install must run before Vite: resources/css/filament/admin/theme.css
+        # imports vendor/filament/filament/resources/css/theme.css, which only
+        # exists once composer pulls vendor/. Without this step,
+        # @tailwindcss/vite fails to resolve the import and the build exits 1.
+        uses: shivammathur/setup-php@v2
+        with:
+          php-version: '8.4'
+          tools: composer:v2
+          coverage: none
+
+      - name: Install PHP dependencies (need vendor/filament for CSS import)
+        run: composer install --no-interaction --prefer-dist --no-progress --no-scripts
+
       - name: Setup Node 20
         uses: actions/setup-node@v4
         with:
