@@ -70,10 +70,24 @@ class TwoFactorLogin extends BaseLogin
 
     protected function getCaptchaFormComponent(): TextInput
     {
-        $question = (string) session(self::CAPTCHA_QUESTION_KEY, 'CAPTCHA');
-
+        // The label is a closure so Filament re-evaluates it at every render
+        // (not at form() instantiation time). This matters because mount()
+        // runs AFTER form() and is the call that seeds the session via
+        // refreshCaptcha() — without the closure the first render would
+        // freeze the placeholder 'CAPTCHA' string into the rendered HTML.
         return TextInput::make('captcha_answer')
-            ->label("Security check: {$question}")
+            ->label(function (): string {
+                $question = session(self::CAPTCHA_QUESTION_KEY);
+                if (! is_string($question) || $question === '') {
+                    // First touch in this session — populate now so the
+                    // user sees a real question even if mount() has not
+                    // yet executed (Livewire wire:model re-renders).
+                    $this->refreshCaptcha();
+                    $question = (string) session(self::CAPTCHA_QUESTION_KEY);
+                }
+
+                return "Security check: {$question}";
+            })
             ->helperText('Type the answer as a digit to prove you are human.')
             ->required()
             ->numeric()
