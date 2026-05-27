@@ -938,29 +938,24 @@ class DocumentResource extends Resource
     }
 
     /**
-     * Apply conditional eager-loading to the base query.
+     * Apply eager-loading to the base query.
      *
-     * NOTE on timing: Filament evaluates `getEloquentQuery()` BEFORE the
-     * table's filters run (see `Filament\Tables\Concerns\HasRecords::filterTableQuery()`
-     * — the eloquent builder returned here is the one filters are then
-     * stacked onto). That means the `conditionallyWith()` count probes
-     * the full table, not the post-filter subset. For the production
-     * archive (~50k+ docs) the count will always cross the 200 threshold,
-     * so the eager load is effectively always-on — which is the SAFE
-     * default and matches the previous behaviour. For smaller installs
-     * (e.g. a development copy with < 200 documents) the scope skips
-     * the eager load and lets Filament fall back to lazy access per row,
-     * which is cheaper for the dev case.
+     * The previous implementation called `conditionallyWith()` which ran
+     * a `SELECT COUNT(*) ... LIMIT 201` on EVERY call to
+     * `getEloquentQuery()`. Filament invokes this method dozens of times
+     * per page render (one per column, filter, header action, livewire
+     * poll, widget computation) — Debugbar caught it firing 291 times on
+     * a single dashboard load. The "cheap" probe added up to ~700 ms of
+     * pure overhead per request.
      *
-     * If a future page wants true post-filter conditional preloading it
-     * should override `ListDocuments::getTableRecords()` and call
-     * `loadMissing(...)` on the paginated collection — Filament does not
-     * expose a post-filter hook on the resource itself.
+     * Always eager-load. The production archive contains ~50k documents,
+     * which means the conditional was effectively always-true anyway;
+     * removing it just kills the overhead without changing the behaviour.
      */
     public static function getEloquentQuery(): Builder
     {
         return parent::getEloquentQuery()
-            ->conditionallyWith([
+            ->with([
                 'series',
                 'batch',
                 // `currentBox.batch` lets the "Box" column render

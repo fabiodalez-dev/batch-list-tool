@@ -4,7 +4,6 @@ namespace App\Models;
 
 use App\Models\Builders\DocumentBuilder;
 use App\Models\Concerns\BelongsToRepository;
-use App\Models\Concerns\ConditionallyPreloadsRelations;
 use App\Observers\DocumentObserver;
 use Carbon\Carbon;
 use Illuminate\Database\Eloquent\Builder;
@@ -29,7 +28,6 @@ class Document extends Model implements AuditableContract, HasMedia, Sortable
 {
     use Auditable;
     use BelongsToRepository;  // RFQ §3.5.1 — multi-tenant scope
-    use ConditionallyPreloadsRelations;
     use HasFactory;
     use HasTags;
     use InteractsWithMedia;

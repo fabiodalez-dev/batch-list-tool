@@ -2,7 +2,6 @@
 
 namespace App\Models;
 
-use App\Models\Concerns\ConditionallyPreloadsRelations;
 use App\Models\Scopes\ThroughBatchRepositoryScope;
 use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Database\Eloquent\Factories\HasFactory;
@@ -20,7 +19,6 @@ use Spatie\EloquentSortable\SortableTrait;
 class Box extends Model implements AuditableContract, Sortable
 {
     use Auditable;
-    use ConditionallyPreloadsRelations;
     use HasFactory;
     use SoftDeletes;
     use SortableTrait;
