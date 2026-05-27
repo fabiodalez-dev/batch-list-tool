@@ -19,6 +19,10 @@ use Illuminate\Support\Facades\DB;
  *
  * Documents that don't currently have the chosen authority are silently
  * skipped (no-op intent).
+ *
+ * Per-row atomicity (review C-2): each row runs in its own DB transaction
+ * so the detach + audit row are atomic, and a single-row failure does
+ * NOT undo previously-detached rows.
  */
 final class DetachAuthorityAction
 {
@@ -85,16 +89,16 @@ final class DetachAuthorityAction
         $skipped = 0;
         $errors = [];
 
-        DB::transaction(function () use ($records, $authority, &$detached, &$skipped, &$errors): void {
-            foreach ($records as $doc) {
-                /** @var Document $doc */
-                try {
-                    $existed = $doc->authorities()->where('authorities.id', $authority->getKey())->exists();
-                    if (! $existed) {
-                        $skipped++;
-                        continue;
-                    }
+        foreach ($records as $doc) {
+            /** @var Document $doc */
+            try {
+                $existed = $doc->authorities()->where('authorities.id', $authority->getKey())->exists();
+                if (! $existed) {
+                    $skipped++;
+                    continue;
+                }
 
+                DB::transaction(static function () use ($doc, $authority): void {
                     $doc->authorities()->detach($authority->getKey());
 
                     ActionSupport::logPivotChange(
@@ -104,13 +108,13 @@ final class DetachAuthorityAction
                         oldValues: ['authority_id' => $authority->getKey()],
                         tags: 'pivot,authority,detach',
                     );
+                });
 
-                    $detached++;
-                } catch (\Throwable $e) {
-                    $errors[] = "#{$doc->identifier}: {$e->getMessage()}";
-                }
+                $detached++;
+            } catch (\Throwable $e) {
+                $errors[] = "#{$doc->identifier}: {$e->getMessage()}";
             }
-        });
+        }
 
         $label = "{$authority->identifier} — {$authority->surname}";
 
@@ -141,7 +145,7 @@ final class DetachAuthorityAction
         }
 
         Notification::make()
-            ->title('Authority detach failed')
+            ->title('Authority detach failed (' . count($errors) . ' failed)')
             ->body(implode("\n", array_slice($errors, 0, 5)) ?: 'No documents updated.')
             ->danger()->send();
     }

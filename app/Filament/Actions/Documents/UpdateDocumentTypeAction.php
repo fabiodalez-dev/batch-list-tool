@@ -11,7 +11,6 @@ use Filament\Forms\Components\Select;
 use Filament\Notifications\Notification;
 use Filament\Schemas\Components\Component;
 use Illuminate\Database\Eloquent\Collection as EloquentCollection;
-use Illuminate\Support\Facades\DB;
 
 /**
  * Action #12 — Set `documents.document_type` (free text).
@@ -126,42 +125,18 @@ final class UpdateDocumentTypeAction
             return;
         }
 
-        $ok = 0;
-        $errors = [];
+        $result = ActionSupport::performBulk(
+            $records,
+            function (Document $doc) use ($type): void {
+                $doc->document_type = $type;
+                $doc->save();
+            },
+        );
 
-        DB::transaction(function () use ($records, $type, &$ok, &$errors): void {
-            foreach ($records as $doc) {
-                /** @var Document $doc */
-                try {
-                    $doc->document_type = $type;
-                    $doc->save();
-                    $ok++;
-                } catch (\Throwable $e) {
-                    $errors[] = "#{$doc->identifier}: {$e->getMessage()}";
-                }
-            }
-        });
-
-        if ($errors === [] && $ok > 0) {
-            Notification::make()
-                ->title("Set document_type='{$type}' on {$ok} document(s)")
-                ->success()->send();
-
-            return;
-        }
-
-        if ($ok > 0) {
-            Notification::make()
-                ->title("Partial: {$ok} updated, " . count($errors) . ' failed')
-                ->body(implode("\n", array_slice($errors, 0, 5)))
-                ->warning()->send();
-
-            return;
-        }
-
-        Notification::make()
-            ->title('Update failed')
-            ->body(implode("\n", array_slice($errors, 0, 5)) ?: 'No documents updated.')
-            ->danger()->send();
+        ActionSupport::notifyBulkResult(
+            $result,
+            successVerb: "updated to document_type='{$type}'",
+            failedTitle: 'Update failed',
+        );
     }
 }

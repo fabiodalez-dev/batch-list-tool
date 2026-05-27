@@ -13,13 +13,16 @@ use Filament\Forms\Components\Toggle;
 use Filament\Notifications\Notification;
 use Filament\Schemas\Components\Component;
 use Illuminate\Database\Eloquent\Collection as EloquentCollection;
-use Illuminate\Support\Facades\DB;
 
 /**
  * Action #2 — Move document(s) to a target Batch.
  *
  * RFQ App.1 #1 forbids batch numbers 33/34/36; the action refuses any target
  * batch whose `batch_number` is in {@see Batch::FORBIDDEN_NUMBERS}.
+ *
+ * Multi-tenant safety (review C-3): the target Batch must belong to the
+ * same repository as the document. Privileged users (super_admin / admin)
+ * bypass the Filament Select's RepositoryScope, so we enforce per-row.
  *
  * If the new batch differs from the current box's batch, the `current_box_id`
  * is cleared (the operator must re-assign a box from the new batch via the
@@ -101,45 +104,28 @@ final class MoveToBatchAction
             return;
         }
 
-        $ok = 0;
-        $errors = [];
-
-        DB::transaction(function () use ($records, $targetBatch, $clearBox, &$ok, &$errors): void {
-            foreach ($records as $doc) {
-                /** @var Document $doc */
-                try {
-                    $doc->batch_id = $targetBatch->getKey();
-                    if ($clearBox && $doc->current_box_id !== null) {
-                        $doc->current_box_id = null;
-                    }
-                    $doc->save();
-                    $ok++;
-                } catch (\Throwable $e) {
-                    $errors[] = "#{$doc->identifier}: {$e->getMessage()}";
+        $result = ActionSupport::performBulk(
+            $records,
+            function (Document $doc) use ($targetBatch, $clearBox): void {
+                // C-3: per-row tenant gate.
+                if ((int) $targetBatch->repository_id !== (int) $doc->repository_id) {
+                    throw new \DomainException(
+                        'target batch belongs to a different repository'
+                    );
                 }
-            }
-        });
 
-        if ($errors === [] && $ok > 0) {
-            Notification::make()
-                ->title("{$ok} document(s) moved to Batch {$targetBatch->batch_number}")
-                ->success()->send();
+                $doc->batch_id = $targetBatch->getKey();
+                if ($clearBox && $doc->current_box_id !== null) {
+                    $doc->current_box_id = null;
+                }
+                $doc->save();
+            },
+        );
 
-            return;
-        }
-
-        if ($ok > 0) {
-            Notification::make()
-                ->title("Partial: {$ok} moved, " . count($errors) . ' failed')
-                ->body(implode("\n", array_slice($errors, 0, 5)))
-                ->warning()->send();
-
-            return;
-        }
-
-        Notification::make()
-            ->title('Move failed')
-            ->body(implode("\n", array_slice($errors, 0, 5)) ?: 'No documents were processed.')
-            ->danger()->send();
+        ActionSupport::notifyBulkResult(
+            $result,
+            successVerb: "moved to Batch {$targetBatch->batch_number}",
+            failedTitle: 'Move failed',
+        );
     }
 }

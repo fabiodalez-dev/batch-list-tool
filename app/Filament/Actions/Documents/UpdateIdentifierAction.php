@@ -9,6 +9,7 @@ use App\Models\Scopes\RepositoryScope;
 use Filament\Actions\Action;
 use Filament\Forms\Components\TextInput;
 use Filament\Notifications\Notification;
+use Illuminate\Database\Eloquent\SoftDeletingScope;
 use Illuminate\Support\Facades\DB;
 
 /**
@@ -64,8 +65,18 @@ final class UpdateIdentifierAction
         }
 
         // Uniqueness within the same repository (multi-tenant safety).
+        //
+        // H-4: include soft-deleted documents in the uniqueness check.
+        // Without the SoftDeletingScope bypass, the global scope hides
+        // trashed rows from the lookup, so an operator could legitimately
+        // pick an identifier that's currently held by a soft-deleted
+        // document. If that document is then restored, both rows are live
+        // with the same identifier in the same repo — silent duplicate.
+        // We drop BOTH RepositoryScope (to catch cross-tenant-invisible
+        // hits) AND SoftDeletingScope (to catch trashed rows) via
+        // `withoutGlobalScopes()`, narrowed to the same repository_id.
         $exists = Document::query()
-            ->withoutGlobalScope(RepositoryScope::class)
+            ->withoutGlobalScopes([RepositoryScope::class, SoftDeletingScope::class])
             ->where('repository_id', $record->repository_id)
             ->where('identifier', $new)
             ->where('id', '!=', $record->getKey())

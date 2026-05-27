@@ -11,7 +11,6 @@ use Filament\Actions\Action;
 use Filament\Actions\BulkAction;
 use Filament\Notifications\Notification;
 use Illuminate\Database\Eloquent\Collection as EloquentCollection;
-use Illuminate\Support\Facades\DB;
 
 /**
  * Action #13 — Composite "Move to wills".
@@ -20,6 +19,10 @@ use Illuminate\Support\Facades\DB;
  * preferring whatever wills series the documents already use, otherwise
  * defaulting to RWL). The repository-scoped Batch 50 is auto-created if
  * missing (each tenant has its own #50 row).
+ *
+ * Schema dependency (review C-1): the per-tenant Batch 50 lookup requires
+ * `(batch_number, repository_id)` to be unique-per-repo, not globally
+ * unique. The 2026_05_28_140000 migration converts the constraint.
  *
  * RFQ App.1 #2 — Batch 50 is exclusively for wills.
  */
@@ -67,84 +70,62 @@ final class MoveToWillsAction
             return;
         }
 
-        $ok = 0;
-        $errors = [];
+        $result = ActionSupport::performBulk(
+            $records,
+            function (Document $doc): void {
+                // Tenant-scoped Batch 50 lookup (RFQ §3.5.1 — each repo has
+                // its own Batch 50 row). The schema constraint is the
+                // composite unique `(batch_number, repository_id)` — see
+                // migration 2026_05_28_140000.
+                $batch = Batch::withoutGlobalScopes()
+                    ->where('batch_number', Batch::WILLS_BATCH)
+                    ->where('repository_id', $doc->repository_id)
+                    ->first();
 
-        DB::transaction(function () use ($records, &$ok, &$errors): void {
-            foreach ($records as $doc) {
-                /** @var Document $doc */
-                try {
-                    // Tenant-scoped Batch 50 lookup (RFQ §3.5.1 — each repo has
-                    // its own Batch 50 row).
-                    $batch = Batch::withoutGlobalScopes()
-                        ->where('batch_number', Batch::WILLS_BATCH)
-                        ->where('repository_id', $doc->repository_id)
-                        ->first();
-
-                    if ($batch === null) {
-                        // Auto-create the wills batch for this tenant.
-                        $batch = Batch::withoutGlobalScopes()->create([
-                            'batch_number' => Batch::WILLS_BATCH,
-                            'type' => 'NOTARY_ACCESSION',
-                            'description' => 'Wills (auto-created by Move to wills action)',
-                            'repository_id' => $doc->repository_id,
-                            'is_active' => true,
-                        ]);
-                    }
-
-                    $doc->batch_id = $batch->getKey();
-
-                    // Ensure series is a wills series.
-                    $currentSeries = $doc->series_id !== null
-                        ? Series::query()->find($doc->series_id)
-                        : null;
-                    $isWillsSeries = $currentSeries !== null
-                        && ((bool) ($currentSeries->is_wills_series ?? false)
-                            || str_starts_with(strtoupper((string) $currentSeries->code), 'RWL')
-                            || str_starts_with(strtoupper((string) $currentSeries->code), 'OWL'));
-                    if (! $isWillsSeries) {
-                        $rwl = Series::query()
-                            ->where('code', 'like', 'RWL%')
-                            ->orWhere('is_wills_series', true)
-                            ->orderBy('code')
-                            ->first();
-                        if ($rwl !== null) {
-                            $doc->series_id = $rwl->getKey();
-                        }
-                    }
-
-                    // Clear the box pointer — it almost certainly belongs to a
-                    // different batch now.
-                    $doc->current_box_id = null;
-
-                    $doc->save();
-                    $ok++;
-                } catch (\Throwable $e) {
-                    $errors[] = "#{$doc->identifier}: {$e->getMessage()}";
+                if ($batch === null) {
+                    // Auto-create the wills batch for this tenant.
+                    $batch = Batch::withoutGlobalScopes()->create([
+                        'batch_number' => Batch::WILLS_BATCH,
+                        'type' => 'NOTARY_ACCESSION',
+                        'description' => 'Wills (auto-created by Move to wills action)',
+                        'repository_id' => $doc->repository_id,
+                        'is_active' => true,
+                    ]);
                 }
-            }
-        });
 
-        if ($errors === [] && $ok > 0) {
-            Notification::make()
-                ->title("{$ok} document(s) moved to Batch 50 (wills)")
-                ->success()->send();
+                $doc->batch_id = $batch->getKey();
 
-            return;
-        }
+                // Ensure series is a wills series.
+                $currentSeries = $doc->series_id !== null
+                    ? Series::query()->find($doc->series_id)
+                    : null;
+                $isWillsSeries = $currentSeries !== null
+                    && ((bool) ($currentSeries->is_wills_series ?? false)
+                        || str_starts_with(strtoupper((string) $currentSeries->code), 'RWL')
+                        || str_starts_with(strtoupper((string) $currentSeries->code), 'OWL'));
+                if (! $isWillsSeries) {
+                    $rwl = Series::query()
+                        ->where('code', 'like', 'RWL%')
+                        ->orWhere('is_wills_series', true)
+                        ->orderBy('code')
+                        ->first();
+                    if ($rwl !== null) {
+                        $doc->series_id = $rwl->getKey();
+                    }
+                }
 
-        if ($ok > 0) {
-            Notification::make()
-                ->title("Partial: {$ok} moved, " . count($errors) . ' failed')
-                ->body(implode("\n", array_slice($errors, 0, 5)))
-                ->warning()->send();
+                // Clear the box pointer — it almost certainly belongs to a
+                // different batch now.
+                $doc->current_box_id = null;
 
-            return;
-        }
+                $doc->save();
+            },
+        );
 
-        Notification::make()
-            ->title('Move to wills failed')
-            ->body(implode("\n", array_slice($errors, 0, 5)) ?: 'No documents updated.')
-            ->danger()->send();
+        ActionSupport::notifyBulkResult(
+            $result,
+            successVerb: 'moved to Batch 50 (wills)',
+            failedTitle: 'Move to wills failed',
+        );
     }
 }

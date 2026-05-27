@@ -5,7 +5,6 @@ declare(strict_types=1);
 namespace App\Filament\Actions\Documents;
 
 use App\Filament\Support\SearchableSelects;
-use App\Models\Authority;
 use App\Models\Document;
 use App\Models\Repository;
 use Filament\Actions\BulkAction;
@@ -32,6 +31,17 @@ use Illuminate\Support\Facades\DB;
  * Authority is currently global (no `repository_id` column), this is a
  * forward-compatibility hook — by default we keep the existing pivot rows;
  * the operator can opt-in to a stricter mode that drops them.
+ *
+ * Tenancy-cascade (review H-3): after re-stamping `documents.repository_id`,
+ * we cascade the new tenancy onto the document's child rows that mirror
+ * it — `document_flags`, `document_identifier_history`,
+ * `document_seal_number_history`. Without this cascade, the document would
+ * be visible to operators in the new repo BUT their flags / history
+ * panels would render empty because those tables are scoped by
+ * `repository_id` (BelongsToRepository) and still point at the old tenant.
+ * We use raw DB queries (not Eloquent) so the BelongsToRepository
+ * `creating` hook — which would re-validate the OLD tenant — doesn't
+ * fire on these updates.
  */
 final class MoveToRepositoryAction
 {
@@ -102,68 +112,60 @@ final class MoveToRepositoryAction
             return;
         }
 
-        $ok = 0;
-        $errors = [];
+        $result = ActionSupport::performBulk(
+            $records,
+            function (Document $doc) use ($repo, $reason, $clear): void {
+                $oldRepoId = $doc->repository_id;
 
-        DB::transaction(function () use ($records, $repo, $reason, $clear, &$ok, &$errors): void {
-            foreach ($records as $doc) {
-                /** @var Document $doc */
-                try {
-                    $oldRepoId = $doc->repository_id;
-
-                    if ((int) $oldRepoId === (int) $repo->getKey()) {
-                        // No-op — silently skip.
-                        $ok++;
-                        continue;
-                    }
-
-                    $doc->repository_id = $repo->getKey();
-                    if ($clear) {
-                        $doc->current_box_id = null;
-                        $doc->batch_id = null;
-                    }
-                    $doc->save();
-
-                    ActionSupport::logPivotChange(
-                        document: $doc,
-                        event: 'cross_tenant_transfer',
-                        newValues: [
-                            'repository_id' => $repo->getKey(),
-                            'reason' => $reason,
-                        ],
-                        oldValues: [
-                            'repository_id' => $oldRepoId,
-                        ],
-                        tags: 'cross_tenant_transfer,repository',
-                    );
-
-                    $ok++;
-                } catch (\Throwable $e) {
-                    $errors[] = "#{$doc->identifier}: {$e->getMessage()}";
+                if ((int) $oldRepoId === (int) $repo->getKey()) {
+                    // No-op — silently succeed (operator selected a doc
+                    // that already lives in the target repo).
+                    return;
                 }
-            }
-        });
 
-        if ($errors === [] && $ok > 0) {
-            Notification::make()
-                ->title("{$ok} document(s) transferred to {$repo->code}")
-                ->success()->send();
+                $doc->repository_id = $repo->getKey();
+                if ($clear) {
+                    $doc->current_box_id = null;
+                    $doc->batch_id = null;
+                }
+                $doc->save();
 
-            return;
-        }
+                // H-3: cascade tenancy onto child rows that mirror it.
+                // Raw DB queries, no models — we don't want the
+                // BelongsToRepository `creating` hook to re-validate the
+                // OLD tenant (it's not creating, it's updating, but the
+                // observer is hooked on `saving` which would also fire).
+                DB::table('document_flags')
+                    ->where('document_id', $doc->getKey())
+                    ->update(['repository_id' => $repo->getKey()]);
 
-        if ($ok > 0) {
-            Notification::make()
-                ->title("Partial: {$ok} transferred, " . count($errors) . ' failed')
-                ->body(implode("\n", array_slice($errors, 0, 5)))
-                ->warning()->send();
+                DB::table('document_identifier_history')
+                    ->where('document_id', $doc->getKey())
+                    ->update(['repository_id' => $repo->getKey()]);
 
-            return;
-        }
+                DB::table('document_seal_number_history')
+                    ->where('document_id', $doc->getKey())
+                    ->update(['repository_id' => $repo->getKey()]);
 
-        Notification::make()
-            ->title('Transfer failed')
-            ->body(implode("\n", array_slice($errors, 0, 5)) ?: 'No documents processed.')
-            ->danger()->send();
+                ActionSupport::logPivotChange(
+                    document: $doc,
+                    event: 'cross_tenant_transfer',
+                    newValues: [
+                        'repository_id' => $repo->getKey(),
+                        'reason' => $reason,
+                    ],
+                    oldValues: [
+                        'repository_id' => $oldRepoId,
+                    ],
+                    tags: 'cross_tenant_transfer,repository',
+                );
+            },
+        );
+
+        ActionSupport::notifyBulkResult(
+            $result,
+            successVerb: "transferred to {$repo->code}",
+            failedTitle: 'Transfer failed',
+        );
     }
 }

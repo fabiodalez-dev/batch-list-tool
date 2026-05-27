@@ -20,11 +20,17 @@ use OwenIt\Auditing\Auditable;
  * Action #7 — Attach an Authority (notary) to document(s).
  *
  * The pivot is idempotent: documents that already have the chosen authority
- * are silently skipped (we don't increment $ok, we don't add an error — the
- * end state matches what the operator asked for).
+ * are silently skipped (we don't increment $attached, we don't add an error
+ * — the end state matches what the operator asked for).
  *
- * Because pivot writes do NOT fire {@see Auditable} events
- * we write a manual audit row via {@see ActionSupport::logPivotChange()}.
+ * Per-row atomicity (review C-2): each row runs in its own
+ * `DB::transaction()` so a failure mid-row (pivot insert succeeded but
+ * audit row insert failed, or vice versa) rolls back THAT row only —
+ * earlier rows stay committed and the operator sees a partial-success
+ * notification.
+ *
+ * Because pivot writes do NOT fire {@see Auditable} events we write a
+ * manual audit row via {@see ActionSupport::logPivotChange()}.
  */
 final class AssignAuthorityAction
 {
@@ -95,16 +101,19 @@ final class AssignAuthorityAction
         $skipped = 0;
         $errors = [];
 
-        DB::transaction(function () use ($records, $authority, $isPrimary, &$attached, &$skipped, &$errors): void {
-            foreach ($records as $doc) {
-                /** @var Document $doc */
-                try {
-                    $exists = $doc->authorities()->where('authorities.id', $authority->getKey())->exists();
-                    if ($exists) {
-                        $skipped++;
-                        continue;
-                    }
+        // Per-row atomicity: each row runs in its own transaction so a
+        // mid-row failure (pivot insert succeeded, audit row insert
+        // failed) rolls back THAT row only — earlier rows stay committed.
+        foreach ($records as $doc) {
+            /** @var Document $doc */
+            try {
+                $exists = $doc->authorities()->where('authorities.id', $authority->getKey())->exists();
+                if ($exists) {
+                    $skipped++;
+                    continue;
+                }
 
+                DB::transaction(static function () use ($doc, $authority, $isPrimary): void {
                     $doc->authorities()->attach($authority->getKey(), ['is_primary' => $isPrimary]);
 
                     ActionSupport::logPivotChange(
@@ -116,13 +125,13 @@ final class AssignAuthorityAction
                         ],
                         tags: 'pivot,authority,attach',
                     );
+                });
 
-                    $attached++;
-                } catch (\Throwable $e) {
-                    $errors[] = "#{$doc->identifier}: {$e->getMessage()}";
-                }
+                $attached++;
+            } catch (\Throwable $e) {
+                $errors[] = "#{$doc->identifier}: {$e->getMessage()}";
             }
-        });
+        }
 
         $label = "{$authority->identifier} — {$authority->surname}";
 
@@ -153,7 +162,7 @@ final class AssignAuthorityAction
         }
 
         Notification::make()
-            ->title('Authority attach failed')
+            ->title('Authority attach failed (' . count($errors) . ' failed)')
             ->body(implode("\n", array_slice($errors, 0, 5)) ?: 'No documents updated.')
             ->danger()->send();
     }

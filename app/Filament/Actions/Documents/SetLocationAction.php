@@ -12,7 +12,6 @@ use Filament\Actions\BulkAction;
 use Filament\Notifications\Notification;
 use Filament\Schemas\Components\Component;
 use Illuminate\Database\Eloquent\Collection as EloquentCollection;
-use Illuminate\Support\Facades\DB;
 
 /**
  * Action #4 — Pin document(s) to a configurable Location (RFQ §3.1.9).
@@ -21,8 +20,8 @@ use Illuminate\Support\Facades\DB;
  * to the same repository as each document, OR be a "global" location
  * (`repository_id IS NULL` — typically conservation labs / shared rooms).
  * Documents in mixed repositories get individually validated: documents whose
- * repository_id does not match the location's repository_id are skipped and
- * reported in the partial-success message.
+ * repository_id does not match the location's repository_id are reported in
+ * the partial-success message.
  */
 final class SetLocationAction
 {
@@ -85,53 +84,28 @@ final class SetLocationAction
             return;
         }
 
-        $ok = 0;
-        $skipped = 0;
-        $errors = [];
-
-        DB::transaction(function () use ($records, $location, &$ok, &$skipped, &$errors): void {
-            foreach ($records as $doc) {
-                /** @var Document $doc */
-                try {
-                    // Tenant safety: a repository-scoped location can only be
-                    // assigned to documents in the same repository. A global
-                    // location (repository_id=null) can be assigned to any doc.
-                    if ($location->repository_id !== null
-                        && (int) $location->repository_id !== (int) $doc->repository_id) {
-                        $skipped++;
-                        $errors[] = "#{$doc->identifier}: location belongs to a different repository";
-                        continue;
-                    }
-
-                    $doc->location_id = $location->getKey();
-                    $doc->save();
-                    $ok++;
-                } catch (\Throwable $e) {
-                    $errors[] = "#{$doc->identifier}: {$e->getMessage()}";
+        $result = ActionSupport::performBulk(
+            $records,
+            function (Document $doc) use ($location): void {
+                // Tenant safety: a repository-scoped location can only be
+                // assigned to documents in the same repository. A global
+                // location (repository_id=null) can be assigned to any doc.
+                if ($location->repository_id !== null
+                    && (int) $location->repository_id !== (int) $doc->repository_id) {
+                    throw new \DomainException(
+                        'location belongs to a different repository'
+                    );
                 }
-            }
-        });
 
-        if ($errors === [] && $ok > 0) {
-            Notification::make()
-                ->title("{$ok} document(s) pinned to '{$location->name}'")
-                ->success()->send();
+                $doc->location_id = $location->getKey();
+                $doc->save();
+            },
+        );
 
-            return;
-        }
-
-        if ($ok > 0) {
-            Notification::make()
-                ->title("Partial: {$ok} updated, " . count($errors) . ' issues')
-                ->body(implode("\n", array_slice($errors, 0, 5)))
-                ->warning()->send();
-
-            return;
-        }
-
-        Notification::make()
-            ->title('Location not applied')
-            ->body(implode("\n", array_slice($errors, 0, 5)) ?: 'No documents updated.')
-            ->danger()->send();
+        ActionSupport::notifyBulkResult(
+            $result,
+            successVerb: "pinned to '{$location->name}'",
+            failedTitle: 'Location not applied',
+        );
     }
 }

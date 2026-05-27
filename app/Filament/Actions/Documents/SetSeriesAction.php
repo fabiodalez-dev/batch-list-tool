@@ -12,7 +12,6 @@ use Filament\Actions\BulkAction;
 use Filament\Notifications\Notification;
 use Filament\Schemas\Components\Component;
 use Illuminate\Database\Eloquent\Collection as EloquentCollection;
-use Illuminate\Support\Facades\DB;
 
 /**
  * Action #10 — Reclassify document(s) into a different Series.
@@ -85,21 +84,13 @@ final class SetSeriesAction
             return;
         }
 
-        $ok = 0;
-        $errors = [];
-
-        DB::transaction(function () use ($records, $series, &$ok, &$errors): void {
-            foreach ($records as $doc) {
-                /** @var Document $doc */
-                try {
-                    $doc->series_id = $series->getKey();
-                    $doc->save();
-                    $ok++;
-                } catch (\Throwable $e) {
-                    $errors[] = "#{$doc->identifier}: {$e->getMessage()}";
-                }
-            }
-        });
+        $result = ActionSupport::performBulk(
+            $records,
+            function (Document $doc) use ($series): void {
+                $doc->series_id = $series->getKey();
+                $doc->save();
+            },
+        );
 
         $isWillsSeries = (bool) ($series->is_wills_series ?? false)
             || str_starts_with(strtoupper((string) $series->code), 'RWL')
@@ -109,26 +100,10 @@ final class SetSeriesAction
             ? " — these documents may belong in Batch 50 (wills). Use 'Move to wills' to relocate them."
             : '';
 
-        if ($errors === [] && $ok > 0) {
-            Notification::make()
-                ->title("Reclassified {$ok} document(s) into '{$series->code}'{$willsHint}")
-                ->success()->send();
-
-            return;
-        }
-
-        if ($ok > 0) {
-            Notification::make()
-                ->title("Partial: {$ok} reclassified, " . count($errors) . ' failed')
-                ->body(implode("\n", array_slice($errors, 0, 5)))
-                ->warning()->send();
-
-            return;
-        }
-
-        Notification::make()
-            ->title('Reclassification failed')
-            ->body(implode("\n", array_slice($errors, 0, 5)) ?: 'No documents updated.')
-            ->danger()->send();
+        ActionSupport::notifyBulkResult(
+            $result,
+            successVerb: "reclassified into '{$series->code}'{$willsHint}",
+            failedTitle: 'Reclassification failed',
+        );
     }
 }

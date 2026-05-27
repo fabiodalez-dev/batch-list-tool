@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace App\Filament\Actions\Documents;
 
 use App\Filament\Support\SearchableSelects;
+use App\Models\Batch;
 use App\Models\Box;
 use App\Models\BoxMovement;
 use App\Models\Document;
@@ -22,6 +23,21 @@ use Illuminate\Support\Facades\DB;
  * Validates that the target Box is assignable (not soft-deleted, not
  * PERM_OUT) and writes a {@see BoxMovement} row for each document so the
  * physical chain of custody is preserved (RFQ §3.1.5).
+ *
+ * Per-row atomicity (review C-2): each row runs inside its own
+ * `DB::transaction()` via {@see ActionSupport::performBulk()}; a failure
+ * partway through a row's writes (document save + BoxMovement insert) rolls
+ * back that row only — previously-successful rows are preserved. The
+ * operator gets a partial-success notification listing the failures.
+ *
+ * Multi-tenant safety (review C-3): the target box must belong to a Batch
+ * in the same repository as the document. Otherwise the action refuses
+ * the row (no cross-tenant writes from privileged users picking a foreign
+ * target via the Select).
+ *
+ * Invariant safety (review H-5): the target box must have a non-null
+ * `batch_id`. Assigning a document to an orphan box would break the
+ * `documents.batch_id ↔ documents.currentBox.batch_id` invariant.
  *
  * Both the single-record and bulk variants share the same form (target box
  * + optional reason) and the same writer body — only the way `records` is
@@ -106,70 +122,60 @@ final class MoveToBoxAction
             return;
         }
 
-        $ok = 0;
-        $errors = [];
+        // H-5: an orphan box (no batch) would silently break the
+        // documents.batch_id ↔ boxes.batch_id invariant. Refuse explicitly.
+        if ($targetBox->batch_id === null) {
+            Notification::make()
+                ->title('Cannot move — target box has no batch assignment')
+                ->body('Assign a batch to the box first, then retry. Documents must always inherit the box\'s batch.')
+                ->danger()
+                ->send();
 
-        DB::transaction(function () use ($records, $targetBox, $reason, &$ok, &$errors): void {
-            foreach ($records as $doc) {
-                /** @var Document $doc */
-                try {
-                    $from = $doc->current_box_id;
-                    $doc->current_box_id = $targetBox->getKey();
-                    // Aligning batch with the box's batch keeps documents.batch_id
-                    // consistent with documents.current_box_id (defence-in-depth
-                    // — Filament forms enforce this, but power-actions must too).
-                    if ($targetBox->batch_id !== null) {
-                        $doc->batch_id = $targetBox->batch_id;
-                    }
-                    $doc->save();
+            return;
+        }
 
-                    BoxMovement::create([
-                        'document_id' => $doc->getKey(),
-                        'from_box_id' => $from,
-                        'to_box_id' => $targetBox->getKey(),
-                        'movement_date' => now(),
-                        'reason' => $reason,
-                        'user_id' => auth()->id(),
-                    ]);
+        // Resolve the box's owning batch via the typed Batch model so
+        // PHPStan can see the `repository_id` attribute (the BelongsTo
+        // accessor returns Model|null, which level-6 rejects).
+        $targetBoxBatch = Batch::withoutGlobalScopes()->find($targetBox->batch_id);
+        $targetBoxRepoId = $targetBoxBatch?->repository_id;
 
-                    $ok++;
-                } catch (\Throwable $e) {
-                    $errors[] = "#{$doc->identifier}: {$e->getMessage()}";
+        $result = ActionSupport::performBulk(
+            $records,
+            function (Document $doc) use ($targetBox, $targetBoxRepoId, $reason): void {
+                // C-3: per-row tenant gate. Privileged users (super_admin,
+                // admin) bypass the Box Select's RepositoryScope, so we MUST
+                // re-check here. SetLocationAction / MoveToWillsAction
+                // enforce the same invariant.
+                if ($targetBoxRepoId !== null
+                    && (int) $targetBoxRepoId !== (int) $doc->repository_id) {
+                    throw new \DomainException(
+                        'target box belongs to a different repository'
+                    );
                 }
-            }
-        });
 
-        self::notify($ok, $errors, "moved to Box {$targetBox->box_number}");
-    }
+                $from = $doc->current_box_id;
+                $doc->current_box_id = $targetBox->getKey();
+                // H-5 (covered above): targetBox->batch_id is guaranteed
+                // non-null at this point.
+                $doc->batch_id = $targetBox->batch_id;
+                $doc->save();
 
-    /**
-     * @param array<int, string> $errors
-     */
-    private static function notify(int $ok, array $errors, string $verb): void
-    {
-        if ($errors === [] && $ok > 0) {
-            Notification::make()
-                ->title("{$ok} document(s) {$verb}")
-                ->success()
-                ->send();
+                BoxMovement::create([
+                    'document_id' => $doc->getKey(),
+                    'from_box_id' => $from,
+                    'to_box_id' => $targetBox->getKey(),
+                    'movement_date' => now(),
+                    'reason' => $reason,
+                    'user_id' => auth()->id(),
+                ]);
+            },
+        );
 
-            return;
-        }
-
-        if ($ok > 0 && $errors !== []) {
-            Notification::make()
-                ->title("Partial: {$ok} {$verb}, " . count($errors) . ' failed')
-                ->body(implode("\n", array_slice($errors, 0, 5)))
-                ->warning()
-                ->send();
-
-            return;
-        }
-
-        Notification::make()
-            ->title('Action failed')
-            ->body($errors === [] ? 'No documents were processed.' : implode("\n", array_slice($errors, 0, 5)))
-            ->danger()
-            ->send();
+        ActionSupport::notifyBulkResult(
+            $result,
+            successVerb: "moved to Box {$targetBox->box_number}",
+            failedTitle: 'Move failed',
+        );
     }
 }
