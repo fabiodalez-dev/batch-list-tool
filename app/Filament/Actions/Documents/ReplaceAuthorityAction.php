@@ -25,6 +25,11 @@ use Illuminate\Support\Facades\DB;
  * Documents that don't have the "old" authority attached are silently
  * skipped (they're not failures — the operator's intent on those docs is a
  * no-op).
+ *
+ * Per-row atomicity (review C-2): each row runs in its own DB transaction
+ * so the detach + attach + audit row commit together (or roll back
+ * together), and a single-row failure does NOT undo previously-replaced
+ * rows.
  */
 final class ReplaceAuthorityAction
 {
@@ -107,18 +112,18 @@ final class ReplaceAuthorityAction
         $skipped = 0;
         $errors = [];
 
-        DB::transaction(function () use ($records, $old, $new, &$replaced, &$skipped, &$errors): void {
-            foreach ($records as $doc) {
-                /** @var Document $doc */
-                try {
-                    $pivot = $doc->authorities()->where('authorities.id', $old->getKey())->first();
-                    if ($pivot === null) {
-                        $skipped++;
-                        continue;
-                    }
+        foreach ($records as $doc) {
+            /** @var Document $doc */
+            try {
+                $pivot = $doc->authorities()->where('authorities.id', $old->getKey())->first();
+                if ($pivot === null) {
+                    $skipped++;
+                    continue;
+                }
 
-                    $wasPrimary = (bool) ($pivot->pivot->is_primary ?? false);
+                $wasPrimary = (bool) ($pivot->pivot->is_primary ?? false);
 
+                DB::transaction(static function () use ($doc, $old, $new, $wasPrimary): void {
                     $doc->authorities()->detach($old->getKey());
 
                     // Don't add a duplicate row if the doc already has `new`.
@@ -139,13 +144,13 @@ final class ReplaceAuthorityAction
                         ],
                         tags: 'pivot,authority,replace',
                     );
+                });
 
-                    $replaced++;
-                } catch (\Throwable $e) {
-                    $errors[] = "#{$doc->identifier}: {$e->getMessage()}";
-                }
+                $replaced++;
+            } catch (\Throwable $e) {
+                $errors[] = "#{$doc->identifier}: {$e->getMessage()}";
             }
-        });
+        }
 
         if ($errors === [] && $replaced > 0) {
             $suffix = $skipped > 0 ? " ({$skipped} did not have the old authority)" : '';
@@ -174,7 +179,7 @@ final class ReplaceAuthorityAction
         }
 
         Notification::make()
-            ->title('Authority replace failed')
+            ->title('Authority replace failed (' . count($errors) . ' failed)')
             ->body(implode("\n", array_slice($errors, 0, 5)) ?: 'No documents updated.')
             ->danger()->send();
     }

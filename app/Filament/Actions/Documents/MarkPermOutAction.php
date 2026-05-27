@@ -9,24 +9,26 @@ use Filament\Actions\Action;
 use Filament\Actions\BulkAction;
 use Filament\Notifications\Notification;
 use Illuminate\Database\Eloquent\Collection as EloquentCollection;
-use Illuminate\Support\Facades\DB;
-use Illuminate\Support\Facades\Schema;
 
 /**
  * Action #6 — Mark document(s) as PERM_OUT (permanently transferred out).
  *
  * RFQ App.1 #5 — a document cannot be marked PERM_OUT unless its
- * `disinfestation_date` is already set. Documents that fail this check
- * are skipped and reported in the partial-success notification rather than
- * aborting the whole bulk operation.
+ * `disinfestation_date` is already set.
  *
- * The Document model uses an integer barcode_status only on the box-level
- * (Box::BARCODE_STATUSES), but legacy POC documents carry a barcode in
- * `documents.barcode_in`. Per the implementation brief, we update the
- * document-level status using the same vocabulary as Box; if a
- * `barcode_status` column exists on documents it is written, otherwise
- * the change is logged via the audit row only — defensive against schema
- * drift between the live MySQL and the SQLite test driver.
+ * Strict bulk semantics (review H-2): the modal warns "Each document must
+ * already have a disinfestation date" and operators expect an all-or-
+ * nothing precondition check. We pre-validate ALL selected rows; if ANY
+ * row lacks `disinfestation_date`, the whole bulk is aborted with a
+ * danger notification listing the offending identifiers. The operator
+ * fixes the missing disinfestations (via Action #5) and retries.
+ *
+ * Column write (review H-1): `documents.barcode_status` is added by the
+ * 2026_05_28_140100 migration and writes 'PERM_OUT' onto the column AND
+ * an audit row tagged `permout_marked`. The list view's barcode_status
+ * filter / column now reflects the PERM_OUT state immediately, instead
+ * of the previous audit-trail-only behaviour that left the document
+ * visually unchanged.
  */
 final class MarkPermOutAction
 {
@@ -37,7 +39,7 @@ final class MarkPermOutAction
             ->icon('heroicon-o-archive-box-x-mark')
             ->color('danger')
             ->modalHeading('Permanently transfer out')
-            ->modalDescription('This is permanent. Make sure the disinfestation date is recorded first.')
+            ->modalDescription('This is permanent. The document must already have a disinfestation date.')
             ->requiresConfirmation()
             ->action(function (Document $record): void {
                 self::perform(ActionSupport::asCollection($record));
@@ -52,7 +54,7 @@ final class MarkPermOutAction
             ->icon('heroicon-o-archive-box-x-mark')
             ->color('danger')
             ->modalHeading('Permanently transfer out selected documents')
-            ->modalDescription('This is permanent. Each document must already have a disinfestation date.')
+            ->modalDescription('This is permanent. ALL selected documents must already have a disinfestation date — if any do not, the whole bulk operation is aborted.')
             ->requiresConfirmation()
             ->action(function (EloquentCollection $records): void {
                 self::perform($records);
@@ -66,70 +68,55 @@ final class MarkPermOutAction
      */
     private static function perform(EloquentCollection $records): void
     {
-        $ok = 0;
-        $errors = [];
-
-        $hasStatusColumn = Schema::hasColumn('documents', 'barcode_status');
-
-        DB::transaction(function () use ($records, &$ok, &$errors, $hasStatusColumn): void {
-            foreach ($records as $doc) {
-                /** @var Document $doc */
-                if ($doc->disinfestation_date === null) {
-                    $errors[] = "#{$doc->identifier}: cannot mark PERM_OUT without disinfestation date — mark disinfested first";
-                    continue;
-                }
-
-                try {
-                    if ($hasStatusColumn) {
-                        // Use setAttribute() so we don't depend on a Document
-                        // model property declaration — `barcode_status` is a
-                        // schema-conditional column not in the model $fillable
-                        // list.
-                        $doc->setAttribute('barcode_status', 'PERM_OUT');
-                    }
-
-                    // Always log the intent via an explicit audit row so the
-                    // PERM_OUT decision is queryable even on databases without
-                    // a documents.barcode_status column.
-                    ActionSupport::logPivotChange(
-                        document: $doc,
-                        event: 'permout_marked',
-                        newValues: ['barcode_status' => 'PERM_OUT'],
-                        oldValues: ['barcode_status' => $doc->getOriginal('barcode_status')],
-                        tags: 'permout,document',
-                    );
-
-                    if ($doc->isDirty()) {
-                        $doc->save();
-                    }
-
-                    $ok++;
-                } catch (\Throwable $e) {
-                    $errors[] = "#{$doc->identifier}: {$e->getMessage()}";
-                }
-            }
-        });
-
-        if ($errors === [] && $ok > 0) {
-            Notification::make()
-                ->title("{$ok} document(s) marked PERM_OUT")
-                ->success()->send();
+        if ($records->isEmpty()) {
+            Notification::make()->title('No documents selected')->warning()->send();
 
             return;
         }
 
-        if ($ok > 0) {
+        // H-2: strict precondition. Filter rows that lack the prerequisite
+        // disinfestation_date; if any are found, abort the whole bulk.
+        $missing = $records->filter(fn (Document $d): bool => $d->disinfestation_date === null);
+        if ($missing->isNotEmpty()) {
+            $identifiers = $missing->take(5)->pluck('identifier')->implode(', ');
+            $extra = $missing->count() > 5 ? ' (… and ' . ($missing->count() - 5) . ' more)' : '';
             Notification::make()
-                ->title("Partial: {$ok} marked, " . count($errors) . ' blocked')
-                ->body(implode("\n", array_slice($errors, 0, 5)))
-                ->warning()->send();
+                ->title("Aborted: {$missing->count()} document(s) lack a disinfestation date")
+                ->body("Mark them disinfested first, then retry.\nOffending: {$identifiers}{$extra}")
+                ->danger()
+                ->send();
 
             return;
         }
 
-        Notification::make()
-            ->title('Cannot mark PERM_OUT without disinfestation date — mark disinfested first')
-            ->body(implode("\n", array_slice($errors, 0, 5)) ?: 'No documents updated.')
-            ->danger()->send();
+        $result = ActionSupport::performBulk(
+            $records,
+            function (Document $doc): void {
+                // H-1: the documents.barcode_status column now exists
+                // (migration 2026_05_28_140100). Write it and rely on
+                // the column default ('IN') for backfill of legacy rows.
+                $previousStatus = $doc->getOriginal('barcode_status');
+                $doc->setAttribute('barcode_status', 'PERM_OUT');
+
+                // Explicit audit row in addition to the model's column-diff
+                // Auditable trail — gives a more descriptive `event`
+                // ('permout_marked') and a queryable tag for filtering.
+                ActionSupport::logPivotChange(
+                    document: $doc,
+                    event: 'permout_marked',
+                    newValues: ['barcode_status' => 'PERM_OUT'],
+                    oldValues: ['barcode_status' => $previousStatus],
+                    tags: 'permout,document',
+                );
+
+                $doc->save();
+            },
+        );
+
+        ActionSupport::notifyBulkResult(
+            $result,
+            successVerb: 'marked PERM_OUT',
+            failedTitle: 'Mark PERM_OUT failed',
+        );
     }
 }

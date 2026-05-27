@@ -8,19 +8,24 @@ use App\Models\Document;
 use Filament\Notifications\Notification;
 use Illuminate\Database\Eloquent\Collection as EloquentCollection;
 use Illuminate\Support\Collection;
+use Illuminate\Support\Facades\DB;
 use OwenIt\Auditing\Models\Audit;
 
 /**
  * Shared helpers for the Document power-action classes under this namespace.
  *
- * The actions all share three small responsibilities:
+ * The actions all share four small responsibilities:
  *   1. Writing a custom audit row for non-column changes (pivot writes, cross-
  *      tenant transfers, …) — the {@see Auditable} trait only records column
  *      diffs on the host model, so anything else has to be logged manually.
- *   2. Building the standard success / partial-success / failure
+ *   2. Per-row atomic execution of the bulk loop via
+ *      {@see self::performBulk()} so a failure on row N rolls back row N's
+ *      writes (which may span the document + pivot + audit), without
+ *      affecting earlier successful rows.
+ *   3. Building the standard success / partial-success / failure
  *      {@see Notification} payloads with the same
  *      title shape, so the operator sees a consistent UX across the 15 actions.
- *   3. Normalising the "selected records" argument across the single-record
+ *   4. Normalising the "selected records" argument across the single-record
  *      and bulk variants.
  *
  * Keeping this in one small static helper avoids a base class hierarchy
@@ -85,6 +90,103 @@ final class ActionSupport
         $coll = new EloquentCollection($records->all());
 
         return $coll;
+    }
+
+    /**
+     * Execute a per-row callback inside its own database transaction so that:
+     *   - row N's failure does NOT undo row N-1's successful writes;
+     *   - row N's own multi-step writes (document save + pivot insert +
+     *     audit row + box movement) DO roll back atomically.
+     *
+     * Pattern recap of why the previous code was unsafe (review C-2):
+     * `DB::transaction(fn () => foreach { try { ... } catch { $errors[] } })`
+     * swallowed every per-row exception inside the closure, so the closure
+     * returned normally and Laravel committed the OUTER transaction —
+     * including all the rows that succeeded before the failure. That gave
+     * "best-effort partial commit" semantics while the docstring / tests
+     * claimed all-or-nothing rollback. This helper makes the partial-commit
+     * semantics explicit AND restores per-row atomicity at the same time.
+     *
+     * The callback receives the {@see Document} (and may throw any
+     * \Throwable to signal a per-row failure; the message is captured into
+     * the result for the partial-success notification).
+     *
+     * @param EloquentCollection<int, Document> $records
+     * @param callable(Document): void $perRow
+     * @return array{ok:int, errors:array<int,string>, skipped:int}
+     */
+    public static function performBulk(
+        EloquentCollection $records,
+        callable $perRow,
+    ): array {
+        $ok = 0;
+        $errors = [];
+
+        foreach ($records as $doc) {
+            /** @var Document $doc */
+            try {
+                DB::transaction(static function () use ($perRow, $doc): void {
+                    $perRow($doc);
+                });
+                $ok++;
+            } catch (\Throwable $e) {
+                $errors[] = "#{$doc->identifier}: {$e->getMessage()}";
+            }
+        }
+
+        return ['ok' => $ok, 'errors' => $errors, 'skipped' => 0];
+    }
+
+    /**
+     * Render the standard 3-state notification (full success / partial /
+     * failure) given the {@see self::performBulk()} result tuple.
+     *
+     * `successVerb` is appended after the count, e.g. "moved to Box BX-42".
+     * `failedTitle` is the title used when nothing succeeded (so operators
+     * can tell "Move failed" apart from "Reclassification failed").
+     *
+     * Title is always plain text — Filament's `Notification::title()` is HTML
+     * escaped by default unless someone explicitly calls `->htmlable()`.
+     * We deliberately do NOT, so the title is XSS-safe even when concatenated
+     * with DB-controlled values (box_number, identifier, …).
+     *
+     * @param array{ok:int, errors:array<int,string>, skipped?:int} $result
+     */
+    public static function notifyBulkResult(
+        array $result,
+        string $successVerb,
+        string $failedTitle = 'Action failed',
+    ): void {
+        $ok = (int) ($result['ok'] ?? 0);
+        $errors = $result['errors'] ?? [];
+
+        if ($errors === [] && $ok > 0) {
+            Notification::make()
+                ->title("{$ok} document(s) {$successVerb}")
+                ->success()
+                ->send();
+
+            return;
+        }
+
+        if ($ok > 0 && $errors !== []) {
+            Notification::make()
+                ->title("Partial: {$ok} {$successVerb}, " . count($errors) . ' failed')
+                ->body(implode("\n", array_slice($errors, 0, 5)))
+                ->warning()
+                ->send();
+
+            return;
+        }
+
+        $failed = count($errors);
+        $title = $failed > 0 ? "{$failedTitle} ({$failed} failed)" : $failedTitle;
+
+        Notification::make()
+            ->title($title)
+            ->body($errors === [] ? 'No documents were processed.' : implode("\n", array_slice($errors, 0, 5)))
+            ->danger()
+            ->send();
     }
 
     /**

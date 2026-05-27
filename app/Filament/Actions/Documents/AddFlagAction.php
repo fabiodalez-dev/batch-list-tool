@@ -22,6 +22,10 @@ use Illuminate\Support\Facades\DB;
  * The pivot is kept idempotent: if a document already has an OPEN flag of
  * the same `type`, we don't create a duplicate row — we touch the existing
  * flag's `flagged_at` to surface it as fresh in the inbox.
+ *
+ * Per-row atomicity (review C-2): each row runs in its own DB transaction
+ * so flag creation does not roll back earlier successful flags when a
+ * later row fails.
  */
 final class AddFlagAction
 {
@@ -124,10 +128,10 @@ final class AddFlagAction
         $touched = 0;
         $errors = [];
 
-        DB::transaction(function () use ($records, $type, $severity, $title, $description, &$created, &$touched, &$errors): void {
-            foreach ($records as $doc) {
-                /** @var Document $doc */
-                try {
+        foreach ($records as $doc) {
+            /** @var Document $doc */
+            try {
+                DB::transaction(static function () use ($doc, $type, $severity, $title, $description, &$created, &$touched): void {
                     // Idempotent: if an OPEN flag of this type already exists,
                     // touch flagged_at so it surfaces as fresh; don't create a
                     // duplicate row.
@@ -140,7 +144,8 @@ final class AddFlagAction
                     if ($existing !== null) {
                         $existing->touch('flagged_at');
                         $touched++;
-                        continue;
+
+                        return;
                     }
 
                     // `title` is NOT NULL at the DB level — fall back to a
@@ -160,11 +165,11 @@ final class AddFlagAction
                     ]);
 
                     $created++;
-                } catch (\Throwable $e) {
-                    $errors[] = "#{$doc->identifier}: {$e->getMessage()}";
-                }
+                });
+            } catch (\Throwable $e) {
+                $errors[] = "#{$doc->identifier}: {$e->getMessage()}";
             }
-        });
+        }
 
         if ($errors === [] && ($created + $touched) > 0) {
             $msg = "Flagged {$created} document(s)";
@@ -186,7 +191,7 @@ final class AddFlagAction
         }
 
         Notification::make()
-            ->title('Flag attach failed')
+            ->title('Flag attach failed (' . count($errors) . ' failed)')
             ->body(implode("\n", array_slice($errors, 0, 5)) ?: 'No documents updated.')
             ->danger()->send();
     }

@@ -11,7 +11,7 @@ use Filament\Forms\Components\DatePicker;
 use Filament\Notifications\Notification;
 use Filament\Schemas\Components\Component;
 use Illuminate\Database\Eloquent\Collection as EloquentCollection;
-use Illuminate\Support\Facades\DB;
+use Illuminate\Support\Carbon;
 
 /**
  * Action #5 — Mark document(s) as disinfested with an explicit date.
@@ -19,6 +19,11 @@ use Illuminate\Support\Facades\DB;
  * The DatePicker defaults to today() and refuses future dates (an archive
  * cannot pre-record a disinfestation that has not happened yet). This is a
  * prerequisite for Action #6 (PERM_OUT) per RFQ App.1 #5.
+ *
+ * Defence-in-depth (review M-7): the form-level `->maxDate(now())` is
+ * enforced by Filament's validation pipeline, but {@see self::perform()}
+ * re-checks server-side so programmatic invocations (test helpers, queued
+ * jobs, future internal callers) cannot stamp a future date.
  */
 final class MarkDisinfestedAction
 {
@@ -81,42 +86,27 @@ final class MarkDisinfestedAction
             return;
         }
 
-        $ok = 0;
-        $errors = [];
-
-        DB::transaction(function () use ($records, $date, &$ok, &$errors): void {
-            foreach ($records as $doc) {
-                /** @var Document $doc */
-                try {
-                    $doc->disinfestation_date = $date;
-                    $doc->save();
-                    $ok++;
-                } catch (\Throwable $e) {
-                    $errors[] = "#{$doc->identifier}: {$e->getMessage()}";
-                }
-            }
-        });
-
-        if ($errors === [] && $ok > 0) {
+        // Defence-in-depth re-check beyond the form-level maxDate guard.
+        if (Carbon::parse($date)->isFuture()) {
             Notification::make()
-                ->title("{$ok} document(s) marked disinfested on {$date}")
-                ->success()->send();
+                ->title('Disinfestation date cannot be in the future')
+                ->danger()->send();
 
             return;
         }
 
-        if ($ok > 0) {
-            Notification::make()
-                ->title("Partial: {$ok} marked, " . count($errors) . ' failed')
-                ->body(implode("\n", array_slice($errors, 0, 5)))
-                ->warning()->send();
+        $result = ActionSupport::performBulk(
+            $records,
+            function (Document $doc) use ($date): void {
+                $doc->disinfestation_date = $date;
+                $doc->save();
+            },
+        );
 
-            return;
-        }
-
-        Notification::make()
-            ->title('Failed to mark disinfested')
-            ->body(implode("\n", array_slice($errors, 0, 5)) ?: 'No documents updated.')
-            ->danger()->send();
+        ActionSupport::notifyBulkResult(
+            $result,
+            successVerb: "marked disinfested on {$date}",
+            failedTitle: 'Failed to mark disinfested',
+        );
     }
 }
