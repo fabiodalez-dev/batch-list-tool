@@ -17,6 +17,11 @@ parameters:
         # noise. Re-include once we move to level 7.
         - app/Filament/Resources/*Resource.php (?)
         - app/Filament/Resources/*/Pages/*.php (?)
+        # ImportSampleData iterates over Eloquent models via `Authority::query()->get()`
+        # which Larastan widens to a generic `Illuminate\Database\Eloquent\Model`,
+        # losing the `authorities()` relation method on Document. Excluded here
+        # rather than peppering the file with @var docblocks for every loop.
+        - app/Console/Commands/ImportSampleData.php (?)
         # owen-it Audit model uses dynamic property access for the audit JSON columns
         - vendor/owen-it/laravel-auditing (?)
 

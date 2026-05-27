@@ -103,6 +103,14 @@
         "allow-plugins": {
             "pestphp/pest-plugin": true,
             "php-http/discovery": true
+        },
+        "audit": {
+            "ignore": {
+                "PKSA-3d8r-4bff-vcj1": "CVE-2026-48761 symfony/html-sanitizer — patch (8.0.13) not yet on Packagist; remove when symfony/symfony releases the next 8.0.x.",
+                "PKSA-bvdf-tk8n-sbsf": "CVE-2026-48760 symfony/html-sanitizer — patch (8.0.13) not yet on Packagist; remove when symfony/symfony releases the next 8.0.x.",
+                "PKSA-y6py-qpv1-h52p": "CVE-2026-48736 symfony/http-foundation — patch (8.0.13) not yet on Packagist; remove when symfony/symfony releases the next 8.0.x.",
+                "PKSA-bf7t-jnpz-492k": "CVE-2026-48784 symfony/routing — patch (8.0.13) not yet on Packagist; remove when symfony/symfony releases the next 8.0.x."
+            }
         }
     },
     "minimum-stability": "stable",
