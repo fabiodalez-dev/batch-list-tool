@@ -140,8 +140,17 @@ class DocumentImporter extends Importer
             // Batch_List_Sample) is a formal R-code → exact FK match. The
             // separate "Creator" column (col 36) is free-text catalogator
             // data that gets fuzzy-matched.
+            //
+            // RFQ Appendix-2 §xi — both columns may carry MULTIPLE values in
+            // a single spreadsheet cell, delimited by ";". Real examples:
+            //   Identifier:  "520; 178"   → two notaries (R520 + R178)
+            //   Creator:     "Calcedonio Gatt; Angelo Cauchi"
+            // We split on ";", trim each piece, and resolve each piece
+            // independently. The FIRST non-empty piece becomes is_primary;
+            // every subsequent successful match attaches as a co-creator.
+            // Empty / whitespace-only pieces are skipped silently.
             ImportColumn::make('authority_identifier')
-                ->label('Authority identifier (R-code)')
+                ->label('Authority identifier (R-code, optionally ";"-separated)')
                 // NB: the legacy sample column header is just "Identifier",
                 // which collides with the Document's own identifier column.
                 // We disambiguate at the operator level: they're shown both
@@ -151,44 +160,111 @@ class DocumentImporter extends Importer
                     if ($state === null || trim($state) === '') {
                         return;
                     }
-                    $res = EntityResolver::resolveAuthority(trim($state));
-                    if ($res === null) {
-                        return; // soft miss — caller can review via extra.creator_match_log
-                    }
-                    if (isset($res['ambiguous_count'])) {
-                        // Defensive: identifier should be unique → no ambiguity
-                        // is possible. Treat as soft miss and log.
-                        self::mergeExtra($record, [
-                            'creator_match_log' => 'ambiguous_' . $res['ambiguous_count'] . '_candidates',
-                        ]);
-
+                    $pieces = self::splitSemicolonList($state);
+                    if ($pieces === []) {
                         return;
                     }
-                    // Stash on the importer (NOT the record — Eloquent would
-                    // try to persist an unknown property as a column).
-                    self::stashAuthority($record, (int) $res['authority_id']);
+                    foreach ($pieces as $piece) {
+                        $res = EntityResolver::resolveAuthority($piece);
+                        if ($res === null) {
+                            continue; // soft miss — try fallback by surname
+                        }
+                        if (isset($res['ambiguous_count'])) {
+                            // Defensive: identifier should be unique → no
+                            // ambiguity is possible. Treat as soft miss and log.
+                            self::mergeExtra($record, [
+                                'creator_match_log' => 'ambiguous_' . $res['ambiguous_count'] . '_candidates',
+                            ]);
+
+                            continue;
+                        }
+                        // Stash on the importer (NOT the record — Eloquent would
+                        // try to persist an unknown property as a column).
+                        // afterSave() assigns is_primary=true to the first
+                        // stashed id and is_primary=false to all subsequent.
+                        self::stashAuthority($record, (int) $res['authority_id']);
+                    }
                 }),
 
             ImportColumn::make('creator_legacy_text')
-                ->label('Creator (free-text)')
+                ->label('Creator (free-text, optionally ";"-separated)')
                 ->guess(['Creator', 'creator', 'Creator name'])
                 ->fillRecordUsing(function (Document $record, ?string $state): void {
                     if ($state === null || trim($state) === '') {
                         return;
                     }
-                    $merge = ['legacy_creator_text' => trim($state)];
+                    $raw = trim($state);
+                    $merge = ['legacy_creator_text' => $raw];
 
-                    // Best-effort name resolution (F-009 / F-001 aware).
-                    $res = EntityResolver::resolveAuthority(null, null, trim($state));
-                    if ($res === null) {
-                        $merge['creator_match_log'] = 'unresolved';
-                    } elseif (isset($res['ambiguous_count'])) {
-                        $merge['creator_match_log'] =
-                            'ambiguous_' . $res['ambiguous_count'] . '_candidates';
-                        $merge['ambiguous_candidates'] = $res['candidates'];
+                    // Split on ";" — RFQ Appendix-2 §xi: the legacy Creator
+                    // column can encode multiple notaries in one cell, e.g.
+                    // "Calcedonio Gatt; Angelo Cauchi".
+                    $pieces = self::splitSemicolonList($raw);
+                    if ($pieces === []) {
+                        self::mergeExtra($record, $merge);
+
+                        return;
+                    }
+
+                    $logs = [];
+                    $ambiguous = [];
+                    $matchedAny = false;
+
+                    foreach ($pieces as $piece) {
+                        // Best-effort name resolution (F-009 / F-001 aware).
+                        $res = EntityResolver::resolveAuthority(null, null, $piece);
+                        if ($res === null) {
+                            $logs[] = 'unresolved:' . $piece;
+                        } elseif (isset($res['ambiguous_count'])) {
+                            $logs[] = 'ambiguous_' . $res['ambiguous_count']
+                                . '_candidates:' . $piece;
+                            foreach ($res['candidates'] as $c) {
+                                $ambiguous[] = (int) $c;
+                            }
+                        } else {
+                            $logs[] = 'matched:' . $res['method'] . ':' . $piece;
+                            self::stashAuthority($record, (int) $res['authority_id']);
+                            $matchedAny = true;
+                        }
+                    }
+
+                    // Preserve the single-piece log shape ("unresolved",
+                    // "ambiguous_N_candidates", "matched:<method>") when only
+                    // one creator was in the cell — keeps assertions in the
+                    // existing test suite stable.
+                    if (count($pieces) === 1) {
+                        $only = $logs[0];
+                        if (str_starts_with($only, 'unresolved')) {
+                            $merge['creator_match_log'] = 'unresolved';
+                        } elseif (str_starts_with($only, 'ambiguous_')) {
+                            // strip the trailing ":<piece>" we added above
+                            $colon = strpos($only, ':');
+                            $merge['creator_match_log'] = $colon !== false
+                                ? substr($only, 0, $colon)
+                                : $only;
+                            if ($ambiguous !== []) {
+                                $merge['ambiguous_candidates']
+                                    = array_values(array_unique($ambiguous));
+                            }
+                        } else {
+                            // matched:<method>:<piece> → matched:<method>
+                            $parts = explode(':', $only, 3);
+                            $merge['creator_match_log'] = isset($parts[1])
+                                ? $parts[0] . ':' . $parts[1]
+                                : $only;
+                        }
                     } else {
-                        $merge['creator_match_log'] = 'matched:' . $res['method'];
-                        self::stashAuthority($record, (int) $res['authority_id']);
+                        // Multi-creator cell: aggregate the per-piece log
+                        // entries; keep the array of ambiguous candidate ids
+                        // so an operator can still resolve manually.
+                        $merge['creator_match_log'] = $matchedAny
+                            ? 'matched_multi:' . count($pieces)
+                            : 'unresolved_multi:' . count($pieces);
+                        $merge['creator_match_details'] = $logs;
+                        if ($ambiguous !== []) {
+                            $merge['ambiguous_candidates']
+                                = array_values(array_unique($ambiguous));
+                        }
                     }
                     self::mergeExtra($record, $merge);
                 }),
@@ -426,6 +502,35 @@ class DocumentImporter extends Importer
     {
         $key = spl_object_id($record);
         self::$rowAuthorityStash[$key][] = $authorityId;
+    }
+
+    /**
+     * Split a semicolon-delimited spreadsheet cell into a clean list of
+     * trimmed, non-empty pieces. RFQ Appendix-2 §xi — the legacy Excel
+     * encodes multiple creators in a SINGLE column delimited by `;`:
+     *
+     *   "520; 178"                       → ["520", "178"]
+     *   "Calcedonio Gatt; Angelo Cauchi" → ["Calcedonio Gatt", "Angelo Cauchi"]
+     *   "520; ; 178"                     → ["520", "178"]  (empty piece dropped)
+     *   "  R520  "                       → ["R520"]
+     *   ""                               → []
+     *
+     * @return array<int, string>
+     */
+    public static function splitSemicolonList(string $raw): array
+    {
+        if (! str_contains($raw, ';')) {
+            $only = trim($raw);
+
+            return $only === '' ? [] : [$only];
+        }
+
+        $pieces = array_map('trim', explode(';', $raw));
+
+        return array_values(array_filter(
+            $pieces,
+            static fn (string $p): bool => $p !== '',
+        ));
     }
 
     /**

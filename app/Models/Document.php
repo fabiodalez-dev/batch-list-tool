@@ -158,6 +158,29 @@ class Document extends Model implements AuditableContract, HasMedia, Sortable
         return static::query()->where('current_box_id', $this->current_box_id);
     }
 
+    /**
+     * The "best-available" identifier for display:
+     *   catalogue_identifier > object_reference_number > identifier
+     *
+     * Per RFQ Appendix-2 §xv: `object_reference_number` is "a temporary
+     * identifier used in past projects" and serves as a fallback when the
+     * canonical `catalogue_identifier` has not yet been assigned. The
+     * legacy POC `identifier` column is the last-resort fallback so the
+     * accessor never silently degrades to an empty string for a record
+     * that does have *some* identifier on file.
+     *
+     * Non-invasive accessor only — no DB change required. Used by the
+     * Document Resource table column and the Document Infolist hero so the
+     * shown value flows through this fallback chain consistently.
+     */
+    public function getDisplayIdentifierAttribute(): ?string
+    {
+        return $this->catalogue_identifier
+            ?? $this->object_reference_number
+            ?? $this->identifier
+            ?? null;
+    }
+
     public function series(): BelongsTo
     {
         return $this->belongsTo(Series::class);
