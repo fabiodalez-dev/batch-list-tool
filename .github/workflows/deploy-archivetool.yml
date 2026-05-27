@@ -54,6 +54,10 @@ jobs:
         with:
           ref: ${{ github.sha }}
           fetch-depth: 1
+          # The deploy step uses SSH (not the GitHub token) so the
+          # default-persisted credential is unnecessary attack surface.
+          persist-credentials: false
+
 
       - name: Validate required secrets
         env:

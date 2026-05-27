@@ -68,15 +68,34 @@ trait CapsExportRows
     protected function capExportRows(iterable $rows): array
     {
         $cap = static::$exportRowCap;
-        $array = is_array($rows) ? $rows : iterator_to_array($rows, preserve_keys: false);
 
-        if (count($array) > $cap) {
-            $this->notifyExportTruncated($cap);
+        // Fast path for the array case: count is O(1), slice is O(cap).
+        if (is_array($rows)) {
+            if (count($rows) > $cap) {
+                $this->notifyExportTruncated($cap);
 
-            return array_slice($array, 0, $cap);
+                return array_slice($rows, 0, $cap);
+            }
+
+            return $rows;
         }
 
-        return $array;
+        // Streaming path: never materialise more than `cap` items. A future
+        // caller passing a Generator / LazyCollection no longer pays the
+        // worst-case cost of fully exhausting the source.
+        $result = [];
+        $count = 0;
+        foreach ($rows as $row) {
+            if ($count >= $cap) {
+                $this->notifyExportTruncated($cap);
+
+                return $result;
+            }
+            $result[] = $row;
+            $count++;
+        }
+
+        return $result;
     }
 
     protected function notifyExportTruncated(int $cap): void

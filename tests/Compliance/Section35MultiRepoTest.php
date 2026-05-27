@@ -28,8 +28,13 @@ describe('REQ-3.5 Multi-tenant repository scoping', function () {
         $userA->save();
         $this->actingAs($userA);
 
-        $visible = Document::query()->pluck('repository_id')->unique()->all();
-        expect($visible)->each->toBe($repoA->id);
+        $visible = Document::query()->pluck('repository_id')->unique()->values()->all();
+        // Guard against silent pass on empty result: a leak detection test
+        // that finds zero documents at all proves nothing.
+        expect($visible)
+            ->toHaveCount(1)
+            ->toContain($repoA->id)
+            ->not->toContain($repoB->id);
     });
 
     it('super_admin bypasses RepositoryScope and sees all repositories')->todo('Feature\\SecurityBaseline\\MultiTenantScopeTest');

@@ -7,8 +7,11 @@
 Web application for the **Notarial Archives Foundation (NAF)**, Malta, under contract **RFQ-2026-06**. Replaces the legacy Excel-based "Batch List" with a structured, auditable, multi-repository system.
 
 - **Production go-live**: 30 November 2026
-- **Stack**: Laravel 11 · Filament 3 · PHP 8.4 · MySQL 8 · Blade/Livewire (no SPA)
-- **Licence**: Apache 2.0 (to be added at handover)
+- **Stack**: Laravel 13.11 · Filament 5.6 · Livewire 4 · PHP 8.4.21 · MySQL 8.x prod (MySQL 9.x dev) · Blade (no SPA)
+- **Licence**: Apache 2.0 — see [`LICENSE`](LICENSE) + [`NOTICE`](NOTICE)
+- **Stack note**: the original RFQ submission promised Laravel 11 + Filament 3. The implementation
+  shipped on Laravel 13 + Filament 5 because those were the current stable releases at bootstrap.
+  Functional contract is unchanged; change-control documented in `../Batch_List_Tool/nra/ops/plan.md` v2.1 header.
 - **Operational docs**: `../Batch_List_Tool/nra/ops/` (planning, workflow, runbooks)
 
 ---
@@ -83,9 +86,10 @@ Security: `bepsvpt/secure-headers`, `spatie/laravel-csp`, `spatie/laravel-honeyp
 
 ### Dev packages
 
-`larastan/larastan`, `laravel/telescope`, `barryvdh/laravel-debugbar`.
-
-(Pest is **not** installed yet — Pest 4 requires PHPUnit 12 which conflicts with the Laravel 11 default. To revisit when Laravel 12 lands.)
+`pestphp/pest` 4.x (+ `pest-plugin-arch`, `pest-plugin-laravel`, `pest-plugin-livewire`) ·
+`larastan/larastan` (level 6) · `laravel/pint` (style) ·
+`laravel/telescope` (dev-only, gated registration in `AppServiceProvider`) ·
+`barryvdh/laravel-debugbar` · `phpunit/phpunit` ^12 · `mockery/mockery`.
 
 ---
 

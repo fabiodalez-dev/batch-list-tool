@@ -4,9 +4,8 @@ declare(strict_types=1);
 
 use App\Models\Batch;
 use App\Models\Box;
-use App\Models\DocumentType;
-use App\Models\Practice;
 use Illuminate\Foundation\Testing\RefreshDatabase;
+use Illuminate\Support\Facades\Schema;
 
 /*
  * RFQ-2026-06 §3.1 Core Features (12 requirements × 4 tests = 48 tests).
@@ -126,12 +125,12 @@ describe('REQ-3.1.10 Box lifecycle (state + destroyed)', function () {
 
 /* ─── REQ-3.1.11 Controlled vocabularies ─────────────────────────── */
 describe('REQ-3.1.11 Lookup tables', function () {
-    test('document_types lookup table exists and is seeded', function () {
-        expect(DocumentType::query()->count())->toBeGreaterThanOrEqual(0);
+    test('document_types lookup table exists', function () {
+        expect(Schema::hasTable('document_types'))->toBeTrue();
     });
 
     test('practices lookup table exists', function () {
-        expect(Practice::query()->count())->toBeGreaterThanOrEqual(0);
+        expect(Schema::hasTable('practices'))->toBeTrue();
     });
 
     it('DocumentResource form Select uses the lookup table options')->todo('Feature\\Resources\\DocumentResource — form Select');

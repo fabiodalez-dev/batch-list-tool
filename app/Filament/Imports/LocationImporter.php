@@ -148,6 +148,13 @@ class LocationImporter extends Importer
                     $q->where('repository_id', $record->repository_id)
                         ->orWhereNull('repository_id');
                 });
+                // Determinism: when a same-named location exists both
+                // repository-scoped AND globally, prefer the repository-
+                // scoped one (CodeRabbit PR #85 finding).
+                $parentQuery->orderByRaw(
+                    'CASE WHEN repository_id = ? THEN 0 WHEN repository_id IS NULL THEN 1 ELSE 2 END',
+                    [$record->repository_id]
+                );
             }
 
             $parent = $parentQuery->first();
@@ -170,13 +177,40 @@ class LocationImporter extends Importer
      */
     public function resolveRecord(): ?Location
     {
-        $name = (string) ($this->data['name'] ?? '');
+        $name = trim((string) ($this->data['name'] ?? ''));
         if ($name === '') {
             return new Location;
         }
 
+        // Match the docblock contract: idempotency on the COMPOSITE key
+        // (repository_id, parent_id, name). Matching by name alone would
+        // pick up a same-named location in a different repository or under
+        // a different parent and overwrite it — critical cross-tenant
+        // corruption risk (CodeRabbit PR #85 finding).
+        $repoCode = trim((string) ($this->data['repository_code'] ?? ''));
+        $repoId = null;
+        if ($repoCode !== '') {
+            $repoId = Repository::query()
+                ->whereRaw('LOWER(code) = ?', [mb_strtolower($repoCode)])
+                ->value('id');
+        }
+
+        $parentName = trim((string) ($this->data['parent_name'] ?? ''));
+        $parentId = null;
+        if ($parentName !== '') {
+            $parentId = Location::query()
+                ->whereRaw('LOWER(name) = ?', [mb_strtolower($parentName)])
+                ->when($repoId !== null, fn ($q) => $q->where(function ($qq) use ($repoId): void {
+                    $qq->where('repository_id', $repoId)
+                        ->orWhereNull('repository_id');
+                }))
+                ->value('id');
+        }
+
         $existing = Location::query()
             ->whereRaw('LOWER(name) = ?', [mb_strtolower($name)])
+            ->where('repository_id', $repoId)
+            ->where('parent_id', $parentId)
             ->first();
 
         return $existing ?? new Location;

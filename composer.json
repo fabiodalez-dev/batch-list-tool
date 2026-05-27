@@ -1,10 +1,10 @@
 {
     "$schema": "https://getcomposer.org/schema.json",
-    "name": "laravel/laravel",
+    "name": "fabiodalez-dev/batch-list-tool",
     "type": "project",
-    "description": "The skeleton application for the Laravel framework.",
-    "keywords": ["laravel", "framework"],
-    "license": "MIT",
+    "description": "Batch List Tool — Laravel application built for NRA Malta (RFQ-2026-06).",
+    "keywords": ["nra", "notarial-archive", "laravel", "filament"],
+    "license": "Apache-2.0",
     "repositories": [
         {
             "type": "vcs",

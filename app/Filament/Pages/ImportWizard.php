@@ -485,12 +485,23 @@ class ImportWizard extends Page
             // UTF-8 BOM for Excel compatibility on Windows / Maltese accents.
             fwrite($out, "\xEF\xBB\xBF");
 
-            // CSV formula injection defence: cells beginning with =/+/-/@ are
-            // interpreted as formulas by Excel/LibreOffice/Sheets. Prefix
-            // a single quote so the cell stays literal text.
+            // CSV formula injection defence (OWASP CWE-1236): cells beginning
+            // with =/+/-/@ are interpreted as formulas by Excel/LibreOffice/
+            // Sheets. Prefix a single quote so the cell stays literal text.
+            // We also guard against leading TAB/CR/LF which Excel treats as
+            // field-start tricks — checked against the RAW string (NOT the
+            // trimmed one) because ltrim() strips them before we'd see them.
             $sanitizeForCsv = static function (string $value): string {
+                if ($value === '') {
+                    return $value;
+                }
+                $firstRaw = $value[0];
+                if (in_array($firstRaw, ["\t", "\r", "\n"], true)) {
+                    return "'" . $value;
+                }
                 $trimmed = ltrim($value);
-                if ($trimmed !== '' && in_array($trimmed[0], ['=', '+', '-', '@', "\t", "\r"], true)) {
+                $firstTrimmed = $trimmed[0] ?? '';
+                if (in_array($firstTrimmed, ['=', '+', '-', '@'], true)) {
                     return "'" . $value;
                 }
 
@@ -503,7 +514,17 @@ class ImportWizard extends Page
                     $rawData = $row->getAttribute('data');
                     $data = is_array($rawData) ? $rawData : (array) json_decode((string) $rawData, true);
                     if ($first) {
-                        fputcsv($out, array_merge(array_keys($data), ['_validation_error']));
+                        // Headers (operator-supplied column names from the
+                        // uploaded xlsx) ALSO need the sanitiser — a
+                        // malicious header like '=cmd|...' would otherwise
+                        // execute when the export is opened.
+                        fputcsv($out, array_merge(
+                            array_map(
+                                static fn ($k): string => $sanitizeForCsv((string) $k),
+                                array_keys($data),
+                            ),
+                            ['_validation_error'],
+                        ));
                         $first = false;
                     }
                     fputcsv($out, array_merge(
