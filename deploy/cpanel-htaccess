@@ -1,0 +1,49 @@
+# cPanel public_html/.htaccess — archivetool.eu
+#
+# Routes every request that isn't an existing file or directory to the cPanel
+# bootstrap shim (public_html/index.php), which in turn includes the real
+# Laravel entrypoint at /home/archivet/laravel-app/public/index.php.
+#
+# Mirrors the directives shipped in laravel-app/public/.htaccess so that
+# behavior at the cPanel document root matches Laravel's expectations.
+
+<IfModule mod_rewrite.c>
+    <IfModule mod_negotiation.c>
+        Options -MultiViews -Indexes
+    </IfModule>
+
+    RewriteEngine On
+
+    # Force HTTPS — production runs behind a valid TLS cert on archivetool.eu.
+    RewriteCond %{HTTPS} !=on [NC]
+    RewriteCond %{HTTP:X-Forwarded-Proto} !=https [NC]
+    RewriteRule ^ https://%{HTTP_HOST}%{REQUEST_URI} [L,R=301]
+
+    # Handle Authorization Header
+    RewriteCond %{HTTP:Authorization} .
+    RewriteRule .* - [E=HTTP_AUTHORIZATION:%{HTTP:Authorization}]
+
+    # Handle X-XSRF-Token Header
+    RewriteCond %{HTTP:x-xsrf-token} .
+    RewriteRule .* - [E=HTTP_X_XSRF_TOKEN:%{HTTP:X-XSRF-Token}]
+
+    # Redirect trailing slashes if not a folder
+    RewriteCond %{REQUEST_FILENAME} !-d
+    RewriteCond %{REQUEST_URI} (.+)/$
+    RewriteRule ^ %1 [L,R=301]
+
+    # Send all other requests to the bootstrap shim
+    RewriteCond %{REQUEST_FILENAME} !-d
+    RewriteCond %{REQUEST_FILENAME} !-f
+    RewriteRule ^ index.php [L]
+</IfModule>
+
+# Hard-deny direct access to sensitive files even if they leak into public_html
+<FilesMatch "^(\.env|\.env\..*|composer\.(json|lock)|package(-lock)?\.json|\.git.*|deploy\.sh|post-deploy\.sh)$">
+    Require all denied
+</FilesMatch>
+
+# Default to PHP 8.3 on cPanel CloudLinux EL8
+<IfModule mime_module>
+    AddHandler application/x-httpd-ea-php83 .php .php8 .phtml
+</IfModule>
