@@ -9,6 +9,8 @@ use App\Filament\Imports\BatchImporter;
 use App\Filament\Imports\BoxImporter;
 use App\Filament\Imports\DocumentImporter;
 use App\Filament\Imports\SeriesImporter;
+use App\Models\ImportProfile;
+use App\Models\User;
 use App\Support\BulkImport\TemplateGenerator;
 use Filament\Actions\Action as FilamentAction;
 use Filament\Actions\Imports\Events\ImportCompleted;
@@ -22,10 +24,14 @@ use Filament\Forms\Components\FileUpload;
 use Filament\Forms\Components\Placeholder;
 use Filament\Forms\Components\Radio;
 use Filament\Forms\Components\Select;
+use Filament\Forms\Components\TextInput;
 use Filament\Notifications\Notification;
 use Filament\Pages\Page;
 use Filament\Schemas\Components\Actions as SchemaActions;
+use Filament\Schemas\Components\Component;
+use Filament\Schemas\Components\Grid;
 use Filament\Schemas\Components\Utilities\Get;
+use Filament\Schemas\Components\Utilities\Set;
 use Filament\Schemas\Components\Wizard;
 use Filament\Schemas\Components\Wizard\Step;
 use Filament\Schemas\Schema;
@@ -35,6 +41,7 @@ use Illuminate\Support\Facades\Bus;
 use Illuminate\Support\Facades\Storage;
 use Illuminate\Support\HtmlString;
 use League\Csv\Reader;
+use Livewire\Attributes\Url;
 use Livewire\Features\SupportFileUploads\TemporaryUploadedFile;
 use PhpOffice\PhpSpreadsheet\IOFactory;
 use PhpOffice\PhpSpreadsheet\Writer\Csv;
@@ -102,6 +109,108 @@ class ImportWizard extends Page
     ];
 
     /**
+     * Synonyms table for {@see guessColumnMap()}. Maps lowercase Excel
+     * header strings the operator might use → one or more Importer field
+     * names. The matcher cascades: exact-name → SYNONYMS → fuzzy
+     * Levenshtein. Keys are normalized lowercase / trimmed; values are
+     * the importer column names (snake_case) that the synonym resolves to.
+     *
+     * Most entries are derived from the three sample spreadsheets in
+     * `/samples/` and the legacy column names operators have been spotted
+     * pasting in (e.g. "Creator Name", "Name of Inputter", "MS code"). The
+     * operator can extend this per-profile via `ImportProfile::synonyms`.
+     *
+     * @var array<string, array<int, string>>
+     */
+    public const SYNONYMS = [
+        // ── Authority / Creator ────────────────────────────────────────
+        'creator name' => ['given_names', 'name'],
+        'creator first name' => ['given_names'],
+        'first name' => ['given_names'],
+        'given name' => ['given_names'],
+        'given names' => ['given_names'],
+        'creator surname' => ['surname'],
+        'last name' => ['surname'],
+        'family name' => ['surname'],
+        'authority name' => ['surname', 'given_names'],
+        'authority surname' => ['surname'],
+        'name of inputter' => ['inputter', 'created_by'],
+        'inputter' => ['inputter', 'created_by'],
+        'identifier' => ['identifier', 'code'],
+        'authority identifier' => ['identifier'],
+        'r-code' => ['identifier'],
+        'r code' => ['identifier'],
+        'alternative identifier' => ['alternative_identifier'],
+        'alt identifier' => ['alternative_identifier'],
+        'ms' => ['alternative_identifier'],
+        'ms code' => ['alternative_identifier'],
+        'type of entity' => ['entity_type'],
+        'entity type' => ['entity_type'],
+        'practice dates' => ['practice_dates_active'],
+        'private practice dates active' => ['practice_dates_active'],
+        'dates active' => ['practice_dates_active'],
+        'maiden surname' => ['maiden_surname'],
+        'maiden name' => ['maiden_surname'],
+        'name suffix' => ['name_suffix'],
+        'suffix' => ['name_suffix'],
+        'ntg dates' => ['ntg_dates_active'],
+        'ntg dates active' => ['ntg_dates_active'],
+
+        // ── Document ──────────────────────────────────────────────────
+        'batch number' => ['batch_id', 'batch', 'batch_number'],
+        'batch no' => ['batch_id', 'batch_number'],
+        'batch' => ['batch_id', 'batch_number'],
+        'box number' => ['box_id', 'box', 'box_number'],
+        'box no' => ['box_id', 'box_number'],
+        'box' => ['box_id', 'box_number'],
+        'document type' => ['document_type', 'type'],
+        'doc type' => ['document_type'],
+        'volume' => ['volume_label', 'volume'],
+        'volume label' => ['volume_label'],
+        'volume number' => ['volume_label'],
+        'date of creation' => ['dates'],
+        'creation date' => ['dates'],
+        'date range' => ['dates'],
+        'dates' => ['dates'],
+        'catalogue identifier' => ['catalogue_identifier'],
+        'catalogue id' => ['catalogue_identifier'],
+        'deeds' => ['deeds'],
+        'practice' => ['practice'],
+        'barcode' => ['barcode'],
+        'barcode (in)' => ['barcode'],
+        'barcode status' => ['barcode_status'],
+        'status' => ['barcode_status'],
+
+        // ── Series ────────────────────────────────────────────────────
+        'series code' => ['code'],
+        'series identifier' => ['code'],
+        'code' => ['code'],
+        'series name' => ['title'],
+        'series title' => ['title'],
+        'title' => ['title'],
+        'standard title in english (plural)' => ['title'],
+        'standard title' => ['title'],
+        'description' => ['description'],
+        'legacy label' => ['description'],
+        'title and code' => ['description'],
+        'is wills series' => ['is_wills_series'],
+        'wills' => ['is_wills_series'],
+        'is active' => ['is_active'],
+        'active' => ['is_active'],
+
+        // ── Batch ─────────────────────────────────────────────────────
+        'batch type' => ['type', 'batch_type'],
+        'main collection' => ['type'],
+        'notary accession' => ['type'],
+        'accession' => ['accession_id', 'accession'],
+
+        // ── Box ───────────────────────────────────────────────────────
+        'box type' => ['box_type', 'type'],
+        'ras box' => ['box_number'],
+        'in situ box' => ['box_number'],
+    ];
+
+    /**
      * Wizard state — a single flat array of every step's fields.
      * Filament's Wizard component stitches the steps' state paths
      * together under this root, so `data.import_type`, `data.file`
@@ -111,6 +220,14 @@ class ImportWizard extends Page
      * @var array<string, mixed>
      */
     public ?array $data = [];
+
+    /**
+     * Optional `?profile=N` query-string parameter — preloads a saved
+     * {@see ImportProfile} into the wizard state so the operator's
+     * column_map is already populated when they reach Step 4.
+     */
+    #[Url(as: 'profile')]
+    public ?string $profileQuery = null;
 
     protected string $view = 'filament.pages.import-wizard';
 
@@ -155,9 +272,21 @@ class ImportWizard extends Page
     public function mount(): void
     {
         abort_unless(static::canAccess(), 403);
-        $this->form->fill([
+
+        $initial = [
             'skip_duplicates' => true,
-        ]);
+        ];
+
+        // ?profile=N — preload a saved mapping. We only honour profiles the
+        // current user can actually see (owner OR shared in their tenant).
+        $profile = $this->resolveProfileFromQuery();
+        if ($profile !== null) {
+            $initial['starting_profile_id'] = (string) $profile->getKey();
+            $initial['import_type'] = $profile->import_type;
+            $initial['column_map'] = is_array($profile->column_map) ? $profile->column_map : [];
+        }
+
+        $this->form->fill($initial);
     }
 
     /* ──────────────────────────────────────────────────────────────── */
@@ -248,7 +377,15 @@ class ImportWizard extends Page
 
         /** @var class-string<Importer> $importerClass */
         $importerClass = self::IMPORTERS[$type];
-        $columnMap = self::guessColumnMap($importerClass, $headers);
+
+        // Prefer the operator's edited column_map from form state; fall
+        // back to a fresh auto-guess if nothing was set (e.g. file was
+        // uploaded after Step 4 was last rendered).
+        $columnMap = $state['column_map'] ?? null;
+        if (! is_array($columnMap) || $columnMap === []) {
+            $columnMap = self::guessColumnMap($importerClass, $headers);
+        }
+        /** @var array<string, string|null> $columnMap */
         $missing = self::findMissingRequiredColumns($importerClass, $columnMap);
         if (count($missing) > 0) {
             $this->notifyDanger(
@@ -272,6 +409,12 @@ class ImportWizard extends Page
 
             return;
         }
+
+        // Persist the mapping as a reusable profile if the operator asked
+        // for it — and stamp `last_used_at` / `use_count` on a profile we
+        // started FROM, so the dropdown sort surfaces recent picks first.
+        $savedProfile = $this->maybeSaveProfile($state, $type, $columnMap);
+        $this->maybeMarkStartingProfileUsed($state, $savedProfile);
 
         Notification::make()
             ->title('Import started')
@@ -297,11 +440,17 @@ class ImportWizard extends Page
      * keys are Importer column names, values are the matching Excel
      * header strings (or null if not present).
      *
+     * Cascading match strategy (per Importer field):
+     *   1. exact name / label / `->guess()` alias (case-insensitive, trimmed);
+     *   2. {@see SYNONYMS} table lookup;
+     *   3. Levenshtein distance ≤ 3 fuzzy match against the field name.
+     *
      * @param class-string<Importer> $importerClass
      * @param array<int, string> $excelHeaders
+     * @param array<string, array<int, string>> $extraSynonyms per-profile aliases
      * @return array<string, string|null>
      */
-    public static function guessColumnMap(string $importerClass, array $excelHeaders): array
+    public static function guessColumnMap(string $importerClass, array $excelHeaders, array $extraSynonyms = []): array
     {
         $lowerExcel = [];
         foreach ($excelHeaders as $h) {
@@ -310,7 +459,7 @@ class ImportWizard extends Page
 
         $map = [];
         foreach ($importerClass::getColumns() as $column) {
-            $map[$column->getName()] = self::guessSingleColumn($column, $lowerExcel);
+            $map[$column->getName()] = self::guessSingleColumn($column, $lowerExcel, $extraSynonyms);
         }
 
         return $map;
@@ -370,6 +519,110 @@ class ImportWizard extends Page
         return $resource::getUrl('index');
     }
 
+    /**
+     * Resolve `?profile=N` (or `$starting_profile_id`) into an actual
+     * {@see ImportProfile} the current user is allowed to see. Returns
+     * null if the id is missing, malformed, soft-deleted, or out of the
+     * user's repository.
+     */
+    protected function resolveProfileFromQuery(): ?ImportProfile
+    {
+        $raw = $this->profileQuery;
+        if ($raw === null || $raw === '' || ! ctype_digit((string) $raw)) {
+            return null;
+        }
+
+        /** @var User|null $user */
+        $user = auth()->user();
+        if ($user === null) {
+            return null;
+        }
+
+        return ImportProfile::query()
+            ->accessibleBy($user)
+            ->whereKey((int) $raw)
+            ->first();
+    }
+
+    /**
+     * Persist the operator's column_map as a reusable {@see ImportProfile}
+     * if they ticked "Save as profile" on step 5. Returns the saved profile
+     * (or null if nothing was saved) so callers can correlate it with
+     * `starting_profile_id` for markUsed bookkeeping.
+     *
+     * @param array<string, mixed> $state
+     * @param array<string, string|null> $columnMap
+     */
+    protected function maybeSaveProfile(array $state, string $type, array $columnMap): ?ImportProfile
+    {
+        if (! ($state['save_as_profile'] ?? false)) {
+            return null;
+        }
+        $name = trim((string) ($state['save_as_profile_name'] ?? ''));
+        if ($name === '') {
+            return null;
+        }
+        $user = auth()->user();
+        if ($user === null) {
+            return null;
+        }
+
+        /** @var User $user */
+        try {
+            $profile = ImportProfile::query()->create([
+                'user_id' => (int) $user->getKey(),
+                'repository_id' => $user->default_repository_id,
+                'name' => mb_substr($name, 0, 191),
+                'description' => null,
+                'import_type' => $type,
+                'column_map' => $columnMap,
+                'synonyms' => null,
+                'is_shared' => (bool) ($state['save_as_profile_shared'] ?? false),
+            ]);
+        } catch (\Throwable $e) {
+            Notification::make()
+                ->title('Could not save profile')
+                ->body($e->getMessage())
+                ->warning()
+                ->send();
+
+            return null;
+        }
+
+        Notification::make()
+            ->title('Profile saved')
+            ->body(sprintf('"%s" is available next time you import %s.', $profile->name, $type))
+            ->success()
+            ->send();
+
+        return $profile;
+    }
+
+    /**
+     * If the operator started from a saved profile, bump its `last_used_at`
+     * + `use_count` so the dropdown in Step 1 sorts the most-recent picks
+     * to the top.
+     *
+     * @param array<string, mixed> $state
+     */
+    protected function maybeMarkStartingProfileUsed(array $state, ?ImportProfile $newProfile): void
+    {
+        $startingId = $state['starting_profile_id'] ?? null;
+        if ($startingId === null || $startingId === '' || ! ctype_digit((string) $startingId)) {
+            return;
+        }
+        // Don't double-count: if we just created a NEW profile, we already
+        // initialized its use_count at 0 and it's not the same record.
+        $startingProfile = ImportProfile::query()->find((int) $startingId);
+        if ($startingProfile === null) {
+            return;
+        }
+        if ($newProfile !== null && (int) $newProfile->getKey() === (int) $startingProfile->getKey()) {
+            return;
+        }
+        $startingProfile->markUsed();
+    }
+
     /* ──── Step 1: what are you importing? ───────────────────────── */
 
     protected function stepWhat(): Step
@@ -395,8 +648,84 @@ class ImportWizard extends Page
                         'documents' => 'Depends on: Series + Authorities + Batches + Boxes.',
                     ])
                     ->required()
-                    ->live(),
+                    ->live()
+                    ->afterStateUpdated(function (Set $set): void {
+                        // Reset profile + map when the operator switches entity:
+                        // a profile is type-specific, so the previous choice is
+                        // no longer valid for the new type.
+                        $set('starting_profile_id', null);
+                        $set('column_map', []);
+                    }),
+
+                Select::make('starting_profile_id')
+                    ->label('Start from a saved profile')
+                    ->helperText('Optional — pick a previously-saved column mapping. Leave empty to use auto-guess.')
+                    ->placeholder('— Start from scratch (use auto-guess) —')
+                    ->options(fn (Get $get): array => self::profileOptionsFor((string) ($get('import_type') ?? '')))
+                    ->visible(fn (Get $get): bool => filled($get('import_type')) && count(self::profileOptionsFor((string) $get('import_type'))) > 0)
+                    ->searchable()
+                    ->live()
+                    ->afterStateUpdated(function ($state, Set $set): void {
+                        if (! is_string($state) && ! is_int($state)) {
+                            $set('column_map', []);
+
+                            return;
+                        }
+                        if (! ctype_digit((string) $state)) {
+                            $set('column_map', []);
+
+                            return;
+                        }
+                        $user = auth()->user();
+                        if ($user === null) {
+                            return;
+                        }
+                        /** @var User $user */
+                        $profile = ImportProfile::query()
+                            ->accessibleBy($user)
+                            ->whereKey((int) $state)
+                            ->first();
+                        if ($profile === null) {
+                            return;
+                        }
+                        $set('import_type', $profile->import_type);
+                        $set('column_map', is_array($profile->column_map) ? $profile->column_map : []);
+                    }),
             ]);
+    }
+
+    /**
+     * List the profiles the current user can see for a given import_type,
+     * sorted by recency (last_used_at desc, then created_at desc). Returns
+     * a [id => label] map ready to feed a Select.
+     *
+     * @return array<string, string>
+     */
+    protected static function profileOptionsFor(string $importType): array
+    {
+        if (! array_key_exists($importType, self::IMPORTERS)) {
+            return [];
+        }
+        $user = auth()->user();
+        if ($user === null) {
+            return [];
+        }
+
+        /** @var User $user */
+        return ImportProfile::query()
+            ->accessibleBy($user)
+            ->ofType($importType)
+            ->orderByRaw('last_used_at IS NULL') // non-null first
+            ->orderByDesc('last_used_at')
+            ->orderByDesc('id')
+            ->limit(50)
+            ->get(['id', 'name', 'use_count'])
+            ->mapWithKeys(fn (ImportProfile $p): array => [
+                (string) $p->getKey() => $p->use_count > 0
+                    ? sprintf('%s (used %dx)', $p->name, $p->use_count)
+                    : $p->name,
+            ])
+            ->all();
     }
 
     /* ──── Step 2: download the template ─────────────────────────── */
@@ -474,7 +803,25 @@ class ImportWizard extends Page
                     ->visibility('private')
                     ->preserveFilenames()
                     ->required()
-                    ->live(),
+                    ->live()
+                    ->afterStateUpdated(function (Get $get, Set $set): void {
+                        // When a file is uploaded (or replaced), seed the
+                        // column_map from auto-guess UNLESS the operator
+                        // already loaded one from a saved profile.
+                        $existing = $get('column_map');
+                        if (is_array($existing) && $existing !== []) {
+                            return;
+                        }
+                        $type = (string) ($get('import_type') ?? '');
+                        if (! array_key_exists($type, self::IMPORTERS)) {
+                            return;
+                        }
+                        $info = $this->parseFilePreview($get('file'), (int) ($get('sheet') ?? 0));
+                        if ($info === null) {
+                            return;
+                        }
+                        $set('column_map', self::guessColumnMap(self::IMPORTERS[$type], $info['headers']));
+                    }),
 
                 Select::make('sheet')
                     ->label('Sheet to import')
@@ -493,6 +840,23 @@ class ImportWizard extends Page
                     })
                     ->visible(function (Get $get): bool {
                         return count(self::detectSheetNames($get('file'))) > 1;
+                    })
+                    ->live()
+                    ->afterStateUpdated(function (Get $get, Set $set): void {
+                        // Sheet change → re-guess unless a profile is in use.
+                        $existing = $get('column_map');
+                        if (is_array($existing) && $existing !== []) {
+                            return;
+                        }
+                        $type = (string) ($get('import_type') ?? '');
+                        if (! array_key_exists($type, self::IMPORTERS)) {
+                            return;
+                        }
+                        $info = $this->parseFilePreview($get('file'), (int) ($get('sheet') ?? 0));
+                        if ($info === null) {
+                            return;
+                        }
+                        $set('column_map', self::guessColumnMap(self::IMPORTERS[$type], $info['headers']));
                     }),
             ]);
     }
@@ -501,8 +865,8 @@ class ImportWizard extends Page
 
     protected function stepPreview(): Step
     {
-        return Step::make('Preview')
-            ->description('Spot-check the first 10 rows before we run the import.')
+        return Step::make('Preview & map columns')
+            ->description('Spot-check the first 10 rows and tune the column mapping if needed.')
             ->icon('heroicon-o-eye')
             ->schema([
                 Placeholder::make('row_count')
@@ -535,44 +899,207 @@ class ImportWizard extends Page
                         }
 
                         return new HtmlString(self::renderPreviewTable($info['headers'], $info['rows']));
+                    })
+                    ->columnSpanFull(),
+
+                // Editable column mapping. Each importer field gets its own
+                // Select whose options are the detected Excel headers; the
+                // default value comes from `column_map.<field>` which the
+                // Step-3 file upload populates via guessColumnMap(). The
+                // operator can override any cell to fix a wrong guess or
+                // to skip a column entirely (--- skip --- option).
+                Grid::make(1)
+                    ->columnSpanFull()
+                    ->schema(fn (Get $get): array => self::buildMappingEditor($get))
+                    ->visible(function (Get $get): bool {
+                        $type = (string) ($get('import_type') ?? '');
+                        if (! array_key_exists($type, self::IMPORTERS)) {
+                            return false;
+                        }
+
+                        return $this->parseFilePreview($get('file'), (int) ($get('sheet') ?? 0)) !== null;
                     }),
 
-                Placeholder::make('column_mapping')
-                    ->label('Column mapping')
+                Placeholder::make('missing_required_columns')
+                    ->hiddenLabel()
                     ->content(function (Get $get): HtmlString {
                         $type = (string) ($get('import_type') ?? '');
                         if (! array_key_exists($type, self::IMPORTERS)) {
-                            return new HtmlString('<em>Pick a type in step 1 first.</em>');
+                            return new HtmlString('');
                         }
-                        $info = $this->parseFilePreview(
-                            $get('file'),
-                            (int) ($get('sheet') ?? 0),
-                        );
-                        if ($info === null) {
-                            return new HtmlString('<em>Upload a file first.</em>');
+                        $columnMap = $get('column_map');
+                        if (! is_array($columnMap)) {
+                            $columnMap = [];
                         }
-                        $mapping = self::guessColumnMap(self::IMPORTERS[$type], $info['headers']);
-                        $missing = self::findMissingRequiredColumns(self::IMPORTERS[$type], $mapping);
-
-                        $rows = '';
-                        foreach ($mapping as $field => $excelCol) {
-                            $rows .= '<li><code>' . e($field) . '</code> ← '
-                                . ($excelCol === null ? '<em>(unmapped)</em>' : '<strong>' . e((string) $excelCol) . '</strong>')
-                                . '</li>';
-                        }
-                        $warn = '';
-                        if (count($missing) > 0) {
-                            $warn = '<p class="mt-2 text-sm font-medium text-danger-600">'
-                                . 'Missing required columns: <code>'
-                                . e(implode(', ', $missing))
-                                . '</code>. Re-upload after adding them.</p>';
+                        /** @var array<string, string|null> $columnMap */
+                        $missing = self::findMissingRequiredColumns(self::IMPORTERS[$type], $columnMap);
+                        if (count($missing) === 0) {
+                            return new HtmlString(
+                                '<p class="text-sm font-medium text-success-600">'
+                                . 'All required columns are mapped — you can continue.</p>'
+                            );
                         }
 
                         return new HtmlString(
-                            '<ul class="text-sm space-y-1">' . $rows . '</ul>' . $warn
+                            '<p class="text-sm font-medium text-danger-600">'
+                            . 'Missing required columns: <code>'
+                            . e(implode(', ', $missing))
+                            . '</code>. Pick the right Excel header above before you continue.</p>'
                         );
-                    }),
-            ]);
+                    })
+                    ->columnSpanFull(),
+            ])
+            ->afterValidation(function (Get $get): void {
+                // Block "Next" while any required field is unmapped. We re-run
+                // the same predicate the live placeholder shows so the wizard
+                // step actually halts (a danger Notification is shown).
+                $type = (string) ($get('import_type') ?? '');
+                if (! array_key_exists($type, self::IMPORTERS)) {
+                    return;
+                }
+                $columnMap = $get('column_map');
+                if (! is_array($columnMap)) {
+                    $columnMap = [];
+                }
+                /** @var array<string, string|null> $columnMap */
+                $missing = self::findMissingRequiredColumns(self::IMPORTERS[$type], $columnMap);
+                if (count($missing) === 0) {
+                    return;
+                }
+                Notification::make()
+                    ->title('Missing required columns')
+                    ->body('Map: ' . implode(', ', $missing) . ' before you continue.')
+                    ->danger()
+                    ->send();
+
+                throw new Halt;
+            });
+    }
+
+    /**
+     * Build the per-field Select rows for Step 4's mapping editor. Returns
+     * an array of {@see Select} components, one per importer column,
+     * scoped under the `column_map.<field>` state path.
+     *
+     * The Select options are ALL Excel headers detected in the uploaded
+     * file (preserving original casing for display), plus a null "skip"
+     * option. We use Filament's `placeholder` for the empty value rather
+     * than a synthetic value because that survives the dehydrate /
+     * rehydrate cycle without leaking a magic-string sentinel into the
+     * persisted `column_map`.
+     *
+     * @return array<int, Component>
+     */
+    protected static function buildMappingEditor(Get $get): array
+    {
+        $type = (string) ($get('import_type') ?? '');
+        if (! array_key_exists($type, self::IMPORTERS)) {
+            return [];
+        }
+        $file = $get('file');
+        $sheet = (int) ($get('sheet') ?? 0);
+        $info = self::staticParseFilePreview($file, $sheet);
+        if ($info === null) {
+            return [];
+        }
+
+        /** @var class-string<Importer> $importerClass */
+        $importerClass = self::IMPORTERS[$type];
+
+        // Header → header map: the Select stores the original-cased header
+        // string (which is what the import jobs use) — but using the
+        // original as both key and value keeps the Select dropdown sane.
+        $options = [];
+        foreach ($info['headers'] as $h) {
+            $original = (string) $h;
+            if ($original === '') {
+                continue;
+            }
+            $options[$original] = $original;
+        }
+
+        $rows = [];
+        foreach ($importerClass::getColumns() as $column) {
+            $fieldName = $column->getName();
+            $required = $column->isMappingRequired();
+            $label = (string) ($column->getLabel() ?? $fieldName);
+
+            $select = Select::make('column_map.' . $fieldName)
+                ->label($label . ($required ? ' *' : ''))
+                ->helperText(sprintf(
+                    'Importer field: %s%s',
+                    $fieldName,
+                    $required ? ' — required' : '',
+                ))
+                ->options($options)
+                ->placeholder('— (skip this column) —')
+                ->searchable()
+                ->live();
+
+            $rows[] = $select->columnSpanFull();
+        }
+
+        return $rows;
+    }
+
+    /**
+     * Static wrapper around {@see parseFilePreview()} so static
+     * schema-builder closures can share the parser without binding `$this`.
+     *
+     * @return array{headers:array<int, string>, rows:array<int, array<int, mixed>>, totalRows:int}|null
+     */
+    protected static function staticParseFilePreview(mixed $file, int $sheet): ?array
+    {
+        if (is_array($file)) {
+            $file = reset($file) ?: null;
+        }
+        if (! $file instanceof TemporaryUploadedFile) {
+            return null;
+        }
+        $path = $file->getRealPath();
+        if (! is_readable($path)) {
+            return null;
+        }
+
+        try {
+            $reader = IOFactory::createReaderForFile($path);
+            $reader->setReadDataOnly(true);
+            $spreadsheet = $reader->load($path);
+            $worksheet = $spreadsheet->getSheet($sheet);
+            $highestRow = $worksheet->getHighestDataRow();
+            $highestColumn = $worksheet->getHighestDataColumn();
+
+            $headers = [];
+            foreach ($worksheet->getRowIterator(1, 1) as $row) {
+                $iter = $row->getCellIterator('A', $highestColumn);
+                $iter->setIterateOnlyExistingCells(false);
+                foreach ($iter as $cell) {
+                    $headers[] = (string) ($cell->getValue() ?? '');
+                }
+            }
+
+            $rows = [];
+            $maxPreview = 10;
+            for ($r = 2; $r <= $highestRow && count($rows) < $maxPreview; $r++) {
+                $dataRow = [];
+                foreach ($worksheet->getRowIterator($r, $r) as $row) {
+                    $iter = $row->getCellIterator('A', $highestColumn);
+                    $iter->setIterateOnlyExistingCells(false);
+                    foreach ($iter as $cell) {
+                        $dataRow[] = $cell->getValue();
+                    }
+                }
+                $rows[] = $dataRow;
+            }
+
+            return [
+                'headers' => $headers,
+                'rows' => $rows,
+                'totalRows' => max(0, $highestRow - 1),
+            ];
+        } catch (\Throwable) {
+            return null;
+        }
     }
 
     /* ──── Step 5: confirm and import ────────────────────────────── */
@@ -608,6 +1135,23 @@ class ImportWizard extends Page
                 Checkbox::make('skip_duplicates')
                     ->label('Skip rows that already exist (matched by the importer\'s resolveRecord).')
                     ->default(true),
+
+                Checkbox::make('save_as_profile')
+                    ->label('Save this column mapping as a reusable profile')
+                    ->helperText('Next time you import a spreadsheet with the same layout, pick the profile in step 1 to skip the column-by-column work.')
+                    ->live(),
+
+                TextInput::make('save_as_profile_name')
+                    ->label('Profile name')
+                    ->placeholder('e.g. NRA legacy Excel — Documents')
+                    ->maxLength(191)
+                    ->visible(fn (Get $get): bool => (bool) $get('save_as_profile'))
+                    ->required(fn (Get $get): bool => (bool) $get('save_as_profile'))
+                    ->columnSpanFull(),
+
+                Checkbox::make('save_as_profile_shared')
+                    ->label('Share this profile with the rest of my repository')
+                    ->visible(fn (Get $get): bool => (bool) $get('save_as_profile')),
             ]);
     }
 
@@ -751,10 +1295,18 @@ class ImportWizard extends Page
     }
 
     /**
+     * Match a single importer column against the uploaded headers using
+     * the three-tier cascade: exact → synonyms → fuzzy.
+     *
      * @param array<string, string> $lowerExcel lowercase-trimmed-header → original-header
+     * @param array<string, array<int, string>> $extraSynonyms per-profile additions to {@see SYNONYMS}
      */
-    protected static function guessSingleColumn(ImportColumn $column, array $lowerExcel): ?string
-    {
+    protected static function guessSingleColumn(
+        ImportColumn $column,
+        array $lowerExcel,
+        array $extraSynonyms = [],
+    ): ?string {
+        // Tier 1: exact candidates (name, label, ->guess() aliases).
         $candidates = [
             $column->getName(),
             $column->getLabel(),
@@ -770,7 +1322,51 @@ class ImportWizard extends Page
             }
         }
 
-        return null;
+        // Tier 2: synonyms table — for each Excel header, look up its
+        // synonyms map and if this column's name is among them, claim it.
+        $fieldName = $column->getName();
+        $synonyms = $extraSynonyms + self::SYNONYMS;
+        foreach ($lowerExcel as $lowerHeader => $originalHeader) {
+            $synonymTargets = $synonyms[$lowerHeader] ?? null;
+            if (! is_array($synonymTargets)) {
+                continue;
+            }
+            if (in_array($fieldName, $synonymTargets, true)) {
+                return $originalHeader;
+            }
+        }
+
+        // Tier 3: Levenshtein distance ≤ 3 against the field name. Very
+        // short field names skew the threshold (a 4-char name + 3 typo
+        // tolerance is gibberish), so we bias the cutoff by length.
+        $bestHeader = null;
+        $bestDistance = PHP_INT_MAX;
+        $maxDistance = max(1, min(3, (int) floor(mb_strlen($fieldName) / 3)));
+        $targetSlug = self::slugify($fieldName);
+        foreach ($lowerExcel as $originalHeader) {
+            $headerSlug = self::slugify($originalHeader);
+            if ($headerSlug === '') {
+                continue;
+            }
+            $distance = levenshtein($targetSlug, $headerSlug);
+            if ($distance < $bestDistance && $distance <= $maxDistance) {
+                $bestDistance = $distance;
+                $bestHeader = $originalHeader;
+            }
+        }
+
+        return $bestHeader;
+    }
+
+    /**
+     * Normalize a header for fuzzy comparison: lowercase, strip everything
+     * non-alphanumeric, collapse. E.g. "Creator Name (en)" → "creatorname".
+     */
+    protected static function slugify(string $value): string
+    {
+        $lower = mb_strtolower(trim($value));
+
+        return (string) preg_replace('/[^a-z0-9]+/i', '', $lower);
     }
 
     /**
