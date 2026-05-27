@@ -18,7 +18,6 @@ use Filament\Http\Middleware\DispatchServingFilamentEvent;
 use Filament\Pages;
 use Filament\Panel;
 use Filament\PanelProvider;
-use Filament\Support\Colors\Color;
 use Illuminate\Cookie\Middleware\AddQueuedCookiesToResponse;
 use Illuminate\Cookie\Middleware\EncryptCookies;
 use Illuminate\Foundation\Http\Middleware\VerifyCsrfToken;
@@ -35,6 +34,9 @@ class AdminPanelProvider extends PanelProvider
             ->id('admin')
             ->path('admin')
             ->brandName('Batch List Tool')
+            // Solid-color wordmark in Fraunces (no gradient text per project rules).
+            ->brandLogo(asset('images/brand-logo.svg'))
+            ->brandLogoHeight('1.75rem')
             // RFQ §3.1.7 hardening — TwoFactorLogin is a stock Login subclass
             // that re-routes users with a confirmed TOTP secret to Fortify's
             // /two-factor-challenge endpoint after their password is validated.
@@ -51,11 +53,29 @@ class AdminPanelProvider extends PanelProvider
             )
             // ui-avatars.com replaced by laravolt/avatar (server-side SVG)
             ->defaultAvatarProvider(LocalAvatarProvider::class)
+            // Compile the warm cream/coffee/orange admin theme through Vite.
+            // Source: resources/css/filament/admin/theme.css (Tailwind v4).
+            ->viteTheme('resources/css/filament/admin/theme.css')
             ->plugins([
                 FilamentShieldPlugin::make(),
             ])
+            // Brand palette — warm orange (h≈50 OKLCH) converted to hex for
+            // Filament's color() pipeline. Steps mirror the --brand-orange-*
+            // CSS variables in resources/css/filament/admin/theme.css.
             ->colors([
-                'primary' => Color::Blue,
+                'primary' => [
+                    50  => '#fff2e4',
+                    100 => '#ffe1c7',
+                    200 => '#ffc091',
+                    300 => '#f79f63',
+                    400 => '#ef853b',
+                    500 => '#e36a00',
+                    600 => '#cc4b00',
+                    700 => '#ac3600',
+                    800 => '#802200',
+                    900 => '#541500',
+                    950 => '#2e0600',
+                ],
             ])
             ->discoverResources(in: app_path('Filament/Resources'), for: 'App\\Filament\\Resources')
             ->discoverPages(in: app_path('Filament/Pages'), for: 'App\\Filament\\Pages')

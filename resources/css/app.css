@@ -1,3 +1,6 @@
-@tailwind base;
-@tailwind components;
-@tailwind utilities;
+/* Tailwind v4 entry — only used by the public welcome page.
+ * The Filament admin panel has its own theme entry at
+ * resources/css/filament/admin/theme.css. */
+@import 'tailwindcss';
+
+@source '../views';
