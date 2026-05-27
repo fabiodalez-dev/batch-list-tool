@@ -9,6 +9,8 @@ use App\Filament\Concerns\AppliesFieldPermissions;
 use App\Filament\Resources\DocumentResource\Pages;
 use App\Filament\Support\SearchableSelects;
 use App\Models\Document;
+use App\Models\DocumentType;
+use App\Models\Practice;
 use App\Models\Repository;
 use Filament\Actions\BulkActionGroup;
 use Filament\Actions\DeleteBulkAction;
@@ -119,7 +121,18 @@ class DocumentResource extends Resource
                     ->schema([
                         $g(Forms\Components\TextInput::make('identifier')->required()->maxLength(64)),
                         $g(Forms\Components\TextInput::make('catalogue_identifier')->maxLength(191)),
-                        $g(Forms\Components\TextInput::make('document_type')->maxLength(100)),
+                        $g(Forms\Components\Select::make('document_type')
+                            ->label('Document type')
+                            ->searchable()
+                            ->options(fn (): array => DocumentType::query()
+                                ->where('is_active', true)->orderBy('name')->pluck('name', 'name')->all())
+                            ->createOptionForm([
+                                Forms\Components\TextInput::make('name')->required()->maxLength(100)->unique(DocumentType::class, 'name'),
+                                Forms\Components\Textarea::make('description')->maxLength(500),
+                            ])
+                            ->createOptionUsing(fn (array $data): string => DocumentType::create([
+                                'name' => $data['name'], 'description' => $data['description'] ?? null, 'is_active' => true,
+                            ])->name)),
                         $g(SearchableSelects::series('series_id')
                             ->label('Series')
                             ->required()),
@@ -136,7 +149,18 @@ class DocumentResource extends Resource
                             ->required()
                             ->default(fn () => auth()->user()?->default_repository_id)),
                         $g(Forms\Components\TextInput::make('volume_label')->label('Volume label')->maxLength(64)),
-                        $g(Forms\Components\TextInput::make('practice')->maxLength(100)),
+                        $g(Forms\Components\Select::make('practice')
+                            ->label('Practice')
+                            ->searchable()
+                            ->options(fn (): array => Practice::query()
+                                ->where('is_active', true)->orderBy('name')->pluck('name', 'name')->all())
+                            ->createOptionForm([
+                                Forms\Components\TextInput::make('name')->required()->maxLength(100)->unique(Practice::class, 'name'),
+                                Forms\Components\Textarea::make('description')->maxLength(500),
+                            ])
+                            ->createOptionUsing(fn (array $data): string => Practice::create([
+                                'name' => $data['name'], 'description' => $data['description'] ?? null, 'is_active' => true,
+                            ])->name)),
                         $g(Forms\Components\TextInput::make('dates')->label('Dates (text)')->maxLength(191)
                             ->helperText('Free-text dates as in POC, e.g. "1607-1629" or "Jun 1997 - Nov 1998"')
                             ->columnSpanFull()),
