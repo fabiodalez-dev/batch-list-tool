@@ -508,7 +508,8 @@ test('landing page caches counts for 60 seconds', function () {
 
     $page = new Reports;
     $cards1 = $page->cards();
-    expect($cards1)->toHaveCount(5);
+    // 5 original canned reports + 1 new "Flags by type" report (RFQ APP2-xviii).
+    expect($cards1)->toHaveCount(6);
 
     // Second call hits the cache — verify by checking the cache key.
     $uid = auth()->id();

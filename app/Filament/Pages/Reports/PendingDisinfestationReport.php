@@ -4,9 +4,11 @@ declare(strict_types=1);
 
 namespace App\Filament\Pages\Reports;
 
+use App\Filament\Pages\Reports\Concerns\HasReportTemplates;
 use App\Filament\Pages\Reports\Filters\DateRangeFilter;
 use App\Filament\Widgets\PendingDisinfestationTable;
 use App\Models\Document;
+use App\Models\ReportTemplate;
 use App\Support\Reports\ReportRenderer;
 use Filament\Actions\Action;
 use Filament\Pages\Page;
@@ -35,7 +37,11 @@ use Symfony\Component\HttpFoundation\StreamedResponse;
  */
 class PendingDisinfestationReport extends Page implements HasTable
 {
+    use HasReportTemplates;
     use InteractsWithTable;
+
+    /** @see ReportTemplate::SOURCES */
+    public const REPORT_SOURCE = ReportTemplate::SOURCE_PENDING_DISINFESTATION;
 
     protected string $view = 'filament.pages.reports.table';
 
@@ -347,6 +353,11 @@ class PendingDisinfestationReport extends Page implements HasTable
         return 'pending-disinfestation';
     }
 
+    public function mount(): void
+    {
+        $this->applyTemplateFromQuery();
+    }
+
     /**
      * `disinfestation_date IS NULL` AND
      * (current_box_id IS NULL OR currentBox.barcode_status != 'PERM_OUT')
@@ -391,6 +402,8 @@ class PendingDisinfestationReport extends Page implements HasTable
     protected function getHeaderActions(): array
     {
         return [
+            $this->saveAsTemplateAction(),
+
             Action::make('exportCsv')
                 ->label('Export CSV')
                 ->icon('heroicon-o-arrow-down-tray')

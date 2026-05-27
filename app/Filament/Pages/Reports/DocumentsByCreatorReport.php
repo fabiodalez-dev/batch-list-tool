@@ -4,9 +4,11 @@ declare(strict_types=1);
 
 namespace App\Filament\Pages\Reports;
 
+use App\Filament\Pages\Reports\Concerns\HasReportTemplates;
 use App\Filament\Pages\Reports\Filters\DateRangeFilter;
 use App\Models\Authority;
 use App\Models\Document;
+use App\Models\ReportTemplate;
 use App\Models\Repository;
 use App\Models\Series;
 use App\Support\Reports\ReportRenderer;
@@ -41,7 +43,11 @@ use Symfony\Component\HttpFoundation\StreamedResponse;
  */
 class DocumentsByCreatorReport extends Page implements HasTable
 {
+    use HasReportTemplates;
     use InteractsWithTable;
+
+    /** @see ReportTemplate::SOURCES */
+    public const REPORT_SOURCE = ReportTemplate::SOURCE_DOCUMENTS_BY_CREATOR;
 
     protected string $view = 'filament.pages.reports.table';
 
@@ -269,6 +275,11 @@ class DocumentsByCreatorReport extends Page implements HasTable
         return 'documents-by-creator';
     }
 
+    public function mount(): void
+    {
+        $this->applyTemplateFromQuery();
+    }
+
     /**
      * Build a "documents.<column> in [from, to]" filter that targets the
      * outer Authority query through the document_authority pivot. The
@@ -448,6 +459,8 @@ class DocumentsByCreatorReport extends Page implements HasTable
     protected function getHeaderActions(): array
     {
         return [
+            $this->saveAsTemplateAction(),
+
             Action::make('exportCsv')
                 ->label('Export CSV')
                 ->icon('heroicon-o-arrow-down-tray')

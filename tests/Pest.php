@@ -72,8 +72,8 @@ function bl_shieldPermissionNames(): array
 {
     $resources = [
         'accession', 'audit', 'authority', 'batch', 'box', 'box_movement',
-        'document', 'document_flag', 'location', 'report', 'repository',
-        'role', 'series', 'user', 'volume',
+        'document', 'document_flag', 'location', 'report', 'report_template',
+        'repository', 'role', 'series', 'user', 'volume',
     ];
     $ops = [
         'view_any', 'view', 'create', 'update', 'delete', 'delete_any',

@@ -4,8 +4,10 @@ declare(strict_types=1);
 
 namespace App\Filament\Pages\Reports;
 
+use App\Filament\Pages\Reports\Concerns\HasReportTemplates;
 use App\Filament\Pages\Reports\Filters\DateRangeFilter;
 use App\Models\Document;
+use App\Models\ReportTemplate;
 use App\Support\Reports\ReportRenderer;
 use Filament\Actions\Action;
 use Filament\Pages\Page;
@@ -32,7 +34,11 @@ use Symfony\Component\HttpFoundation\StreamedResponse;
  */
 class DocumentsBySeriesReport extends Page implements HasTable
 {
+    use HasReportTemplates;
     use InteractsWithTable;
+
+    /** @see ReportTemplate::SOURCES */
+    public const REPORT_SOURCE = ReportTemplate::SOURCE_DOCUMENTS_BY_SERIES;
 
     protected string $view = 'filament.pages.reports.table';
 
@@ -261,6 +267,11 @@ class DocumentsBySeriesReport extends Page implements HasTable
         return 'documents-by-series';
     }
 
+    public function mount(): void
+    {
+        $this->applyTemplateFromQuery();
+    }
+
     /**
      * @return array<string, string>
      */
@@ -335,6 +346,8 @@ class DocumentsBySeriesReport extends Page implements HasTable
     protected function getHeaderActions(): array
     {
         return [
+            $this->saveAsTemplateAction(),
+
             Action::make('exportCsv')
                 ->label('Export CSV')
                 ->icon('heroicon-o-arrow-down-tray')

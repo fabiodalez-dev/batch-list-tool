@@ -4,9 +4,11 @@ declare(strict_types=1);
 
 namespace App\Filament\Pages\Reports;
 
+use App\Filament\Pages\Reports\Concerns\HasReportTemplates;
 use App\Filament\Pages\Reports\Filters\DateRangeFilter;
 use App\Models\Box;
 use App\Models\BoxMovement;
+use App\Models\ReportTemplate;
 use App\Models\Scopes\ThroughBoxBatchRepositoryScope;
 use App\Support\Reports\ReportRenderer;
 use Filament\Actions\Action;
@@ -35,7 +37,11 @@ use Symfony\Component\HttpFoundation\StreamedResponse;
  */
 class BoxMovementHistoryReport extends Page implements HasTable
 {
+    use HasReportTemplates;
     use InteractsWithTable;
+
+    /** @see ReportTemplate::SOURCES */
+    public const REPORT_SOURCE = ReportTemplate::SOURCE_BOX_MOVEMENTS;
 
     protected string $view = 'filament.pages.reports.table';
 
@@ -294,6 +300,11 @@ class BoxMovementHistoryReport extends Page implements HasTable
         return 'box-movement-history';
     }
 
+    public function mount(): void
+    {
+        $this->applyTemplateFromQuery();
+    }
+
     protected function reportQuery(): Builder
     {
         return BoxMovement::query()
@@ -335,6 +346,8 @@ class BoxMovementHistoryReport extends Page implements HasTable
     protected function getHeaderActions(): array
     {
         return [
+            $this->saveAsTemplateAction(),
+
             Action::make('exportCsv')
                 ->label('Export CSV')
                 ->icon('heroicon-o-arrow-down-tray')
