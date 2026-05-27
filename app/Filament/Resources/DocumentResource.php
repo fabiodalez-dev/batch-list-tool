@@ -319,6 +319,11 @@ class DocumentResource extends Resource
                             ->size(TextSize::Large)
                             ->weight(FontWeight::Bold)
                             ->copyable()
+                            // RFQ Appendix-2 §xv — display the best-available
+                            // identifier: catalogue_identifier first, then
+                            // object_reference_number, then the legacy
+                            // identifier column.
+                            ->state(fn (?Document $record): ?string => $record?->display_identifier)
                             ->placeholder('—'),
 
                         TextEntry::make('primary_author_display')
@@ -722,7 +727,13 @@ class DocumentResource extends Resource
                 // §3.1.2) and covers `identifier`, `document_type`,
                 // `barcode_in`, `catalogue_identifier`, joined Authorities,
                 // Series, Batch, Box, Location and Flags.
-                $gc(Tables\Columns\TextColumn::make('identifier')->sortable()->copyable()),
+                $gc(Tables\Columns\TextColumn::make('identifier')
+                    ->sortable()
+                    ->copyable()
+                    // RFQ Appendix-2 §xv — fall back to object_reference_number
+                    // (then to the legacy identifier) when catalogue_identifier
+                    // is null. Sorting / search remain on the canonical column.
+                    ->state(fn (Document $record): ?string => $record->display_identifier)),
                 $gc(Tables\Columns\TextColumn::make('document_type')->toggleable()),
                 $gc(Tables\Columns\TextColumn::make('series.code')->label('Series')->badge()->sortable(), 'series_id'),
                 $gc(Tables\Columns\TextColumn::make('batch.batch_number')->label('Batch')->sortable()->alignCenter(), 'batch_id'),
