@@ -4,14 +4,14 @@ declare(strict_types=1);
 
 namespace App\Policies;
 
+use Illuminate\Auth\Access\HandlesAuthorization;
 use Illuminate\Foundation\Auth\User as AuthUser;
 use OwenIt\Auditing\Models\Audit;
-use Illuminate\Auth\Access\HandlesAuthorization;
 
 class AuditPolicy
 {
     use HandlesAuthorization;
-    
+
     public function viewAny(AuthUser $authUser): bool
     {
         return $authUser->can('view_any_audit');
@@ -71,5 +71,4 @@ class AuditPolicy
     {
         return $authUser->can('reorder_audit');
     }
-
 }
