@@ -6,6 +6,7 @@ use App\Models\Builders\DocumentBuilder;
 use App\Models\Concerns\BelongsToRepository;
 use App\Models\Concerns\ConditionallyPreloadsRelations;
 use App\Observers\DocumentObserver;
+use Carbon\Carbon;
 use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Database\Eloquent\Factories\HasFactory;
 use Illuminate\Database\Eloquent\Model;
@@ -242,6 +243,37 @@ class Document extends Model implements AuditableContract, HasMedia, Sortable
     public function flags(): HasMany
     {
         return $this->hasMany(DocumentFlag::class)->latest('flagged_at');
+    }
+
+    /**
+     * Disinfestation history rendered as a flat, ordered collection of
+     * `{date, label}` rows — ready for the Filament `RepeatableEntry` on
+     * the View Document page.
+     *
+     * Sources, ordered chronologically (oldest first):
+     *   - `disinfestation_date_1` → "Legacy round #1"
+     *   - `disinfestation_date_2` → "Legacy round #2"
+     *   - `disinfestation_date_3` → "Legacy round #3"
+     *   - `disinfestation_date`   → "Current"  (the canonical column)
+     *
+     * Null rows are skipped — the infolist already shows a placeholder when
+     * the resulting collection is empty.
+     *
+     * @return Collection<int, array{date: Carbon|\Illuminate\Support\Carbon, label: string}>
+     */
+    public function disinfestationTimeline(): Collection
+    {
+        $rows = collect([
+            ['date' => $this->disinfestation_date_1, 'label' => 'Legacy round #1'],
+            ['date' => $this->disinfestation_date_2, 'label' => 'Legacy round #2'],
+            ['date' => $this->disinfestation_date_3, 'label' => 'Legacy round #3'],
+            ['date' => $this->disinfestation_date, 'label' => 'Current'],
+        ])
+            ->filter(fn (array $row) => $row['date'] !== null)
+            ->sortBy(fn (array $row) => $row['date'])
+            ->values();
+
+        return $rows;
     }
 
     /**

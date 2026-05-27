@@ -247,6 +247,19 @@ class Location extends Model implements AuditableContract
     }
 
     /**
+     * Accessor variant of {@see self::breadcrumb()} that renders the
+     * root-to-leaf path with the rocket-style arrow separator. Used by the
+     * Filament infolist (`TextEntry::make('location.full_path')`) so the
+     * `View Document` page shows `Building A → Floor 2 → Shelf 12` instead
+     * of the bare leaf name. Kept as an Eloquent accessor (not a method on
+     * a separate helper) so the entry can dot-into it like a real column.
+     */
+    public function getFullPathAttribute(): string
+    {
+        return $this->breadcrumb(' → ');
+    }
+
+    /**
      * Whether this Location is referenced by any Box or Document.
      * Centralises the "can I delete this?" check used by the Filament
      * resource (the canDelete() guard) and by the unit tests.
