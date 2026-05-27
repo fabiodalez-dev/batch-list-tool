@@ -4,11 +4,15 @@ declare(strict_types=1);
 
 namespace App\Support\Reports;
 
+use App\Exports\GenericReportExport;
 use Barryvdh\DomPDF\Facade\Pdf;
 use Closure;
 use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Support\Str;
+use Maatwebsite\Excel\Excel as ExcelWriter;
+use Maatwebsite\Excel\Facades\Excel;
+use Symfony\Component\HttpFoundation\BinaryFileResponse;
 use Symfony\Component\HttpFoundation\Response;
 use Symfony\Component\HttpFoundation\StreamedResponse;
 
@@ -169,6 +173,41 @@ final class ReportRenderer
                 'X-Content-Type-Options' => 'nosniff',
             ],
         );
+    }
+
+    /**
+     * Stream an XLSX download via maatwebsite/excel.
+     *
+     * Wraps {@see GenericReportExport} into a streamed response so a
+     * 50k-row workbook doesn't have to sit in memory before the user's
+     * browser starts receiving bytes. The `$columns` map is the same
+     * shape used by the CSV exporter on the grouped reports — header
+     * label keyed → closure(row): mixed — and is the single source of
+     * truth for column order.
+     *
+     * @param iterable<int, mixed> $rows
+     * @param array<string, callable(mixed): mixed> $columns
+     */
+    public static function streamXlsx(
+        iterable $rows,
+        array $columns,
+        string $filename,
+        ?string $title = null,
+    ): BinaryFileResponse|StreamedResponse {
+        $exporter = new GenericReportExport(
+            rows: $rows,
+            columns: $columns,
+            title: $title ?? 'Report',
+        );
+
+        /** @var BinaryFileResponse|StreamedResponse $response */
+        $response = Excel::download($exporter, $filename, ExcelWriter::XLSX, [
+            'Cache-Control' => 'no-store, no-cache, must-revalidate, max-age=0',
+            'Pragma' => 'no-cache',
+            'X-Content-Type-Options' => 'nosniff',
+        ]);
+
+        return $response;
     }
 
     /**

@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace App\Filament\Pages\Reports;
 
+use App\Filament\Pages\Reports\Filters\DateRangeFilter;
 use App\Filament\Widgets\PendingDisinfestationTable;
 use App\Models\Document;
 use App\Support\Reports\ReportRenderer;
@@ -14,6 +15,7 @@ use Filament\Tables\Concerns\InteractsWithTable;
 use Filament\Tables\Contracts\HasTable;
 use Filament\Tables\Table;
 use Illuminate\Database\Eloquent\Builder;
+use Symfony\Component\HttpFoundation\BinaryFileResponse;
 use Symfony\Component\HttpFoundation\Response;
 use Symfony\Component\HttpFoundation\StreamedResponse;
 
@@ -99,6 +101,7 @@ class PendingDisinfestationReport extends Page implements HasTable
                     ->alignEnd()
                     ->sortable(),
             ])
+            ->filtersFormColumns(2)
             ->filters([
                 Tables\Filters\Filter::make('older_than_30_days')
                     ->label('> 30 days waiting')
@@ -110,6 +113,144 @@ class PendingDisinfestationReport extends Page implements HasTable
 
                         return $query->where('documents.created_at', '<=', now()->subDays(30));
                     }),
+
+                // ── Date range pickers ──
+                DateRangeFilter::make('created_range')
+                    ->label('Added to queue')
+                    ->column('documents.created_at')
+                    ->columnLabel('Created'),
+
+                DateRangeFilter::make('document_dates')
+                    ->label('Document dates')
+                    ->column('documents.dates_start')
+                    ->columnLabel('Document dates'),
+
+                DateRangeFilter::make('updated_range')
+                    ->label('Last updated')
+                    ->column('documents.updated_at')
+                    ->columnLabel('Updated'),
+
+                // ── Multi-select scopes ──
+                Tables\Filters\SelectFilter::make('repository_id')
+                    ->label('Repository')
+                    ->relationship('repository', 'code')
+                    ->searchable()
+                    ->multiple()
+                    ->preload()
+                    ->query(function (Builder $query, array $data): Builder {
+                        $values = $data['values'] ?? [];
+                        if (empty($values)) {
+                            return $query;
+                        }
+
+                        return $query->whereIn('documents.repository_id', $values);
+                    }),
+
+                Tables\Filters\SelectFilter::make('series_id')
+                    ->label('Series')
+                    ->relationship('series', 'code')
+                    ->searchable()
+                    ->multiple()
+                    ->query(function (Builder $query, array $data): Builder {
+                        $values = $data['values'] ?? [];
+                        if (empty($values)) {
+                            return $query;
+                        }
+
+                        return $query->whereIn('documents.series_id', $values);
+                    }),
+
+                Tables\Filters\SelectFilter::make('batch_id')
+                    ->label('Batch')
+                    ->relationship('batch', 'batch_number')
+                    ->searchable()
+                    ->multiple()
+                    ->query(function (Builder $query, array $data): Builder {
+                        $values = $data['values'] ?? [];
+                        if (empty($values)) {
+                            return $query;
+                        }
+
+                        return $query->whereIn('documents.batch_id', $values);
+                    }),
+
+                Tables\Filters\SelectFilter::make('authorities')
+                    ->label('Creators')
+                    ->relationship('authorities', 'surname')
+                    ->multiple()
+                    ->preload()
+                    ->searchable(),
+
+                Tables\Filters\SelectFilter::make('document_type')
+                    ->label('Document type')
+                    ->options(fn (): array => Document::query()
+                        ->whereNotNull('document_type')
+                        ->distinct()
+                        ->orderBy('document_type')
+                        ->pluck('document_type', 'document_type')
+                        ->all())
+                    ->multiple()
+                    ->searchable()
+                    ->query(function (Builder $query, array $data): Builder {
+                        $values = $data['values'] ?? [];
+                        if (empty($values)) {
+                            return $query;
+                        }
+
+                        return $query->whereIn('documents.document_type', $values);
+                    }),
+
+                Tables\Filters\SelectFilter::make('barcode_status')
+                    ->label('Barcode status (current box)')
+                    ->options([
+                        'IN' => 'IN',
+                        'OUT' => 'OUT',
+                        'PERM_OUT' => 'PERM_OUT',
+                    ])
+                    ->multiple()
+                    ->query(function (Builder $query, array $data): Builder {
+                        $values = $data['values'] ?? [];
+                        if (empty($values)) {
+                            return $query;
+                        }
+
+                        return $query->whereHas('currentBox', function (Builder $q) use ($values): void {
+                            $q->whereIn('barcode_status', $values);
+                        });
+                    }),
+
+                // ── Ternary filters ──
+                Tables\Filters\TernaryFilter::make('has_open_flags')
+                    ->label('Has open flags?')
+                    ->placeholder('Any')
+                    ->trueLabel('With open flags')
+                    ->falseLabel('No open flags')
+                    ->queries(
+                        true: fn (Builder $q): Builder => $q->whereHas('openFlags'),
+                        false: fn (Builder $q): Builder => $q->whereDoesntHave('openFlags'),
+                    ),
+
+                Tables\Filters\TernaryFilter::make('uncatalogued')
+                    ->label('Uncatalogued?')
+                    ->placeholder('Any')
+                    ->trueLabel('Uncatalogued')
+                    ->falseLabel('Catalogued')
+                    ->queries(
+                        true: fn (Builder $q): Builder => $q->whereNull('documents.catalogue_identifier'),
+                        false: fn (Builder $q): Builder => $q->whereNotNull('documents.catalogue_identifier'),
+                    ),
+
+                Tables\Filters\TernaryFilter::make('torre')
+                    ->label('Torre')
+                    ->placeholder('Any')
+                    ->trueLabel('Torre = yes')
+                    ->falseLabel('Torre = no'),
+
+                Tables\Filters\TernaryFilter::make('is_in_disinfestation')
+                    ->label('Currently in disinfestation')
+                    ->placeholder('Any')
+                    ->trueLabel('Currently out')
+                    ->falseLabel('Not currently out'),
             ])
             ->paginated([25, 50, 100, 'all']);
     }
@@ -152,6 +293,58 @@ class PendingDisinfestationReport extends Page implements HasTable
             headers: ['Identifier', 'Type', 'Series', 'Batch', 'Current box', 'Box status', 'Created at', 'Days waiting'],
             rows: $rows,
         );
+    }
+
+    public function exportXlsx(): BinaryFileResponse|StreamedResponse
+    {
+        abort_unless(static::canAccess(), 403);
+
+        $query = $this->getFilteredTableQuery() ?? $this->reportQuery();
+        $rows = $query
+            ->with(['currentBox:id,box_number,barcode_status', 'batch:id,batch_number', 'series:id,code'])
+            ->orderBy('documents.created_at')
+            ->limit(50000)
+            ->get();
+
+        return ReportRenderer::streamXlsx(
+            rows: $rows,
+            columns: $this->getXlsxColumns(),
+            filename: ReportRenderer::filename($this->getReportSlug(), 'xlsx'),
+            title: $this->getReportTitle(),
+        );
+    }
+
+    /**
+     * @return array<string, callable(Document): mixed>
+     */
+    public function getXlsxColumns(): array
+    {
+        return [
+            'Identifier' => fn (Document $r) => $r->identifier,
+            'Type' => fn (Document $r) => $r->document_type,
+            'Series' => fn (Document $r) => $r->series?->getAttribute('code'),
+            'Batch' => fn (Document $r) => $r->batch?->getAttribute('batch_number'),
+            'Current box' => fn (Document $r) => $r->currentBox?->getAttribute('box_number'),
+            'Box status' => fn (Document $r) => $r->currentBox?->getAttribute('barcode_status'),
+            'Created at' => fn (Document $r) => $r->created_at instanceof \DateTimeInterface ? $r->created_at->format('Y-m-d') : null,
+            'Days waiting' => function (Document $r): int {
+                $created = $r->created_at;
+
+                return $created instanceof \DateTimeInterface
+                    ? (int) round(now()->diffInDays($created, true))
+                    : 0;
+            },
+        ];
+    }
+
+    public function getReportTitle(): string
+    {
+        return 'Documents pending disinfestation';
+    }
+
+    public function getReportSlug(): string
+    {
+        return 'pending-disinfestation';
     }
 
     /**
@@ -203,6 +396,12 @@ class PendingDisinfestationReport extends Page implements HasTable
                 ->icon('heroicon-o-arrow-down-tray')
                 ->color('gray')
                 ->action(fn () => $this->exportCsv()),
+
+            Action::make('exportXlsx')
+                ->label('Export Excel')
+                ->icon('heroicon-o-table-cells')
+                ->color('gray')
+                ->action(fn () => $this->exportXlsx()),
 
             Action::make('exportPdf')
                 ->label('Export PDF')
