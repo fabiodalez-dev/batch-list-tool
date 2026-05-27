@@ -92,6 +92,57 @@
     Require all denied
 </FilesMatch>
 
+# ---------------------------------------------------------------------------
+# Browser + LiteSpeed cache for STATIC assets only.
+# ---------------------------------------------------------------------------
+# Cached aggressively because Vite hashes their filenames
+# (app-D7XccZNu.css, theme-CryXTWxX.css, ...): when content changes the URL
+# changes, so a 1-year immutable cache header is safe. Fonts are versionless
+# but their content never changes either.
+#
+# IMPORTANT: only static URLs match. The Laravel admin panel (/admin/*) is
+# explicitly excluded below so logged-in pages are never cached.
+<IfModule mod_headers.c>
+    # 1 year immutable for Vite-hashed assets (CSS/JS bundles).
+    <FilesMatch "\.(css|js|map)$">
+        Header set Cache-Control "public, max-age=31536000, immutable"
+        Header unset Pragma
+    </FilesMatch>
+
+    # 1 year immutable for self-hosted webfonts.
+    <FilesMatch "\.(woff2|woff|ttf|eot|otf)$">
+        Header set Cache-Control "public, max-age=31536000, immutable"
+        Header unset Pragma
+    </FilesMatch>
+
+    # 30 days for images that don't carry a content hash.
+    <FilesMatch "\.(jpg|jpeg|png|gif|webp|avif|svg|ico)$">
+        Header set Cache-Control "public, max-age=2592000"
+        Header unset Pragma
+    </FilesMatch>
+</IfModule>
+
+# LiteSpeed Cache (LSCache). cPanel doesn't expose this through the user UI
+# on shared plans, but mod_lsapi honors these directives directly. We enable
+# LSCache for the same static paths Browser-cached above so cold edge HTTP
+# servers also serve from cache. Admin requests stay uncached (they would
+# leak session-specific HTML otherwise).
+<IfModule LiteSpeed>
+    CacheLookup public on
+
+    # Cache static assets at the edge for a year. ESI/private cache is NOT
+    # enabled — we never want Filament's logged-in panel served from cache.
+    RewriteEngine On
+    RewriteRule \.(css|js|map|woff2|woff|ttf|eot|otf|jpg|jpeg|png|gif|webp|avif|svg|ico)$ - [E=cache-control:max-age=31536000]
+
+    # Explicit no-store for the admin panel and the Laravel front controller
+    # so even if a public CacheLookup matched, the HTML never persists.
+    RewriteCond %{REQUEST_URI} ^/admin
+    RewriteRule .* - [E=Cache-Control:no-cache\,no-store\,must-revalidate]
+    RewriteCond %{REQUEST_URI} ^/livewire
+    RewriteRule .* - [E=Cache-Control:no-cache\,no-store\,must-revalidate]
+</IfModule>
+
 # Block sensitive top-level files that ship with a Laravel repo (and any
 # *.sh / *.md / *.yml / *.yaml at the project root - those are runbooks,
 # CI configs, or deploy scripts, never legitimate web responses).
