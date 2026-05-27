@@ -1,0 +1,73 @@
+name: Security
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+  schedule:
+    # Weekly run Mondays at 06:00 UTC — catches newly-disclosed CVEs that
+    # weren't in the registry when the last push happened.
+    - cron: '0 6 * * 1'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  security-events: write
+
+jobs:
+  composer-audit:
+    name: composer audit (security advisories)
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup PHP 8.4
+        uses: shivammathur/setup-php@v2
+        with:
+          php-version: '8.4'
+          tools: composer:v2
+          coverage: none
+
+      - name: Cache composer dependencies
+        uses: actions/cache@v4
+        with:
+          path: vendor
+          key: composer-audit-${{ runner.os }}-${{ hashFiles('composer.lock') }}
+          restore-keys: composer-audit-${{ runner.os }}-
+
+      - name: Install dependencies
+        run: composer install --no-interaction --prefer-dist --no-progress --no-scripts
+
+      - name: Run composer audit
+        # On main + scheduled runs we DO fail the build on advisories so the
+        # team gets a red badge until the dependency is patched.
+        run: composer audit --no-interaction --format=plain
+
+  semgrep:
+    name: Semgrep SAST
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    # Semgrep already runs externally via the Semgrep App integration; this
+    # job is a no-op fallback that just confirms the file structure parses.
+    # Remove this job entirely once the Semgrep App is the single source of
+    # truth, or wire SEMGREP_APP_TOKEN as a repo secret and enable the upload.
+    if: ${{ github.event_name != 'schedule' || vars.SEMGREP_ENABLED == 'true' }}
+    container:
+      image: semgrep/semgrep:latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Run Semgrep (auto config)
+        env:
+          SEMGREP_APP_TOKEN: ${{ secrets.SEMGREP_APP_TOKEN }}
+        run: |
+          if [ -n "$SEMGREP_APP_TOKEN" ]; then
+            semgrep ci
+          else
+            # Fallback: run the default p/ci ruleset locally without uploading
+            semgrep scan --config auto --error --severity ERROR --severity WARNING
+          fi

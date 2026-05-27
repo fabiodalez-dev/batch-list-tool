@@ -1,0 +1,72 @@
+name: Lint & build JS
+
+on:
+  push:
+    branches: ['**']
+    paths:
+      - 'resources/js/**'
+      - 'resources/css/**'
+      - 'vite.config.js'
+      - 'package.json'
+      - 'package-lock.json'
+      - 'tailwind.config.js'
+      - 'postcss.config.js'
+      - '.github/workflows/lint-js.yml'
+  pull_request:
+    branches: ['**']
+    paths:
+      - 'resources/js/**'
+      - 'resources/css/**'
+      - 'vite.config.js'
+      - 'package.json'
+      - 'package-lock.json'
+      - 'tailwind.config.js'
+      - 'postcss.config.js'
+      - '.github/workflows/lint-js.yml'
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  lint-build:
+    name: Node 20 · lint + vite build
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Node 20
+        uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+          cache: 'npm'
+
+      - name: Install dependencies
+        # Use `npm ci` when a lockfile exists, fall back to `npm install`
+        # otherwise (the repo currently doesn't ship package-lock.json).
+        run: |
+          if [ -f package-lock.json ]; then
+            npm ci
+          else
+            npm install --no-audit --no-fund
+          fi
+
+      - name: Run lint script (if defined)
+        # `npm run lint` may not exist — don't fail the job for that.
+        run: |
+          if npm run | grep -qE '^  lint$'; then
+            npm run lint
+          else
+            echo "No 'lint' script defined in package.json — skipping."
+          fi
+
+      - name: Build assets with Vite
+        run: npm run build
+
+      - name: Verify build artefacts
+        run: |
+          test -d public/build || { echo "::error::public/build/ was not produced"; exit 1; }
+          test -f public/build/manifest.json || { echo "::error::vite manifest.json missing"; exit 1; }
+          echo "Vite build OK — $(find public/build -type f | wc -l) files produced"

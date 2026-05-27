@@ -1,0 +1,105 @@
+name: Tests & Quality
+
+on:
+  push:
+    branches: ['**']
+  pull_request:
+    branches: ['**']
+
+# Cancel superseded runs on the same branch/PR to save CI minutes
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  test:
+    name: PHP ${{ matrix.php }} · Pest + PHPStan + Pint
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+
+    strategy:
+      fail-fast: false
+      matrix:
+        php: ['8.3', '8.4']
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup PHP ${{ matrix.php }}
+        uses: shivammathur/setup-php@v2
+        with:
+          php-version: ${{ matrix.php }}
+          extensions: mbstring, zip, gd, pdo_mysql, sqlite3, intl, bcmath, exif, fileinfo
+          tools: composer:v2
+          coverage: none
+          ini-values: memory_limit=2G, error_reporting=E_ALL
+
+      - name: Validate composer.json
+        run: composer validate --strict --no-check-publish
+
+      - name: Get composer cache directory
+        id: composer-cache
+        run: echo "dir=$(composer config cache-files-dir)" >> "$GITHUB_OUTPUT"
+
+      - name: Cache composer dependencies
+        uses: actions/cache@v4
+        with:
+          path: |
+            ${{ steps.composer-cache.outputs.dir }}
+            vendor
+          key: composer-${{ runner.os }}-php${{ matrix.php }}-${{ hashFiles('composer.lock') }}
+          restore-keys: |
+            composer-${{ runner.os }}-php${{ matrix.php }}-
+            composer-${{ runner.os }}-
+
+      - name: Install dependencies
+        run: composer install --no-interaction --prefer-dist --no-progress --no-scripts
+
+      - name: Run composer post-install scripts
+        run: composer run-script post-autoload-dump --no-interaction || true
+
+      - name: Prepare .env.testing
+        run: |
+          cp .env.example .env
+          cp .env.example .env.testing
+          # Override DB to sqlite in-memory (phpunit.xml already does this, but be explicit)
+          sed -i 's|^DB_CONNECTION=.*|DB_CONNECTION=sqlite|' .env.testing
+          {
+            echo "DB_DATABASE=:memory:"
+            echo "PULSE_ENABLED=false"
+            echo "TELESCOPE_ENABLED=false"
+            echo "SESSION_DRIVER=array"
+            echo "CACHE_STORE=array"
+            echo "QUEUE_CONNECTION=sync"
+            echo "MAIL_MAILER=array"
+            echo "SESSION_SECURE_COOKIE=false"
+          } >> .env.testing
+
+      - name: Generate application key
+        run: |
+          php artisan key:generate --ansi
+          php artisan key:generate --env=testing --ansi
+
+      - name: Create storage directories
+        run: |
+          mkdir -p storage/framework/cache storage/framework/sessions storage/framework/views storage/framework/testing
+          mkdir -p storage/logs bootstrap/cache
+
+      - name: Run Pest test suite
+        env:
+          APP_ENV: testing
+        # Start without --parallel: Filament tests can race on the in-memory
+        # SQLite connection. Re-enable later once the suite is verified stable.
+        run: php -d memory_limit=2G ./vendor/bin/pest --compact
+
+      - name: Run PHPStan (Larastan)
+        run: ./vendor/bin/phpstan analyse --memory-limit=2G --no-progress
+
+      - name: Run Pint (code style check)
+        run: ./vendor/bin/pint --test
+
+      - name: Composer security audit
+        # Don't fail the build on advisories — surface them in the log.
+        # The dedicated security.yml workflow enforces failure on main.
+        run: composer audit --no-interaction --format=plain || true
