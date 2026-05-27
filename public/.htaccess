@@ -1,3 +1,11 @@
+# php -- BEGIN cPanel-generated handler, do not edit
+# Force EA-PHP 8.4 in case cPanel/LiteSpeed defaults to an older
+# version. Laravel 13 + Symfony 8.x require >= 8.4.
+<IfModule mime_module>
+  AddHandler application/x-httpd-ea-php84 .php .php8 .phtml
+</IfModule>
+# php -- END cPanel-generated handler, do not edit
+
 <IfModule mod_rewrite.c>
     <IfModule mod_negotiation.c>
         Options -MultiViews -Indexes
