@@ -69,50 +69,53 @@
 /* ------------------------------------------------------------------ */
 
 :root {
-    /* Cream — dominant surface, panna napoletana.
-       50 + 100 are pinned to the exact menubello.com hex values per
-       user spec (the rest of the scale follows in OKLCH and was
-       derived by stepping the chroma + lightness down).
-         #FDF7F3 — light pinkish cream, used for the MAIN page body
-         #F9F3E9 — darker warm panna, used for SIDEBAR + TOPBAR + thead */
-    --cream-50:  #FDF7F3;
-    --cream-100: #F9F3E9;
-    --cream-200: oklch(93%   0.022 76);
-    --cream-300: oklch(88%   0.028 74);
-    --cream-400: oklch(78%   0.040 70);
-    --cream-500: oklch(65%   0.050 65);
-    --cream-600: oklch(52%   0.050 60);
-    --cream-700: oklch(40%   0.050 55);
-    --cream-800: oklch(30%   0.045 50);
-    --cream-900: oklch(22%   0.040 48);
-    --cream-950: oklch(15%   0.035 46);
+    /* Cream — dominant surface, "warm bone / spa magazine" register.
+       Dialed down from the previous panna-napoletana so the panel
+       reads professional + minimal instead of restaurant-menu warm.
+       Hue stays in the 75-78 family but chroma is reduced ~30% so
+       the neutrals whisper instead of speak.
+         #FAF6F1 — main page body  (was #FDF7F3, less pink)
+         #F4EFE7 — sidebar/topbar  (was #F9F3E9, ΔL≈3 not 4) */
+    --cream-50:  #FAF6F1;
+    --cream-100: #F4EFE7;
+    --cream-200: #E7E0D2;
+    --cream-300: #D8CFBD;
+    --cream-400: #A89F8C;
+    --cream-500: #7E7565;
+    --cream-600: oklch(40% 0.018 65);
+    --cream-700: oklch(32% 0.020 60);
+    --cream-800: oklch(24% 0.018 55);
+    --cream-900: oklch(18% 0.015 50);
+    --cream-950: oklch(12% 0.012 48);
 
-    /* Coffee — warm brown for text and structural accents */
-    --coffee-50:  oklch(96% 0.013 48);
-    --coffee-100: oklch(91% 0.025 48);
-    --coffee-200: oklch(82% 0.050 48);
-    --coffee-300: oklch(70% 0.070 48);
-    --coffee-400: oklch(56% 0.075 48);
-    --coffee-500: oklch(45% 0.075 48);
-    --coffee-600: oklch(36% 0.070 48);
-    --coffee-700: oklch(28% 0.060 48);
-    --coffee-800: oklch(22% 0.050 48);
-    --coffee-900: oklch(16% 0.040 48);
-    --coffee-950: oklch(10% 0.030 48);
+    /* Coffee — warm brown for text and structural accents.
+       Same scale family but chroma trimmed across the board so the
+       text colour reads "serif body" not "espresso splash". */
+    --coffee-50:  oklch(96% 0.010 50);
+    --coffee-100: oklch(90% 0.018 50);
+    --coffee-200: oklch(80% 0.030 50);
+    --coffee-300: oklch(68% 0.038 50);
+    --coffee-400: oklch(54% 0.040 50);
+    --coffee-500: oklch(42% 0.038 50);
+    --coffee-600: #4A3F33;
+    --coffee-700: #4A3F33;
+    --coffee-800: #2F2820;
+    --coffee-900: #1C1812;
+    --coffee-950: oklch(8%  0.012 48);
 
-    /* Orange — warm primary accent, used sparingly (~10% of surface).
-       500 is pinned to the exact menubello.com brand orange #D46039
-       (a warm terracotta brick, NOT the brighter #EF863B I had used
-       before). Other steps stepped around it. */
-    --brand-orange-50:  oklch(97% 0.025 50);
-    --brand-orange-100: oklch(93% 0.055 50);
-    --brand-orange-200: oklch(85% 0.095 48);
-    --brand-orange-300: oklch(75% 0.135 48);
-    --brand-orange-400: oklch(65% 0.160 47);
-    --brand-orange-500: #D46039;
-    --brand-orange-600: oklch(50% 0.155 44);
-    --brand-orange-700: oklch(42% 0.135 42);
-    --brand-orange-800: oklch(34% 0.110 40);
+    /* Terracotta — single accent, ≤10% of surface, dialed-down.
+       Hue shifted to 42 (a touch redder, less neon-orange) and
+       chroma cut from 0.175 to 0.105 so the 500 step reads
+       "thoughtful brand" not "shouty button". */
+    --brand-orange-50:  #FAF1E8;
+    --brand-orange-100: #F1E0D5;
+    --brand-orange-200: #E3C0AB;
+    --brand-orange-300: #D29B7E;
+    --brand-orange-400: #C57658;
+    --brand-orange-500: #B25434;
+    --brand-orange-600: #93432A;
+    --brand-orange-700: #6D3220;
+    --brand-orange-800: oklch(24% 0.060 38);
     --brand-orange-900: oklch(26% 0.085 38);
     --brand-orange-950: oklch(18% 0.060 36);
 
@@ -214,8 +217,9 @@ pre,
 /* --- Shells: body, sidebar, topbar, main ---------------------------- */
 
 .fi-sidebar {
-    /* Darker panna (#F9F3E9) lifts the sidebar against the lighter
-       page body (#FDF7F3). Matches menubello.com's two-tone shell. */
+    /* Whispered lift: #F4EFE7 against #FAF6F1 body. ΔL≈3 → barely
+       there, professional. The border is the real demarcation, not
+       the bg delta. */
     background-color: var(--cream-100);
     border-right: 1px solid var(--cream-200);
 }
@@ -236,9 +240,14 @@ pre,
 
 .fi-sidebar-item-active .fi-sidebar-item-button,
 .fi-sidebar-item-button[aria-current="page"] {
-    background-color: var(--brand-orange-100);
-    color: var(--brand-orange-800);
+    /* Active state: a 5% terracotta wash + 1px hairline left
+       border (the only place a border-left is allowed: a navigation
+       affordance, not a card stripe). Text shifts to coffee-800
+       weight 600 so the affordance reads through colour AND weight. */
+    background-color: var(--brand-orange-50);
+    color: var(--coffee-800);
     font-weight: 600;
+    box-shadow: inset 2px 0 0 var(--brand-orange-500);
 }
 
 .fi-sidebar-item-icon {
@@ -260,13 +269,13 @@ pre,
 
 .fi-main,
 .fi-main-ctn {
-    /* Main content area: lighter #FDF7F3 to match the page body. */
+    /* Main: #FAF6F1, the lighter cream. */
     background-color: var(--cream-50);
 }
 
 .fi-topbar > nav,
 .fi-topbar {
-    /* Topbar matches sidebar (#F9F3E9), darker than the main body. */
+    /* Topbar matches sidebar at the whispered #F4EFE7. */
     background-color: var(--cream-100);
     box-shadow: 0 1px 0 var(--cream-200);
     border-bottom: 0;
@@ -310,9 +319,10 @@ pre,
     box-shadow: none;
 }
 
-/* User-spec colour for the table header band: the whole <thead> must read
-   as a single uniform cream surface (#F9F3E9), regardless of column tint,
-   sort state or selection checkbox cell. */
+/* Table header band — uniform cream-100 (#F4EFE7) so the whole thead
+   reads as one surface, no column-tint / sort-cell drift. Quieter
+   than the previous #F9F3E9 in line with the rest of the dialed-down
+   palette. */
 .fi-ta-table thead,
 .fi-ta-table > thead,
 .fi-ta-table thead tr,
@@ -320,7 +330,7 @@ pre,
 .fi-ta-header-row,
 .fi-ta-header,
 .fi-ta-header-cell {
-    background-color: #F9F3E9;
+    background-color: var(--cream-100);
     color: var(--coffee-700);
     font-weight: 600;
     letter-spacing: 0.01em;
