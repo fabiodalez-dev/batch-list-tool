@@ -8,6 +8,11 @@ use App\Observers\DocumentObserver;
 use Illuminate\Support\Facades\Gate;
 use Illuminate\Support\ServiceProvider;
 use Laravel\Telescope\TelescopeServiceProvider;
+use Spatie\Health\Checks\Checks\BackupsCheck;
+use Spatie\Health\Checks\Checks\DatabaseCheck;
+use Spatie\Health\Checks\Checks\ScheduleCheck;
+use Spatie\Health\Checks\Checks\UsedDiskSpaceCheck;
+use Spatie\Health\Facades\Health;
 
 class AppServiceProvider extends ServiceProvider
 {
@@ -37,5 +42,38 @@ class AppServiceProvider extends ServiceProvider
         Gate::define('viewPulse', function (?User $user): bool {
             return $user !== null && $user->hasAnyRole(['super_admin', 'admin']);
         });
+
+        $this->registerHealthChecks();
+    }
+
+    /**
+     * Register the application health checks exposed via /health.
+     *
+     * Four standard checks for NAF IT monitoring / uptime probes (RFQ-2026-06 §3.4.1):
+     *   - Database connectivity
+     *   - Used disk space (warn 80%, fail 95%)
+     *   - Laravel schedule running (verifies `schedule:run` cron is firing)
+     *   - Recent backup present (younger than 2 days) under the local-disk
+     *     spatie/laravel-backup destination
+     */
+    protected function registerHealthChecks(): void
+    {
+        // The local-disk path where spatie/laravel-backup stores its zip archives.
+        // `config('backup.backup.name')` resolves to APP_NAME by default, and the
+        // 'local' filesystem disk roots at storage/app/private — so backups land
+        // under storage/app/private/<APP_NAME>/.
+        $backupName = (string) config('backup.backup.name', 'laravel-backup');
+        $backupPath = storage_path('app/private/' . $backupName);
+
+        Health::checks([
+            DatabaseCheck::new(),
+            UsedDiskSpaceCheck::new()
+                ->warnWhenUsedSpaceIsAbovePercentage(80)
+                ->failWhenUsedSpaceIsAbovePercentage(95),
+            ScheduleCheck::new(),
+            BackupsCheck::new()
+                ->locatedAt($backupPath)
+                ->youngestBackShouldHaveBeenMadeBefore(now()->subDays(2)),
+        ]);
     }
 }

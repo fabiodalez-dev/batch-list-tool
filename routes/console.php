@@ -30,3 +30,11 @@ Schedule::command('backup:monitor')
     ->withoutOverlapping()
     ->onOneServer()
     ->emailOutputOnFailure(env('MAIL_BACKUP_RECIPIENT'));
+
+// spatie/laravel-health — refresh the cached results consumed by the public
+// `/health` JSON endpoint (RFQ-2026-06 §3.4.1). Every 5 minutes is the upstream
+// recommended cadence; the result store keeps the last run for instant probes.
+Schedule::command('health:check')
+    ->everyFiveMinutes()
+    ->withoutOverlapping()
+    ->onOneServer();

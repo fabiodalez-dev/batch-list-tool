@@ -1,6 +1,7 @@
 <?php
 
 use Illuminate\Support\Facades\Route;
+use Spatie\Health\Http\Controllers\HealthCheckJsonResultsController;
 
 // Default landing → Filament admin login.
 // The bundled welcome.blade.php pulls fonts from fonts.bunny.net (CDN) and an
@@ -8,6 +9,18 @@ use Illuminate\Support\Facades\Route;
 // runtime) and blocked by AppPolicy CSP. The admin panel is the only intended
 // entry point for this deliverable; everything else is unused scaffolding.
 Route::redirect('/', '/admin/login');
+
+/*
+|--------------------------------------------------------------------------
+| Health endpoint (RFQ-2026-06 §3.4.1 — non-functional observability)
+|--------------------------------------------------------------------------
+|
+| Public JSON health probe consumed by NAF IT monitoring and uptime checks.
+| Returns the latest cached results from the four checks registered in
+| AppServiceProvider::registerHealthChecks() (DB, disk, schedule, backups).
+| Refreshed every 5 minutes by the `health:check` scheduled command.
+*/
+Route::get('/health', HealthCheckJsonResultsController::class)->name('health');
 
 /*
 |--------------------------------------------------------------------------
