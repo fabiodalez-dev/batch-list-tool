@@ -59,24 +59,24 @@ class AdminPanelProvider extends PanelProvider
             ->plugins([
                 FilamentShieldPlugin::make(),
             ])
-            // Brand palette — dialed-down terracotta. The 500 step
-            // (#B25434) reads "thoughtful brand accent" not "shouty
-            // restaurant menu". Chroma cut ~40% from the previous
-            // #D46039 brick. Steps mirror the --brand-orange-* CSS
-            // variables in resources/css/filament/admin/theme.css.
+            // Brand palette — dusty-sandstone. 500 step (#A5613D) reads
+            // "thoughtful spice" not "brand orange". Lifted from the
+            // editorial/spa register: paper-white shell + minimal warm
+            // accent. Steps mirror --brand-orange-* in
+            // resources/css/filament/admin/theme.css.
             ->colors([
                 'primary' => [
-                    50  => '#FAF1E8',
-                    100 => '#F1E0D5',
-                    200 => '#E3C0AB',
-                    300 => '#D29B7E',
-                    400 => '#C57658',
-                    500 => '#B25434',
-                    600 => '#93432A',
-                    700 => '#6D3220',
-                    800 => '#4A2317',
-                    900 => '#2D160E',
-                    950 => '#180B06',
+                    50  => '#FBF3EC',
+                    100 => '#F4E2D5',
+                    200 => '#E5C2A8',
+                    300 => '#D29D7A',
+                    400 => '#BF7B55',
+                    500 => '#A5613D',
+                    600 => '#874C2E',
+                    700 => '#663823',
+                    800 => '#442416',
+                    900 => '#2A170E',
+                    950 => '#170B06',
                 ],
             ])
             ->discoverResources(in: app_path('Filament/Resources'), for: 'App\\Filament\\Resources')
