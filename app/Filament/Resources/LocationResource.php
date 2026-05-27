@@ -13,9 +13,11 @@ use Filament\Actions\DeleteAction;
 use Filament\Actions\EditAction;
 use Filament\Actions\ViewAction;
 use Filament\Forms;
+use Filament\Infolists\Components\IconEntry;
+use Filament\Infolists\Components\TextEntry;
 use Filament\Notifications\Notification;
 use Filament\Resources\Resource;
-use Filament\Schemas;
+use Filament\Schemas\Components\Section;
 use Filament\Schemas\Schema;
 use Filament\Tables;
 use Filament\Tables\Filters\SelectFilter;
@@ -54,10 +56,16 @@ class LocationResource extends Resource
 
     public static function form(Schema $schema): Schema
     {
+        // Layout rule (user mandate): root columns(1) → full-width Sections;
+        // atomic-field Sections use ['default' => 1, 'md' => 2]; non-atomic
+        // children (helperText-heavy inputs, Textarea) → columnSpanFull.
+        $twoCols = ['default' => 1, 'md' => 2];
+
         return $schema
+            ->columns(1)
             ->schema([
-                Schemas\Components\Section::make('Identification')
-                    ->columns(2)
+                Section::make('Identification')
+                    ->columns($twoCols)
                     ->schema([
                         Forms\Components\TextInput::make('name')
                             ->required()
@@ -81,10 +89,12 @@ class LocationResource extends Resource
                             ->label('Parent location')
                             ->nullable()
                             ->helperText('Leave empty for a root node. Cycles are rejected; max depth is '
-                                . Location::MAX_DEPTH . '.'),
+                                . Location::MAX_DEPTH . '.')
+                            ->columnSpanFull(),
                         Forms\Components\TextInput::make('code')
                             ->maxLength(32)
                             ->helperText('Optional short code. Must be unique within the same repository.')
+                            ->columnSpanFull()
                             ->rule(function (?Location $record) {
                                 return function (string $attribute, $value, \Closure $fail) use ($record) {
                                     if ($value === null || $value === '') {
@@ -107,8 +117,8 @@ class LocationResource extends Resource
                             }),
                     ]),
 
-                Schemas\Components\Section::make('Scope & status')
-                    ->columns(3)
+                Section::make('Scope & status')
+                    ->columns($twoCols)
                     ->schema([
                         Forms\Components\Select::make('repository_id')
                             ->label('Repository')
@@ -130,21 +140,130 @@ class LocationResource extends Resource
                             ->searchable()
                             ->nullable()
                             ->helperText('Leave empty for a GLOBAL location (visible to every repository).')
-                            ->default(fn () => auth()->user()?->default_repository_id),
+                            ->default(fn () => auth()->user()?->default_repository_id)
+                            ->columnSpanFull(),
                         Forms\Components\Toggle::make('is_active')
                             ->default(true)
                             ->required(),
                         Forms\Components\TextInput::make('sort_order')
                             ->numeric()
                             ->minValue(0)
-                            ->helperText('Sibling display order under the same parent.'),
+                            ->helperText('Sibling display order under the same parent.')
+                            ->columnSpanFull(),
                     ]),
 
-                Schemas\Components\Section::make('Notes')
+                Section::make('Notes')
+                    ->columns(1)
                     ->collapsed()
                     ->schema([
                         Forms\Components\Textarea::make('notes')->rows(3)->columnSpanFull(),
                     ]),
+            ]);
+    }
+
+    public static function infolist(Schema $schema): Schema
+    {
+        // Layout rule (user mandate): root columns(1) → full-width Sections;
+        // atomic entries on ['default' => 1, 'md' => 2]; non-atomic content
+        // → columnSpanFull. Every FK gets a ->url() to its Resource view.
+        $twoCols = ['default' => 1, 'md' => 2];
+
+        return $schema
+            ->columns(1)
+            ->components([
+                Section::make('Identification')
+                    ->columns($twoCols)
+                    ->schema([
+                        TextEntry::make('name')
+                            ->label('Name')
+                            ->placeholder('—'),
+                        TextEntry::make('type')
+                            ->label('Type')
+                            ->badge()
+                            ->color(fn (?string $state): string => $state ? self::typeColor($state) : 'gray')
+                            ->formatStateUsing(fn (?string $state): string => $state
+                                ? self::typeLabel($state)
+                                : '—')
+                            ->placeholder('—'),
+                        TextEntry::make('code')
+                            ->label('Code')
+                            ->copyable()
+                            ->placeholder('—'),
+                        TextEntry::make('breadcrumb')
+                            ->label('Path')
+                            ->state(fn (?Location $record): string => $record?->breadcrumb() ?? '—')
+                            ->placeholder('—')
+                            ->columnSpanFull(),
+                        TextEntry::make('parent.name')
+                            ->label('Parent')
+                            ->url(fn (?Location $record): ?string => $record?->parent_id
+                                ? route('filament.admin.resources.locations.view', ['record' => $record->parent_id])
+                                : null)
+                            ->openUrlInNewTab(false)
+                            ->placeholder('—')
+                            ->columnSpanFull(),
+                    ]),
+
+                Section::make('Scope & status')
+                    ->columns($twoCols)
+                    ->schema([
+                        TextEntry::make('repository.code')
+                            ->label('Repository')
+                            ->badge()
+                            ->color('info')
+                            ->url(fn (?Location $record): ?string => $record?->repository_id
+                                ? route('filament.admin.resources.repositories.view', ['record' => $record->repository_id])
+                                : null)
+                            ->openUrlInNewTab(false)
+                            ->placeholder('GLOBAL'),
+                        TextEntry::make('depth')
+                            ->label('Depth')
+                            ->badge()
+                            ->color('gray')
+                            ->placeholder('—'),
+                        IconEntry::make('is_active')
+                            ->label('Active')
+                            ->boolean(),
+                        TextEntry::make('sort_order')
+                            ->label('Sort order')
+                            ->placeholder('—'),
+                    ]),
+
+                Section::make('Counts')
+                    ->columns($twoCols)
+                    ->schema([
+                        TextEntry::make('boxes_count')
+                            ->label('Boxes')
+                            ->state(fn (?Location $record): int => $record?->boxes()->count() ?? 0)
+                            ->badge()
+                            ->color('gray'),
+                        TextEntry::make('documents_count')
+                            ->label('Documents')
+                            ->state(fn (?Location $record): int => $record?->documents()->count() ?? 0)
+                            ->badge()
+                            ->color('gray'),
+                    ]),
+
+                Section::make('Notes')
+                    ->columns(1)
+                    ->collapsed()
+                    ->schema([
+                        TextEntry::make('notes')
+                            ->hiddenLabel()
+                            ->prose()
+                            ->placeholder('No notes.')
+                            ->columnSpanFull(),
+                    ]),
+
+                Section::make('Audit info')
+                    ->columns($twoCols)
+                    ->collapsed()
+                    ->schema([
+                        TextEntry::make('created_at')->dateTime()->label('Created'),
+                        TextEntry::make('updated_at')->dateTime()->label('Updated'),
+                        TextEntry::make('deleted_at')->dateTime()->label('Trashed')->placeholder('—')->columnSpanFull(),
+                    ])
+                    ->visible(fn (): bool => (bool) auth()->user()?->hasRole('super_admin')),
             ]);
     }
 
