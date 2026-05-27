@@ -66,7 +66,7 @@ class AdminPanelProvider extends PanelProvider
             // resources/css/filament/admin/theme.css.
             ->colors([
                 'primary' => [
-                    50  => '#FBF3EC',
+                    50 => '#FBF3EC',
                     100 => '#F4E2D5',
                     200 => '#E5C2A8',
                     300 => '#D29D7A',

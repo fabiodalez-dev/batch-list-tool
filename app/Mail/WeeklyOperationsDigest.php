@@ -32,9 +32,7 @@ class WeeklyOperationsDigest extends Mailable
     /**
      * @param array<string, mixed> $stats
      */
-    public function __construct(public array $stats)
-    {
-    }
+    public function __construct(public array $stats) {}
 
     public function envelope(): Envelope
     {
