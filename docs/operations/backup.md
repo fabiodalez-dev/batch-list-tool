@@ -330,21 +330,54 @@ from a permanent data loss event - do not skip this step.**
 
 ## 7. Off-site copy
 
-> **Current state: NOT configured.** All backups live on the same disk
-> as the application. If the cPanel account is lost, the backups are
-> lost with it.
+> **Current state: pre-wired, activates on env var.** `config/backup.php`
+> auto-enables the `s3` disk when `BACKUP_S3_BUCKET` is set; the disk
+> definition itself reads `AWS_*` env vars from `config/filesystems.php`,
+> so any S3-compatible service (Wasabi, Backblaze B2, OVH, AWS) drops in
+> with credentials only — zero code change.
 
-Future enhancement: add an S3-compatible disk to
-`config/backup.php` -> `destination.disks`. Suggested options for
-the NRA Malta engagement:
+Suggested options for the NRA Malta engagement:
 
 - **Wasabi** (cheapest egress-free S3, EU region available)
 - **Backblaze B2** (S3-compatible)
 - **AWS S3 Glacier Deep Archive** if storage volume justifies it
 
-Once a second disk is wired, every `backup:run` writes the same
-archive to both locations atomically and `backup:monitor` will check
-both. Update this section when implemented.
+### Activation procedure
+
+Add these to `.env` on prod (replace placeholders):
+
+```env
+# Bucket NAME (also flips disks list in config/backup.php to ['local', 's3'])
+BACKUP_S3_BUCKET=nra-malta-backups
+
+# Standard Laravel S3 driver env (config/filesystems.php reads these)
+AWS_ACCESS_KEY_ID=AKIAxxxxx
+AWS_SECRET_ACCESS_KEY=xxxxxxxxxxxxxx
+AWS_DEFAULT_REGION=eu-central-1
+AWS_BUCKET=nra-malta-backups
+# For non-AWS S3-compatible (Wasabi, B2, OVH) set both:
+# AWS_ENDPOINT=https://s3.eu-central-1.wasabisys.com
+# AWS_USE_PATH_STYLE_ENDPOINT=true
+```
+
+Then:
+
+```bash
+# (prod) - clear config cache so the new env is picked up
+ssh archivetool "cd /home/archivet/public_html && /opt/cpanel/ea-php84/root/usr/bin/php artisan config:clear"
+
+# Run a manual backup to verify the off-site copy lands:
+ssh archivetool "cd /home/archivet/public_html && /opt/cpanel/ea-php84/root/usr/bin/php artisan backup:run"
+# Look for "Copying zip to disk named [s3]..." in the output.
+```
+
+Every subsequent `backup:run` writes the archive to both `local` AND `s3`
+atomically. `backup:monitor` will check both. `backup:clean` retention
+rules apply per-disk via the existing `cleanup.default_strategy` config.
+
+If `BACKUP_S3_BUCKET` is unset (current local + staging state) the disks
+list silently stays at `['local']` — single-failure risk but no broken
+deploys from missing credentials.
 
 ---
 

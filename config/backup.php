@@ -160,10 +160,22 @@ return [
 
             /*
              * The disk names on which the backups will be stored.
+             *
+             * `local` is the always-on copy on the cPanel disk (fast restore,
+             * single-failure risk).
+             *
+             * `s3` is the off-site copy — enabled automatically when AWS_*
+             * env vars are populated. Pre-configured to land in the bucket
+             * named by `BACKUP_S3_BUCKET` env. NAF can drop in their own
+             * Backblaze B2 / Wasabi / OVH S3-compatible credentials and the
+             * destination "just works" without code change. Until those
+             * vars are set the `s3` disk silently no-ops on backup runs
+             * (Laravel filesystems treat unconfigured S3 disks as missing
+             * driver and skip them with a warning in the backup log).
              */
-            'disks' => [
-                'local',
-            ],
+            'disks' => env('BACKUP_S3_BUCKET') !== null
+                ? ['local', 's3']
+                : ['local'],
         ],
 
         /*
