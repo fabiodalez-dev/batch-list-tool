@@ -21,10 +21,16 @@ use App\Models\User;
  *   regardless of config — this is defence-in-depth so that an empty,
  *   broken, or accidentally-tightened config can never lock out the
  *   only operator capable of fixing it.
- * - When `$user` is null (no authenticated user, e.g. CLI seeders or
- *   queued jobs), all checks default to ALLOW — production gates already
- *   live above this layer (Filament Shield resource policies). This
- *   layer is a UX/UI restriction, not an authentication boundary.
+ * - When `$user` is null (no authenticated user), the behaviour depends
+ *   on the runtime context to balance safety against developer ergonomics:
+ *     * In CONSOLE context (CLI seeders, queue workers, scheduled jobs,
+ *       artisan tinker) all checks default to ALLOW so trusted local
+ *       maintenance code is never blocked.
+ *     * In HTTP context (web request without an authenticated session)
+ *       all checks default to DENY (fail-closed) — an upstream Filament
+ *       Shield gate normally short-circuits this path, but if it ever
+ *       fails open the field-permission layer becomes the safety net
+ *       instead of leaking the form. OWASP A01 hardening (2026-05-28).
  * - When the resource key or field is absent from the config, the
  *   `_default` block for the resource is consulted; if `_default` is
  *   also missing, the check defaults to ALLOW (implicit-allow for
@@ -62,11 +68,11 @@ final class FieldPermissions
     {
         $user ??= self::resolveUser();
 
-        // No user → no UI context to gate. Allow; resource-level Shield
-        // policies above this layer will have already denied unauthorised
-        // access if applicable.
         if ($user === null) {
-            return true;
+            // Console: trusted local code (seeders, queue, tinker) — allow.
+            // HTTP: no auth context, fail closed so the form layer never
+            // leaks fields when an upstream policy gate misfires.
+            return self::isConsole();
         }
 
         // Defence-in-depth: super_admin is always allowed.
@@ -105,7 +111,7 @@ final class FieldPermissions
         $user ??= self::resolveUser();
 
         if ($user === null) {
-            return true;
+            return self::isConsole();
         }
 
         if (self::isSuperAdmin($user)) {
@@ -140,7 +146,10 @@ final class FieldPermissions
         $user ??= self::resolveUser();
 
         if ($user === null) {
-            return false;
+            // Console: never hide (CLI / queue / tinker trusted).
+            // HTTP without auth context: hide (fail-safe — never expose
+            // a field whose policy decision we cannot evaluate).
+            return ! self::isConsole();
         }
 
         // Defence-in-depth: super_admin is never hidden.
@@ -154,6 +163,24 @@ final class FieldPermissions
     /* ---------------------------------------------------------------- *
      | Internal helpers                                                  |
      * ---------------------------------------------------------------- */
+
+    /**
+     * `true` when the current process is a CLI invocation (artisan, queue
+     * worker, scheduled task, tinker). Used to distinguish trusted local
+     * maintenance code from unauthenticated HTTP requests for the
+     * fail-closed-in-HTTP semantics described in the class docblock.
+     */
+    private static function isConsole(): bool
+    {
+        try {
+            return function_exists('app') && app()->runningInConsole();
+        } catch (\Throwable) {
+            // If the container is not bound yet (very early boot, unit tests
+            // without a Laravel kernel) treat as console — there is no HTTP
+            // request to leak into.
+            return true;
+        }
+    }
 
     /**
      * Resolve the current user without crashing if the auth manager is

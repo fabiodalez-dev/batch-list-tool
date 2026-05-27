@@ -145,13 +145,25 @@ return [
      * Note: Please ensure your website had set up ssl/tls before enable hsts.
      */
     'hsts' => [
-        'enable' => false,
+        // Enabled per OWASP A02 hardening (2026-05-28). archivetool.eu serves
+        // HTTPS via Let's Encrypt; HSTS prevents protocol-downgrade attacks
+        // by instructing the browser to NEVER speak HTTP to this host again.
+        // Enable LOCALLY too — Laravel only sends the header on a HTTPS
+        // response, so plain-http `php artisan serve` is unaffected.
+        'enable' => true,
 
+        // 1 year — Chrome / Firefox preload-list minimum. Bumping this is
+        // free; lowering requires a documented procedure (browsers cache).
         'max-age' => 31536000,
 
-        'include-sub-domains' => false,
+        // includeSubDomains: ON. If we add staging.archivetool.eu later it
+        // automatically inherits the HSTS protection.
+        'include-sub-domains' => true,
 
-        'preload' => false,
+        // preload: ON. Cuts the first-visit window where a downgrade is
+        // still possible. Submission to hstspreload.org is a separate
+        // operator step but the header is the prerequisite.
+        'preload' => true,
     ],
 
     /**
