@@ -8,6 +8,7 @@ use App\Filament\Imports\AuthorityImporter;
 use App\Filament\Imports\BatchImporter;
 use App\Filament\Imports\BoxImporter;
 use App\Filament\Imports\DocumentImporter;
+use App\Filament\Imports\LocationImporter;
 use App\Filament\Imports\SeriesImporter;
 use App\Models\ImportProfile;
 use App\Models\User;
@@ -89,6 +90,7 @@ class ImportWizard extends Page
     public const IMPORTERS = [
         'series' => SeriesImporter::class,
         'authorities' => AuthorityImporter::class,
+        'locations' => LocationImporter::class,
         'batches' => BatchImporter::class,
         'boxes' => BoxImporter::class,
         'documents' => DocumentImporter::class,
@@ -103,6 +105,7 @@ class ImportWizard extends Page
     public const TEMPLATE_KEYS = [
         'series' => 'series',
         'authorities' => 'authority',
+        'locations' => 'location',
         'batches' => 'batch',
         'boxes' => 'box',
         'documents' => 'document',
@@ -724,6 +727,7 @@ class ImportWizard extends Page
                     ->options([
                         'series' => 'Series (record types: R / REG / RWL / O)',
                         'authorities' => 'Authorities (notaries — 808 in production sample)',
+                        'locations' => 'Locations (physical/logical hierarchy)',
                         'batches' => 'Batches (numbered groupings)',
                         'boxes' => 'Boxes (physical containers)',
                         'documents' => 'Documents (the main entity — 3,113 rows in sample)',
@@ -731,6 +735,7 @@ class ImportWizard extends Page
                     ->descriptions([
                         'series' => 'Depends on: nothing — import this first.',
                         'authorities' => 'Depends on: nothing.',
+                        'locations' => 'Depends on: at least one Repository. Parents must be imported before their children (re-run after fixing order if parent not found).',
                         'batches' => 'Depends on: at least one Repository.',
                         'boxes' => 'Depends on: at least one Batch.',
                         'documents' => 'Depends on: Series + Authorities + Batches + Boxes.',
