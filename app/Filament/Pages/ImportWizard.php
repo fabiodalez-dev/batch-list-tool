@@ -229,6 +229,14 @@ class ImportWizard extends Page
     #[Url(as: 'profile')]
     public ?string $profileQuery = null;
 
+    /**
+     * ID of the most recent import dispatched by THIS wizard instance.
+     * Powers the "Download failed rows" header action — null until the
+     * first import in the session runs. Not persisted (Livewire keeps it
+     * in component state across re-renders).
+     */
+    public ?int $lastImportId = null;
+
     protected string $view = 'filament.pages.import-wizard';
 
     protected static string|\UnitEnum|null $navigationGroup = 'Archive';
@@ -429,10 +437,75 @@ class ImportWizard extends Page
         $this->data = [];
         $this->form->fill(['skip_duplicates' => true]);
 
-        // The local var is kept for forwards-compat with future versions of
-        // this Page that may surface the Import ID to the operator (e.g. in
-        // a dedicated "Recent imports" panel). Silence the unused warning.
-        unset($importId);
+        // Surface the Import ID on the page so the "Download failed rows"
+        // header action becomes visible once the batch has produced any
+        // failure records. The action polls the model on click; we don't
+        // need to know failure count synchronously at dispatch time.
+        $this->lastImportId = (int) $importId;
+    }
+
+    /* ──────────────────────────────────────────────────────────────── */
+    /* RFQ §3.1.3 — "downloadable CSV error report" header action */
+    /* ──────────────────────────────────────────────────────────────── */
+
+    /**
+     * Stream `failed_import_rows` for the wizard's most recent batch as a
+     * UTF-8 CSV with the original row data + the validation error message.
+     *
+     * Security: gated on `static::canAccess()` and on the Import row's
+     * `user_id` matching the current user — operators cannot probe other
+     * users' failed-row sets by guessing IDs. Streamed (not buffered) so
+     * a 50 000-row failure dump doesn't sit in memory.
+     */
+    public function downloadFailedRows(): StreamedResponse
+    {
+        abort_unless(static::canAccess(), 403);
+        abort_if($this->lastImportId === null, 404, 'No recent import to download failures for.');
+
+        /** @var Import|null $import */
+        $import = Import::query()->find($this->lastImportId);
+        abort_if($import === null, 404, 'Import not found.');
+
+        $user = auth()->user();
+        abort_if($user === null || (int) $import->user_id !== (int) $user->getKey(), 403);
+
+        $filename = sprintf('failed_import_rows_%d_%s.csv', $this->lastImportId, now()->format('Ymd_His'));
+
+        return response()->streamDownload(function () use ($import): void {
+            $out = fopen('php://output', 'wb');
+            // UTF-8 BOM for Excel compatibility on Windows / Maltese accents.
+            fwrite($out, "\xEF\xBB\xBF");
+
+            $first = true;
+            $import->failedRows()->chunk(500, function ($rows) use ($out, &$first): void {
+                foreach ($rows as $row) {
+                    $rawData = $row->getAttribute('data');
+                    $data = is_array($rawData) ? $rawData : (array) json_decode((string) $rawData, true);
+                    if ($first) {
+                        fputcsv($out, array_merge(array_keys($data), ['_validation_error']));
+                        $first = false;
+                    }
+                    fputcsv($out, array_merge(
+                        array_map(
+                            static fn ($v): string => is_scalar($v) ? (string) $v : (string) json_encode($v),
+                            $data,
+                        ),
+                        [(string) $row->getAttribute('validation_error')],
+                    ));
+                }
+            });
+
+            if ($first) {
+                // No failed rows yet — emit a single header row so the file is well-formed.
+                fputcsv($out, ['_no_failed_rows']);
+            }
+
+            fclose($out);
+        }, $filename, [
+            'Content-Type' => 'text/csv; charset=UTF-8',
+            'Cache-Control' => 'no-store, no-cache, must-revalidate, max-age=0',
+            'X-Content-Type-Options' => 'nosniff',
+        ]);
     }
 
     /**
@@ -517,6 +590,21 @@ class ImportWizard extends Page
 
         /** @phpstan-ignore-next-line */
         return $resource::getUrl('index');
+    }
+
+    /**
+     * @return array<int, FilamentAction>
+     */
+    protected function getHeaderActions(): array
+    {
+        return [
+            FilamentAction::make('downloadFailedRows')
+                ->label('Download failed rows (CSV)')
+                ->icon('heroicon-o-arrow-down-tray')
+                ->color('warning')
+                ->visible(fn (): bool => $this->lastImportId !== null)
+                ->action(fn () => $this->downloadFailedRows()),
+        ];
     }
 
     /**
