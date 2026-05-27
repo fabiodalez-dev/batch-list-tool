@@ -1,0 +1,141 @@
+name: Deploy to archivetool.eu
+
+# Incremental production deploy. Runs after a successful push to `main`.
+# First-time bootstrap is documented in docs/deploy/archivetool.md and is
+# performed MANUALLY (DB password and SSH key setup require human action).
+#
+# Required GitHub repository secrets:
+#   SSH_PRIVATE_KEY_DEPLOY  - private key matching ~/.ssh/authorized_keys on the server
+#   SSH_HOST                - cpanel19.vhosting-it.com
+#   SSH_USER                - archivet
+#   DEPLOY_PATH             - /home/archivet/laravel-app
+#
+# Optional secrets (no-op if absent):
+#   SLACK_WEBHOOK_URL       - send a deploy notification
+
+on:
+  push:
+    branches: [main]
+  workflow_dispatch:
+    inputs:
+      branch:
+        description: 'Branch to deploy (defaults to main)'
+        required: false
+        default: 'main'
+
+concurrency:
+  group: deploy-archivetool-production
+  cancel-in-progress: false
+
+jobs:
+  deploy:
+    name: Deploy production
+    runs-on: ubuntu-latest
+    # Only deploy from the canonical repo; forks should not be able to push code
+    # to production even if their workflow somehow runs with the right secrets.
+    if: github.repository == 'fabiodalez-dev/batch-list-tool'
+    environment:
+      name: production
+      url: https://archivetool.eu
+    timeout-minutes: 15
+
+    # Pin every potentially-untrusted dynamic input as an environment variable
+    # so it can never be interpolated directly into a shell command. See:
+    # https://github.blog/security/vulnerability-research/how-to-catch-github-actions-workflow-injections-before-attackers-do/
+    env:
+      DEPLOY_BRANCH: ${{ github.event.inputs.branch || 'main' }}
+      SSH_HOST: ${{ secrets.SSH_HOST }}
+      SSH_USER: ${{ secrets.SSH_USER }}
+      DEPLOY_PATH: ${{ secrets.DEPLOY_PATH }}
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          ref: ${{ github.sha }}
+          fetch-depth: 1
+
+      - name: Validate required secrets
+        env:
+          SSH_PRIVATE_KEY_DEPLOY: ${{ secrets.SSH_PRIVATE_KEY_DEPLOY }}
+        run: |
+          missing=()
+          [[ -z "${SSH_PRIVATE_KEY_DEPLOY}" ]] && missing+=(SSH_PRIVATE_KEY_DEPLOY)
+          [[ -z "${SSH_HOST}" ]]               && missing+=(SSH_HOST)
+          [[ -z "${SSH_USER}" ]]               && missing+=(SSH_USER)
+          [[ -z "${DEPLOY_PATH}" ]]            && missing+=(DEPLOY_PATH)
+          if (( ${#missing[@]} > 0 )); then
+            printf 'Missing required secret(s): %s\n' "${missing[*]}"
+            exit 1
+          fi
+
+      - name: Validate branch input shape
+        run: |
+          # workflow_dispatch input is admin-only, but treat as untrusted anyway.
+          # Allow only alphanumerics, /, -, _, . — the same shape git accepts
+          # for sane branch names. Reject anything that could break out into a
+          # shell or argument.
+          if [[ ! "${DEPLOY_BRANCH}" =~ ^[A-Za-z0-9._/-]{1,128}$ ]]; then
+            printf 'Refusing to deploy: branch name failed safety check: %q\n' "${DEPLOY_BRANCH}"
+            exit 1
+          fi
+
+      - name: Setup SSH agent
+        uses: webfactory/ssh-agent@v0.9.0
+        with:
+          ssh-private-key: ${{ secrets.SSH_PRIVATE_KEY_DEPLOY }}
+
+      - name: Trust deploy host
+        run: |
+          mkdir -p ~/.ssh
+          chmod 700 ~/.ssh
+          ssh-keyscan -p 22 -H "${SSH_HOST}" >> ~/.ssh/known_hosts 2>/dev/null
+          chmod 644 ~/.ssh/known_hosts
+
+      - name: Verify deploy script syntax locally
+        run: bash -n deploy/post-deploy.sh
+
+      - name: Run incremental deploy over SSH
+        run: |
+          ssh -o ServerAliveInterval=30 \
+              -o ServerAliveCountMax=6 \
+              "${SSH_USER}@${SSH_HOST}" \
+              "APP_DIR='${DEPLOY_PATH}' BRANCH='${DEPLOY_BRANCH}' bash -s" \
+              < deploy/post-deploy.sh
+
+      - name: Smoke test admin panel
+        id: smoke
+        run: |
+          set -euo pipefail
+          # Filament admin login page must respond 200; allow up to 5 retries
+          # in case the cPanel opcache invalidator lags behind the deploy.
+          for attempt in 1 2 3 4 5; do
+            status=$(curl -sS -o /tmp/smoke.html -w "%{http_code}" \
+                          --max-time 15 \
+                          --retry 0 \
+                          https://archivetool.eu/admin/login || true)
+            echo "attempt ${attempt}: HTTP ${status}"
+            if [[ "${status}" == "200" ]]; then
+              echo "ok=true" >> "$GITHUB_OUTPUT"
+              exit 0
+            fi
+            sleep $((attempt * 5))
+          done
+          echo "Smoke test failed; last body snippet:"
+          head -c 2048 /tmp/smoke.html || true
+          exit 1
+
+      - name: Notify Slack (optional)
+        if: always() && env.SLACK_WEBHOOK_URL != ''
+        env:
+          SLACK_WEBHOOK_URL: ${{ secrets.SLACK_WEBHOOK_URL }}
+          JOB_STATUS: ${{ job.status }}
+          GIT_SHA: ${{ github.sha }}
+          GIT_ACTOR: ${{ github.actor }}
+        run: |
+          status_icon=':white_check_mark:'
+          [[ "${JOB_STATUS}" != "success" ]] && status_icon=':x:'
+          payload=$(printf '{"text":"%s archivetool.eu deploy %s — sha `%s` by %s"}' \
+              "${status_icon}" "${JOB_STATUS}" "${GIT_SHA}" "${GIT_ACTOR}")
+          curl -sS -X POST -H 'Content-Type: application/json' \
+               --data "${payload}" "${SLACK_WEBHOOK_URL}" || true
