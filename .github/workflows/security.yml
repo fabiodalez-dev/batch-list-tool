@@ -42,8 +42,11 @@ jobs:
         run: composer install --no-interaction --prefer-dist --no-progress --no-scripts
 
       - name: Run composer audit
-        # On main + scheduled runs we DO fail the build on advisories so the
-        # team gets a red badge until the dependency is patched.
+        # `extra.audit.ignore` in composer.json holds the temporary
+        # exclusion list (currently the 4 Symfony CVEs from 2026-05-26
+        # whose 8.0.13 patch hasn't shipped yet). When Symfony releases,
+        # remove those IDs from composer.json and this gate goes back to
+        # being a hard fail.
         run: composer audit --no-interaction --format=plain
 
   semgrep:
