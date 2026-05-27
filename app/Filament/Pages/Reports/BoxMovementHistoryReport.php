@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace App\Filament\Pages\Reports;
 
+use App\Filament\Pages\Reports\Concerns\CapsExportRows;
 use App\Filament\Pages\Reports\Concerns\HasReportTemplates;
 use App\Filament\Pages\Reports\Filters\DateRangeFilter;
 use App\Models\Box;
@@ -37,6 +38,7 @@ use Symfony\Component\HttpFoundation\StreamedResponse;
  */
 class BoxMovementHistoryReport extends Page implements HasTable
 {
+    use CapsExportRows;
     use HasReportTemplates;
     use InteractsWithTable;
 
@@ -247,16 +249,16 @@ class BoxMovementHistoryReport extends Page implements HasTable
         abort_unless(static::canAccess(), 403);
 
         $query = $this->getFilteredTableQuery() ?? $this->reportQuery();
-        $rows = $query
-            ->with([
-                'document:id,identifier',
-                'fromBox:id,box_number',
-                'toBox:id,box_number',
-                'user:id,name,email',
-            ])
-            ->orderByDesc('movement_date')
-            ->limit(50000)
-            ->get();
+        $rows = $this->fetchExportRowsWithCap(
+            $query
+                ->with([
+                    'document:id,identifier',
+                    'fromBox:id,box_number',
+                    'toBox:id,box_number',
+                    'user:id,name,email',
+                ])
+                ->orderByDesc('movement_date'),
+        );
 
         return ReportRenderer::streamXlsx(
             rows: $rows,

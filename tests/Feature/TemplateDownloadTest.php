@@ -35,6 +35,17 @@ use Symfony\Component\HttpFoundation\StreamedResponse;
  */
 uses(RefreshDatabase::class);
 
+// TemplateGenerator::SAMPLES_DIR points at the legacy xlsx fixtures that
+// live in the OUTER repo (Batch_List_Tool/samples/). CI checks out only
+// the Laravel app (batch-list-tool/), so the dir is absent — skip every
+// test in this file when that is the case, instead of failing with a
+// confusing "Sample file not readable".
+beforeEach(function (): void {
+    if (! is_dir(TemplateGenerator::SAMPLES_DIR)) {
+        $this->markTestSkipped('Samples dir absent (CI checkout of Laravel-only repo); covered by local dev runs.');
+    }
+});
+
 /* ─── helpers ─────────────────────────────────────────────────────────── */
 
 function tpl_seedRoles(): void

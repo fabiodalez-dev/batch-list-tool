@@ -11,6 +11,7 @@ use Illuminate\Database\Eloquent\Relations\HasMany;
 use Illuminate\Database\Eloquent\SoftDeletes;
 use Illuminate\Support\Collection;
 use Illuminate\Support\Facades\Auth;
+use Illuminate\Support\Facades\DB;
 use OwenIt\Auditing\Auditable;
 use OwenIt\Auditing\Contracts\Auditable as AuditableContract;
 use Spatie\EloquentSortable\Sortable;
@@ -244,21 +245,37 @@ class Box extends Model implements AuditableContract, Sortable
      * column diff and writes an `updated` audit row, which is the audit
      * trail for the event (no extra manual log needed).
      *
+     * Race-safe: the row is re-acquired with `SELECT ... FOR UPDATE` inside a
+     * transaction and the eligibility check is re-evaluated against the locked
+     * row. Two operators clicking "Destroy" on the same box at the same instant
+     * serialise on the lock; the second request sees `destroyed_at` already
+     * stamped and throws instead of double-recording the event.
+     *
      * @throws \DomainException if {@see canBeDestroyed()} returns ok=false.
      */
     public function markDestroyed(?string $reason, ?int $userId): void
     {
-        $check = $this->canBeDestroyed();
-        if (! $check['ok']) {
-            throw new \DomainException(
-                $check['reason'] ?? 'Box cannot be destroyed.'
-            );
-        }
+        DB::transaction(function () use ($reason, $userId) {
+            $locked = static::query()->whereKey($this->getKey())->lockForUpdate()->first();
 
-        $this->destroyed_at = now();
-        $this->destroyed_by_user_id = $userId;
-        $this->destroyed_reason = $reason;
-        $this->save();
+            if ($locked === null) {
+                throw new \DomainException('Box no longer exists.');
+            }
+
+            $check = $locked->canBeDestroyed();
+            if (! $check['ok']) {
+                throw new \DomainException(
+                    $check['reason'] ?? 'Box cannot be destroyed.'
+                );
+            }
+
+            $locked->destroyed_at = now();
+            $locked->destroyed_by_user_id = $userId;
+            $locked->destroyed_reason = $reason;
+            $locked->save();
+
+            $this->setRawAttributes($locked->getAttributes(), true);
+        });
     }
 
     /**

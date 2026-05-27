@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace App\Filament\Pages\Reports;
 
+use App\Filament\Pages\Reports\Concerns\CapsExportRows;
 use App\Filament\Pages\Reports\Concerns\HasReportTemplates;
 use App\Filament\Pages\Reports\Filters\DateRangeFilter;
 use App\Filament\Widgets\PendingDisinfestationTable;
@@ -37,6 +38,7 @@ use Symfony\Component\HttpFoundation\StreamedResponse;
  */
 class PendingDisinfestationReport extends Page implements HasTable
 {
+    use CapsExportRows;
     use HasReportTemplates;
     use InteractsWithTable;
 
@@ -306,11 +308,11 @@ class PendingDisinfestationReport extends Page implements HasTable
         abort_unless(static::canAccess(), 403);
 
         $query = $this->getFilteredTableQuery() ?? $this->reportQuery();
-        $rows = $query
-            ->with(['currentBox:id,box_number,barcode_status', 'batch:id,batch_number', 'series:id,code'])
-            ->orderBy('documents.created_at')
-            ->limit(50000)
-            ->get();
+        $rows = $this->fetchExportRowsWithCap(
+            $query
+                ->with(['currentBox:id,box_number,barcode_status', 'batch:id,batch_number', 'series:id,code'])
+                ->orderBy('documents.created_at'),
+        );
 
         return ReportRenderer::streamXlsx(
             rows: $rows,

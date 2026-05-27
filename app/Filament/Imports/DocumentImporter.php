@@ -53,6 +53,13 @@ use Spatie\SchemalessAttributes\SchemalessAttributes;
  */
 class DocumentImporter extends Importer
 {
+    /**
+     * Multi-value cell delimiter per RFQ Appendix-2 §xi. Hard-coded by the
+     * RFQ — do NOT swap for `,` or `|` without a contract amendment, since
+     * authority names legitimately contain commas ("Buttigieg, John").
+     */
+    public const SEMICOLON_DELIMITER = ';';
+
     protected static ?string $model = Document::class;
 
     /**
@@ -505,9 +512,10 @@ class DocumentImporter extends Importer
     }
 
     /**
-     * Split a semicolon-delimited spreadsheet cell into a clean list of
-     * trimmed, non-empty pieces. RFQ Appendix-2 §xi — the legacy Excel
-     * encodes multiple creators in a SINGLE column delimited by `;`:
+     * Split a {@see SEMICOLON_DELIMITER}-delimited spreadsheet cell into a
+     * clean list of trimmed, non-empty pieces. RFQ Appendix-2 §xi — the
+     * legacy Excel encodes multiple creators in a SINGLE column delimited
+     * by `;`:
      *
      *   "520; 178"                       → ["520", "178"]
      *   "Calcedonio Gatt; Angelo Cauchi" → ["Calcedonio Gatt", "Angelo Cauchi"]
@@ -515,17 +523,30 @@ class DocumentImporter extends Importer
      *   "  R520  "                       → ["R520"]
      *   ""                               → []
      *
+     * Semantics worth noting:
+     *
+     * - Empty pieces (e.g. trailing `;`, double `;;`, whitespace-only) are
+     *   SILENTLY SKIPPED. This is deliberate: legacy spreadsheets routinely
+     *   carry sloppy editor whitespace and we do not want to fail an entire
+     *   row because of a stray separator.
+     * - The delimiter is fixed at {@see SEMICOLON_DELIMITER}. A comma is
+     *   NOT a fallback — names in the legacy data legitimately contain
+     *   commas (e.g. "Buttigieg, John") and treating `,` as a separator
+     *   would corrupt every such row.
+     * - Whitespace around each piece is trimmed; internal whitespace is
+     *   preserved verbatim.
+     *
      * @return array<int, string>
      */
     public static function splitSemicolonList(string $raw): array
     {
-        if (! str_contains($raw, ';')) {
+        if (! str_contains($raw, self::SEMICOLON_DELIMITER)) {
             $only = trim($raw);
 
             return $only === '' ? [] : [$only];
         }
 
-        $pieces = array_map('trim', explode(';', $raw));
+        $pieces = array_map('trim', explode(self::SEMICOLON_DELIMITER, $raw));
 
         return array_values(array_filter(
             $pieces,
