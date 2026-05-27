@@ -55,6 +55,34 @@ class Document extends Model implements AuditableContract, HasMedia, Sortable
         'dates',
     ];
 
+    /**
+     * RFQ-2026-06 APP2-xiii — allowed values for the `digitised` lookup.
+     * Tracks the digitisation source. NULL means "not yet digitised".
+     *
+     * Mirrored by a CHECK constraint on MySQL (see
+     * 2026_05_27_170100_tighten_document_lookups). The PHP-side guard in
+     * booted() is the cross-driver enforcement (SQLite cannot retro-fit a
+     * CHECK constraint).
+     *
+     * @var array<int,string>
+     */
+    public const DIGITISED_VALUES = ['VHMML', 'NRA', 'none'];
+
+    /**
+     * RFQ-2026-06 APP2-ix — allowed values for `current_box_type`. The
+     * disinfestation planner counts 'Big Brown Box' as 2 boxes against the
+     * 250-box per-cycle limit, so the enum lock-down also gates that
+     * downstream business logic.
+     *
+     * Mirrored by a CHECK constraint on MySQL (see
+     * 2026_05_27_170100_tighten_document_lookups). The PHP-side guard in
+     * booted() is the cross-driver enforcement (SQLite cannot retro-fit a
+     * CHECK constraint).
+     *
+     * @var array<int,string>
+     */
+    public const CURRENT_BOX_TYPES = ['RAS Box', 'Big Brown Box', 'Small Brown Box'];
+
     public array $sortable = [
         'order_column_name' => 'sort_order',
         'sort_when_creating' => true,
@@ -490,6 +518,30 @@ class Document extends Model implements AuditableContract, HasMedia, Sortable
      */
     protected static function booted(): void
     {
+        // RFQ-2026-06 APP2-ix / APP2-xiii — gate the two lookup enums in PHP
+        // so the constraint is enforced on every driver (SQLite test runs
+        // included, where a DB-level CHECK cannot be retro-fitted).
+        // Runs on both create and update via the `saving` event.
+        static::saving(function (Document $document): void {
+            if ($document->digitised !== null
+                && ! in_array($document->digitised, self::DIGITISED_VALUES, true)
+            ) {
+                throw new \DomainException(
+                    "Invalid digitised value '{$document->digitised}'. Allowed: "
+                    . implode(', ', self::DIGITISED_VALUES)
+                );
+            }
+
+            if ($document->current_box_type !== null
+                && ! in_array($document->current_box_type, self::CURRENT_BOX_TYPES, true)
+            ) {
+                throw new \DomainException(
+                    "Invalid current_box_type '{$document->current_box_type}'. Allowed: "
+                    . implode(', ', self::CURRENT_BOX_TYPES)
+                );
+            }
+        });
+
         static::updating(function (Document $document): void {
             if (! $document->isDirty('seal_number')) {
                 return;
