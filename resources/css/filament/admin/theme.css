@@ -69,9 +69,14 @@
 /* ------------------------------------------------------------------ */
 
 :root {
-    /* Cream — dominant surface, panna napoletana */
-    --cream-50:  oklch(98.5% 0.008 78);
-    --cream-100: oklch(96.5% 0.015 78);
+    /* Cream — dominant surface, panna napoletana.
+       50 + 100 are pinned to the exact menubello.com hex values per
+       user spec (the rest of the scale follows in OKLCH and was
+       derived by stepping the chroma + lightness down).
+         #FDF7F3 — light pinkish cream, used for the MAIN page body
+         #F9F3E9 — darker warm panna, used for SIDEBAR + TOPBAR + thead */
+    --cream-50:  #FDF7F3;
+    --cream-100: #F9F3E9;
     --cream-200: oklch(93%   0.022 76);
     --cream-300: oklch(88%   0.028 74);
     --cream-400: oklch(78%   0.040 70);
@@ -95,18 +100,21 @@
     --coffee-900: oklch(16% 0.040 48);
     --coffee-950: oklch(10% 0.030 48);
 
-    /* Orange — warm primary accent, used sparingly (~10% of surface) */
-    --brand-orange-50:  oklch(97% 0.025 65);
-    --brand-orange-100: oklch(93% 0.050 60);
-    --brand-orange-200: oklch(86% 0.100 56);
-    --brand-orange-300: oklch(78% 0.130 54);
-    --brand-orange-400: oklch(72% 0.155 52);
-    --brand-orange-500: oklch(66% 0.175 50);
-    --brand-orange-600: oklch(58% 0.185 48);
-    --brand-orange-700: oklch(50% 0.170 46);
-    --brand-orange-800: oklch(40% 0.140 44);
-    --brand-orange-900: oklch(30% 0.100 42);
-    --brand-orange-950: oklch(20% 0.070 42);
+    /* Orange — warm primary accent, used sparingly (~10% of surface).
+       500 is pinned to the exact menubello.com brand orange #D46039
+       (a warm terracotta brick, NOT the brighter #EF863B I had used
+       before). Other steps stepped around it. */
+    --brand-orange-50:  oklch(97% 0.025 50);
+    --brand-orange-100: oklch(93% 0.055 50);
+    --brand-orange-200: oklch(85% 0.095 48);
+    --brand-orange-300: oklch(75% 0.135 48);
+    --brand-orange-400: oklch(65% 0.160 47);
+    --brand-orange-500: #D46039;
+    --brand-orange-600: oklch(50% 0.155 44);
+    --brand-orange-700: oklch(42% 0.135 42);
+    --brand-orange-800: oklch(34% 0.110 40);
+    --brand-orange-900: oklch(26% 0.085 38);
+    --brand-orange-950: oklch(18% 0.060 36);
 
     /* Warm danger / success / warning that harmonize with the cream surface */
     --warm-danger-500:  oklch(60% 0.180 25);
@@ -161,7 +169,9 @@ body,
 .fi-body {
     font-family: var(--font-sans);
     color: var(--coffee-800);
-    background-color: var(--cream-100);
+    /* Lighter cream (#FDF7F3) for the main page surface — sidebar and
+       topbar get the darker #F9F3E9 to lift them out of the page band. */
+    background-color: var(--cream-50);
     -webkit-font-smoothing: antialiased;
     -moz-osx-font-smoothing: grayscale;
 }
@@ -204,7 +214,9 @@ pre,
 /* --- Shells: body, sidebar, topbar, main ---------------------------- */
 
 .fi-sidebar {
-    background-color: var(--cream-50);
+    /* Darker panna (#F9F3E9) lifts the sidebar against the lighter
+       page body (#FDF7F3). Matches menubello.com's two-tone shell. */
+    background-color: var(--cream-100);
     border-right: 1px solid var(--cream-200);
 }
 
@@ -218,7 +230,7 @@ pre,
 }
 
 .fi-sidebar-item-button:hover {
-    background-color: var(--cream-100);
+    background-color: var(--cream-200);
     color: var(--coffee-800);
 }
 
@@ -248,12 +260,14 @@ pre,
 
 .fi-main,
 .fi-main-ctn {
-    background-color: var(--cream-100);
+    /* Main content area: lighter #FDF7F3 to match the page body. */
+    background-color: var(--cream-50);
 }
 
 .fi-topbar > nav,
 .fi-topbar {
-    background-color: var(--cream-50);
+    /* Topbar matches sidebar (#F9F3E9), darker than the main body. */
+    background-color: var(--cream-100);
     box-shadow: 0 1px 0 var(--cream-200);
     border-bottom: 0;
 }
