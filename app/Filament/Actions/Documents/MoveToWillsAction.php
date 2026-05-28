@@ -109,9 +109,23 @@ final class MoveToWillsAction
                         ->orWhere('is_wills_series', true)
                         ->orderBy('code')
                         ->first();
-                    if ($rwl !== null) {
-                        $doc->series_id = $rwl->getKey();
+                    // Guarantee the invariant this action exists to enforce
+                    // (Batch 50 = wills only, RFQ App.1 #2): if the catalogue
+                    // has no wills series yet, provision the canonical RWL one
+                    // — mirrors the auto-create of Batch 50 above. Without this
+                    // the document would land in Batch 50 as a non-wills doc,
+                    // which the Document model guard correctly rejects.
+                    if ($rwl === null) {
+                        $rwl = Series::query()->firstOrCreate(
+                            ['code' => 'RWL'],
+                            [
+                                'title' => 'Registers Private Practice Public Wills',
+                                'is_wills_series' => true,
+                                'is_active' => true,
+                            ],
+                        );
                     }
+                    $doc->series_id = $rwl->getKey();
                 }
 
                 // Clear the box pointer — it almost certainly belongs to a

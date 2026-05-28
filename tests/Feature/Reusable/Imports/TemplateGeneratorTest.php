@@ -33,31 +33,27 @@ it('TemplateGenerator: headersFor("box") includes parent_box_number and barcode_
         ->and($headers)->toContain('disinfestation_date');
 });
 
-it('TemplateGenerator: headersFor("authority") reads from legacy sample (must exist)', function () {
-    if (! is_readable(TemplateGenerator::SAMPLES_DIR . '/Authorities_Sample.xlsx')) {
-        $this->markTestSkipped('Authorities_Sample.xlsx missing from samples dir.');
-    }
+it('TemplateGenerator: headersFor("authority") returns the in-repo legacy contract', function () {
     $headers = TemplateGenerator::headersFor('authority');
-    expect($headers)->toBeArray()
-        ->and(count($headers))->toBeGreaterThan(0);
+    expect($headers)->toEqual(TemplateGenerator::AUTHORITY_HEADERS)
+        ->and($headers)->toHaveCount(9)
+        ->and($headers[0])->toBe('Identifier');
 });
 
-it('TemplateGenerator: headersFor("series") trims trailing nulls', function () {
-    if (! is_readable(TemplateGenerator::SAMPLES_DIR . '/Series_Sample.xlsx')) {
-        $this->markTestSkipped('Series_Sample.xlsx missing from samples dir.');
-    }
+it('TemplateGenerator: headersFor("series") returns the trimmed 6-column contract', function () {
     $headers = TemplateGenerator::headersFor('series');
-    // sample declares 26 columns but only 6 populated → trimmed
-    expect(count($headers))->toBeLessThanOrEqual(10)
-        ->and(count($headers))->toBeGreaterThan(0);
+    expect($headers)->toEqual(TemplateGenerator::SERIES_HEADERS)
+        ->and($headers)->toHaveCount(6)
+        ->and($headers[1])->toBe('Identifier');
 });
 
-it('TemplateGenerator: headersFor("document") preserves duplicate "Barcode (IN)" headers', function () {
-    if (! is_readable(TemplateGenerator::SAMPLES_DIR . '/Batch_List_Sample.xlsx')) {
-        $this->markTestSkipped('Batch_List_Sample.xlsx missing from samples dir.');
-    }
+it('TemplateGenerator: headersFor("document") preserves the duplicated provenance headers', function () {
     $headers = TemplateGenerator::headersFor('document');
-    expect(count($headers))->toBeGreaterThan(20);
+    expect($headers)->toEqual(TemplateGenerator::DOCUMENT_HEADERS)
+        ->and($headers)->toHaveCount(49)
+        // "Barcode (IN)" appears at columns 13 and 22 (0-based 12 / 21)
+        ->and($headers[12])->toBe('Barcode (IN)')
+        ->and($headers[21])->toBe('Barcode (IN)');
 });
 
 it('TemplateGenerator: headersFor("unknown") throws InvalidArgumentException', function () {

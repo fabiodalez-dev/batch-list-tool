@@ -234,11 +234,16 @@ return [
         'notifiable' => Notifiable::class,
 
         'mail' => [
-            'to' => 'your@example.com',
+            // RFQ §3.4 — backup health notifications go to the NAF ops mailbox.
+            // env-driven (no placeholder): set MAIL_BACKUP_RECIPIENT in
+            // production (already scaffolded in .env.example). Falls back to
+            // MAIL_FROM_ADDRESS so a misconfigured env still reaches the
+            // configured sender rather than a dummy address.
+            'to' => env('MAIL_BACKUP_RECIPIENT', env('MAIL_FROM_ADDRESS')),
 
             'from' => [
-                'address' => env('MAIL_FROM_ADDRESS', 'hello@example.com'),
-                'name' => env('MAIL_FROM_NAME', 'Example'),
+                'address' => env('MAIL_FROM_ADDRESS', 'backups@archivetool.eu'),
+                'name' => env('MAIL_FROM_NAME', 'Batch List Tool Backups'),
             ],
         ],
 
