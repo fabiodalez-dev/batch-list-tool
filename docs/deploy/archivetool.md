@@ -18,16 +18,20 @@ This document covers:
 
 ---
 
-## TODO - action required before the next deploy
+## Deploy secret configuration (resolved 2026-05-28)
 
-> **The GitHub secret `DEPLOY_PATH` must be updated.**
-> Old value: `/home/archivet/laravel-app`
-> New value: `/home/archivet/public_html`
+> ✅ `DEPLOY_PATH` is set to `/home/archivet/public_html` and the
+> auto-deploy workflow has been running green since the first production
+> cut-over (30+ successful `Deploy to archivetool.eu` runs verified).
 >
-> Go to **Settings -> Secrets and variables -> Actions** on the
-> `fabiodalez-dev/batch-list-tool` repository, edit `DEPLOY_PATH`, and
-> save. The deploy workflow will fail with `DEPLOY_PATH does not exist`
-> until this is done.
+> The five GitHub secrets the deploy workflow needs:
+> `SSH_HOST`, `SSH_USER`, `SSH_PRIVATE_KEY_DEPLOY`, `SSH_PASSPHRASE` (empty
+> for the no-passphrase deploy key), `DEPLOY_PATH=/home/archivet/public_html`.
+>
+> Transient failure note: the `Trust deploy host` step runs `ssh-keyscan`;
+> if the VHosting host is briefly unreachable it exits non-zero under
+> `set -e`. Re-run the workflow (`gh workflow run "Deploy to archivetool.eu"
+> --ref main`) — it is idempotent.
 
 ---
 

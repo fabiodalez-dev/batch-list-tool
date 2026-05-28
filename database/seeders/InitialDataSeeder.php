@@ -31,6 +31,17 @@ class InitialDataSeeder extends Seeder
         );
 
         // ----- Roles (Shield's super_admin is created on the fly; we add operational roles) -----
+        //
+        // RFQ §3.3 / submission taxonomy mapping (see docs/role-taxonomy.md):
+        //   Administrator  →  super_admin (+ admin)
+        //   ReadingRoom    →  editor
+        //   General        →  viewer
+        // The internal slugs (super_admin/admin/editor/viewer) are the Shield/
+        // Spatie convention used across FieldPermissions, policies and the test
+        // suite. The RFQ-facing display names are surfaced in the UI via the
+        // App\Support\RoleLabels helper; renaming the slugs themselves would
+        // break the permission matrix + policy gates + ~900 tests for a purely
+        // cosmetic gain, so the mapping is documented rather than renamed.
         $superAdmin = Role::firstOrCreate(['name' => 'super_admin', 'guard_name' => 'web']);
         $admin = Role::firstOrCreate(['name' => 'admin', 'guard_name' => 'web']);
         $editor = Role::firstOrCreate(['name' => 'editor', 'guard_name' => 'web']);
