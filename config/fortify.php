@@ -164,7 +164,11 @@ return [
     */
 
     'features' => [
-        Features::registration(),
+        // RFQ-2026-06 — public self-registration is DISABLED: this is an
+        // internal NAF system, accounts are provisioned by an Administrator
+        // (UserResource) only. Re-enabling would let anonymous visitors create
+        // is_active users, so it stays off by design.
+        // Features::registration(),
         Features::resetPasswords(),
         // Features::emailVerification(),
         Features::updateProfileInformation(),

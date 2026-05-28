@@ -344,12 +344,20 @@ test('DocumentsPerBatchChart top-15 ordering (descending by count)', function ()
 test('DocumentsPerBatchChart filter "wills" returns only batch 50', function () {
     $repo = makeRepository('W');
     $series = makeSeries('W');
+    // Batch 50 only accepts wills-series documents (RFQ App.1 #2, enforced in
+    // Document::saving), so the two docs we park there use a wills series.
+    $willsSeries = Series::create([
+        'code' => 'RWL_' . substr(uniqid(), -4),
+        'title' => 'Wills',
+        'is_wills_series' => true,
+        'is_active' => true,
+    ]);
 
     $wills = makeBatch($repo->id, Batch::WILLS_BATCH);
     $main = makeBatch($repo->id, 7);
 
-    makeDocument($repo->id, $series->id, ['batch_id' => $wills->id]);
-    makeDocument($repo->id, $series->id, ['batch_id' => $wills->id]);
+    makeDocument($repo->id, $willsSeries->id, ['batch_id' => $wills->id]);
+    makeDocument($repo->id, $willsSeries->id, ['batch_id' => $wills->id]);
     makeDocument($repo->id, $series->id, ['batch_id' => $main->id]);
 
     $this->actingAs(adminUser());

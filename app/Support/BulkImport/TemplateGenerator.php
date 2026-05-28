@@ -8,8 +8,6 @@ use App\Filament\Imports\BatchImporter;
 use App\Filament\Imports\BoxImporter;
 use PhpOffice\PhpSpreadsheet\Cell\Coordinate;
 use PhpOffice\PhpSpreadsheet\Cell\DataType;
-use PhpOffice\PhpSpreadsheet\IOFactory;
-use PhpOffice\PhpSpreadsheet\Reader\IReadFilter;
 use PhpOffice\PhpSpreadsheet\Spreadsheet;
 use PhpOffice\PhpSpreadsheet\Style\Alignment;
 use PhpOffice\PhpSpreadsheet\Worksheet\Worksheet;
@@ -61,11 +59,43 @@ use Symfony\Component\HttpFoundation\StreamedResponse;
 final class TemplateGenerator
 {
     /**
-     * Where the legacy sample files live. Read-only — never write here.
-     * Kept as a class constant so tests can introspect without parsing
-     * the source.
+     * Legacy sample header rows, captured verbatim from the official sample
+     * files and embedded here so template generation has NO runtime dependency
+     * on any external/absolute path (works identically on dev, CI and on-prem).
+     * Only the column NAMES are stored — no notary data — so this is also
+     * privacy-safe. Duplicates and positions are preserved exactly because the
+     * operators read the legacy layout by column position (see class docblock).
+     *
+     * @var array<int, string>
      */
-    public const SAMPLES_DIR = '/Users/fabio/Desktop/Batch_List_Tool/samples';
+    public const AUTHORITY_HEADERS = [
+        'Identifier', 'Alternative Identifier', 'Type of Entity',
+        'Private Practice Dates Active', 'NTG Dates Active', 'Name Suffix',
+        'Maiden Surname', 'Creator Surname', 'Creator Name',
+    ];
+
+    /** @var array<int, string> */
+    public const SERIES_HEADERS = [
+        '', 'Identifier', 'Standard title in English (Plural)',
+        'Level of description', 'Date of creation', 'Name of Inputter',
+    ];
+
+    /** @var array<int, string> */
+    public const DOCUMENT_HEADERS = [
+        'RAS Batch 1', 'RAS Box 1', 'RAS Batch 2', 'RAS Box 2',
+        'In Situ Box 1', 'In Situ Box 2', 'In Situ Box 3',
+        'RAS 1 Box Destroyed', 'RAS 2 Box Destroyed', 'In Situ Box 1 Destroyed',
+        'In Situ Box 2 Destroyed', 'In Situ Box 3 Destroyed', 'Barcode (IN)',
+        'Barcode RAS 1', 'Status 1', 'Barcode RAS 2', 'Status 2',
+        'Barcode RAS 3', 'Status 3', 'Barcode RAS 4', 'Status 4',
+        'Barcode (IN)', 'Barcode RAS 2', 'Status 1', 'Barcode RAS 2', 'Status 2',
+        'Seal Number', 'Disinfestation Date', 'Disinfestation Date',
+        'Disinfestation Date', 'Catalogue Identifier', 'NRA Location',
+        'Museum Location', 'Identifier', 'Practice', 'Volume', 'Creator',
+        'Dates', 'Deeds', 'Document Type', 'Series', 'Current Box', 'Note',
+        'Digitised', 'Torre', 'Accession', 'Object Reference Number',
+        'Tracking', 'Museum Reference',
+    ];
 
     /**
      * Generator version — embedded in the hidden metadata sheet so that
@@ -76,45 +106,22 @@ final class TemplateGenerator
     public const GENERATOR_VERSION = '1.0.0';
 
     /**
-     * Per-entity descriptor table. `source` is the legacy sample whose
-     * row-1 we copy verbatim; `synthesise` is a callable returning the
-     * header list when no sample exists for the entity (Batch / Box).
+     * Supported template entities. Headers come from the in-repo constants
+     * ({@see AUTHORITY_HEADERS}, {@see SERIES_HEADERS}, {@see DOCUMENT_HEADERS})
+     * or the `synthesise*Headers()` methods — never from an external file.
      *
-     * Kept public so the wizard page and tests can read the same source
-     * of truth without duplicating literals.
+     * Kept public so the wizard page and tests can read the same key set
+     * without duplicating literals.
      *
-     * @var array<string, array{
-     *     source?: string,
-     *     sheet?: int,
-     *     header_row?: int,
-     *     synthesise?: callable():array<int, string>,
-     * }>
+     * @var array<string, array{}>
      */
     public const TEMPLATES = [
-        'authority' => [
-            'source' => 'Authorities_Sample.xlsx',
-            'sheet' => 0,
-            'header_row' => 1,
-        ],
-        'series' => [
-            'source' => 'Series_Sample.xlsx',
-            'sheet' => 0,
-            'header_row' => 1,
-        ],
-        'batch' => [
-            // No legacy sample; synthesised from BatchImporter columns + RFQ.
-        ],
-        'box' => [
-            // No legacy sample; synthesised from BoxImporter columns + Box::TYPES.
-        ],
-        'location' => [
-            // No legacy sample; synthesised from LocationImporter columns + Location::TYPES.
-        ],
-        'document' => [
-            'source' => 'Batch_List_Sample.xlsx',
-            'sheet' => 0,
-            'header_row' => 1,
-        ],
+        'authority' => [],
+        'series' => [],
+        'batch' => [],
+        'box' => [],
+        'location' => [],
+        'document' => [],
     ];
 
     /**
@@ -170,11 +177,9 @@ final class TemplateGenerator
         }
 
         return match ($entity) {
-            'authority', 'series', 'document' => self::extractHeadersFromSample(
-                self::SAMPLES_DIR . '/' . self::TEMPLATES[$entity]['source'],
-                self::TEMPLATES[$entity]['sheet'],
-                self::TEMPLATES[$entity]['header_row'],
-            ),
+            'authority' => self::AUTHORITY_HEADERS,
+            'series' => self::SERIES_HEADERS,
+            'document' => self::DOCUMENT_HEADERS,
             'batch' => self::synthesiseBatchHeaders(),
             'box' => self::synthesiseBoxHeaders(),
             'location' => self::synthesiseLocationHeaders(),
@@ -182,75 +187,6 @@ final class TemplateGenerator
         // Note: the `array_key_exists` guard above narrows $entity to the
         // exact key set covered by the match arms, so PHPStan correctly
         // flags any `default` here as unreachable.
-    }
-
-    /**
-     * Read row N of sheet K from a sample xlsx and return the populated
-     * header cells in order.
-     *
-     * Trailing-NULL handling: `Series_Sample.xlsx` declares 26 columns but
-     * only the first 6 are populated — Excel records `getHighestColumn()`
-     * as `Z` because some empty cells were touched at save time. We trim
-     * trailing NULLs so the generated template doesn't ship phantom empty
-     * column slots. Interior NULLs (very rare in our samples) are kept as
-     * empty strings to preserve column count and alignment, since
-     * downstream code may rely on column positions.
-     *
-     * @return array<int, string>
-     */
-    private static function extractHeadersFromSample(string $samplePath, int $sheet, int $headerRow): array
-    {
-        if (! is_readable($samplePath)) {
-            throw new \RuntimeException("Sample file not readable: {$samplePath}");
-        }
-
-        $reader = IOFactory::createReaderForFile($samplePath);
-        $reader->setReadDataOnly(true);
-        // Only read the header row — `Batch_List_Sample.xlsx` is 3,000+ rows
-        // wide and the default reader holds the whole grid in memory (~120 MB
-        // for that one file). A read filter keeps memory flat regardless of
-        // sample size.
-        $reader->setReadFilter(new class($headerRow) implements IReadFilter
-        {
-            public function __construct(private readonly int $headerRow) {}
-
-            // Loose signature to stay compatible with the interface contract
-            // shipped by phpoffice/phpspreadsheet (no scalar typehints on the
-            // interface method).
-            public function readCell($columnAddress, $row, $worksheetName = '')
-            {
-                return $row === $this->headerRow;
-            }
-        });
-        $spreadsheet = $reader->load($samplePath);
-        $worksheet = $spreadsheet->getSheet($sheet);
-
-        $highestColumn = $worksheet->getHighestColumn();
-        $highestIdx = Coordinate::columnIndexFromString($highestColumn);
-
-        $row = [];
-        for ($c = 1; $c <= $highestIdx; $c++) {
-            $coord = Coordinate::stringFromColumnIndex($c) . $headerRow;
-            $value = $worksheet->getCell($coord)->getValue();
-            $row[] = $value;
-        }
-
-        // Trim trailing NULL / empty cells. We do NOT touch interior holes
-        // (those would break column position contracts for the Document
-        // template).
-        while (count($row) > 0) {
-            $last = end($row);
-            if ($last === null || $last === '') {
-                array_pop($row);
-
-                continue;
-            }
-            break;
-        }
-
-        // Map interior NULL → empty string so the writer doesn't choke
-        // and `is_string` checks downstream are clean.
-        return array_map(static fn ($v) => (string) ($v ?? ''), $row);
     }
 
     /**

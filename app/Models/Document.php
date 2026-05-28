@@ -596,6 +596,27 @@ class Document extends Model implements AuditableContract, HasMedia, Sortable
                 }
                 $document->current_box_type = $normalized;
             }
+
+            // RFQ App.1 #2 — Batch 50 is reserved for wills. Enforce centrally
+            // (every path, not just the UI actions): a document placed in the
+            // wills-reserve batch MUST belong to a wills series. Only evaluated
+            // when the placement actually changes, to keep unrelated saves cheap.
+            if ($document->batch_id !== null
+                && ($document->isDirty('batch_id') || $document->isDirty('series_id'))) {
+                $batch = Batch::withoutGlobalScopes()->find($document->batch_id);
+                if ($batch !== null && (int) $batch->batch_number === Batch::WILLS_BATCH) {
+                    $series = $document->series_id !== null
+                        ? Series::find($document->series_id)
+                        : null;
+                    if ($series === null || ! $series->is_wills_series) {
+                        throw new \DomainException(
+                            'Batch ' . Batch::WILLS_BATCH
+                            . ' is reserved for wills documents (RFQ App.1 #2); '
+                            . 'assign a wills series before placing the document there.'
+                        );
+                    }
+                }
+            }
         });
 
         static::updating(function (Document $document): void {
