@@ -38,8 +38,10 @@ use Filament\Schemas\Components\Wizard\Step;
 use Filament\Schemas\Schema;
 use Filament\Support\Exceptions\Halt;
 use Illuminate\Bus\PendingBatch;
+use Illuminate\Contracts\Validation\ValidationRule;
 use Illuminate\Support\Facades\Bus;
 use Illuminate\Support\Facades\Storage;
+use Illuminate\Support\Facades\Validator;
 use Illuminate\Support\HtmlString;
 use League\Csv\Reader;
 use Livewire\Attributes\Locked;
@@ -215,6 +217,14 @@ class ImportWizard extends Page
     ];
 
     /**
+     * Hard cap on the number of individual row errors the preflight collects
+     * for display. The invalid-row COUNT is always exact; only the per-error
+     * detail list is truncated so a 3 000-row file with thousands of failures
+     * doesn't blow up the Livewire payload.
+     */
+    public const PREFLIGHT_MAX_ERRORS = 200;
+
+    /**
      * Wizard state — a single flat array of every step's fields.
      * Filament's Wizard component stitches the steps' state paths
      * together under this root, so `data.import_type`, `data.file`
@@ -245,6 +255,22 @@ class ImportWizard extends Page
      */
     #[Locked]
     public ?int $lastImportId = null;
+
+    /**
+     * Result of the most recent Step-5 preflight, or null if not run yet for
+     * the current file. Shape:
+     *   ['total'=>int, 'valid'=>int, 'invalid'=>int,
+     *    'errors'=>list<array{row:int, field:string, message:string}>,
+     *    'truncated'=>bool].
+     *
+     * `#[Locked]` because the wizard's submit gate trusts it — a tampered
+     * Livewire payload must not be able to fake a clean preflight to bypass
+     * the "nothing valid to import" Halt.
+     *
+     * @var array{total:int, valid:int, invalid:int, errors:list<array{row:int, field:string, message:string}>, truncated:bool}|null
+     */
+    #[Locked]
+    public ?array $preflightResult = null;
 
     protected string $view = 'filament.pages.import-wizard';
 
@@ -325,6 +351,7 @@ class ImportWizard extends Page
                     $this->stepDownloadTemplate(),
                     $this->stepUpload(),
                     $this->stepPreview(),
+                    $this->stepValidate(),
                     $this->stepConfirm(),
                 ])
                     ->submitAction(
@@ -637,6 +664,159 @@ class ImportWizard extends Page
     }
 
     /**
+     * Re-parse the uploaded file in full and validate every row against the
+     * importer's column rules, storing the summary in {@see $preflightResult}.
+     */
+    public function runPreflight(): void
+    {
+        abort_unless(static::canAccess(), 403);
+
+        $this->preflightResult = null;
+
+        try {
+            $state = $this->form->getState();
+        } catch (Halt) {
+            return;
+        }
+
+        $type = (string) ($state['import_type'] ?? '');
+        if (! array_key_exists($type, self::IMPORTERS)) {
+            $this->notifyDanger('Pick a type in step 1 first.');
+
+            return;
+        }
+
+        /** @var TemporaryUploadedFile|array<TemporaryUploadedFile>|null $file */
+        $file = $state['file'] ?? null;
+        if (is_array($file)) {
+            $file = reset($file) ?: null;
+        }
+        if (! $file instanceof TemporaryUploadedFile) {
+            $this->notifyDanger('No file uploaded — go back to step 3.');
+
+            return;
+        }
+
+        try {
+            $csvPath = $this->materialiseCsv($file, (int) ($state['sheet'] ?? 0));
+            [, $rows] = $this->readCsvForImport($csvPath);
+        } catch (\Throwable $e) {
+            $this->notifyDanger('Could not read the file: ' . $e->getMessage());
+
+            return;
+        }
+
+        /** @var class-string<Importer> $importerClass */
+        $importerClass = self::IMPORTERS[$type];
+
+        $columnMap = $state['column_map'] ?? null;
+        if (! is_array($columnMap) || $columnMap === []) {
+            $columnMap = self::guessColumnMap($importerClass, array_keys($rows[0] ?? []));
+        }
+        /** @var array<string, string|null> $columnMap */
+        $this->preflightResult = self::validateRows($importerClass, $rows, $columnMap);
+
+        $r = $this->preflightResult;
+        Notification::make()
+            ->title('Validation complete')
+            ->body(sprintf('%d of %d rows pass. %d would fail.', $r['valid'], $r['total'], $r['invalid']))
+            ->color($r['invalid'] === 0 ? 'success' : 'warning')
+            ->send();
+    }
+
+    /**
+     * Validate every mapped row against the importer's per-column data rules.
+     * Pure + static so it is trivially unit-testable without a Livewire mount.
+     *
+     * @param class-string<Importer> $importerClass
+     * @param array<int, array<string, string>> $rows CSV rows keyed by Excel header
+     * @param array<string, string|null> $columnMap importerField → Excel header
+     * @return array{total:int, valid:int, invalid:int, errors:list<array{row:int, field:string, message:string}>, truncated:bool}
+     */
+    public static function validateRows(string $importerClass, array $rows, array $columnMap): array
+    {
+        // Collect the scalar / Rule-object data rules per importer field,
+        // dropping Closure rules (relationship-existence checks) that need a
+        // bound Importer/record context we don't have at preflight time.
+        $rulesByField = [];
+        $labels = [];
+        foreach ($importerClass::getColumns() as $column) {
+            $name = $column->getName();
+            $labels[$name] = (string) ($column->getLabel() ?? $name);
+
+            try {
+                $rules = $column->getDataValidationRules();
+            } catch (\Throwable) {
+                continue;
+            }
+            $scalar = array_values(array_filter(
+                $rules,
+                static fn ($rule): bool => is_string($rule) || is_array($rule) || $rule instanceof ValidationRule,
+            ));
+            if ($scalar !== []) {
+                $rulesByField[$name] = $scalar;
+            }
+        }
+
+        // Reverse the column map so we can project each Excel-keyed row onto
+        // the importer field names the rules are keyed by.
+        $headerToField = [];
+        foreach ($columnMap as $field => $header) {
+            if (filled($header)) {
+                $headerToField[(string) $header] = (string) $field;
+            }
+        }
+
+        $total = count($rows);
+        $invalid = 0;
+        $errors = [];
+        $truncated = false;
+
+        foreach ($rows as $index => $row) {
+            $mapped = [];
+            foreach ($row as $header => $value) {
+                $field = $headerToField[(string) $header] ?? null;
+                if ($field !== null) {
+                    $mapped[$field] = $value;
+                }
+            }
+
+            $validator = Validator::make($mapped, $rulesByField, [], $labels);
+            if (! $validator->fails()) {
+                continue;
+            }
+
+            $invalid++;
+            if ($truncated) {
+                continue;
+            }
+            // +2: spreadsheet row number (1-based + header row).
+            $rowNumber = $index + 2;
+            foreach ($validator->errors()->messages() as $field => $messages) {
+                foreach ((array) $messages as $message) {
+                    $errors[] = [
+                        'row' => $rowNumber,
+                        'field' => $labels[$field] ?? (string) $field,
+                        'message' => (string) $message,
+                    ];
+                    if (count($errors) >= self::PREFLIGHT_MAX_ERRORS) {
+                        $truncated = true;
+                        break 2;
+                    }
+                }
+            }
+        }
+
+        return [
+            'total' => $total,
+            'valid' => $total - $invalid,
+            'invalid' => $invalid,
+            'errors' => $errors,
+            'truncated' => $truncated,
+        ];
+    }
+
+    /**
      * @return array<int, FilamentAction>
      */
     protected function getHeaderActions(): array
@@ -789,6 +969,9 @@ class ImportWizard extends Page
                         // no longer valid for the new type.
                         $set('starting_profile_id', null);
                         $set('column_map', []);
+                        // A cached preflight is keyed to a (type, file, map)
+                        // tuple; invalidate it when any of those change.
+                        $this->preflightResult = null;
                     }),
 
                 Select::make('starting_profile_id')
@@ -939,6 +1122,8 @@ class ImportWizard extends Page
                     ->required()
                     ->live()
                     ->afterStateUpdated(function (Get $get, Set $set): void {
+                        // A new/replaced file invalidates any cached preflight.
+                        $this->preflightResult = null;
                         // When a file is uploaded (or replaced), seed the
                         // column_map from auto-guess UNLESS the operator
                         // already loaded one from a saved profile.
@@ -978,6 +1163,7 @@ class ImportWizard extends Page
                     ->live()
                     ->afterStateUpdated(function (Get $get, Set $set): void {
                         // Sheet change → re-guess unless a profile is in use.
+                        $this->preflightResult = null;
                         $existing = $get('column_map');
                         if (is_array($existing) && $existing !== []) {
                             return;
@@ -1108,6 +1294,120 @@ class ImportWizard extends Page
 
                 throw new Halt;
             });
+    }
+
+    /* ──── Step 5: validate every row (preflight) ────────────────── */
+
+    /**
+     * RFQ §3.1.3 (P1) — preflight. The operator validates EVERY row against
+     * each importer column's data-validation rules and sees a full error
+     * report BEFORE the import is dispatched, instead of discovering bad
+     * rows only in the post-hoc "failed rows" CSV.
+     *
+     * The validation here is bounded to the scalar / Rule-object rules
+     * declared on each column (enum membership, formats, lengths, required
+     * values). Foreign-key existence and DB-unique violations still surface
+     * in the failed-rows download after dispatch — replicating Filament's
+     * full relationship-resolution pipeline here would be fragile and slow.
+     */
+    protected function stepValidate(): Step
+    {
+        return Step::make('Validate rows')
+            ->description('Dry-run every row against the import rules before anything is written.')
+            ->icon('heroicon-o-shield-check')
+            ->schema([
+                Placeholder::make('preflight_intro')
+                    ->hiddenLabel()
+                    ->content(new HtmlString(
+                        '<p class="text-sm">Run a validation pass over <strong>all</strong> rows. '
+                        . 'Nothing is written to the database — this only reports which rows would '
+                        . 'fail so you can fix the spreadsheet first.</p>'
+                    )),
+
+                SchemaActions::make([
+                    FilamentAction::make('run_preflight')
+                        ->label('Run validation')
+                        ->icon('heroicon-o-play')
+                        ->color('primary')
+                        ->action(fn () => $this->runPreflight()),
+                ]),
+
+                Placeholder::make('preflight_result')
+                    ->hiddenLabel()
+                    ->content(fn (): HtmlString => new HtmlString($this->renderPreflightResult()))
+                    ->columnSpanFull(),
+            ])
+            ->afterValidation(function (): void {
+                // Gate "Next": require a preflight to have run, and block if
+                // there is literally nothing valid to import. A partial pass
+                // (some valid, some invalid) is allowed through — invalid rows
+                // are skipped by the import job and land in the failed-rows CSV.
+                if ($this->preflightResult === null) {
+                    Notification::make()
+                        ->title('Run the validation first')
+                        ->body('Click "Run validation" so you can see which rows would fail before importing.')
+                        ->warning()
+                        ->send();
+
+                    throw new Halt;
+                }
+
+                if (($this->preflightResult['valid'] ?? 0) < 1) {
+                    Notification::make()
+                        ->title('Nothing to import')
+                        ->body('Every row failed validation. Fix the highlighted errors and re-upload.')
+                        ->danger()
+                        ->send();
+
+                    throw new Halt;
+                }
+            });
+    }
+
+    /**
+     * Render the cached preflight result as an HTML summary + error table.
+     */
+    protected function renderPreflightResult(): string
+    {
+        $r = $this->preflightResult;
+        if ($r === null) {
+            return '<em class="text-sm">Not run yet — click "Run validation" above.</em>';
+        }
+
+        if ($r['invalid'] === 0) {
+            return '<p class="text-sm font-medium text-success-600">'
+                . sprintf('All %d rows pass validation. You can continue.', $r['total'])
+                . '</p>';
+        }
+
+        $summary = '<p class="text-sm font-medium text-danger-600">'
+            . sprintf('%d of %d rows would fail validation.', $r['invalid'], $r['total'])
+            . '</p>'
+            . '<p class="mt-1 text-xs text-gray-600 dark:text-gray-400">'
+            . sprintf('%d rows are valid and will be imported; invalid rows are skipped.', $r['valid'])
+            . '</p>';
+
+        $rowsHtml = '';
+        foreach ($r['errors'] as $err) {
+            $rowsHtml .= '<tr>'
+                . '<td class="px-2 py-1 border-t border-gray-200 dark:border-gray-700 text-right tabular-nums">' . (int) $err['row'] . '</td>'
+                . '<td class="px-2 py-1 border-t border-gray-200 dark:border-gray-700">' . e($err['field']) . '</td>'
+                . '<td class="px-2 py-1 border-t border-gray-200 dark:border-gray-700">' . e($err['message']) . '</td>'
+                . '</tr>';
+        }
+
+        $truncatedNote = $r['truncated']
+            ? '<p class="mt-2 text-xs text-gray-500">Showing the first ' . self::PREFLIGHT_MAX_ERRORS . ' errors; more exist.</p>'
+            : '';
+
+        return $summary
+            . '<div class="mt-3 overflow-x-auto rounded-lg border border-gray-200 dark:border-gray-700">'
+            . '<table class="min-w-full text-xs"><thead><tr>'
+            . '<th class="px-2 py-1 text-left font-medium bg-gray-100 dark:bg-gray-800">Row</th>'
+            . '<th class="px-2 py-1 text-left font-medium bg-gray-100 dark:bg-gray-800">Field</th>'
+            . '<th class="px-2 py-1 text-left font-medium bg-gray-100 dark:bg-gray-800">Error</th>'
+            . '</tr></thead><tbody>' . $rowsHtml . '</tbody></table></div>'
+            . $truncatedNote;
     }
 
     /**
