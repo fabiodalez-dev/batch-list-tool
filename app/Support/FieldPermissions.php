@@ -4,7 +4,10 @@ declare(strict_types=1);
 
 namespace App\Support;
 
+use App\Models\FieldPermissionOverride;
 use App\Models\User;
+use Illuminate\Support\Facades\Cache;
+use Illuminate\Support\Facades\Schema;
 
 /**
  * Field-level permission resolver (RFQ §3.1.8).
@@ -56,6 +59,14 @@ final class FieldPermissions
      * file the operator is trying to debug.
      */
     public const SUPER_ADMIN_ROLE = 'super_admin';
+
+    /**
+     * Cache key for the persisted {@see FieldPermissionOverride} matrix.
+     * In production the cache survives across requests and is flushed by the
+     * model's saved/deleted events; in tests the array cache store is reset
+     * with the application between cases, so each test reads fresh.
+     */
+    public const OVERRIDE_CACHE_KEY = 'field_permission_overrides';
 
     /**
      * Can this role READ the given field?
@@ -160,6 +171,15 @@ final class FieldPermissions
         return self::roleIn($user, self::fieldConfig($resource, $field)['hidden_from'] ?? []);
     }
 
+    /**
+     * Forget the cached override matrix. Called by
+     * {@see FieldPermissionOverride}'s model events on every write.
+     */
+    public static function flushCache(): void
+    {
+        Cache::forget(self::OVERRIDE_CACHE_KEY);
+    }
+
     /* ---------------------------------------------------------------- *
      | Internal helpers                                                  |
      * ---------------------------------------------------------------- */
@@ -243,10 +263,18 @@ final class FieldPermissions
     }
 
     /**
+     * Resolve the config block for one (resource, field), giving a persisted
+     * {@see FieldPermissionOverride} precedence over the config baseline.
+     *
      * @return array<string,array<int,string>>
      */
     private static function fieldConfig(string $resource, string $field): array
     {
+        $override = self::overrides()[$resource . '.' . $field] ?? null;
+        if (is_array($override)) {
+            return $override;
+        }
+
         $cfg = config('field_permissions.' . $resource . '.' . $field);
 
         return is_array($cfg) ? $cfg : [];
@@ -257,8 +285,44 @@ final class FieldPermissions
      */
     private static function defaultConfig(string $resource): array
     {
-        $cfg = config('field_permissions.' . $resource . '._default');
+        return self::fieldConfig($resource, '_default');
+    }
 
-        return is_array($cfg) ? $cfg : [];
+    /**
+     * Persisted overrides keyed by "resource.field". Cached for the request
+     * lifetime (and across requests in production), flushed by
+     * {@see FieldPermissionOverride}'s saved/deleted events.
+     *
+     * Only non-null lists survive so a per-key `?? config` fallback still
+     * works for a partially-specified override.
+     *
+     * @return array<string, array<string, array<int, string>>>
+     */
+    private static function overrides(): array
+    {
+        return Cache::rememberForever(self::OVERRIDE_CACHE_KEY, static function (): array {
+            // Guard: during early boot / before the migration has run there is
+            // no table to query. Returning [] (cached) is correct — there are
+            // no overrides yet, and flushCache() runs on the first write.
+            try {
+                if (! Schema::hasTable('field_permission_overrides')) {
+                    return [];
+                }
+            } catch (\Throwable) {
+                return [];
+            }
+
+            return FieldPermissionOverride::query()->get()
+                ->mapWithKeys(static function (FieldPermissionOverride $o): array {
+                    $block = array_filter([
+                        'read' => $o->read,
+                        'write' => $o->write,
+                        'hidden_from' => $o->hidden_from,
+                    ], static fn ($v): bool => is_array($v));
+
+                    return [$o->resource . '.' . $o->field => $block];
+                })
+                ->all();
+        });
     }
 }

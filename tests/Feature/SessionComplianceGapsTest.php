@@ -10,8 +10,10 @@ use App\Models\Batch;
 use App\Models\Box;
 use App\Models\BoxMovement;
 use App\Models\Document;
+use App\Models\FieldPermissionOverride;
 use App\Models\Repository;
 use App\Models\User;
+use App\Support\FieldPermissions;
 use App\Support\RoleLabels;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Support\Facades\Schema;
@@ -255,33 +257,56 @@ it('returns a zeroed result for an empty row set', function () {
         ->and($r['invalid'])->toBe(0);
 });
 
-/* ─────────────── FieldPermissionMatrix page (7) ──────────────────── */
+/* ─────────────── FieldPermissionMatrix page (editable) ──────────────── */
 
-it('builds a matrix for every configured resource', function () {
-    $m = (new FieldPermissionMatrix)->matrix();
+/** Mount the page as an admin and return its seeded editable state. */
+function bl_matrixState(object $test): array
+{
+    bl_seedRoles();
+    $admin = User::factory()->create();
+    $admin->assignRole('admin');
+    $test->actingAs($admin);
 
-    expect(array_keys($m))->toEqualCanonicalizing(['document', 'authority', 'series', 'batch', 'box']);
+    return Livewire::test(FieldPermissionMatrix::class)->get('state');
+}
+
+it('seeds editable state for every configured resource', function () {
+    $state = bl_matrixState($this);
+
+    expect(array_keys($state))->toEqualCanonicalizing(['document', 'authority', 'series', 'batch', 'box']);
 });
 
-it('marks the document extra field as hidden from editor and viewer', function () {
-    $extra = (new FieldPermissionMatrix)->matrix()['document']['fields']['extra'];
+it('seeds the document extra field as hidden for editor and viewer', function () {
+    $extra = bl_matrixState($this)['document']['extra'];
 
     expect($extra['editor']['hidden'])->toBeTrue()
         ->and($extra['viewer']['hidden'])->toBeTrue();
 });
 
-it('marks document repository_id read-only for editor and viewer', function () {
-    $rid = (new FieldPermissionMatrix)->matrix()['document']['fields']['repository_id'];
+it('seeds document repository_id read-only for editor', function () {
+    $rid = bl_matrixState($this)['document']['repository_id'];
 
     expect($rid['editor']['read'])->toBeTrue()
-        ->and($rid['editor']['write'])->toBeFalse()
-        ->and($rid['viewer']['write'])->toBeFalse();
+        ->and($rid['editor']['write'])->toBeFalse();
 });
 
-it('always grants super_admin read+write and never hides a field', function () {
-    $extra = (new FieldPermissionMatrix)->matrix()['document']['fields']['extra'];
+it('keeps super_admin full access even when an override hides a field', function () {
+    bl_seedRoles();
+    $su = User::factory()->create();
+    $su->assignRole('super_admin');
 
-    expect($extra['super_admin'])->toBe(['read' => true, 'write' => true, 'hidden' => false]);
+    FieldPermissionOverride::create([
+        'resource' => 'document',
+        'field' => 'extra',
+        'read' => [],
+        'write' => [],
+        'hidden_from' => ['admin', 'editor', 'viewer'],
+    ]);
+    FieldPermissions::flushCache();
+
+    expect(FieldPermissions::canRead('document', 'extra', $su))->toBeTrue()
+        ->and(FieldPermissions::canWrite('document', 'extra', $su))->toBeTrue()
+        ->and(FieldPermissions::isHidden('document', 'extra', $su))->toBeFalse();
 });
 
 it('exposes RFQ role labels on the page', function () {
@@ -305,7 +330,7 @@ it('allows admins but not viewers to access the matrix page', function () {
     expect(FieldPermissionMatrix::canAccess())->toBeFalse();
 });
 
-it('renders the matrix page for an admin', function () {
+it('renders the editable matrix page for an admin', function () {
     bl_seedRoles();
     $admin = User::factory()->create();
     $admin->assignRole('admin');
@@ -314,5 +339,53 @@ it('renders the matrix page for an admin', function () {
     Livewire::test(FieldPermissionMatrix::class)
         ->assertOk()
         ->assertSee('ReadingRoom')
-        ->assertSee('Hidden');
+        ->assertSee('Save changes');
+});
+
+it('persists an override on save that changes the effective permission', function () {
+    bl_seedRoles();
+    $admin = User::factory()->create();
+    $admin->assignRole('admin');
+    $this->actingAs($admin);
+
+    $editor = User::factory()->create();
+    $editor->assignRole('editor');
+
+    // Baseline: an editor can read document.notes.
+    expect(FieldPermissions::canRead('document', 'notes', $editor))->toBeTrue();
+
+    Livewire::test(FieldPermissionMatrix::class)
+        ->set('state.document.notes.editor.read', false)
+        ->set('state.document.notes.editor.write', false)
+        ->set('state.document.notes.editor.hidden', true)
+        ->call('save');
+
+    expect(FieldPermissionOverride::where('resource', 'document')->where('field', 'notes')->exists())->toBeTrue()
+        ->and(FieldPermissions::isHidden('document', 'notes', $editor))->toBeTrue()
+        ->and(FieldPermissions::canRead('document', 'notes', $editor))->toBeFalse();
+});
+
+it('reset to defaults removes overrides and reverts to config', function () {
+    bl_seedRoles();
+    $admin = User::factory()->create();
+    $admin->assignRole('admin');
+    $this->actingAs($admin);
+
+    $editor = User::factory()->create();
+    $editor->assignRole('editor');
+
+    FieldPermissionOverride::create([
+        'resource' => 'document',
+        'field' => 'notes',
+        'read' => ['super_admin', 'admin'],
+        'write' => ['super_admin', 'admin'],
+        'hidden_from' => ['editor'],
+    ]);
+    FieldPermissions::flushCache();
+    expect(FieldPermissions::isHidden('document', 'notes', $editor))->toBeTrue();
+
+    Livewire::test(FieldPermissionMatrix::class)->call('resetToDefaults');
+
+    expect(FieldPermissionOverride::count())->toBe(0)
+        ->and(FieldPermissions::isHidden('document', 'notes', $editor))->toBeFalse();
 });
