@@ -129,11 +129,14 @@ it('lets an editor open the document edit page', function () {
     bl_login($editor)->navigate("/admin/documents/{$doc->id}/edit")->assertSee('R-DOC-001');
 });
 
-it('lets a viewer view a document but not edit-create', function () {
+it('lets a viewer view a document but not edit or create', function () {
     $viewer = bl_actor('viewer');
     $doc = bl_seedDocument($viewer->repositories()->first());
 
-    bl_login($viewer)->navigate("/admin/documents/{$doc->id}")->assertSee('R-DOC-001');
+    bl_login($viewer)
+        ->navigate("/admin/documents/{$doc->id}")->assertSee('R-DOC-001')
+        ->navigate("/admin/documents/{$doc->id}/edit")->assertSee('403')
+        ->navigate('/admin/documents/create')->assertSee('403');
 });
 
 it('shows a distinctive document_type on the view page', function () {

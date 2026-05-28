@@ -7,6 +7,8 @@ use App\Models\Box;
 use App\Models\Document;
 use App\Models\Repository;
 use App\Models\Series;
+use OwenIt\Auditing\AuditableObserver;
+use OwenIt\Auditing\Models\Audit;
 
 beforeEach(function () {
     bl_seedShieldPermissions();
@@ -124,9 +126,26 @@ it('opens the audit log page for an admin', function () {
 });
 
 it('records an audit entry when a document is created', function () {
-    $admin = bl_actor('super_admin');
-    bl_docIn($admin->repositories()->first(), 'AUDITED-DOC');
+    // owen-it skips auditing in console context by default; enable it so the
+    // factory create in this (CLI) test process produces the audit row.
+    // bootAuditable() already ran (with console=false) when Document was first
+    // booted, so the observer was never attached — re-attach it explicitly.
+    config(['audit.console' => true]);
+    Document::observe(AuditableObserver::class);
 
+    $admin = bl_actor('super_admin');
+    $doc = bl_docIn($admin->repositories()->first(), 'AUDITED-DOC');
+
+    // Deterministic proof the create event was audited for THIS document …
+    expect(
+        Audit::query()
+            ->where('auditable_type', Document::class)
+            ->where('auditable_id', $doc->id)
+            ->where('event', 'created')
+            ->exists()
+    )->toBeTrue();
+
+    // … and that it surfaces on the audit log page in the browser.
     bl_login($admin)->navigate('/admin/audits')->assertSee('Document');
 });
 
