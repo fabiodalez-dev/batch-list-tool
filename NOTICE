@@ -1,0 +1,27 @@
+Batch List Tool
+Copyright 2026 Fabio Gaetano D'Alessandro
+
+This product is delivered under the Letter of Engagement RFQ-2026-06
+to the Notarial Archives Foundation (NAF), Malta.
+
+This product includes software developed by third parties:
+
+  - Laravel Framework  (MIT License) — https://laravel.com
+  - Filament           (MIT License) — https://filamentphp.com
+  - Livewire           (MIT License) — https://livewire.laravel.com
+  - Spatie Laravel ecosystem (MIT License) — https://spatie.be/open-source
+  - Symfony components  (MIT License) — https://symfony.com
+  - PhpSpreadsheet      (LGPL-2.1)    — https://github.com/PHPOffice/PhpSpreadsheet
+  - barryvdh/laravel-dompdf (MIT License) — https://github.com/barryvdh/laravel-dompdf
+  - bacon/bacon-qr-code (BSD-2-Clause) — https://github.com/Bacon/BaconQrCode
+  - pragmarx/google2fa  (MIT License) — https://github.com/antonioribeiro/google2fa
+  - owen-it/laravel-auditing (MIT License) — https://laravel-auditing.com
+  - laravolt/avatar     (MIT License) — https://github.com/laravolt/avatar
+  - hayderhatem/filament-excel-import (rianorie fork) (MIT License)
+  - maatwebsite/excel   (MIT License) — https://laravel-excel.com
+  - opcodesio/log-viewer (MIT License) — https://github.com/opcodesio/log-viewer
+
+The Inter font family is licensed under the SIL Open Font License 1.1
+(https://github.com/rsms/inter, OFL-1.1).
+
+Heroicons are licensed under the MIT License (https://heroicons.com).

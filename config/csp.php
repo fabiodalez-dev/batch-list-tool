@@ -1,6 +1,7 @@
 <?php
 
 use App\Support\Csp\AppPolicy;
+use App\Support\Csp\StrictReportOnlyPolicy;
 use Spatie\Csp\Nonce\RandomString;
 
 // use Spatie\Csp\Directive;
@@ -27,9 +28,13 @@ return [
      * These presets which will be put in a report-only policy. This is great for testing out
      * a new policy or changes to existing CSP policy without breaking anything.
      */
-    'report_only_presets' => [
-        //
-    ],
+    // Opt-in via env (default off). When true the strict policy is sent
+    // as Content-Security-Policy-Report-Only alongside the enforced
+    // {@see AppPolicy}, so the browser exercises the future-tight rules
+    // and reports violations without breaking the page.
+    'report_only_presets' => env('CSP_STRICT_REPORT_ONLY', false)
+        ? [StrictReportOnlyPolicy::class]
+        : [],
 
     /**
      * Register additional global report-only CSP directives here.

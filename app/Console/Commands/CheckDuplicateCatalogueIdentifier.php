@@ -38,10 +38,11 @@ class CheckDuplicateCatalogueIdentifier extends Command
 
     public function handle(): int
     {
-        // DB::table() bypasses the SoftDeletingScope global scope by default,
-        // so `--include-trashed` is the default behaviour. We add an explicit
-        // `whereNull('deleted_at')` when the operator wants the "live rows
-        // only" view that mirrors what `ALTER TABLE` will see.
+        // DB::table() bypasses the SoftDeletingScope global scope entirely,
+        // returning ALL rows (including soft-deleted) by default. To mirror
+        // what `ALTER TABLE … ADD UNIQUE` will actually see, we add an
+        // explicit `whereNull('deleted_at')` UNLESS `--include-trashed` is
+        // set (forensic widened view).
         $query = DB::table('documents')
             ->selectRaw('catalogue_identifier, COUNT(*) AS row_count')
             ->whereNotNull('catalogue_identifier')

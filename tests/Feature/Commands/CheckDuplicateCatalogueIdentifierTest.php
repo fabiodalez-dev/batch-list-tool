@@ -41,7 +41,15 @@ beforeEach(function (): void {
     if ($driver === 'sqlite') {
         DB::statement('DROP INDEX IF EXISTS documents_catalogue_identifier_unique');
     } else {
-        DB::statement('DROP INDEX documents_catalogue_identifier_unique ON documents');
+        // MySQL has no DROP INDEX IF EXISTS until 8.0.20; older versions
+        // (and any state where the migration has not yet run) would throw.
+        // Tolerate the "doesn't exist" case to keep the test idempotent
+        // across re-runs and across driver versions.
+        try {
+            DB::statement('DROP INDEX documents_catalogue_identifier_unique ON documents');
+        } catch (Throwable) {
+            // index already absent — fine, the test simulates pre-migration state
+        }
     }
 });
 

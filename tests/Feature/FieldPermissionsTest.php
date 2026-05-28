@@ -198,10 +198,12 @@ it('§3.1.8 #13: config completely missing → graceful allow-all (no crash)', f
     expect(FieldPermissions::isHidden('document', 'identifier', $v))->toBeFalse();
 });
 
-it('§3.1.8 #14: null user (CLI / queue context) defaults to allow-all', function () {
-    // Resource-level Shield policies already deny unauthenticated access
-    // in the HTTP layer; this layer is a UI gate, so the absence of a
-    // user is interpreted as "no UI context" → no restriction.
+it('§3.1.8 #14: null user in CONSOLE context (CLI/queue/pest) defaults to allow-all', function () {
+    // PR #86 hardening (OWASP A01): null user is now fail-closed in HTTP
+    // (DENY canRead/canWrite, HIDE isHidden) but stays fail-open in
+    // CONSOLE context (CLI/queue/tinker/pest) so maintenance scripts
+    // are never blocked. The pest harness runs under runningInConsole()
+    // → this exercises the CONSOLE branch.
     expect(FieldPermissions::canRead('document', 'extra', null))->toBeTrue();
     expect(FieldPermissions::canWrite('document', 'extra', null))->toBeTrue();
     expect(FieldPermissions::isHidden('document', 'extra', null))->toBeFalse();
@@ -577,4 +579,20 @@ it('§3.1.8 #34: viewer has Shield read access AND FieldPermissions write denial
     expect(FieldPermissions::canWrite('document', 'identifier', $v))->toBeFalse();
     // Field-level: viewer IS HIDDEN from extra.
     expect(FieldPermissions::isHidden('document', 'extra', $v))->toBeTrue();
+});
+
+/* -------------------------------------------------------------------------
+ |  OWASP A01 hardening (2026-05-28) — fail-closed-in-HTTP guardrail
+ |
+ |  The CONSOLE branch is covered by §3.1.8 #14 above (pest runs under
+ |  runningInConsole()). The HTTP branch is exercised by the Browser/Dusk
+ |  suite (Tier B #104). The structural assertion below pins the existence
+ |  of the isConsole() routing helper so a refactor that removes the
+ |  branching trips the test rather than silently re-introducing the
+ |  fail-open HTTP regression.
+ * ------------------------------------------------------------------------- */
+
+test('FieldPermissions::isConsole() exists — anti-regression guardrail for the fail-closed-in-HTTP branch', function () {
+    $reflection = new ReflectionClass(FieldPermissions::class);
+    expect($reflection->hasMethod('isConsole'))->toBeTrue();
 });

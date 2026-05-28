@@ -256,7 +256,16 @@ class Box extends Model implements AuditableContract, Sortable
     public function markDestroyed(?string $reason, ?int $userId): void
     {
         DB::transaction(function () use ($reason, $userId) {
-            $locked = static::query()->whereKey($this->getKey())->lockForUpdate()->first();
+            // Bypass ThroughBatchRepositoryScope: that scope filters by the
+            // authenticated user's repository pivot, which would drop every
+            // row in a CLI/queue/tinker context (no auth user) and surface
+            // a confusing "Box no longer exists" error. The race-safety
+            // guarantee comes from the row lock + canBeDestroyed re-check.
+            $locked = static::query()
+                ->withoutGlobalScope(ThroughBatchRepositoryScope::class)
+                ->whereKey($this->getKey())
+                ->lockForUpdate()
+                ->first();
 
             if ($locked === null) {
                 throw new \DomainException('Box no longer exists.');
@@ -274,7 +283,11 @@ class Box extends Model implements AuditableContract, Sortable
             $locked->destroyed_reason = $reason;
             $locked->save();
 
+            // setRawAttributes() does NOT clear loaded relation caches. Invalidate
+            // `destroyedBy` so a caller that had already eager-loaded the prior
+            // (likely null) relation gets the fresh user on next access.
             $this->setRawAttributes($locked->getAttributes(), true);
+            $this->unsetRelation('destroyedBy');
         });
     }
 
