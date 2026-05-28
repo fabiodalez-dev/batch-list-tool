@@ -2,10 +2,13 @@
 
 declare(strict_types=1);
 
+use App\Filament\Imports\DocumentImporter;
 use App\Models\Box;
 use App\Models\Document;
+use App\Models\DocumentFlag;
 use Illuminate\Database\QueryException;
 use Illuminate\Foundation\Testing\RefreshDatabase;
+use Illuminate\Support\Facades\Schema;
 use Tests\Compliance\Helpers;
 
 /*
@@ -31,7 +34,10 @@ describe('APP2-i RAS Box', function () {
 describe('APP2-ii In Situ Box', function () {
     it('IN_SITU box_type requires parent_box_id reference')->todo('Feature\\RfqCompliance\\Appendix1RulesTest');
     it('legacy MAV / STVC types reject new creation (is_legacy=true mandatory)')->todo('Feature\\RfqCompliance\\Appendix1RulesTest');
-    it('Box.TYPES enum includes RAS, IN_SITU, NRA, MAV, STVC')->todo('Feature\\RfqCompliance\\Section3111BoxLifecycleTest');
+    test('Box.TYPES enum includes RAS, IN_SITU, NRA, MAV, STVC', function () {
+        expect(Box::TYPES)->toEqualCanonicalizing(['RAS', 'IN_SITU', 'NRA', 'MAV', 'STVC'])
+            ->and(Box::LEGACY_TYPES)->toEqualCanonicalizing(['MAV', 'STVC']);
+    });
     it('Mounted / Not in Box state is derivable via current_box_id IS NULL')->todo('Manual / Feature\\Resources\\DocumentResource — display');
 })->group('rfq:app2-ii');
 
@@ -54,7 +60,10 @@ describe('APP2-iv Barcodes', function () {
 /* ─── APP2-v NRA Location ────────────────────────────────────────── */
 describe('APP2-v NRA Location', function () {
     it('Location.TYPES includes Archive, Cataloguing, Museum')->todo('Feature\\LocationHierarchyTest');
-    it('Box AND Document carry location_id FK')->todo('Feature\\LocationHierarchyTest');
+    test('Box AND Document carry a location_id FK', function () {
+        expect(Schema::hasColumn('documents', 'location_id'))->toBeTrue()
+            ->and(Schema::hasColumn('boxes', 'location_id'))->toBeTrue();
+    });
     it('breadcrumb accessor renders full path')->todo('Feature\\LocationHierarchyTest');
     it('cycle detection refuses parent-of-self insertions')->todo('Feature\\LocationHierarchyTest');
 })->group('rfq:app2-v');
@@ -111,7 +120,12 @@ describe('APP2-ix Current box type enum', function () {
         expect($doc->current_box_type)->toBe('RAS Box');
     });
 
-    it('invalid current_box_type throws DomainException at save')->todo('Document::canonicalEnumValue gate');
+    test('invalid current_box_type throws DomainException at save', function () {
+        $repo = Helpers::repo();
+        $series = Helpers::series();
+        expect(fn () => Helpers::doc($repo->id, $series->id, null, ['current_box_type' => 'Cardboard Box']))
+            ->toThrow(DomainException::class);
+    });
     it('form Select replaces free-text input')->todo('Feature\\Resources\\DocumentResource — Select');
     it('CHECK constraint enforces enum at DB level on MySQL')->todo('Migration 2026_05_27_170100_tighten_document_lookups');
 })->group('rfq:app2-ix');
@@ -128,7 +142,9 @@ describe('APP2-x Disinfestation', function () {
 describe('APP2-xi Multi-creator import', function () {
     it('semicolon-delimited Identifier cell parses into multiple Authority rows')->todo('Feature\\BulkImportV2Test — splitSemicolonList');
     it('empty pieces (";;" or ";") are silently skipped')->todo('Feature\\BulkImportV2Test');
-    it('SEMICOLON_DELIMITER constant is wired (not hard-coded)')->todo('DocumentImporter::SEMICOLON_DELIMITER');
+    test('SEMICOLON_DELIMITER constant is wired (not hard-coded)', function () {
+        expect(DocumentImporter::SEMICOLON_DELIMITER)->toBe(';');
+    });
     it('first parsed Authority is marked is_primary=true')->todo('Feature\\BulkImportV2Test');
 })->group('rfq:app2-xi');
 
@@ -150,7 +166,12 @@ describe('APP2-xiii Digitised enum', function () {
         expect($doc->digitised)->toBe('VHMML');
     });
 
-    it('values outside {VHMML, NRA, none} throw DomainException')->todo('Document::canonicalEnumValue gate');
+    test('values outside {VHMML, NRA, none} throw DomainException', function () {
+        $repo = Helpers::repo();
+        $series = Helpers::series();
+        expect(fn () => Helpers::doc($repo->id, $series->id, null, ['digitised' => 'flatbed-scan']))
+            ->toThrow(DomainException::class);
+    });
     it('CHECK constraint enforces enum at MySQL level')->todo('Migration 2026_05_27_170100_tighten_document_lookups');
     it('digitised column visible in DocumentResource list view (toggleable)')->todo('Feature\\Resources\\DocumentResource — list columns');
 })->group('rfq:app2-xiii');
@@ -165,10 +186,23 @@ describe('APP2-xiv Torre boolean', function () {
 
 /* ─── APP2-xv Object Reference Number ────────────────────────────── */
 describe('APP2-xv Object reference number (fallback)', function () {
-    it('displayIdentifier cascades catalogue_identifier → object_reference_number → identifier')->todo('Document::displayIdentifier');
+    test('displayIdentifier cascades catalogue_identifier → object_reference_number → identifier', function () {
+        $doc = new Document([
+            'identifier' => 'R-IDENT',
+            'object_reference_number' => 'OBJ-REF',
+            'catalogue_identifier' => 'CAT-1',
+        ]);
+        expect($doc->display_identifier)->toBe('CAT-1');
+    });
     it('object_reference_number is searchable via omni-search')->todo('Feature\\DocumentOmniSearchTest');
     it('field has 500-char max length')->todo('Feature\\Resources\\DocumentResource — form maxLength');
-    it('fallback fires only when catalogue_identifier IS NULL')->todo('Document::displayIdentifier');
+    test('fallback fires only when catalogue_identifier IS NULL', function () {
+        $noCat = new Document(['identifier' => 'R-IDENT', 'object_reference_number' => 'OBJ-REF']);
+        expect($noCat->display_identifier)->toBe('OBJ-REF');
+
+        $onlyIdent = new Document(['identifier' => 'R-IDENT']);
+        expect($onlyIdent->display_identifier)->toBe('R-IDENT');
+    });
 })->group('rfq:app2-xv');
 
 /* ─── APP2-xvi Tracking ──────────────────────────────────────────── */
@@ -189,7 +223,11 @@ describe('APP2-xvii Museum reference', function () {
 
 /* ─── APP2-xviii Flags by Type ───────────────────────────────────── */
 describe('APP2-xviii Colour coding -> document flags', function () {
-    it('10 type enums + 3 severity + 4 status are exhaustively typed')->todo('App\\Models\\DocumentFlag — const TYPES/SEVERITIES/STATUSES');
+    test('10 type enums + 3 severity + 4 status are exhaustively typed', function () {
+        expect(DocumentFlag::TYPES)->toHaveCount(10)
+            ->and(DocumentFlag::SEVERITIES)->toEqualCanonicalizing(['info', 'warning', 'critical'])
+            ->and(DocumentFlag::STATUSES)->toEqualCanonicalizing(['open', 'acknowledged', 'resolved', 'dismissed']);
+    });
     it('Open flags TernaryFilter on Document list filters has_open_flags=true')->todo('Feature\\Resources\\DocumentResource — TernaryFilter');
     it('FlagsByTypeReport groups COUNT/SUM(CASE) by type+severity')->todo('Feature\\Pages\\FlagsByTypeReportTest');
     it('resolved flags do NOT show in the "Open flags" filter result')->todo('Feature\\Pages\\FlagsByTypeReportTest');

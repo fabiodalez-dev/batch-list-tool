@@ -339,6 +339,36 @@ class Box extends Model implements AuditableContract, Sortable
             foreignKey: 'batch_id',
         ));
 
+        // RFQ App.1 #3 — IN_SITU / NRA boxes require a parent box that is a
+        // RAS box. Enforce centrally (every path: UI, importer, console) on
+        // create or whenever box_type / parent_box_id changes. We deliberately
+        // do NOT fire on an unrelated update of a pre-existing legacy row, so a
+        // barcode edit on legacy data is not blocked retroactively.
+        static::saving(function (self $box): void {
+            if (! $box->requiresParent()) {
+                return;
+            }
+            if (! ($box->isDirty('box_type') || $box->isDirty('parent_box_id'))) {
+                return;
+            }
+
+            if ($box->parent_box_id === null) {
+                throw new \DomainException(
+                    "Box type {$box->box_type} requires a parent RAS box (RFQ App.1 #3)."
+                );
+            }
+
+            // The parent must exist AND actually be a RAS box — a non-null
+            // parent of the wrong type would otherwise slip an invalid
+            // relationship past the rule.
+            $parent = static::withoutGlobalScopes()->find($box->parent_box_id);
+            if ($parent === null || $parent->box_type !== 'RAS') {
+                throw new \DomainException(
+                    "Box type {$box->box_type} requires its parent to be a RAS box (RFQ App.1 #3)."
+                );
+            }
+        });
+
         static::updating(function (self $box): void {
             $box->captureBarcodeTransition();
         });

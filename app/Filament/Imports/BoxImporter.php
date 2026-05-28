@@ -100,6 +100,11 @@ class BoxImporter extends Importer
                     if ($res !== null) {
                         $record->parent_box_id = $res['box_id'];
                     }
+                    // The parent's TYPE is validated centrally in Box::saving
+                    // (RFQ App.1 #3: the parent must be a RAS box). A barcode
+                    // that resolves to a non-RAS box — or no box at all — is
+                    // rejected there on save and surfaces in the failed-rows
+                    // export, so we deliberately do not duplicate that check.
                 }),
 
             ImportColumn::make('barcode')

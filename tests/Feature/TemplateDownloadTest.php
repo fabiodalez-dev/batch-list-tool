@@ -35,16 +35,9 @@ use Symfony\Component\HttpFoundation\StreamedResponse;
  */
 uses(RefreshDatabase::class);
 
-// TemplateGenerator::SAMPLES_DIR points at the legacy xlsx fixtures that
-// live in the OUTER repo (Batch_List_Tool/samples/). CI checks out only
-// the Laravel app (batch-list-tool/), so the dir is absent — skip every
-// test in this file when that is the case, instead of failing with a
-// confusing "Sample file not readable".
-beforeEach(function (): void {
-    if (! is_dir(TemplateGenerator::SAMPLES_DIR)) {
-        $this->markTestSkipped('Samples dir absent (CI checkout of Laravel-only repo); covered by local dev runs.');
-    }
-});
+// The legacy header contract now lives IN-REPO as TemplateGenerator constants
+// (no external/absolute sample path), so these tests run everywhere — dev, CI
+// and on-prem — and FAIL if the header contract ever regresses.
 
 /* ─── helpers ─────────────────────────────────────────────────────────── */
 
@@ -222,9 +215,8 @@ test('Authority template headers match Authorities_Sample.xlsx verbatim', functi
     $this->actingAs(tpl_admin());
 
     $generated = tpl_renderAndParse(TemplateGenerator::download('authority'))['headers'];
-    $sample = tpl_sampleHeaders(TemplateGenerator::SAMPLES_DIR . '/Authorities_Sample.xlsx');
 
-    expect($generated)->toEqual($sample);
+    expect($generated)->toEqual(TemplateGenerator::AUTHORITY_HEADERS);
     // Authorities sample has exactly 9 columns — sanity check on the contract.
     expect(count($generated))->toBe(9);
     expect($generated[0])->toBe('Identifier');
@@ -235,12 +227,11 @@ test('Series template headers match Series_Sample.xlsx (trailing nulls trimmed)'
     $this->actingAs(tpl_admin());
 
     $generated = tpl_renderAndParse(TemplateGenerator::download('series'))['headers'];
-    $sample = tpl_sampleHeaders(TemplateGenerator::SAMPLES_DIR . '/Series_Sample.xlsx');
 
-    // The Series sample has 26 columns but only 6 populated (the rest are
-    // stray NULLs from Excel's "touched" cells). TemplateGenerator trims
-    // trailing NULLs — the generated file should match the trimmed sample.
-    expect($generated)->toEqual($sample);
+    // The Series sample had 26 columns but only 6 populated (the rest were
+    // stray NULLs from Excel's "touched" cells); the captured contract is the
+    // trimmed 6-column set.
+    expect($generated)->toEqual(TemplateGenerator::SERIES_HEADERS);
     expect(count($generated))->toBe(6);
     // Column A is intentionally empty in the sample (the original file
     // uses it as a label column with no header); we preserve that
@@ -254,12 +245,11 @@ test('Document template preserves the duplicated provenance headers verbatim', f
     $this->actingAs(tpl_admin());
 
     $generated = tpl_renderAndParse(TemplateGenerator::download('document'))['headers'];
-    $sample = tpl_sampleHeaders(TemplateGenerator::SAMPLES_DIR . '/Batch_List_Sample.xlsx');
 
     // Same count, same strings at the same positions — including the
     // duplicates. The legacy schema encodes multi-step provenance via
     // repeated header names; the template MUST preserve that layout.
-    expect($generated)->toEqual($sample);
+    expect($generated)->toEqual(TemplateGenerator::DOCUMENT_HEADERS);
 
     // The Document sample has 49 populated columns (57 with trailing
     // NULLs; we strip those).
