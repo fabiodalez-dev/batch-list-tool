@@ -1,40 +1,33 @@
 {{--
-    RFQ §3.1.8 — read-only field-level permission matrix.
+    RFQ §3.1.8 — editable field-level permission matrix.
 
-    For each configured resource we render one table: rows are fields,
-    columns are the four roles (labelled with their RFQ display name). Each
-    cell shows the EFFECTIVE permission resolved by the page class:
-      RW = read + write · R = read only · Hidden = removed from form/table
-      — = no access. Source of truth: config/field_permissions.php.
+    Per resource, one table: rows are fields, columns are roles. The
+    super_admin column is fixed (always RW). For admin / editor / viewer each
+    cell exposes three checkboxes — R (read), W (write), H (hidden) — bound to
+    the page state. "Save changes" persists them as overrides; "Reset to config
+    defaults" drops every override. Source baseline: config/field_permissions.php.
 --}}
 @php
-    /** @var array<string, array{fields: array<string, array<string, array{read:bool, write:bool, hidden:bool}>>}> $matrix */
-    $matrix = $this->matrix();
     $roles = \App\Filament\Pages\FieldPermissionMatrix::ROLES;
+    $editable = \App\Filament\Pages\FieldPermissionMatrix::EDITABLE_ROLES;
 @endphp
 
 <x-filament-panels::page>
     <div class="space-y-2 text-sm text-gray-600 dark:text-gray-400">
         <p>
-            Effective per-field access for each role, resolved exactly as the
-            application enforces it at runtime. The matrix is defined in
-            <code>config/field_permissions.php</code> and is read-only here;
-            changes are made in code and reviewed in version control.
+            Adjust per-field access for each role, then <strong>Save changes</strong>.
+            Edits are stored as overrides on top of the
+            <code>config/field_permissions.php</code> baseline and take effect on
+            each user's next page load. <strong>H</strong> (hidden) removes the
+            field from the form &amp; table and wins over read/write.
+            <code>super_admin</code> always has full access and is not editable.
         </p>
-        <div class="flex flex-wrap gap-3 text-xs">
-            <span><span class="font-semibold text-success-600">RW</span> — read &amp; write</span>
-            <span><span class="font-semibold text-primary-600">R</span> — read only</span>
-            <span><span class="font-semibold text-gray-500">Hidden</span> — removed from form &amp; table</span>
-            <span><span class="font-semibold text-danger-600">—</span> — no access</span>
-        </div>
     </div>
 
-    @foreach ($matrix as $resource => $data)
+    @foreach ($state as $resource => $fields)
         <section class="rounded-xl border border-gray-200 dark:border-gray-700 bg-white dark:bg-gray-900 overflow-hidden">
             <header class="px-4 py-3 border-b border-gray-200 dark:border-gray-700">
-                <h2 class="text-base font-semibold text-gray-900 dark:text-white capitalize">
-                    {{ $resource }}
-                </h2>
+                <h2 class="text-base font-semibold text-gray-900 dark:text-white capitalize">{{ $resource }}</h2>
             </header>
 
             <div class="overflow-x-auto">
@@ -51,23 +44,39 @@
                         </tr>
                     </thead>
                     <tbody>
-                        @foreach ($data['fields'] as $field => $statuses)
-                            <tr class="border-t border-gray-100 dark:border-gray-800">
+                        @foreach ($fields as $field => $rolePerms)
+                            <tr class="border-t border-gray-100 dark:border-gray-800 align-top">
                                 <td class="px-4 py-2 font-mono text-xs text-gray-800 dark:text-gray-200">
                                     {{ $field === '_default' ? '(default — unlisted fields)' : $field }}
                                 </td>
-                                @foreach ($roles as $role)
-                                    @php($s = $statuses[$role])
-                                    <td class="px-4 py-2 text-center">
-                                        @if ($s['hidden'])
-                                            <span class="font-semibold text-gray-500">Hidden</span>
-                                        @elseif ($s['write'])
-                                            <span class="font-semibold text-success-600">RW</span>
-                                        @elseif ($s['read'])
-                                            <span class="font-semibold text-primary-600">R</span>
-                                        @else
-                                            <span class="font-semibold text-danger-600">—</span>
-                                        @endif
+
+                                {{-- super_admin: fixed full access --}}
+                                <td class="px-4 py-2 text-center">
+                                    <span class="font-semibold text-success-600">RW</span>
+                                </td>
+
+                                @foreach ($editable as $role)
+                                    <td class="px-4 py-2">
+                                        <div class="flex items-center justify-center gap-3 text-xs">
+                                            <label class="inline-flex items-center gap-1">
+                                                <input type="checkbox"
+                                                    wire:model="state.{{ $resource }}.{{ $field }}.{{ $role }}.read"
+                                                    class="rounded border-gray-300 dark:border-gray-600" />
+                                                <span>R</span>
+                                            </label>
+                                            <label class="inline-flex items-center gap-1">
+                                                <input type="checkbox"
+                                                    wire:model="state.{{ $resource }}.{{ $field }}.{{ $role }}.write"
+                                                    class="rounded border-gray-300 dark:border-gray-600" />
+                                                <span>W</span>
+                                            </label>
+                                            <label class="inline-flex items-center gap-1">
+                                                <input type="checkbox"
+                                                    wire:model="state.{{ $resource }}.{{ $field }}.{{ $role }}.hidden"
+                                                    class="rounded border-gray-300 dark:border-gray-600" />
+                                                <span>H</span>
+                                            </label>
+                                        </div>
                                     </td>
                                 @endforeach
                             </tr>
