@@ -1,7 +1,6 @@
 # Batch List Tool
 
 [![tests](https://github.com/fabiodalez-dev/batch-list-tool/actions/workflows/test.yml/badge.svg)](https://github.com/fabiodalez-dev/batch-list-tool/actions/workflows/test.yml)
-[![static analysis](https://github.com/fabiodalez-dev/batch-list-tool/actions/workflows/phpstan.yml/badge.svg)](https://github.com/fabiodalez-dev/batch-list-tool/actions/workflows/phpstan.yml)
 [![security](https://github.com/fabiodalez-dev/batch-list-tool/actions/workflows/security.yml/badge.svg)](https://github.com/fabiodalez-dev/batch-list-tool/actions/workflows/security.yml)
 
 Web application for the **Notarial Archives Foundation (NAF)**, Malta, under contract **RFQ-2026-06**. Replaces the legacy Excel-based "Batch List" with a structured, auditable, multi-repository system.
@@ -9,9 +8,12 @@ Web application for the **Notarial Archives Foundation (NAF)**, Malta, under con
 - **Production go-live**: 30 November 2026
 - **Stack**: Laravel 13.11 · Filament 5.6 · Livewire 4 · PHP 8.4.21 · MySQL 8.x prod (MySQL 9.x dev) · Blade (no SPA)
 - **Licence**: Apache 2.0 — see [`LICENSE`](LICENSE) + [`NOTICE`](NOTICE)
-- **Stack note**: the original RFQ submission promised Laravel 11 + Filament 3. The implementation
-  shipped on Laravel 13 + Filament 5 because those were the current stable releases at bootstrap.
-  Functional contract is unchanged; change-control documented in `../Batch_List_Tool/nra/ops/plan.md` v2.1 header.
+- **Stack note (change-control)**: the tender submission proposed a lightweight stack — PHP 8.2 ·
+  **Slim 4** · HTMX / Alpine.js / Tailwind, *"no heavy framework (Laravel/Symfony)"*. The delivered
+  system instead runs on **Laravel 13 + Filament 5**, which provide the mandatory RFQ controls
+  (audit trail, field-level permissions, multi-tenant scoping, validation) out of the box. NAF
+  **approved this stack change on 2026-05-28 (verbal approval during a call)**; the functional
+  contract and fixed price are unchanged. See `../Batch_List_Tool/nra/outbox/2026-05-28_change_control_stack.md`.
 - **Operational docs**: `../Batch_List_Tool/nra/ops/` (planning, workflow, runbooks)
 
 ---
@@ -77,7 +79,7 @@ Open <http://127.0.0.1:8000/admin>.
 
 Auth & RBAC: `laravel/fortify`, `spatie/laravel-permission`, `bezhansalleh/filament-shield`.
 Audit: `owen-it/laravel-auditing` (all 9 domain models).
-Admin UI: `filament/filament` 3.x.
+Admin UI: `filament/filament` 5.x (+ `bezhansalleh/filament-shield`).
 Domain: `spatie/laravel-model-states`, `spatie/laravel-schemaless-attributes`, `spatie/laravel-tags`, `spatie/eloquent-sortable`, `staudenmeir/eloquent-has-many-deep`, `kirschbaum-development/eloquent-power-joins`.
 I/O: `maatwebsite/excel`, `barryvdh/laravel-dompdf`, `laravel/scout` (database driver).
 Media: `spatie/laravel-medialibrary`.
