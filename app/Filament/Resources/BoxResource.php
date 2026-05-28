@@ -92,7 +92,10 @@ class BoxResource extends Resource
 
                 Section::make('Provenance (RAS parent)')
                     ->columns($twoCols)
-                    ->visible(fn (Get $get) => $get('box_type') === 'IN_SITU')
+                    // RFQ App.1 #3 applies to BOTH IN_SITU and NRA boxes — they
+                    // each require a parent RAS box — so the provenance section
+                    // is shown for either type, not IN_SITU alone.
+                    ->visible(fn (Get $get) => in_array($get('box_type'), ['IN_SITU', 'NRA'], true))
                     ->schema([
                         // RFQ Appendix-1 rule #3: In Situ boxes must reference a previous
                         // RAS box, unless the user explicitly opts-out via the "no parent
@@ -120,19 +123,19 @@ class BoxResource extends Resource
                             fn ($query) => $query->where('box_type', 'RAS'),
                         )
                             ->label('Parent RAS box')
-                            ->visible(fn (Get $get) => $get('box_type') === 'IN_SITU')
-                            ->required(fn (Get $get) => $get('box_type') === 'IN_SITU' && ! $get('_parent_explicitly_unknown'))
+                            ->visible(fn (Get $get) => in_array($get('box_type'), ['IN_SITU', 'NRA'], true))
+                            ->required(fn (Get $get) => in_array($get('box_type'), ['IN_SITU', 'NRA'], true) && ! $get('_parent_explicitly_unknown'))
                             ->columnSpanFull()
                             ->rule(function (Get $get) {
                                 return function (string $attribute, $value, \Closure $fail) use ($get) {
                                     // Strict enforcement at validation time (defence in depth
                                     // vs the ->required() above; covers API/bulk-import paths
                                     // that don't go through the Filament Required validator).
-                                    if ($get('box_type') !== 'IN_SITU') {
+                                    if (! in_array($get('box_type'), ['IN_SITU', 'NRA'], true)) {
                                         return;
                                     }
                                     if (! $get('_parent_explicitly_unknown') && empty($value)) {
-                                        $fail('IN_SITU boxes must reference a parent RAS box (RFQ Appendix-1 rule #3). Tick "Provenance lost" only if the origin RAS box is genuinely unknown.');
+                                        $fail('IN_SITU / NRA boxes must reference a parent RAS box (RFQ Appendix-1 rule #3). Tick "Provenance lost" only if the origin RAS box is genuinely unknown.');
                                     }
                                 };
                             })),

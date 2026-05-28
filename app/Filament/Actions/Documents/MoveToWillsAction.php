@@ -104,27 +104,27 @@ final class MoveToWillsAction
                         || str_starts_with(strtoupper((string) $currentSeries->code), 'RWL')
                         || str_starts_with(strtoupper((string) $currentSeries->code), 'OWL'));
                 if (! $isWillsSeries) {
-                    $rwl = Series::query()
-                        ->where('code', 'like', 'RWL%')
-                        ->orWhere('is_wills_series', true)
-                        ->orderBy('code')
-                        ->first();
                     // Guarantee the invariant this action exists to enforce
-                    // (Batch 50 = wills only, RFQ App.1 #2): if the catalogue
-                    // has no wills series yet, provision the canonical RWL one
-                    // — mirrors the auto-create of Batch 50 above. Without this
-                    // the document would land in Batch 50 as a non-wills doc,
-                    // which the Document model guard correctly rejects.
+                    // (Batch 50 = wills only, RFQ App.1 #2). Prefer an existing
+                    // flagged wills series; else fall back to an RWL-coded one;
+                    // else provision the canonical RWL series. CRUCIALLY, the
+                    // chosen series MUST end up with is_wills_series=true — an
+                    // RWL-coded-but-unflagged series would otherwise be rejected
+                    // by the Document::saving guard, so we promote it here.
+                    $rwl = Series::query()->where('is_wills_series', true)->orderBy('code')->first()
+                        ?? Series::query()->where('code', 'like', 'RWL%')->orderBy('code')->first();
+
                     if ($rwl === null) {
-                        $rwl = Series::query()->firstOrCreate(
-                            ['code' => 'RWL'],
-                            [
-                                'title' => 'Registers Private Practice Public Wills',
-                                'is_wills_series' => true,
-                                'is_active' => true,
-                            ],
-                        );
+                        $rwl = Series::query()->create([
+                            'code' => 'RWL',
+                            'title' => 'Registers Private Practice Public Wills',
+                            'is_wills_series' => true,
+                            'is_active' => true,
+                        ]);
+                    } elseif (! $rwl->is_wills_series) {
+                        $rwl->update(['is_wills_series' => true]);
                     }
+
                     $doc->series_id = $rwl->getKey();
                 }
 

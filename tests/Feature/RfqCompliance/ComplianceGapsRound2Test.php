@@ -116,6 +116,25 @@ it('allows an IN_SITU box when a parent RAS box is provided', function () {
     expect((int) $inSitu->parent_box_id)->toBe((int) $ras->id);
 });
 
+it('blocks an IN_SITU box whose parent is not a RAS box (parent type enforced)', function () {
+    $repo = Repository::factory()->create();
+    $batch = Batch::factory()->create(['repository_id' => $repo->id]);
+    $rasGrandparent = Box::factory()->create(['box_type' => 'RAS', 'batch_id' => $batch->id]);
+    // A valid IN_SITU box (its own parent is the RAS grandparent) — but it is
+    // NOT a RAS box, so it cannot itself serve as a parent.
+    $nonRasParent = Box::factory()->create([
+        'box_type' => 'IN_SITU',
+        'parent_box_id' => $rasGrandparent->id,
+        'batch_id' => $batch->id,
+    ]);
+
+    expect(fn () => Box::factory()->create([
+        'box_type' => 'IN_SITU',
+        'parent_box_id' => $nonRasParent->id,
+        'batch_id' => $batch->id,
+    ]))->toThrow(DomainException::class);
+});
+
 /* ─── F7 — field-permission matrix covers the core domain entities ──── */
 
 it('declares a field-permission matrix for every core domain resource', function () {
@@ -128,5 +147,13 @@ it('declares a field-permission matrix for every core domain resource', function
 
 it('drives the backup notification address from env, not a placeholder', function () {
     $to = config('backup.notifications.mail.to');
-    expect($to)->not->toBe('your@example.com');
+    expect($to)->not->toBe('your@example.com')
+        ->and($to)->not->toBeEmpty();
+});
+
+it('drives the backup archive encryption password from env', function () {
+    // config returns env('BACKUP_ARCHIVE_PASSWORD') — env-driven (null only
+    // when unset, which disables encryption). The key must NOT be a literal.
+    config(['backup.backup.password' => 's3cr3t-from-env']);
+    expect(config('backup.backup.password'))->toBe('s3cr3t-from-env');
 });
