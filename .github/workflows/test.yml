@@ -96,7 +96,9 @@ jobs:
           APP_ENV: testing
         # Start without --parallel: Filament tests can race on the in-memory
         # SQLite connection. Re-enable later once the suite is verified stable.
-        run: php -d memory_limit=2G ./vendor/bin/pest --compact
+        # The Browser (E2E) suite is excluded here — it needs a headless
+        # Chromium and runs in the dedicated browser-tests.yml workflow.
+        run: php -d memory_limit=2G ./vendor/bin/pest --compact --exclude-testsuite=Browser
 
       - name: Run PHPStan (Larastan)
         run: ./vendor/bin/phpstan analyse --memory-limit=2G --no-progress

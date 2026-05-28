@@ -1,7 +1,28 @@
 <?php
 
+use App\Models\User;
+use Illuminate\Support\Facades\Auth;
 use Illuminate\Support\Facades\Route;
 use Spatie\Health\Http\Controllers\HealthCheckJsonResultsController;
+
+/*
+|--------------------------------------------------------------------------
+| Test-only authentication shortcut (browser E2E)
+|--------------------------------------------------------------------------
+|
+| Pest browser tests drive a real Chromium, so $this->actingAs() (which only
+| sets auth in the test process) does not authenticate the browser session.
+| This route logs a user in by id and is registered ONLY in the `testing`
+| environment — it never exists in local/staging/production. Browser tests
+| call it once to obtain a real authenticated session cookie.
+*/
+if (app()->environment('testing')) {
+    Route::get('/__test-login__/{user}', function (User $user) {
+        Auth::login($user);
+
+        return redirect('/admin');
+    })->middleware('web');
+}
 
 // Default landing → Filament admin login.
 // The bundled welcome.blade.php pulls fonts from fonts.bunny.net (CDN) and an

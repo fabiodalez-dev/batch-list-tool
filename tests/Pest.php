@@ -1,5 +1,8 @@
 <?php
 
+use App\Models\Repository;
+use App\Models\User;
+use Illuminate\Foundation\Testing\RefreshDatabase;
 use Spatie\Permission\Models\Permission;
 use Spatie\Permission\Models\Role;
 use Spatie\Permission\PermissionRegistrar;
@@ -21,6 +24,12 @@ uses(TestCase::class)
 uses(TestCase::class)
     ->in('Compliance');
 
+// Browser (E2E) tests use a real headless Chromium via Pest's Playwright
+// engine. RefreshDatabase is bound here so every E2E scenario starts from a
+// clean, migrated schema and seeds only the data it needs.
+uses(TestCase::class, RefreshDatabase::class)
+    ->in('Browser');
+
 /*
 |--------------------------------------------------------------------------
 | Expectations
@@ -36,6 +45,31 @@ expect()->extend('toBeOne', function () {
 | Functions
 |--------------------------------------------------------------------------
 */
+
+/**
+ * Create a User with the given role, attached to a repository (created if not
+ * given) as their default. Used to set up browser-E2E actors. Assumes
+ * bl_seedShieldPermissions()/bl_seedRoles() has run.
+ */
+function bl_actor(string $role, ?Repository $repo = null): User
+{
+    $repo ??= Repository::factory()->create();
+    $user = User::factory()->create(['default_repository_id' => $repo->id]);
+    $user->assignRole($role);
+    $user->repositories()->syncWithoutDetaching([$repo->id => ['is_default' => true]]);
+
+    return $user;
+}
+
+/**
+ * Authenticate the headless browser as $user via the testing-only login route
+ * and return the resulting page (positioned at the panel dashboard). From
+ * here, chain ->navigate('/admin/...') to drive the E2E scenario.
+ */
+function bl_login(User $user)
+{
+    return visit('/__test-login__/' . $user->getKey());
+}
 
 function something()
 {

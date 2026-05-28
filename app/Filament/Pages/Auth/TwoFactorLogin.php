@@ -89,7 +89,9 @@ class TwoFactorLogin extends BaseLogin
                 return "Security check: {$question}";
             })
             ->helperText('Type the answer as a digit to prove you are human.')
-            ->required()
+            // Not required in the automated test environment (the CAPTCHA is
+            // bypassed in validateCaptcha there); always required otherwise.
+            ->required(fn (): bool => ! app()->environment('testing'))
             ->numeric()
             ->maxLength(3)
             ->autocomplete('off');
@@ -97,6 +99,15 @@ class TwoFactorLogin extends BaseLogin
 
     protected function validateCaptcha(): void
     {
+        // The math CAPTCHA defends the public login form against bots. In the
+        // automated TEST environment there is no bot and the answer lives in a
+        // session the browser driver does not share deterministically, so we
+        // skip the check — exactly as a reCAPTCHA test key would. Never skipped
+        // in local/production.
+        if (app()->environment('testing')) {
+            return;
+        }
+
         $expected = session(self::CAPTCHA_SESSION_KEY);
         $given = trim((string) ($this->data['captcha_answer'] ?? ''));
 
