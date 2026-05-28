@@ -10,7 +10,7 @@ use App\Filament\Pages\Reports\Filters\DateRangeFilter;
 use App\Models\Box;
 use App\Models\BoxMovement;
 use App\Models\ReportTemplate;
-use App\Models\Scopes\ThroughBoxBatchRepositoryScope;
+use App\Models\Scopes\RepositoryScope;
 use App\Support\Reports\ReportRenderer;
 use Filament\Actions\Action;
 use Filament\Forms;
@@ -31,10 +31,9 @@ use Symfony\Component\HttpFoundation\StreamedResponse;
  * date range and target box. Movements without a target box (legacy
  * data) still appear so operators don't lose audit-trail visibility.
  *
- * Multi-tenancy: BoxMovement has its own dedicated
- * {@see ThroughBoxBatchRepositoryScope} which
- * follows `box_movements.to_box_id → boxes.batch_id → batches.repository_id`,
- * so this report is automatically tenant-correct for non-admin users.
+ * Multi-tenancy: BoxMovement carries its own `repository_id` and is scoped by
+ * the standard {@see RepositoryScope}, so this report is
+ * automatically tenant-correct for non-admin users.
  */
 class BoxMovementHistoryReport extends Page implements HasTable
 {

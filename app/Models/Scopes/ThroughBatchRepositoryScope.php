@@ -24,7 +24,6 @@ use Illuminate\Database\Eloquent\Scope;
  * RepositoryScope's behaviour.
  *
  * @see RepositoryScope
- * @see ThroughBoxBatchRepositoryScope
  */
 class ThroughBatchRepositoryScope implements Scope
 {

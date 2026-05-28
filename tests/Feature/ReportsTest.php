@@ -16,7 +16,6 @@ use App\Models\Document;
 use App\Models\Repository;
 use App\Models\Scopes\RepositoryScope;
 use App\Models\Scopes\ThroughBatchRepositoryScope;
-use App\Models\Scopes\ThroughBoxBatchRepositoryScope;
 use App\Models\Series;
 use App\Models\User;
 use Illuminate\Database\Eloquent\Builder;
@@ -517,11 +516,4 @@ test('landing page caches counts for 60 seconds', function () {
 
     $cards2 = $page->cards();
     expect($cards2)->toEqual($cards1);
-});
-
-/* ─── Mute unused-import diagnostics ───────────────────────────────── */
-
-test('imports used by helpers compile cleanly', function () {
-    // ThroughBoxBatchRepositoryScope is referenced indirectly via BoxMovement.
-    expect(class_exists(ThroughBoxBatchRepositoryScope::class))->toBeTrue();
 });

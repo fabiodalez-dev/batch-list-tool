@@ -9,7 +9,6 @@ use App\Models\Document;
 use App\Models\Repository;
 use App\Models\Scopes\RepositoryScope;
 use App\Models\Scopes\ThroughBatchRepositoryScope;
-use App\Models\Scopes\ThroughBoxBatchRepositoryScope;
 use App\Models\Series;
 use App\Models\User;
 use Illuminate\Foundation\Testing\RefreshDatabase;
@@ -297,16 +296,21 @@ test('non-admin user cannot read a BoxMovement from another tenant', function ()
     $boxA = createBoxInBatch($batchA->id, 'BOX-A-' . uniqid());
     $boxB = createBoxInBatch($batchB->id, 'BOX-B-' . uniqid());
 
-    // Create movements as super-user (no scope active because unauthenticated)
-    $movementA = BoxMovement::withoutGlobalScope(ThroughBoxBatchRepositoryScope::class)->create([
+    // Create movements unauthenticated (the creating hook trusts the caller
+    // and leaves the explicit repository_id intact). withoutGlobalScope is a
+    // no-op here but documents that we're deliberately bypassing tenancy to
+    // seed cross-tenant fixtures.
+    $movementA = BoxMovement::withoutGlobalScope(RepositoryScope::class)->create([
         'document_id' => $this->docA1->id,
+        'repository_id' => $this->repoA->id,
         'from_box_id' => null,
         'to_box_id' => $boxA->id,
         'movement_date' => now(),
         'reason' => 'test-fixture',
     ]);
-    $movementB = BoxMovement::withoutGlobalScope(ThroughBoxBatchRepositoryScope::class)->create([
+    $movementB = BoxMovement::withoutGlobalScope(RepositoryScope::class)->create([
         'document_id' => $this->docB1->id,
+        'repository_id' => $this->repoB->id,
         'from_box_id' => null,
         'to_box_id' => $boxB->id,
         'movement_date' => now(),
