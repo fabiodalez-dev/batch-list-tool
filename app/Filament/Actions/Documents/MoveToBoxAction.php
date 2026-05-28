@@ -163,6 +163,7 @@ final class MoveToBoxAction
 
                 BoxMovement::create([
                     'document_id' => $doc->getKey(),
+                    'repository_id' => $targetBoxRepoId,
                     'from_box_id' => $from,
                     'to_box_id' => $targetBox->getKey(),
                     'movement_date' => now(),
