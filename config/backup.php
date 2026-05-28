@@ -236,10 +236,16 @@ return [
         'mail' => [
             // RFQ §3.4 — backup health notifications go to the NAF ops mailbox.
             // env-driven (no placeholder): set MAIL_BACKUP_RECIPIENT in
-            // production (already scaffolded in .env.example). Falls back to
-            // MAIL_FROM_ADDRESS so a misconfigured env still reaches the
-            // configured sender rather than a dummy address.
-            'to' => env('MAIL_BACKUP_RECIPIENT', env('MAIL_FROM_ADDRESS')),
+            // production (already scaffolded in .env.example). Uses `?:` (not a
+            // 2nd env default) because MAIL_BACKUP_RECIPIENT is scaffolded as an
+            // EMPTY string in .env.example — env() returns '' for a present-but-
+            // empty key, which would make this an invalid (empty) address and
+            // trip spatie/laravel-backup's config validation. The chain falls
+            // back to MAIL_FROM_ADDRESS and finally to a valid literal so the
+            // address is never empty in any environment.
+            'to' => env('MAIL_BACKUP_RECIPIENT')
+                ?: env('MAIL_FROM_ADDRESS')
+                ?: 'backups@archivetool.eu',
 
             'from' => [
                 'address' => env('MAIL_FROM_ADDRESS', 'backups@archivetool.eu'),
