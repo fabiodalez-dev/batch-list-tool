@@ -92,23 +92,8 @@ jobs:
           mkdir -p storage/logs bootstrap/cache
 
       # Feature tests render Filament admin pages whose panel theme is loaded
-      # via @vite(...); the Vite manifest must exist or the render 500s. Assets
-      # are no longer committed to git (built+shipped at deploy time), so build
-      # them here.
-      - name: Setup Node 20
-        uses: actions/setup-node@v4
-        with:
-          node-version: '20'
-          cache: 'npm'
-
-      - name: Build front-end assets (Vite manifest for HTTP render tests)
-        run: |
-          if [ -f package-lock.json ]; then
-            npm ci
-          else
-            npm install --no-audit --no-fund
-          fi
-          npm run build
+      # via Vite; the manifest must exist or the render 500s. public/build is
+      # committed to git, so the checkout already provides it — no build step.
 
       - name: Run Pest test suite
         env:

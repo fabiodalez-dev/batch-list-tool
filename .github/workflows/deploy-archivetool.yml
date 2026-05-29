@@ -58,36 +58,13 @@ jobs:
           # default-persisted credential is unnecessary attack surface.
           persist-credentials: false
 
-      # ── Build production assets on the runner ──────────────────────────────
-      # The cPanel host has no Node, so public/build is built here and shipped
-      # via rsync after the SSH deploy (see "Ship built production assets").
-      # public/build is gitignored and no longer committed to main — this
-      # decouples asset delivery from git and avoids the PR-only ruleset that
-      # blocks a CI push to main.
-      - name: Setup PHP 8.4 (Filament theme CSS imports vendor/filament during the Vite build)
-        uses: shivammathur/setup-php@v2
-        with:
-          php-version: '8.4'
-          tools: composer:v2
-          coverage: none
-
-      - name: Install PHP dependencies (vendor/filament needed by the theme CSS import)
-        run: composer install --no-interaction --prefer-dist --no-progress --no-scripts
-
-      - name: Setup Node 20
-        uses: actions/setup-node@v4
-        with:
-          node-version: '20'
-          cache: 'npm'
-
-      - name: Build production assets with Vite
-        run: |
-          if [ -f package-lock.json ]; then
-            npm ci
-          else
-            npm install --no-audit --no-fund
-          fi
-          npm run build
+      # NOTE: public/build is committed to git (the cPanel host has no Node).
+      # The deploy's `git reset --hard origin/main` therefore delivers the
+      # compiled assets directly — no runner build or rsync needed here.
+      # Developers rebuild + commit public/build as part of any PR that
+      # touches CSS/JS. The bot-driven "Build & commit production assets"
+      # workflow was removed (its push to main was blocked by the PR-only
+      # ruleset); committing assets in PRs sidesteps that entirely.
 
       - name: Validate required secrets
         env:
@@ -136,17 +113,6 @@ jobs:
               "${SSH_USER}@${SSH_HOST}" \
               "DEPLOY_PATH='${DEPLOY_PATH}' BRANCH='${DEPLOY_BRANCH}' bash -s" \
               < deploy/post-deploy.sh
-
-      - name: Ship built production assets to the host
-        run: |
-          # public/build is built on this runner (the host has no Node) and is
-          # gitignored, so it never travels through git. Rsync it into place
-          # AFTER post-deploy.sh so the host always serves freshly-compiled CSS/JS.
-          # --delete keeps the remote dir an exact mirror (drops stale hashed files).
-          rsync -az --delete \
-            -e "ssh -o ServerAliveInterval=30 -o ServerAliveCountMax=6" \
-            ./public/build/ \
-            "${SSH_USER}@${SSH_HOST}:${DEPLOY_PATH}/public/build/"
 
       - name: Smoke test admin panel
         id: smoke

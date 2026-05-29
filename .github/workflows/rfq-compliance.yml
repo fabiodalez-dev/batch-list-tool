@@ -75,23 +75,9 @@ jobs:
           php artisan key:generate --ansi
           php artisan config:clear
 
-      # Compliance tests render Filament pages (@vite theme) — the Vite manifest
-      # must exist. Assets are built+shipped at deploy time (not committed), so
-      # build them here too.
-      - name: Setup Node 20
-        uses: actions/setup-node@v4
-        with:
-          node-version: '20'
-          cache: 'npm'
-
-      - name: Build front-end assets (Vite manifest for HTTP render tests)
-        run: |
-          if [ -f package-lock.json ]; then
-            npm ci
-          else
-            npm install --no-audit --no-fund
-          fi
-          npm run build
+      # Compliance tests render Filament pages (Vite theme) — the manifest must
+      # exist. public/build is committed to git, so the checkout already
+      # provides it — no build step needed.
 
       - name: Run RFQ Compliance suite (full)
         if: ${{ github.event_name != 'workflow_dispatch' || inputs.section == '' }}
