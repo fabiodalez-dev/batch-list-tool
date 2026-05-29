@@ -47,7 +47,7 @@ it('Factory: Batch::factory()->create() persists with non-forbidden number', fun
     $b = Batch::withoutGlobalScope(RepositoryScope::class)
         ->where('id', Batch::factory()->create()->id)->first();
     expect($b->id)->not->toBeNull()
-        ->and(in_array($b->batch_number, [33, 34, 36], true))->toBeFalse();
+        ->and(in_array($b->batch_number, [34, 36], true))->toBeFalse();
 });
 
 it('Factory: Box::factory()->create() persists with default RAS type', function () {

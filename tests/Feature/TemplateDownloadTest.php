@@ -251,9 +251,9 @@ test('Document template preserves the duplicated provenance headers verbatim', f
     // repeated header names; the template MUST preserve that layout.
     expect($generated)->toEqual(TemplateGenerator::DOCUMENT_HEADERS);
 
-    // The Document sample has 49 populated columns (57 with trailing
-    // NULLs; we strip those).
-    expect(count($generated))->toBe(49);
+    // The Document sample has 48 populated columns (Seal Number was removed —
+    // it is a BOX field, not a document field).
+    expect(count($generated))->toBe(48);
 
     // Concrete duplicate-position assertions — these are the contract the
     // operator relies on.
@@ -264,9 +264,9 @@ test('Document template preserves the duplicated provenance headers verbatim', f
     expect($generated[24])->toBe('Barcode RAS 2');          // col 25 — appears 3x
     expect($generated[14])->toBe('Status 1');               // col 15
     expect($generated[23])->toBe('Status 1');               // col 24
+    expect($generated[26])->toBe('Disinfestation Date');    // col 27
     expect($generated[27])->toBe('Disinfestation Date');    // col 28
-    expect($generated[28])->toBe('Disinfestation Date');    // col 29
-    expect($generated[29])->toBe('Disinfestation Date');    // col 30 — three Disinfestations
+    expect($generated[28])->toBe('Disinfestation Date');    // col 29 — three Disinfestations
 
     // Sanity: count occurrences. The contract is "preserve duplicates".
     expect(array_count_values($generated)['Barcode RAS 2'] ?? 0)->toBe(3);

@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace App\Filament\Imports;
 
+use App\Filament\Imports\Concerns\SkipsExistingRows;
 use App\Models\Batch;
 use App\Models\Scopes\RepositoryScope;
 use App\Support\BulkImport\EntityResolver;
@@ -15,11 +16,12 @@ use Filament\Actions\Imports\Models\Import;
  * RFQ §3.1.3 — Bulk import for {@see Batch}.
  *
  * Batches are the top-level grouping unit (1..29 = Main Collection,
- * 30+ = Notary Accession, 50 = Wills only, and 33/34/36 are FORBIDDEN —
- * see {@see Batch::FORBIDDEN_NUMBERS}). The importer enforces the
- * forbidden-number rule client-side via `rules(['not_in:33,34,36'])`
- * so the operator gets a clean per-row error instead of a SQL-level
- * 1452 constraint violation.
+ * 30+ = Notary Accession, 50 = Wills only). Batch 33 is RESERVED for old
+ * MAV boxes (valid, not forbidden). Batches 34 and 36 are unused/forbidden.
+ * See {@see Batch::FORBIDDEN_NUMBERS} and {@see Batch::RESERVED_MAV_BATCH}.
+ * The importer enforces the forbidden-number rule client-side via a custom
+ * closure rule (driven by Batch::isForbidden()) so the operator gets a clean
+ * per-row error instead of a SQL-level 1452 constraint violation.
  *
  * Repository scoping: every batch belongs to exactly one Repository
  * (tenant). When the operator launches the import we read the active
@@ -29,6 +31,8 @@ use Filament\Actions\Imports\Models\Import;
  */
 class BatchImporter extends Importer
 {
+    use SkipsExistingRows;
+
     protected static ?string $model = Batch::class;
 
     /**
@@ -46,12 +50,16 @@ class BatchImporter extends Importer
                     'required',
                     'integer',
                     'min:1',
-                    // RFQ App.1 #1 — 33 (reserved for old MAV boxes only),
-                    // 34 and 36 (unused, never to be used) cannot be created
-                    // through the import path. The model-level MySQL CHECK
-                    // constraint will refuse anyway, but rejecting here
-                    // produces a readable per-row error.
-                    'not_in:33,34,36',
+                    // RFQ App.1 #1 — batch 34 and 36 are unused and will never
+                    // be used (forbidden). Batch 33 is reserved for old MAV
+                    // boxes and IS a valid batch number. We drive this rule from
+                    // Batch::isForbidden() so there is a single source of truth.
+                    function (string $attribute, mixed $value, \Closure $fail): void {
+                        $candidate = new Batch(['batch_number' => (int) $value]);
+                        if ($candidate->isForbidden()) {
+                            $fail("Batch number {$value} is reserved/forbidden (RFQ rule): cannot be imported.");
+                        }
+                    },
                 ]),
 
             ImportColumn::make('description')
@@ -117,10 +125,13 @@ class BatchImporter extends Importer
             return new Batch;
         }
 
-        return Batch::query()
+        $record = Batch::query()
             ->withoutGlobalScope(RepositoryScope::class)
             ->where('batch_number', (int) $number)
             ->first() ?? new Batch;
+        $this->skipIfDuplicate($record);
+
+        return $record;
     }
 
     /**

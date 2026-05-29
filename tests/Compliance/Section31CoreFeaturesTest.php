@@ -39,11 +39,13 @@ describe('REQ-3.1.1 CRUD on all metadata fields', function () {
 
 /* ─── REQ-3.1.2 Validation (Appendix 1) ──────────────────────────── */
 describe('REQ-3.1.2 Validation (forbidden batches, wills, PERM_OUT)', function () {
-    test('forbidden batch numbers 33/34/36 are rejected at the model gate (FORBIDDEN_NUMBERS const)', function () {
-        // Surface-level guarantee: the const exists and lists the three.
+    test('forbidden batch numbers 34/36 are rejected at the model gate; 33 is reserved (not forbidden)', function () {
+        // RFQ Appendix 2: 34 and 36 are unused/forbidden; 33 is reserved for old MAV boxes (valid).
         // Per-action enforcement lives in BatchResource::form() + the DB CHECK
         // (CHECK is MySQL-only; SQLite test driver skips it).
-        expect(Batch::FORBIDDEN_NUMBERS)->toMatchArray([33, 34, 36]);
+        expect(Batch::FORBIDDEN_NUMBERS)->toMatchArray([34, 36])
+            ->and(in_array(33, Batch::FORBIDDEN_NUMBERS, true))->toBeFalse()
+            ->and(Batch::RESERVED_MAV_BATCH)->toBe(33);
     });
 
     test('PERM_OUT requires disinfestation_date — declared at the Box::BARCODE_STATUSES enum', function () {
@@ -99,12 +101,11 @@ describe('REQ-3.1.7 Barcode IN/OUT/PERM_OUT + history', function () {
     it('whitespace-only barcodes are normalised at the boot hook')->todo('Feature\\BoxBarcodeHistoryTest');
 })->group('rfq:3.1.7');
 
-/* ─── REQ-3.1.8 Seal number history ──────────────────────────────── */
+/* ─── REQ-3.1.8 Seal number history (on the BOX) ──────────────────── */
 describe('REQ-3.1.8 Seal number history', function () {
-    it('updating seal_number appends to document_seal_number_history')->todo('Feature\\DocumentSealNumberHistoryTest');
-    it('unchanged seal_number does NOT create a history row')->todo('Feature\\DocumentSealNumberHistoryTest');
-    it('history relation manager renders rows in reverse chronological order')->todo('Feature\\DocumentSealNumberHistoryTest');
-    it('cross-tenant access to seal history is blocked')->todo('Feature\\DocumentSealNumberHistoryTest');
+    it('setting a box seal_number appends to box_seal_number_history')->todo('Feature\\Boxes\\BoxSealHistoryTest');
+    it('unchanged seal_number does NOT create a history row')->todo('Feature\\Boxes\\BoxSealHistoryTest');
+    it('history relation manager renders rows in reverse chronological order')->todo('Feature\\Boxes\\BoxSealHistoryTest');
 })->group('rfq:3.1.8');
 
 /* ─── REQ-3.1.9 Configurable location hierarchies ────────────────── */

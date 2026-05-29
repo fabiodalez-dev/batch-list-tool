@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace App\Filament\Imports;
 
+use App\Filament\Imports\Concerns\SkipsExistingRows;
 use App\Models\Series;
 use Filament\Actions\Imports\ImportColumn;
 use Filament\Actions\Imports\Importer;
@@ -26,6 +27,8 @@ use Filament\Actions\Imports\Models\Import;
  */
 class SeriesImporter extends Importer
 {
+    use SkipsExistingRows;
+
     protected static ?string $model = Series::class;
 
     /**
@@ -109,9 +112,12 @@ class SeriesImporter extends Importer
             return new Series;
         }
 
-        return Series::query()
+        $record = Series::query()
             ->whereRaw('LOWER(code) = ?', [mb_strtolower((string) $code)])
             ->first() ?? new Series;
+        $this->skipIfDuplicate($record);
+
+        return $record;
     }
 
     /**

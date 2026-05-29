@@ -79,10 +79,10 @@ function makeBatch_batch(int $repoId, int $batchNumber, array $attrs = []): Batc
 
 function nextSafeBatchNumber(): int
 {
-    // Avoid forbidden 33/34/36 and the wills-only 50.
+    // Avoid forbidden 34/36 and the wills-only 50. (33 is reserved for MAV, but valid.)
     do {
         $n = random_int(1000, 9999);
-    } while (in_array($n, [33, 34, 36, 50], true)
+    } while (in_array($n, [34, 36, 50], true)
         || Batch::withoutGlobalScope(RepositoryScope::class)
             ->where('batch_number', $n)->exists());
 
@@ -135,13 +135,20 @@ test('BatchResource create persists row', function () {
  * helper and (b) a MySQL-only CHECK constraint. We assert both contracts.
  * The import command also respects it.
  */
-test('Batch::FORBIDDEN_NUMBERS contains 33, 34, 36 and isForbidden() flags them', function () {
-    expect(Batch::FORBIDDEN_NUMBERS)->toBe([33, 34, 36]);
+test('Batch::FORBIDDEN_NUMBERS contains 34, 36 and isForbidden() flags them; batch 33 is reserved (not forbidden)', function () {
+    // RFQ Appendix 2: 34 and 36 are unused/forbidden; 33 is reserved for old MAV boxes (valid).
+    expect(Batch::FORBIDDEN_NUMBERS)->toBe([34, 36])
+        ->and(Batch::RESERVED_MAV_BATCH)->toBe(33);
 
-    foreach ([33, 34, 36] as $n) {
+    foreach ([34, 36] as $n) {
         $b = new Batch(['batch_number' => $n]);
         expect($b->isForbidden())->toBeTrue("Batch number {$n} must be forbidden");
     }
+
+    // 33 is reserved but NOT forbidden.
+    $b33 = new Batch(['batch_number' => 33]);
+    expect($b33->isForbidden())->toBeFalse('Batch 33 is reserved for old MAV boxes, not forbidden')
+        ->and($b33->isReservedMav())->toBeTrue();
 
     foreach ([1, 7, 29, 30, 50, 99] as $n) {
         $b = new Batch(['batch_number' => $n]);

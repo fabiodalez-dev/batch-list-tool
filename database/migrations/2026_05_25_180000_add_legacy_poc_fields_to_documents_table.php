@@ -49,9 +49,8 @@ return new class extends Migration
             $table->string('barcode_ras_2_alt2', 50)->nullable()->after('status_1_alt');
             $table->string('status_2_alt', 20)->nullable()->after('barcode_ras_2_alt2');
 
-            // Seal + disinfestation history (POC kept 3 dates)
-            $table->string('seal_number', 50)->nullable()->after('status_2_alt');
-            $table->date('disinfestation_date_1')->nullable()->after('seal_number');
+            // Disinfestation history (POC kept 3 dates)
+            $table->date('disinfestation_date_1')->nullable()->after('status_2_alt');
             $table->date('disinfestation_date_2')->nullable()->after('disinfestation_date_1');
             $table->date('disinfestation_date_3')->nullable()->after('disinfestation_date_2');
 
@@ -97,7 +96,7 @@ return new class extends Migration
                 'barcode_ras_3', 'status_3', 'barcode_ras_4', 'status_4',
                 'barcode_in_2', 'barcode_ras_2_alt', 'status_1_alt',
                 'barcode_ras_2_alt2', 'status_2_alt',
-                'seal_number', 'disinfestation_date_1', 'disinfestation_date_2', 'disinfestation_date_3',
+                'disinfestation_date_1', 'disinfestation_date_2', 'disinfestation_date_3',
                 'catalogue_identifier', 'nra_location', 'museum_location', 'practice',
                 'dates', 'deeds', 'current_box_type', 'colour_code', 'digitised', 'torre',
                 'accession_code_legacy', 'object_reference_number', 'tracking', 'museum_reference',

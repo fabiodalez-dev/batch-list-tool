@@ -14,6 +14,7 @@ use Illuminate\Database\Eloquent\Relations\BelongsToMany;
 use Illuminate\Database\Eloquent\Relations\HasMany;
 use Illuminate\Database\Eloquent\SoftDeletes;
 use Illuminate\Support\Collection;
+use Illuminate\Validation\ValidationException;
 use Laravel\Scout\Searchable;
 use OwenIt\Auditing\Auditable;
 use OwenIt\Auditing\Contracts\Auditable as AuditableContract;
@@ -83,6 +84,18 @@ class Document extends Model implements AuditableContract, HasMedia, Sortable
      */
     public const CURRENT_BOX_TYPES = ['RAS Box', 'Big Brown Box', 'Small Brown Box'];
 
+    /**
+     * RFQ-2026-06 App.2-ii — physical custody categories for a document.
+     * Stored in `documents.custody_status`; default is `in_box`.
+     *
+     * - `in_box`        — document is physically inside a box
+     * - `not_in_box`    — in situ at NRA, not yet boxed
+     * - `mounted_no_box`— framed / mounted; no box applicable
+     *
+     * @var array<int,string>
+     */
+    public const CUSTODY_STATUSES = ['in_box', 'not_in_box', 'mounted_no_box'];
+
     public array $sortable = [
         'order_column_name' => 'sort_order',
         'sort_when_creating' => true,
@@ -110,11 +123,11 @@ class Document extends Model implements AuditableContract, HasMedia, Sortable
         'in_situ_box_1', 'in_situ_box_2', 'in_situ_box_3',
         'ras_1_box_destroyed', 'ras_2_box_destroyed',
         'in_situ_box_1_destroyed', 'in_situ_box_2_destroyed', 'in_situ_box_3_destroyed',
-        'barcode_in', 'barcode_status', 'barcode_ras_1', 'status_1', 'barcode_ras_2', 'status_2',
+        'barcode_in', 'barcode_status', 'custody_status', 'barcode_ras_1', 'status_1', 'barcode_ras_2', 'status_2',
         'barcode_ras_3', 'status_3', 'barcode_ras_4', 'status_4',
         'barcode_in_2', 'barcode_ras_2_alt', 'status_1_alt',
         'barcode_ras_2_alt2', 'status_2_alt',
-        'seal_number', 'disinfestation_date_1', 'disinfestation_date_2', 'disinfestation_date_3',
+        'disinfestation_date_1', 'disinfestation_date_2', 'disinfestation_date_3',
         'catalogue_identifier', 'nra_location', 'museum_location', 'practice',
         'dates', 'deeds', 'current_box_type', 'colour_code', 'digitised', 'torre',
         'accession_code_legacy', 'object_reference_number', 'tracking', 'museum_reference',
@@ -137,17 +150,6 @@ class Document extends Model implements AuditableContract, HasMedia, Sortable
 
     /** @internal DocumentBuilder bulk-update guard bypass flag */
     private static bool $bypassAuditGuard = false;
-
-    /**
-     * Pending seal_number transitions, keyed by document primary key.
-     *
-     * Captured in `updating` (when the original value is still readable via
-     * getOriginal) and consumed in `updated` (after persistence, so the
-     * eventual auto-increment id and final dirty state are known).
-     *
-     * @var array<int|string, array{previous: ?string, new: ?string}>
-     */
-    private static array $pendingSealTransitions = [];
 
     /**
      * Sort within the current_box. Documents in box A and documents in box B
@@ -255,32 +257,6 @@ class Document extends Model implements AuditableContract, HasMedia, Sortable
     {
         return $this->identifierHistory()
             ->pluck('previous_identifier')
-            ->unique()
-            ->values();
-    }
-
-    /**
-     * Append-only log of seal_number transitions for this document
-     * (RFQ §3.1.5 — seal-number chain-of-custody). Returns rows ordered
-     * descending by `changed_at` so the most recent change is first;
-     * callers can override with `->orderBy(...)`.
-     */
-    public function sealNumberHistory(): HasMany
-    {
-        return $this->hasMany(DocumentSealNumberHistory::class)->latest('changed_at');
-    }
-
-    /**
-     * Distinct list of previous seal numbers this document has ever held.
-     * Built from the `sealNumberHistory` log; uniqueness is enforced in PHP
-     * so the result is stable across DB drivers (SQLite collation quirks).
-     *
-     * @return Collection<int,string>
-     */
-    public function previousSealNumbers(): Collection
-    {
-        return $this->sealNumberHistory()
-            ->pluck('previous_seal_number')
             ->unique()
             ->values();
     }
@@ -551,17 +527,10 @@ class Document extends Model implements AuditableContract, HasMedia, Sortable
     }
 
     /**
-     * Boot hooks for Document — wires the seal_number audit trail directly
-     * on the model (no separate observer class) so the chain-of-custody for
-     * physical seals is recorded transparently on every save().
-     *
-     * The two-phase pattern (capture-in-updating, write-in-updated) mirrors
-     * {@see DocumentObserver} for the identifier column —
-     * it avoids the classic "isDirty returns false after save" pitfall.
-     *
-     * The identifier audit trail intentionally stays in the dedicated
-     * DocumentObserver class for backwards-compatibility; the seal_number
-     * trail lives here per the implementation brief.
+     * Boot hooks for Document — enforces the enum + Batch-50 invariants on
+     * every save(). The identifier audit trail lives in the dedicated
+     * {@see DocumentObserver} class. (Seal-number history is a property of
+     * the Box, not the Document — see {@see Box::sealNumberHistory()}.)
      */
     protected static function booted(): void
     {
@@ -597,6 +566,28 @@ class Document extends Model implements AuditableContract, HasMedia, Sortable
                 $document->current_box_type = $normalized;
             }
 
+            // Gate `custody_status` in PHP too: the MySQL CHECK does not run on
+            // SQLite, so mirror the digitised / current_box_type guards above.
+            // Normalise case-insensitively (consistency with the siblings),
+            // then reject anything outside the enum.
+            if ($document->custody_status !== null) {
+                $normalized = self::canonicalEnumValue($document->custody_status, self::CUSTODY_STATUSES);
+                if ($normalized === null) {
+                    throw ValidationException::withMessages([
+                        'custody_status' => "Invalid custody_status '{$document->custody_status}'. Allowed: "
+                            . implode(', ', self::CUSTODY_STATUSES),
+                    ]);
+                }
+                $document->custody_status = $normalized;
+            }
+
+            // A1.2 — a document cannot be PERM_OUT without a disinfestation date.
+            if ($document->barcode_status === 'PERM_OUT' && empty($document->disinfestation_date)) {
+                throw ValidationException::withMessages([
+                    'barcode_status' => 'A document cannot be PERM OUT without a disinfestation date (RFQ A1.2).',
+                ]);
+            }
+
             // RFQ App.1 #2 — Batch 50 is reserved for wills. Enforce centrally
             // (every path, not just the UI actions): a document placed in the
             // wills-reserve batch MUST belong to a wills series. Only evaluated
@@ -617,46 +608,6 @@ class Document extends Model implements AuditableContract, HasMedia, Sortable
                     }
                 }
             }
-        });
-
-        static::updating(function (Document $document): void {
-            if (! $document->isDirty('seal_number')) {
-                return;
-            }
-
-            $previous = $document->getOriginal('seal_number');
-            $new = $document->seal_number;
-
-            // Skip both-null transitions and pure whitespace-only changes:
-            // they add noise without auditable signal.
-            if ($previous === null && $new === null) {
-                return;
-            }
-            if (trim((string) $previous) === trim((string) $new)) {
-                return;
-            }
-
-            self::$pendingSealTransitions[$document->getKey()] = [
-                'previous' => $previous,
-                'new' => $new,
-            ];
-        });
-
-        static::updated(function (Document $document): void {
-            $key = $document->getKey();
-
-            if (! array_key_exists($key, self::$pendingSealTransitions)) {
-                return;
-            }
-
-            $transition = self::$pendingSealTransitions[$key];
-            unset(self::$pendingSealTransitions[$key]);
-
-            DocumentSealNumberHistory::recordChange(
-                document: $document,
-                previous: $transition['previous'],
-                new: $transition['new'],
-            );
         });
     }
 

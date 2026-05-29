@@ -37,11 +37,13 @@ function s3112_makeDoc(): Document
     ]);
 }
 
-it('§ 3.1.12 #1: DocumentFlag::TYPES lists all 10 RFQ-supported flag categories', function () {
-    expect(count(DocumentFlag::TYPES))->toBe(10);
+it('§ 3.1.12 #1: DocumentFlag::TYPES lists all 15 RFQ-supported flag categories (incl. the 6 colour-code mappings)', function () {
+    expect(count(DocumentFlag::TYPES))->toBe(15);
     foreach (['needs_review', 'missing_data', 'duplicate_suspect', 'damaged',
         'restoration_needed', 'wrongly_catalogued', 'authority_mismatch',
-        'barcode_issue', 'disinfestation_overdue', 'other'] as $t) {
+        'barcode_issue', 'disinfestation_overdue',
+        'entry_issue', 'location_check', 'not_disinfested_onsite',
+        'mould_treatment', 'fragment_sorted', 'other'] as $t) {
         expect(in_array($t, DocumentFlag::TYPES, true))->toBeTrue("Type {$t} should be in TYPES");
     }
 });

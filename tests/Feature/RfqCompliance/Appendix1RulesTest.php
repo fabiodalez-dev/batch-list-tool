@@ -13,7 +13,8 @@ use Illuminate\Foundation\Testing\RefreshDatabase;
 
 /**
  * RFQ Appendix 1 — Validation Rules. The five rules:
- *   #1 Batch numbers 33/34/36 cannot be used. Batch 50 reserved for wills.
+ *   #1 Batch 34 and 36 are unused/forbidden; batch 33 is RESERVED for old MAV boxes (valid, not forbidden).
+ *      Batch 50 reserved for wills.
  *   #2 Document cannot be marked PERM OUT unless it has a disinfestation date.
  *   #3 All In Situ boxes must reference a previous RAS box (unless explicitly NULL).
  *   #4 Legacy box types (MAV, STVC) cannot be created for new records.
@@ -42,15 +43,23 @@ function app1_makeBatch(int $repoId, int $n): Batch
     ]);
 }
 
-/* ─────────── Appendix 1 #1 — Forbidden Batch numbers 33/34/36 ─────────── */
+/* ─────────── Appendix 1 #1 — Forbidden Batch numbers 34/36; 33 is reserved (valid) ─────────── */
 
-it('§ App.1 #1: Batch::FORBIDDEN_NUMBERS constant lists exactly [33, 34, 36]', function () {
-    expect(Batch::FORBIDDEN_NUMBERS)->toBe([33, 34, 36]);
+it('§ App.1 #1: Batch::FORBIDDEN_NUMBERS constant lists exactly [34, 36] (batch 33 is reserved, not forbidden)', function () {
+    expect(Batch::FORBIDDEN_NUMBERS)->toBe([34, 36])
+        ->and(Batch::RESERVED_MAV_BATCH)->toBe(33);
 });
 
-it('§ App.1 #1: EntityResolver::resolveBatch(33) returns forbidden marker', function () {
+it('§ App.1 #1: Batch(33)->isForbidden() is false; isReservedMav() is true', function () {
+    $b = new Batch(['batch_number' => 33]);
+    expect($b->isForbidden())->toBeFalse()
+        ->and($b->isReservedMav())->toBeTrue();
+});
+
+it('§ App.1 #1: EntityResolver::resolveBatch(33) does NOT return forbidden marker (33 is reserved/valid)', function () {
     $res = EntityResolver::resolveBatch(33);
-    expect($res)->toHaveKey('forbidden')->and($res['forbidden'])->toBe(33);
+    // 33 is not in FORBIDDEN_NUMBERS — resolver returns null (batch not found in DB) rather than forbidden
+    expect($res)->toBeNull();
 });
 
 it('§ App.1 #1: EntityResolver::resolveBatch(36) returns forbidden marker', function () {

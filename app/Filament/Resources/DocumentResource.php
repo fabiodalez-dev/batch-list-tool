@@ -36,6 +36,7 @@ use Filament\Tables\Filters\TrashedFilter;
 use Filament\Tables\Table;
 use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Database\Eloquent\Model;
+use Illuminate\Support\Str;
 
 class DocumentResource extends Resource
 {
@@ -69,7 +70,6 @@ class DocumentResource extends Resource
         'dates',
         'notes',
         'deeds',
-        'seal_number',
         'nra_location',
         'museum_location',
         'accession_code_legacy',
@@ -195,6 +195,19 @@ class DocumentResource extends Resource
                             ->options(array_combine(Document::CURRENT_BOX_TYPES, Document::CURRENT_BOX_TYPES))
                             ->nullable()
                             ->helperText('Used for disinfestation planning: Big Brown Box counts as 2 boxes in the 250-box cycle limit.')),
+                        $g(Forms\Components\Select::make('custody_status')
+                            ->label('Custody status')
+                            // Options are derived from the const so they stay in
+                            // sync with the model; the label map keeps them readable.
+                            ->options(collect(Document::CUSTODY_STATUSES)
+                                ->mapWithKeys(fn (string $v): array => [$v => [
+                                    'in_box' => 'In box',
+                                    'not_in_box' => 'Not in box',
+                                    'mounted_no_box' => 'Mounted; no box',
+                                ][$v] ?? Str::headline($v)])
+                                ->all())
+                            ->default('in_box')
+                            ->native(false)),
                         $g(Forms\Components\TextInput::make('nra_location')->maxLength(500)
                             ->helperText('Legacy free-text. New records should use the Location Select above.')
                             ->columnSpanFull()),
@@ -203,11 +216,10 @@ class DocumentResource extends Resource
                             ->columnSpanFull()),
                     ]),
 
-                Section::make('Seal & disinfestation')
+                Section::make('Disinfestation')
                     ->columnSpanFull()
                     ->columns(3)
                     ->schema([
-                        $g(Forms\Components\TextInput::make('seal_number')->maxLength(50)),
                         $g(Forms\Components\DatePicker::make('disinfestation_date')->label('Disinfestation (current)')),
                         $g(Forms\Components\Toggle::make('is_in_disinfestation')
                             ->label('Currently in disinfestation')
@@ -622,12 +634,6 @@ class DocumentResource extends Resource
                             ->formatStateUsing(fn ($state): string => $state ? 'Yes' : 'No')
                             ->color(fn ($state): string => $state ? 'warning' : 'gray')
                             ->columnSpanFull(),
-                        TextEntry::make('seal_number')
-                            ->label('Current seal #')
-                            ->badge()
-                            ->color('primary')
-                            ->copyable()
-                            ->placeholder('—'),
                         RepeatableEntry::make('disinfestation_timeline_rows')
                             ->label('History')
                             ->state(fn (?Document $record): array => $record
@@ -654,7 +660,6 @@ class DocumentResource extends Resource
                         TextEntry::make('identifier')->badge()->color('primary')->copyable()->placeholder('—'),
                         TextEntry::make('catalogue_identifier')->label('Catalogue ID')->copyable()->placeholder('—'),
                         TextEntry::make('barcode_in')->label('Barcode (IN)')->copyable()->placeholder('—'),
-                        TextEntry::make('seal_number')->label('Seal #')->copyable()->placeholder('—'),
                     ]),
 
                 Section::make('Legacy box history (RAS / In Situ)')
@@ -1005,7 +1010,6 @@ class DocumentResource extends Resource
     {
         return [
             DocumentResource\RelationManagers\IdentifierHistoryRelationManager::class,
-            DocumentResource\RelationManagers\SealNumberHistoryRelationManager::class,
             DocumentResource\RelationManagers\FlagsRelationManager::class,
         ];
     }

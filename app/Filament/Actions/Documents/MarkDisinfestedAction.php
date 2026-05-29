@@ -112,7 +112,12 @@ final class MarkDisinfestedAction
                 // "Mark disinfested") expects this action to be the closing
                 // bookend: clear the in-flight flag and return barcode to IN.
                 $doc->is_in_disinfestation = false;
-                $doc->barcode_status = 'IN';
+                // Disinfestation returns a box to storage (IN) — but a PERM_OUT
+                // document has been permanently transferred and must NOT be
+                // silently pulled back in. Leave PERM_OUT untouched.
+                if ($doc->barcode_status !== 'PERM_OUT') {
+                    $doc->barcode_status = 'IN';
+                }
 
                 ActionSupport::logPivotChange(
                     document: $doc,
@@ -120,7 +125,7 @@ final class MarkDisinfestedAction
                     newValues: [
                         'disinfestation_date' => $date,
                         'is_in_disinfestation' => false,
-                        'barcode_status' => 'IN',
+                        'barcode_status' => $doc->barcode_status,
                     ],
                     oldValues: $oldValues,
                     tags: 'disinfestation,document',

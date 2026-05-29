@@ -305,7 +305,6 @@ class ImportSampleData extends Command
                     'status_1_alt' => trim((string) ($row[23] ?? '')) ?: null,
                     'barcode_ras_2_alt2' => trim((string) ($row[24] ?? '')) ?: null,
                     'status_2_alt' => trim((string) ($row[25] ?? '')) ?: null,
-                    'seal_number' => trim((string) ($row[26] ?? '')) ?: null,
                     'disinfestation_date_1' => $this->parseDate($row[27] ?? null),
                     'disinfestation_date_2' => $this->parseDate($row[28] ?? null),
                     'disinfestation_date_3' => $this->parseDate($row[29] ?? null),

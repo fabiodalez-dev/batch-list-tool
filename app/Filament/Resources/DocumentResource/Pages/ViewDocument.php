@@ -58,8 +58,8 @@ class ViewDocument extends ViewRecord
     }
 
     /**
-     * Render the relation-manager tabs (Identifier history, Seal number
-     * history, Issue flags) ABOVE the infolist instead of Filament's default
+     * Render the relation-manager tabs (Identifier history, Issue flags)
+     * ABOVE the infolist instead of Filament's default
      * below-everything position, so the document's history is the first thing
      * on the page. Mirrors the base ViewRecord::content() with the two
      * components swapped.

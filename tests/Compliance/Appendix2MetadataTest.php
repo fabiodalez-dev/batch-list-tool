@@ -27,7 +27,7 @@ describe('APP2-i RAS Box', function () {
     it('batches table accepts numbers 1-32 (Main Collection range)')->todo('Feature\\RfqCompliance\\Appendix1RulesTest');
     it('batch_number is unique per repository')->todo('Feature\\RfqCompliance\\Appendix1RulesTest');
     it('box_number is unique within a batch')->todo('Feature\\Resources\\BoxResourceTest');
-    it('seal_number history captures every change')->todo('Feature\\DocumentSealNumberHistoryTest');
+    it('box seal_number history captures every change')->todo('Feature\\Boxes\\BoxSealHistoryTest');
 })->group('rfq:app2-i');
 
 /* ─── APP2-ii In Situ Box ────────────────────────────────────────── */
@@ -223,10 +223,17 @@ describe('APP2-xvii Museum reference', function () {
 
 /* ─── APP2-xviii Flags by Type ───────────────────────────────────── */
 describe('APP2-xviii Colour coding -> document flags', function () {
-    test('10 type enums + 3 severity + 4 status are exhaustively typed', function () {
-        expect(DocumentFlag::TYPES)->toHaveCount(10)
+    test('15 type enums (incl. 6 colour-code mappings) + 3 severity + 4 status are exhaustively typed', function () {
+        expect(DocumentFlag::TYPES)->toHaveCount(15)
             ->and(DocumentFlag::SEVERITIES)->toEqualCanonicalizing(['info', 'warning', 'critical'])
             ->and(DocumentFlag::STATUSES)->toEqualCanonicalizing(['open', 'acknowledged', 'resolved', 'dismissed']);
+    });
+
+    test('the 6 RFQ App.2-xviii colour codes are each mapped to a registered flag type', function () {
+        expect(DocumentFlag::COLOUR_TYPES)->toHaveCount(6);
+        foreach (DocumentFlag::COLOUR_TYPES as $colour => $type) {
+            expect(in_array($type, DocumentFlag::TYPES, true))->toBeTrue("colour {$colour} -> {$type} missing from TYPES");
+        }
     });
     it('Open flags TernaryFilter on Document list filters has_open_flags=true')->todo('Feature\\Resources\\DocumentResource — TernaryFilter');
     it('FlagsByTypeReport groups COUNT/SUM(CASE) by type+severity')->todo('Feature\\Pages\\FlagsByTypeReportTest');

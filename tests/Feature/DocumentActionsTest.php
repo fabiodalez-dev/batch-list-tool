@@ -295,12 +295,14 @@ test('Move to batch updates batch_id and (by default) clears current_box_id', fu
     expect($doc->current_box_id)->toBeNull();
 });
 
-test('Move to batch refuses forbidden batch numbers (33, 34, 36)', function () {
+test('Move to batch refuses forbidden batch numbers (34, 36); allows reserved batch 33 (old MAV)', function () {
     $this->actingAs(actAs_role('super_admin'));
 
     $repo = repo_();
     $series = series_();
-    $forbidden = batch_($repo->id, 33);
+
+    // batch 34 is forbidden — move must be refused.
+    $forbidden = batch_($repo->id, 34);
     $doc = doc_($repo->id, $series->id);
 
     runAction(MoveToBatchAction::make(), [
@@ -310,6 +312,16 @@ test('Move to batch refuses forbidden batch numbers (33, 34, 36)', function () {
 
     $doc->refresh();
     expect($doc->batch_id)->not->toBe($forbidden->id);
+
+    // batch 33 is reserved (not forbidden) — move must succeed.
+    $reserved = batch_($repo->id, 33);
+    runAction(MoveToBatchAction::make(), [
+        'record' => $doc,
+        'data' => ['to_batch_id' => $reserved->id, 'clear_current_box' => true],
+    ]);
+
+    $doc->refresh();
+    expect($doc->batch_id)->toBe($reserved->id);
 });
 
 /* -------------------------------------------------------------------------
