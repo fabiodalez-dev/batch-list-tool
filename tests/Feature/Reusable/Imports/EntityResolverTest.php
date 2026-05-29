@@ -130,12 +130,15 @@ it('EntityResolver: resolveSeries falls back to title match', function () {
         ->and($res['series_id'])->toBe($s->id);
 });
 
-it('EntityResolver: resolveBatch returns forbidden marker for 33/34/36', function () {
-    foreach ([33, 34, 36] as $n) {
+it('EntityResolver: resolveBatch returns forbidden marker for 34/36; batch 33 is reserved (valid — returns null when not found)', function () {
+    // 34 and 36 are forbidden per RFQ Appendix 2.
+    foreach ([34, 36] as $n) {
         $res = EntityResolver::resolveBatch($n);
         expect($res)->toHaveKey('forbidden')
             ->and($res['forbidden'])->toBe($n);
     }
+    // 33 is reserved for old MAV boxes — NOT forbidden.
+    expect(EntityResolver::resolveBatch(33))->toBeNull();
 });
 
 it('EntityResolver: resolveBatch by number returns batch_id', function () {

@@ -18,8 +18,18 @@ class Batch extends Model implements AuditableContract
     use HasFactory;
     use SoftDeletes;
 
-    /** Reserved batch numbers — cannot be used (RFQ rule #1) */
-    public const FORBIDDEN_NUMBERS = [33, 34, 36];
+    /**
+     * Forbidden batch numbers — cannot be used for any record (RFQ Appendix 2).
+     * 34 and 36 are unused and will never be used.
+     * Note: 33 is NOT forbidden — it is reserved for old MAV boxes only; see RESERVED_MAV_BATCH.
+     */
+    public const FORBIDDEN_NUMBERS = [34, 36];
+
+    /**
+     * Batch number reserved exclusively for old MAV boxes (RFQ Appendix 2).
+     * It is a VALID batch number — it is NOT in FORBIDDEN_NUMBERS.
+     */
+    public const RESERVED_MAV_BATCH = 33;
 
     /** Batch number exclusively for wills documents (RWL, OWL) — RFQ rule #2 */
     public const WILLS_BATCH = 50;
@@ -67,6 +77,15 @@ class Batch extends Model implements AuditableContract
     public function isForbidden(): bool
     {
         return in_array($this->batch_number, self::FORBIDDEN_NUMBERS, true);
+    }
+
+    /**
+     * Returns true when this batch is the MAV-reserved batch (33).
+     * This is a VALID batch number — not forbidden — but restricted to old MAV boxes only.
+     */
+    public function isReservedMav(): bool
+    {
+        return $this->batch_number === self::RESERVED_MAV_BATCH;
     }
 
     public function isWillsOnly(): bool

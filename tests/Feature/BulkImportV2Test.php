@@ -195,13 +195,15 @@ test('EntityResolver series resolves by code from "CODE: Title" format', functio
         ->and($res['series_id'])->toBeInt();
 });
 
-test('EntityResolver batch refuses forbidden numbers 33, 34, 36', function () {
+test('EntityResolver batch refuses forbidden numbers 34 and 36; batch 33 is reserved (valid — returns null when not found)', function () {
     bi_makeAdmin();
 
     EntityResolver::flushMemo();
-    expect(EntityResolver::resolveBatch(33))->toBe(['forbidden' => 33]);
+    // 34 and 36 are forbidden per RFQ Appendix 2.
     expect(EntityResolver::resolveBatch(34))->toBe(['forbidden' => 34]);
     expect(EntityResolver::resolveBatch(36))->toBe(['forbidden' => 36]);
+    // 33 is reserved for old MAV boxes — NOT forbidden, resolver returns null (batch not in DB).
+    expect(EntityResolver::resolveBatch(33))->toBeNull();
 });
 
 /* ─── AuthorityImporter ──────────────────────────────────────────────── */
@@ -384,28 +386,47 @@ test('DocumentImporter F-001: short Creator token "Foo" does not fuzzy-match', f
     expect((string) ($doc->extra['creator_match_log'] ?? ''))->toBe('unresolved');
 });
 
-test('DocumentImporter rejects batch_number 33 (RFQ App.1 #1)', function () {
+test('DocumentImporter rejects forbidden batch_number 34 (RFQ App.1 #1); batch 33 is reserved (not forbidden)', function () {
     $repo = bi_repo();
     $u = bi_makeAdmin($repo->id);
     $this->actingAs($u);
     bi_series('REG');
 
+    // Batch 34 is forbidden per RFQ Appendix 2.
     try {
         bi_runImporter(DocumentImporter::class, [
-            'identifier' => 'DOC-B33-1',
+            'identifier' => 'DOC-B34-1',
             'series' => 'REG',
-            'batch_number' => 33,
+            'batch_number' => 34,
         ], $u->id);
-        $this->fail('Expected a validation exception for forbidden batch 33.');
+        $this->fail('Expected a validation exception for forbidden batch 34.');
     } catch (ValidationException $e) {
         expect($e->errors())->toHaveKey('batch_number');
     }
 
-    // And no row should have been inserted.
+    // No row should have been inserted for the forbidden batch.
     expect(
         Document::withoutGlobalScope(RepositoryScope::class)
-            ->where('identifier', 'DOC-B33-1')->exists()
+            ->where('identifier', 'DOC-B34-1')->exists()
     )->toBeFalse();
+
+    // Batch 33 is reserved for old MAV boxes — NOT forbidden.
+    // When batch 33 exists, documents can be imported into it.
+    Batch::withoutGlobalScope(RepositoryScope::class)->create([
+        'batch_number' => 33,
+        'type' => 'NOTARY_ACCESSION',
+        'repository_id' => $repo->id,
+        'is_active' => true,
+    ]);
+    bi_runImporter(DocumentImporter::class, [
+        'identifier' => 'DOC-B33-1',
+        'series' => 'REG',
+        'batch_number' => 33,
+    ], $u->id);
+    $doc = Document::withoutGlobalScope(RepositoryScope::class)
+        ->where('identifier', 'DOC-B33-1')->first();
+    expect($doc)->not->toBeNull()
+        ->and($doc->batch_id)->not->toBeNull();
 });
 
 test('DocumentImporter requires disinfestation_date when status is PERM_OUT', function () {
@@ -456,12 +477,13 @@ test('DocumentImporter requires disinfestation_date when status is PERM_OUT', fu
 
 /* ─── BatchImporter ──────────────────────────────────────────────────── */
 
-test('BatchImporter rejects batch_number 33 / 34 / 36 with a validation error', function () {
+test('BatchImporter rejects batch_number 34 and 36 with a validation error; allows batch 33 (reserved, not forbidden)', function () {
     $repo = bi_repo();
     $u = bi_makeAdmin($repo->id);
     $this->actingAs($u);
 
-    foreach ([33, 34, 36] as $forbidden) {
+    // 34 and 36 are forbidden per RFQ Appendix 2.
+    foreach ([34, 36] as $forbidden) {
         try {
             bi_runImporter(BatchImporter::class, [
                 'batch_number' => $forbidden,
@@ -473,11 +495,21 @@ test('BatchImporter rejects batch_number 33 / 34 / 36 with a validation error', 
         }
     }
 
-    // None should have been inserted.
+    // None of the forbidden ones should have been inserted.
     expect(
         Batch::withoutGlobalScope(RepositoryScope::class)
-            ->whereIn('batch_number', [33, 34, 36])->count()
+            ->whereIn('batch_number', [34, 36])->count()
     )->toBe(0);
+
+    // Batch 33 is reserved for old MAV boxes — it IS importable.
+    bi_runImporter(BatchImporter::class, [
+        'batch_number' => 33,
+        'type' => 'NOTARY_ACCESSION',
+    ], $u->id);
+    expect(
+        Batch::withoutGlobalScope(RepositoryScope::class)
+            ->where('batch_number', 33)->exists()
+    )->toBeTrue();
 });
 
 test('BatchImporter auto-derives type=NOTARY_ACCESSION for batch_number >= 30', function () {
