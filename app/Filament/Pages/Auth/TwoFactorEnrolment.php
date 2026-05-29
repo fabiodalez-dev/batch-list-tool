@@ -64,6 +64,16 @@ class TwoFactorEnrolment extends Page
 
     protected static ?string $slug = 'two-factor-enrolment';
 
+    /**
+     * Hidden from the sidebar: it would be a confusing second "two-factor"
+     * entry next to TwoFactorProfile. The enrolment flow stays reachable by
+     * route (from the profile / management page and the forced-2FA login flow).
+     */
+    public static function shouldRegisterNavigation(): bool
+    {
+        return false;
+    }
+
     public static function canAccess(): bool
     {
         return auth()->check();
