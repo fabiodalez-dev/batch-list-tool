@@ -72,3 +72,14 @@ it('does NOT record history when a box is created without a seal number', functi
 
     expect($box->sealNumberHistory()->count())->toBe(0);
 });
+
+it('stamps repository_id on the seal-history row, mirroring Box.batch.repository_id', function () {
+    $box = Box::create([
+        'box_type' => 'RAS',
+        'box_number' => 6,
+        'batch_id' => $this->batch->id,
+        'seal_number' => 'S-700',
+    ]);
+
+    expect($box->sealNumberHistory()->first()->repository_id)->toBe($this->repo->id);
+});

@@ -50,7 +50,7 @@ it('TemplateGenerator: headersFor("series") returns the trimmed 6-column contrac
 it('TemplateGenerator: headersFor("document") preserves the duplicated provenance headers', function () {
     $headers = TemplateGenerator::headersFor('document');
     expect($headers)->toEqual(TemplateGenerator::DOCUMENT_HEADERS)
-        ->and($headers)->toHaveCount(49)
+        ->and($headers)->toHaveCount(48)
         // "Barcode (IN)" appears at columns 13 and 22 (0-based 12 / 21)
         ->and($headers[12])->toBe('Barcode (IN)')
         ->and($headers[21])->toBe('Barcode (IN)');

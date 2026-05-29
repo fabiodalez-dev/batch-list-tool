@@ -346,6 +346,7 @@ class Box extends Model implements AuditableContract, Sortable
             'changed_by_user_id' => Auth::id(),
             'changed_at' => now(),
             'notes' => $notes,
+            'repository_id' => $this->batch?->repository_id,
         ]);
     }
 

@@ -36,6 +36,7 @@ use Filament\Tables\Filters\TrashedFilter;
 use Filament\Tables\Table;
 use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Database\Eloquent\Model;
+use Illuminate\Support\Str;
 
 class DocumentResource extends Resource
 {
@@ -196,11 +197,15 @@ class DocumentResource extends Resource
                             ->helperText('Used for disinfestation planning: Big Brown Box counts as 2 boxes in the 250-box cycle limit.')),
                         $g(Forms\Components\Select::make('custody_status')
                             ->label('Custody status')
-                            ->options([
-                                'in_box' => 'In box',
-                                'not_in_box' => 'Not in box',
-                                'mounted_no_box' => 'Mounted; no box',
-                            ])
+                            // Options are derived from the const so they stay in
+                            // sync with the model; the label map keeps them readable.
+                            ->options(collect(Document::CUSTODY_STATUSES)
+                                ->mapWithKeys(fn (string $v): array => [$v => [
+                                    'in_box' => 'In box',
+                                    'not_in_box' => 'Not in box',
+                                    'mounted_no_box' => 'Mounted; no box',
+                                ][$v] ?? Str::headline($v)])
+                                ->all())
                             ->default('in_box')
                             ->native(false)),
                         $g(Forms\Components\TextInput::make('nra_location')->maxLength(500)

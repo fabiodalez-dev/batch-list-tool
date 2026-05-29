@@ -566,6 +566,21 @@ class Document extends Model implements AuditableContract, HasMedia, Sortable
                 $document->current_box_type = $normalized;
             }
 
+            // Gate `custody_status` in PHP too: the MySQL CHECK does not run on
+            // SQLite, so mirror the digitised / current_box_type guards above.
+            // Normalise case-insensitively (consistency with the siblings),
+            // then reject anything outside the enum.
+            if ($document->custody_status !== null) {
+                $normalized = self::canonicalEnumValue($document->custody_status, self::CUSTODY_STATUSES);
+                if ($normalized === null) {
+                    throw ValidationException::withMessages([
+                        'custody_status' => "Invalid custody_status '{$document->custody_status}'. Allowed: "
+                            . implode(', ', self::CUSTODY_STATUSES),
+                    ]);
+                }
+                $document->custody_status = $normalized;
+            }
+
             // A1.2 — a document cannot be PERM_OUT without a disinfestation date.
             if ($document->barcode_status === 'PERM_OUT' && empty($document->disinfestation_date)) {
                 throw ValidationException::withMessages([

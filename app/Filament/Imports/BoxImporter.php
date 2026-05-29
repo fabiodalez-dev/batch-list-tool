@@ -148,7 +148,10 @@ class BoxImporter extends Importer
     }
 
     /**
-     * Idempotent matching: prefer barcode (unique), then (batch_id, box_number).
+     * Idempotent matching: only the (unique) barcode is used for duplicate
+     * detection. A (batch_id, box_number) fallback is NOT implemented — see the
+     * note in the body: batch_id is resolved later in the column fill closures,
+     * not here, so barcode-less rows always insert a new Box.
      */
     public function resolveRecord(): ?Box
     {

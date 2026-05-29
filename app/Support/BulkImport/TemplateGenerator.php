@@ -89,7 +89,9 @@ final class TemplateGenerator
         'Barcode RAS 1', 'Status 1', 'Barcode RAS 2', 'Status 2',
         'Barcode RAS 3', 'Status 3', 'Barcode RAS 4', 'Status 4',
         'Barcode (IN)', 'Barcode RAS 2', 'Status 1', 'Barcode RAS 2', 'Status 2',
-        'Seal Number', 'Disinfestation Date', 'Disinfestation Date',
+        // Seal Number is a BOX field (box_seal_number_history), not a document
+        // field — intentionally NOT emitted in the document template.
+        'Disinfestation Date', 'Disinfestation Date',
         'Disinfestation Date', 'Catalogue Identifier', 'NRA Location',
         'Museum Location', 'Identifier', 'Practice', 'Volume', 'Creator',
         'Dates', 'Deeds', 'Document Type', 'Series', 'Current Box', 'Note',

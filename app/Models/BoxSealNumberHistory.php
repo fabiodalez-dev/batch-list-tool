@@ -2,6 +2,7 @@
 
 namespace App\Models;
 
+use App\Models\Concerns\BelongsToRepository;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
 
@@ -15,9 +16,15 @@ use Illuminate\Database\Eloquent\Relations\BelongsTo;
  *
  * Rows are written by the Box model's `saved` hook; there is no public
  * create surface in the UI (history is immutable).
+ *
+ * The `repository_id` is mirrored from the parent box's batch for tenant
+ * scoping (boxes themselves don't carry a repository_id column), mirroring
+ * BoxBarcodeHistory.
  */
 class BoxSealNumberHistory extends Model
 {
+    use BelongsToRepository;
+
     protected $table = 'box_seal_number_history';
 
     protected $fillable = [
@@ -27,6 +34,7 @@ class BoxSealNumberHistory extends Model
         'changed_by_user_id',
         'changed_at',
         'notes',
+        'repository_id',
     ];
 
     protected $casts = [

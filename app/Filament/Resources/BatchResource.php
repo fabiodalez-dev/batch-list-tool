@@ -56,7 +56,9 @@ class BatchResource extends Resource
                             ->required()
                             ->numeric()
                             ->minValue(1)
-                            // RFQ rule #1: batches 33, 34, 36 are reserved/forbidden.
+                            // RFQ rule #1: batches 34 and 36 are forbidden (unused,
+                            // never to be used); batch 33 is reserved for old MAV
+                            // boxes and remains a valid number.
                             // The Batch model defines FORBIDDEN_NUMBERS — we use the
                             // model helper so the rule has a single source of truth
                             // (model const + form validator + DB CHECK on MySQL).
