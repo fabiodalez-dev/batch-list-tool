@@ -134,7 +134,11 @@ it('requires a password on create', function () {
         ->assertHasFormErrors(['password' => 'required']);
 });
 
-it('exposes all role labels via roleOptions', function () {
+it('exposes all role labels via roleOptions when acting as super_admin', function () {
+    // roleOptions() filters out super_admin for non-super_admin callers,
+    // so we must act as a super_admin to see the full set.
+    $this->actingAs(actAsSuperAdmin_userres());
+
     $options = UserResource::roleOptions();
 
     expect($options)->toMatchArray([

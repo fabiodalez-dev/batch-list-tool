@@ -34,15 +34,20 @@ class UserResource extends Resource
     /**
      * All assignable role slugs mapped to their RFQ display labels.
      *
-     * NOTE: Task 4 will add escalation filtering (an admin must not be able to
-     * grant super_admin). For now this returns the full set unfiltered.
+     * super_admin is only visible to users who already hold that role —
+     * an admin must not be able to grant (or even see) super_admin.
      *
      * @return array<string, string>
      */
     public static function roleOptions(): array
     {
+        $isSuperAdmin = auth()->user()?->hasRole('super_admin') ?? false;
+
         $options = [];
         foreach (array_keys(RoleLabels::MAP) as $slug) {
+            if ($slug === 'super_admin' && ! $isSuperAdmin) {
+                continue;
+            }
             $options[$slug] = RoleLabels::for($slug);
         }
 
@@ -103,7 +108,9 @@ class UserResource extends Resource
                             // `role` is not a User column — it is synced into
                             // spatie/laravel-permission by the page classes.
                             ->dehydrated(false)
-                            ->formatStateUsing(fn (?User $record): ?string => $record?->roles->first()?->name),
+                            ->formatStateUsing(fn (?User $record): ?string => $record?->roles->first()?->name)
+                            // Self-protection: cannot change own role (prevents accidental lock-out).
+                            ->disabled(fn (?User $record): bool => $record?->is(auth()->user()) ?? false),
                         Forms\Components\Select::make('repositories')
                             ->multiple()
                             ->relationship('repositories', 'name')
@@ -115,7 +122,9 @@ class UserResource extends Resource
                             ->searchable()
                             ->preload(),
                         Forms\Components\Toggle::make('is_active')
-                            ->default(true),
+                            ->default(true)
+                            // Self-protection: cannot deactivate own account (prevents lock-out).
+                            ->disabled(fn (?User $record): bool => $record?->is(auth()->user()) ?? false),
                     ]),
             ]);
     }

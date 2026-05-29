@@ -4,6 +4,7 @@ namespace App\Filament\Resources\UserResource\Pages;
 
 use App\Filament\Resources\UserResource;
 use Filament\Resources\Pages\CreateRecord;
+use Illuminate\Validation\ValidationException;
 
 class CreateUser extends CreateRecord
 {
@@ -19,7 +20,17 @@ class CreateUser extends CreateRecord
     {
         // `role` is dehydrated(false) on the form, so it never reaches $data —
         // read it from the raw form state instead.
-        $this->assignedRole = $this->data['role'] ?? null;
+        $role = $this->data['role'] ?? null;
+
+        // Defence-in-depth: reject super_admin escalation if the acting user is
+        // not already a super_admin, regardless of what the form UI shows.
+        if ($role === 'super_admin' && ! auth()->user()?->hasRole('super_admin')) {
+            throw ValidationException::withMessages([
+                'role' => __('You do not have permission to assign the super_admin role.'),
+            ]);
+        }
+
+        $this->assignedRole = $role;
 
         // New users always start with a forced password change.
         $data['must_change_password'] = true;
