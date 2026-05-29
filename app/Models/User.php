@@ -95,4 +95,28 @@ class User extends Authenticatable implements AuditableContract, FilamentUser
             'must_change_password' => 'boolean',
         ];
     }
+
+    /**
+     * Clear `must_change_password` when a user changes their OWN password.
+     *
+     * The edge-case rule: the admin "reset password" action deliberately sets
+     * `password` AND `must_change_password = true` for a DIFFERENT user. We
+     * must NOT clear the flag there. The guard is:
+     *   auth()->check() AND auth()->id() === this user's PK.
+     *
+     * Uses the same `static::saving(...)` pattern as Box::booted().
+     */
+    protected static function booted(): void
+    {
+        static::saving(function (self $user): void {
+            if (
+                $user->must_change_password
+                && $user->isDirty('password')
+                && auth()->check()
+                && (int) auth()->id() === (int) $user->getKey()
+            ) {
+                $user->must_change_password = false;
+            }
+        });
+    }
 }

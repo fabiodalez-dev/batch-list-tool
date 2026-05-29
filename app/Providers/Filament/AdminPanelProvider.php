@@ -8,6 +8,7 @@ use App\Filament\Widgets\DocumentsPerSeriesChart;
 use App\Filament\Widgets\PendingDisinfestationTable;
 use App\Filament\Widgets\RecentActivityWidget;
 use App\Filament\Widgets\StatsOverviewWidget;
+use App\Http\Middleware\EnsurePasswordChanged;
 use App\Support\Avatars\LocalAvatarProvider;
 use BezhanSalleh\FilamentShield\FilamentShieldPlugin;
 use Filament\FontProviders\LocalFontProvider;
@@ -109,6 +110,7 @@ class AdminPanelProvider extends PanelProvider
             ])
             ->authMiddleware([
                 Authenticate::class,
+                EnsurePasswordChanged::class,
             ]);
     }
 }
