@@ -44,7 +44,23 @@ class DocumentFlag extends Model implements AuditableContract
         'authority_mismatch',
         'barcode_issue',
         'disinfestation_overdue',
+        // RFQ App.2-xviii colour-coding equivalents:
+        'entry_issue',            // Pink  — issue with the entry; needs a note
+        'location_check',         // Orange — quarterly stock-take location check
+        'not_disinfested_onsite', // Grey  — brought on-site but not disinfested
+        'mould_treatment',        // Red   — undergoing mould treatment
+        'fragment_sorted',        // Yellow — fragments sorted into boxes
         'other',
+    ];
+
+    /** RFQ App.2-xviii legacy colour-code → structured flag type. */
+    public const COLOUR_TYPES = [
+        'pink' => 'entry_issue',
+        'brown' => 'barcode_issue',
+        'orange' => 'location_check',
+        'grey' => 'not_disinfested_onsite',
+        'red' => 'mould_treatment',
+        'yellow' => 'fragment_sorted',
     ];
 
     public const SEVERITIES = ['info', 'warning', 'critical'];
