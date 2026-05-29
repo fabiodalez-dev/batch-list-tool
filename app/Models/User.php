@@ -30,7 +30,11 @@ class User extends Authenticatable implements AuditableContract, FilamentUser
     use TwoFactorAuthenticatable;
 
     protected $fillable = [
-        'name', 'email', 'password', 'default_repository_id', 'is_active',
+        'name', 'email', 'password', 'default_repository_id', 'is_active', 'must_change_password',
+    ];
+
+    protected $attributes = [
+        'must_change_password' => false,
     ];
 
     protected $hidden = [
@@ -88,6 +92,7 @@ class User extends Authenticatable implements AuditableContract, FilamentUser
             'email_verified_at' => 'datetime',
             'password' => 'hashed',
             'is_active' => 'boolean',
+            'must_change_password' => 'boolean',
         ];
     }
 }
