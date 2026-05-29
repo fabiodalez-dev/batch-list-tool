@@ -194,6 +194,15 @@ class DocumentResource extends Resource
                             ->options(array_combine(Document::CURRENT_BOX_TYPES, Document::CURRENT_BOX_TYPES))
                             ->nullable()
                             ->helperText('Used for disinfestation planning: Big Brown Box counts as 2 boxes in the 250-box cycle limit.')),
+                        $g(Forms\Components\Select::make('custody_status')
+                            ->label('Custody status')
+                            ->options([
+                                'in_box' => 'In box',
+                                'not_in_box' => 'Not in box',
+                                'mounted_no_box' => 'Mounted; no box',
+                            ])
+                            ->default('in_box')
+                            ->native(false)),
                         $g(Forms\Components\TextInput::make('nra_location')->maxLength(500)
                             ->helperText('Legacy free-text. New records should use the Location Select above.')
                             ->columnSpanFull()),

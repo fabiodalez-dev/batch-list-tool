@@ -83,6 +83,18 @@ class Document extends Model implements AuditableContract, HasMedia, Sortable
      */
     public const CURRENT_BOX_TYPES = ['RAS Box', 'Big Brown Box', 'Small Brown Box'];
 
+    /**
+     * RFQ-2026-06 App.2-ii — physical custody categories for a document.
+     * Stored in `documents.custody_status`; default is `in_box`.
+     *
+     * - `in_box`        — document is physically inside a box
+     * - `not_in_box`    — in situ at NRA, not yet boxed
+     * - `mounted_no_box`— framed / mounted; no box applicable
+     *
+     * @var array<int,string>
+     */
+    public const CUSTODY_STATUSES = ['in_box', 'not_in_box', 'mounted_no_box'];
+
     public array $sortable = [
         'order_column_name' => 'sort_order',
         'sort_when_creating' => true,
@@ -110,7 +122,7 @@ class Document extends Model implements AuditableContract, HasMedia, Sortable
         'in_situ_box_1', 'in_situ_box_2', 'in_situ_box_3',
         'ras_1_box_destroyed', 'ras_2_box_destroyed',
         'in_situ_box_1_destroyed', 'in_situ_box_2_destroyed', 'in_situ_box_3_destroyed',
-        'barcode_in', 'barcode_status', 'barcode_ras_1', 'status_1', 'barcode_ras_2', 'status_2',
+        'barcode_in', 'barcode_status', 'custody_status', 'barcode_ras_1', 'status_1', 'barcode_ras_2', 'status_2',
         'barcode_ras_3', 'status_3', 'barcode_ras_4', 'status_4',
         'barcode_in_2', 'barcode_ras_2_alt', 'status_1_alt',
         'barcode_ras_2_alt2', 'status_2_alt',
