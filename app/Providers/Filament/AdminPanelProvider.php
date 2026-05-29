@@ -2,6 +2,7 @@
 
 namespace App\Providers\Filament;
 
+use App\Filament\Pages\Auth\EditProfile;
 use App\Filament\Pages\Auth\TwoFactorLogin;
 use App\Filament\Widgets\DocumentsPerBatchChart;
 use App\Filament\Widgets\DocumentsPerSeriesChart;
@@ -51,7 +52,7 @@ class AdminPanelProvider extends PanelProvider
             // Users without 2FA enrolment authenticate exactly as before.
             ->login(TwoFactorLogin::class)
             ->passwordReset()
-            ->profile()
+            ->profile(EditProfile::class)
             // Security Baseline §15: NO external CDNs at runtime —
             // Inter font is served from /fonts/inter/ (rsms/inter v4.1, OFL-1.1)
             ->font(
