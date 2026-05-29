@@ -783,3 +783,12 @@ body:has(.fi-simple-main),
     background-color: var(--brand-orange-200);
     color: var(--coffee-900);
 }
+
+/* Auth pages (login / password-reset / 2FA): larger brand logo.
+   Scoped to .fi-simple-header so the topbar logo stays at its panel-wide
+   brandLogoHeight (2.25rem). !important overrides the inline height that
+   ->brandLogoHeight() prints on the <img>. */
+.fi-simple-header .fi-logo {
+    height: 3.5rem !important;
+    width: auto;
+}

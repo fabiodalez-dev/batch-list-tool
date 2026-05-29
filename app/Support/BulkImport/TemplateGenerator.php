@@ -329,6 +329,7 @@ final class TemplateGenerator
             'series' => 'Series',
             'batch' => 'Batches',
             'box' => 'Boxes',
+            'location' => 'Locations',
             'document' => 'Documents',
             default => 'Template',
         };
