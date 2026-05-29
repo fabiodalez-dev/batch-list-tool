@@ -57,18 +57,6 @@ class ViewDocument extends ViewRecord
         return $identifier . ' — ' . $author;
     }
 
-    protected function getHeaderActions(): array
-    {
-        return [
-            Actions\EditAction::make(),
-            ActionGroup::make(DocumentActionGroup::singleHeaderActions())
-                ->label('Actions')
-                ->icon('heroicon-o-bolt')
-                ->color('primary')
-                ->button(),
-        ];
-    }
-
     /**
      * Render the relation-manager tabs (Identifier history, Seal number
      * history, Issue flags) ABOVE the infolist instead of Filament's default
@@ -90,5 +78,17 @@ class ViewDocument extends ViewRecord
                 ? $this->getInfolistContentComponent()
                 : $this->getFormContentComponent(),
         ]);
+    }
+
+    protected function getHeaderActions(): array
+    {
+        return [
+            Actions\EditAction::make(),
+            ActionGroup::make(DocumentActionGroup::singleHeaderActions())
+                ->label('Actions')
+                ->icon('heroicon-o-bolt')
+                ->color('primary')
+                ->button(),
+        ];
     }
 }

@@ -18,6 +18,8 @@ use Filament\Schemas\Schema;
  *
  * NOTE: The default-repository selector was moved to the Profile page
  * (EditProfile) to avoid duplication. It is no longer rendered here.
+ *
+ * @property-read Schema $form
  */
 class PreferencesPage extends Page
 {
@@ -58,7 +60,7 @@ class PreferencesPage extends Page
         $user = auth()->user();
 
         $this->form->fill([
-            'preferred_page_size' => $user?->preferred_page_size ?? 25,
+            'preferred_page_size' => $user->preferred_page_size ?? 25,
             'locale' => $user?->locale,
             'timezone' => $user?->timezone,
         ]);
@@ -115,7 +117,7 @@ class PreferencesPage extends Page
         $state = $this->form->getState();
 
         $user = auth()->user();
-        abort_unless($user, 403);
+        abort_unless($user !== null, 403);
 
         $user->update([
             'preferred_page_size' => $state['preferred_page_size'] ?? 25,

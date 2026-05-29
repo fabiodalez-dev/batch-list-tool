@@ -23,6 +23,8 @@ use Filament\Schemas\Schema;
  * {@see AdminPanelProvider} on the next request.
  *
  * Gated to super_admin / admin; viewers are 403-ed on mount.
+ *
+ * @property-read Schema $form
  */
 class BrandingPage extends Page
 {

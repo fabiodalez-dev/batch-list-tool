@@ -59,7 +59,7 @@ it('renders every parameter-free admin GET page without a server error', functio
 
         try {
             $status = $this->get('/' . $uri)->status();
-        } catch (\Throwable $e) {
+        } catch (Throwable $e) {
             $failures[] = sprintf('%s threw %s: %s', $uri, $e::class, $e->getMessage());
 
             continue;

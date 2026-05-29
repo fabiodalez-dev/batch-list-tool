@@ -19,6 +19,12 @@ use OwenIt\Auditing\Contracts\Auditable as AuditableContract;
 use OwenIt\Auditing\Models\Audit;
 use Spatie\Permission\Traits\HasRoles;
 
+/**
+ * @property bool $must_change_password
+ * @property int $preferred_page_size
+ * @property string|null $locale
+ * @property string|null $timezone
+ */
 class User extends Authenticatable implements AuditableContract, FilamentUser
 {
     /** @use HasFactory<UserFactory> */

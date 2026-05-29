@@ -27,7 +27,7 @@ class UserPolicy
         return $u->can('create_user');
     }
 
-    public function update(AuthUser $u, User $m): bool
+    public function update(User $u, User $m): bool
     {
         if (! $u->can('update_user')) {
             return false;
@@ -39,12 +39,12 @@ class UserPolicy
         return true;
     }
 
-    public function delete(AuthUser $u, User $m): bool
+    public function delete(User $u, User $m): bool
     {
         if (! $u->can('delete_user')) {
             return false;
         }
-        if (method_exists($u, 'is') && $u->is($m)) {
+        if ($u->is($m)) {
             return false; // no self-delete
         }
         if ($m->hasRole('super_admin') && ! $u->hasRole('super_admin')) {
@@ -64,9 +64,9 @@ class UserPolicy
         return $u->can('restore_user');
     }
 
-    public function forceDelete(AuthUser $u, User $m): bool
+    public function forceDelete(User $u, User $m): bool
     {
-        return $u->can('force_delete_user') && ! (method_exists($u, 'is') && $u->is($m));
+        return $u->can('force_delete_user') && ! $u->is($m);
     }
 
     public function forceDeleteAny(AuthUser $u): bool

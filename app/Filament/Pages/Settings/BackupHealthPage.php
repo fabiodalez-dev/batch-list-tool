@@ -28,6 +28,8 @@ use Illuminate\Support\Facades\Storage;
  *     (keep_daily / keep_weekly / keep_monthly).
  *
  * Gated to super_admin / admin; viewers receive a 403 on mount.
+ *
+ * @property-read Schema $form
  */
 class BackupHealthPage extends Page
 {

@@ -23,6 +23,8 @@ use Filament\Schemas\Schema;
  * config('audit.enabled').
  *
  * Gated to super_admin ONLY; admins and viewers receive 403 on mount.
+ *
+ * @property-read Schema $form
  */
 class AuditSettingsPage extends Page
 {
