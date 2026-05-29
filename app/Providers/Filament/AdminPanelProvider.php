@@ -9,6 +9,7 @@ use App\Filament\Widgets\PendingDisinfestationTable;
 use App\Filament\Widgets\RecentActivityWidget;
 use App\Filament\Widgets\StatsOverviewWidget;
 use App\Http\Middleware\EnsurePasswordChanged;
+use App\Settings\BrandingSettings;
 use App\Support\Avatars\LocalAvatarProvider;
 use BezhanSalleh\FilamentShield\FilamentShieldPlugin;
 use Filament\FontProviders\LocalFontProvider;
@@ -24,23 +25,26 @@ use Illuminate\Cookie\Middleware\EncryptCookies;
 use Illuminate\Foundation\Http\Middleware\VerifyCsrfToken;
 use Illuminate\Routing\Middleware\SubstituteBindings;
 use Illuminate\Session\Middleware\StartSession;
+use Illuminate\Support\Facades\Storage;
 use Illuminate\View\Middleware\ShareErrorsFromSession;
 
 class AdminPanelProvider extends PanelProvider
 {
     public function panel(Panel $panel): Panel
     {
+        [$brandName, $brandLogo, $brandLogoHeight] = $this->resolveBranding();
+
         return $panel
             ->default()
             ->id('admin')
             ->path('admin')
-            ->brandName('Batch List Tool')
+            ->brandName($brandName)
             // Square NAf foundation mark (raster). Square aspect ratio needs a
             // taller height than the previous horizontal wordmark would have
             // tolerated; 2.25rem keeps the mark legible without breaking the
             // 64-px topbar vertical rhythm.
-            ->brandLogo(asset('images/brand-logo.png'))
-            ->brandLogoHeight('2.25rem')
+            ->brandLogo($brandLogo)
+            ->brandLogoHeight($brandLogoHeight)
             // RFQ §3.1.7 hardening — TwoFactorLogin is a stock Login subclass
             // that re-routes users with a confirmed TOTP secret to Fortify's
             // /two-factor-challenge endpoint after their password is validated.
@@ -112,5 +116,44 @@ class AdminPanelProvider extends PanelProvider
                 Authenticate::class,
                 EnsurePasswordChanged::class,
             ]);
+    }
+
+    /**
+     * Resolve branding values from BrandingSettings, falling back to hard-coded
+     * defaults when the settings table does not exist yet (fresh install, test
+     * isolation, CLI commands that run before migrations).
+     *
+     * Returns [$brandName, $brandLogo, $brandLogoHeight].
+     *
+     * @return array{string, string, string}
+     */
+    private function resolveBranding(): array
+    {
+        try {
+            $settings = app(BrandingSettings::class);
+
+            $brandName = $settings->brand_name ?: 'Batch List Tool';
+            $brandLogoHeight = $settings->logo_height ?: '2.25rem';
+
+            // Use the stored upload path only when it resolves to a locally
+            // served asset — never emit an external URL.
+            $logoPath = $settings->logo_path ?? '';
+            if (
+                $logoPath !== ''
+                && $logoPath !== 'images/brand-logo.png'
+                && Storage::disk('public')->exists($logoPath)
+            ) {
+                $brandLogo = Storage::disk('public')->url($logoPath);
+            } else {
+                $brandLogo = asset('images/brand-logo.png');
+            }
+        } catch (\Throwable) {
+            // Settings table missing (fresh install, migration not yet run).
+            $brandName = 'Batch List Tool';
+            $brandLogo = asset('images/brand-logo.png');
+            $brandLogoHeight = '2.25rem';
+        }
+
+        return [$brandName, $brandLogo, $brandLogoHeight];
     }
 }
