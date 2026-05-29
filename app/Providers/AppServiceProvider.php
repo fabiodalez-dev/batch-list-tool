@@ -2,10 +2,17 @@
 
 namespace App\Providers;
 
+use App\Listeners\LogAuthenticationEvent;
 use App\Models\Document;
 use App\Models\User;
 use App\Observers\DocumentObserver;
 use App\Settings\AuditSettings;
+use Illuminate\Auth\Events\Failed;
+use Illuminate\Auth\Events\Lockout;
+use Illuminate\Auth\Events\Login;
+use Illuminate\Auth\Events\Logout;
+use Illuminate\Auth\Events\PasswordReset;
+use Illuminate\Support\Facades\Event;
 use Illuminate\Support\Facades\Gate;
 use Illuminate\Support\ServiceProvider;
 use Laravel\Telescope\TelescopeServiceProvider;
@@ -37,6 +44,15 @@ class AppServiceProvider extends ServiceProvider
     public function boot(): void
     {
         Document::observe(DocumentObserver::class);
+
+        // Authentication event listeners — write every login lifecycle event to
+        // the audit trail (RFQ §3.1.5). Registered here to mirror the
+        // LogImpersonation pattern (no separate EventServiceProvider needed).
+        Event::listen(Login::class, [LogAuthenticationEvent::class, 'handleLogin']);
+        Event::listen(Logout::class, [LogAuthenticationEvent::class, 'handleLogout']);
+        Event::listen(Failed::class, [LogAuthenticationEvent::class, 'handleFailed']);
+        Event::listen(Lockout::class, [LogAuthenticationEvent::class, 'handleLockout']);
+        Event::listen(PasswordReset::class, [LogAuthenticationEvent::class, 'handlePasswordReset']);
 
         // Mirror AuditSettings::enabled at runtime so that toggling the Audit
         // settings page actually stops new audit rows being written.
