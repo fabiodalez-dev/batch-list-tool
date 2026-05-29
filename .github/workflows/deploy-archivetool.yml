@@ -13,8 +13,19 @@ name: Deploy to archivetool.eu
 # Optional secrets (no-op if absent):
 #   SLACK_WEBHOOK_URL       - send a deploy notification
 
+# Trigger model: instead of deploying on every raw push to main, we deploy
+# only AFTER the CI suites finish green for that commit. Pushing to main is
+# allowed directly (no PR ruleset), but production is gated on tests passing.
+#   push to main ─► "Tests & Quality" + "RFQ-2026-06 Compliance Suite" run
+#                 └► on completion ─► this workflow ─► gate job ─► deploy
+# The `gate` job confirms ALL gating suites concluded success for the exact
+# commit before the `deploy` job runs.
 on:
-  push:
+  workflow_run:
+    workflows:
+      - 'Tests & Quality'
+      - 'RFQ-2026-06 Compliance Suite'
+    types: [completed]
     branches: [main]
   workflow_dispatch:
     inputs:
@@ -28,12 +39,93 @@ concurrency:
   cancel-in-progress: false
 
 jobs:
+  # ── Gate: only green if every required CI suite passed for this commit ──────
+  gate:
+    name: CI gate
+    runs-on: ubuntu-latest
+    if: github.repository == 'fabiodalez-dev/batch-list-tool'
+    permissions:
+      contents: read
+      actions: read
+    outputs:
+      go: ${{ steps.check.outputs.go }}
+      ref: ${{ steps.check.outputs.ref }}
+      branch: ${{ steps.check.outputs.branch }}
+    steps:
+      - name: Decide whether to deploy
+        id: check
+        env:
+          GH_TOKEN: ${{ github.token }}
+          REPO: ${{ github.repository }}
+          EVENT: ${{ github.event_name }}
+          DISPATCH_BRANCH: ${{ github.event.inputs.branch || 'main' }}
+          RUN_EVENT: ${{ github.event.workflow_run.event }}
+          RUN_CONCLUSION: ${{ github.event.workflow_run.conclusion }}
+          HEAD_SHA: ${{ github.event.workflow_run.head_sha }}
+        run: |
+          set -euo pipefail
+
+          # Manual dispatch always deploys the requested branch, no CI gate.
+          if [[ "${EVENT}" == "workflow_dispatch" ]]; then
+            echo "Manual dispatch — deploying '${DISPATCH_BRANCH}'."
+            {
+              echo "go=true"
+              echo "ref=${DISPATCH_BRANCH}"
+              echo "branch=${DISPATCH_BRANCH}"
+            } >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
+
+          # workflow_run path. Only react to CI triggered by a push (ignore the
+          # weekly RFQ cron and any manual CI dispatch).
+          if [[ "${RUN_EVENT}" != "push" ]]; then
+            echo "Triggering CI run was '${RUN_EVENT}', not a push — no deploy."
+            echo "go=false" >> "$GITHUB_OUTPUT"; exit 0
+          fi
+          if [[ "${RUN_CONCLUSION}" != "success" ]]; then
+            echo "Triggering CI run concluded '${RUN_CONCLUSION}' — no deploy."
+            echo "go=false" >> "$GITHUB_OUTPUT"; exit 0
+          fi
+
+          # Require every gating suite to be green for THIS commit. A suite that
+          # did not run for this commit (path filters) is treated as N/A; a suite
+          # still in progress blocks (the other trigger will re-evaluate later).
+          runs=$(gh api --paginate \
+            "repos/${REPO}/actions/runs?head_sha=${HEAD_SHA}&per_page=100")
+          for wf in 'Tests & Quality' 'RFQ-2026-06 Compliance Suite'; do
+            latest=$(printf '%s' "$runs" | jq -c --arg n "$wf" \
+              '[.workflow_runs[] | select(.name==$n)] | sort_by(.created_at) | last')
+            if [[ "$latest" == "null" || -z "$latest" ]]; then
+              echo "gate: '$wf' did not run for ${HEAD_SHA} — N/A, skipping."
+              continue
+            fi
+            status=$(printf '%s' "$latest" | jq -r '.status')
+            concl=$(printf '%s' "$latest" | jq -r '.conclusion // "null"')
+            echo "gate: '$wf' status=${status} conclusion=${concl}"
+            if [[ "$status" != "completed" ]]; then
+              echo "gate: '$wf' still running — defer to the later trigger."
+              echo "go=false" >> "$GITHUB_OUTPUT"; exit 0
+            fi
+            if [[ "$concl" != "success" ]]; then
+              echo "gate: '$wf' concluded '${concl}' — refusing to deploy."
+              echo "go=false" >> "$GITHUB_OUTPUT"; exit 0
+            fi
+          done
+
+          echo "All gating suites green for ${HEAD_SHA} — proceeding."
+          {
+            echo "go=true"
+            echo "ref=${HEAD_SHA}"
+            echo "branch=main"
+          } >> "$GITHUB_OUTPUT"
+
   deploy:
     name: Deploy production
     runs-on: ubuntu-latest
+    needs: gate
     # Only deploy from the canonical repo; forks should not be able to push code
     # to production even if their workflow somehow runs with the right secrets.
-    if: github.repository == 'fabiodalez-dev/batch-list-tool'
+    if: github.repository == 'fabiodalez-dev/batch-list-tool' && needs.gate.outputs.go == 'true'
     environment:
       name: production
       url: https://archivetool.eu
@@ -43,7 +135,7 @@ jobs:
     # so it can never be interpolated directly into a shell command. See:
     # https://github.blog/security/vulnerability-research/how-to-catch-github-actions-workflow-injections-before-attackers-do/
     env:
-      DEPLOY_BRANCH: ${{ github.event.inputs.branch || 'main' }}
+      DEPLOY_BRANCH: ${{ needs.gate.outputs.branch }}
       SSH_HOST: ${{ secrets.SSH_HOST }}
       SSH_USER: ${{ secrets.SSH_USER }}
       DEPLOY_PATH: ${{ secrets.DEPLOY_PATH }}
@@ -52,42 +144,19 @@ jobs:
       - name: Checkout
         uses: actions/checkout@v4
         with:
-          ref: ${{ github.sha }}
+          ref: ${{ needs.gate.outputs.ref }}
           fetch-depth: 1
           # The deploy step uses SSH (not the GitHub token) so the
           # default-persisted credential is unnecessary attack surface.
           persist-credentials: false
 
-      # ── Build production assets on the runner ──────────────────────────────
-      # The cPanel host has no Node, so public/build is built here and shipped
-      # via rsync after the SSH deploy (see "Ship built production assets").
-      # public/build is gitignored and no longer committed to main — this
-      # decouples asset delivery from git and avoids the PR-only ruleset that
-      # blocks a CI push to main.
-      - name: Setup PHP 8.4 (Filament theme CSS imports vendor/filament during the Vite build)
-        uses: shivammathur/setup-php@v2
-        with:
-          php-version: '8.4'
-          tools: composer:v2
-          coverage: none
-
-      - name: Install PHP dependencies (vendor/filament needed by the theme CSS import)
-        run: composer install --no-interaction --prefer-dist --no-progress --no-scripts
-
-      - name: Setup Node 20
-        uses: actions/setup-node@v4
-        with:
-          node-version: '20'
-          cache: 'npm'
-
-      - name: Build production assets with Vite
-        run: |
-          if [ -f package-lock.json ]; then
-            npm ci
-          else
-            npm install --no-audit --no-fund
-          fi
-          npm run build
+      # NOTE: public/build is committed to git (the cPanel host has no Node).
+      # The deploy's `git reset --hard origin/main` therefore delivers the
+      # compiled assets directly — no runner build or rsync needed here.
+      # Developers rebuild + commit public/build as part of any PR that
+      # touches CSS/JS. The bot-driven "Build & commit production assets"
+      # workflow was removed (its push to main was blocked by the PR-only
+      # ruleset); committing assets in PRs sidesteps that entirely.
 
       - name: Validate required secrets
         env:
@@ -136,17 +205,6 @@ jobs:
               "${SSH_USER}@${SSH_HOST}" \
               "DEPLOY_PATH='${DEPLOY_PATH}' BRANCH='${DEPLOY_BRANCH}' bash -s" \
               < deploy/post-deploy.sh
-
-      - name: Ship built production assets to the host
-        run: |
-          # public/build is built on this runner (the host has no Node) and is
-          # gitignored, so it never travels through git. Rsync it into place
-          # AFTER post-deploy.sh so the host always serves freshly-compiled CSS/JS.
-          # --delete keeps the remote dir an exact mirror (drops stale hashed files).
-          rsync -az --delete \
-            -e "ssh -o ServerAliveInterval=30 -o ServerAliveCountMax=6" \
-            ./public/build/ \
-            "${SSH_USER}@${SSH_HOST}:${DEPLOY_PATH}/public/build/"
 
       - name: Smoke test admin panel
         id: smoke

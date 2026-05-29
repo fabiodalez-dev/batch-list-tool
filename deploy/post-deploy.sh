@@ -94,10 +94,9 @@ trap '${PHP_BIN} artisan up >/dev/null 2>&1 || true; abort "deploy failed, app r
 run "${GIT_BIN}" remote -v
 run "${GIT_BIN}" fetch --prune origin
 run "${GIT_BIN}" reset --hard "origin/${BRANCH}"
-# public/build is gitignored and delivered out-of-band by the deploy workflow
-# (rsync, since the host has no Node) — exclude it so a future `-x` clean or a
-# tracked→untracked transition never wipes the freshly-shipped assets.
-run "${GIT_BIN}" clean -fd -e storage -e .env -e bootstrap/cache -e .htaccess -e public/build
+# public/build is committed to git, so `reset --hard` restores the compiled
+# assets and `clean -fd` leaves them untouched (it only removes untracked files).
+run "${GIT_BIN}" clean -fd -e storage -e .env -e bootstrap/cache -e .htaccess
 
 # ---- composer install -------------------------------------------------------
 # Invoke composer via PHP_BIN so the platform-check satisfies the >= 8.4
