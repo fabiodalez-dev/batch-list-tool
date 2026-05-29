@@ -3,6 +3,7 @@
 namespace App\Http\Middleware;
 
 use Closure;
+use Filament\Notifications\Notification;
 use Illuminate\Http\Request;
 use Symfony\Component\HttpFoundation\Response;
 
@@ -43,8 +44,15 @@ class EnsurePasswordChanged
             return $next($request);
         }
 
-        // Redirect to profile with a Filament warning notification.
-        return redirect()->route('filament.admin.auth.profile')
-            ->with('warning', __('You must change your password before continuing.'));
+        // Redirect to profile with a Filament warning notification. Filament
+        // renders notifications flashed to the session via Notification::send(),
+        // so we queue it here rather than using an arbitrary ->with() flash key
+        // (which Filament does not pick up).
+        Notification::make()
+            ->title(__('You must change your password before continuing.'))
+            ->warning()
+            ->send();
+
+        return redirect()->route('filament.admin.auth.profile');
     }
 }

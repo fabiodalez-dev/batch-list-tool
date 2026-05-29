@@ -273,7 +273,7 @@ it('hides super_admin role from admins', function () {
 
 ## Task 15: Navigation cleanup
 
-**Files:** Modify the resources whose group is `'Reference data'` to use `'Reference'`; verify `Administration`/`My account`/`Settings` grouping is coherent. Test: `tests/Feature/Settings/NavigationTest.php` (assert no resource uses `'Reference data'`).
+**Files:** Modify the resources whose group is `'Reference data'` to use `'Reference'`; verify `Administration`/`My account`/`Settings` grouping is coherent. Test: `tests/Feature/Settings/NavigationConsolidationTest.php` (assert no resource uses `'Reference data'`).
 
 - [ ] **Step 1 — Failing test** asserting `LocationResource::getNavigationGroup()` (and any other) equals `'Reference'`.
 - [ ] **Step 2 — Run, expect FAIL.**

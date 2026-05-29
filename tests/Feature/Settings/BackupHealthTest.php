@@ -49,8 +49,9 @@ function actAsViewer_backup(): User
 // ─── tests ───────────────────────────────────────────────────────────────────
 
 it('gates the page to admins', function () {
-    // viewer → canAccess returns false (no authenticated user → guest)
-    actAsViewer_backup();
+    // authenticated viewer → canAccess returns false (gated to admin/super_admin)
+    $viewer = actAsViewer_backup();
+    $this->actingAs($viewer);
     expect(BackupHealthPage::canAccess())->toBeFalse();
 
     // admin → canAccess returns true

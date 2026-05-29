@@ -66,7 +66,17 @@ class UserPolicy
 
     public function forceDelete(User $u, User $m): bool
     {
-        return $u->can('force_delete_user') && ! $u->is($m);
+        if (! $u->can('force_delete_user') || $u->is($m)) {
+            return false;
+        }
+
+        // Anti-escalation: a non-super_admin cannot force-delete a super_admin
+        // (mirrors the update/delete guards).
+        if ($m->hasRole('super_admin') && ! $u->hasRole('super_admin')) {
+            return false;
+        }
+
+        return true;
     }
 
     public function forceDeleteAny(AuthUser $u): bool
