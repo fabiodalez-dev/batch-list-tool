@@ -27,7 +27,10 @@ return new class extends Migration
             return;
         }
 
-        DB::statement('ALTER TABLE batches DROP CHECK chk_batches_forbidden_numbers');
+        // `DROP CONSTRAINT IF EXISTS` is the portable form accepted by both
+        // MariaDB (10.2.1+) and MySQL (8.0.19+). The production host is MariaDB
+        // 10.11, which rejects MySQL-8's `DROP CHECK` syntax (1064 syntax error).
+        DB::statement('ALTER TABLE batches DROP CONSTRAINT IF EXISTS chk_batches_forbidden_numbers');
         DB::statement('ALTER TABLE batches ADD CONSTRAINT chk_batches_forbidden_numbers CHECK (batch_number NOT IN (34, 36))');
     }
 
@@ -37,7 +40,7 @@ return new class extends Migration
             return;
         }
 
-        DB::statement('ALTER TABLE batches DROP CHECK chk_batches_forbidden_numbers');
+        DB::statement('ALTER TABLE batches DROP CONSTRAINT IF EXISTS chk_batches_forbidden_numbers');
         DB::statement('ALTER TABLE batches ADD CONSTRAINT chk_batches_forbidden_numbers CHECK (batch_number NOT IN (33, 34, 36))');
     }
 };
