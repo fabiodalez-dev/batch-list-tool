@@ -43,6 +43,9 @@ return new class extends Migration
             $table->foreign('repository_id', 'doc_flags_repo_fk')
                 ->references('id')->on('repositories')->nullOnDelete();
 
+            // Keep this list in sync with App\Models\DocumentFlag::TYPES.
+            // The last five map the RFQ App.2-xviii legacy colour codes
+            // (Pink/Orange/Grey/Red/Yellow; Brown == barcode_issue above).
             $table->enum('type', [
                 'needs_review',
                 'missing_data',
@@ -53,6 +56,11 @@ return new class extends Migration
                 'authority_mismatch',
                 'barcode_issue',
                 'disinfestation_overdue',
+                'entry_issue',
+                'location_check',
+                'not_disinfested_onsite',
+                'mould_treatment',
+                'fragment_sorted',
                 'other',
             ])->index();
 
