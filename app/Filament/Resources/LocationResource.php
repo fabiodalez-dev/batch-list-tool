@@ -48,7 +48,7 @@ class LocationResource extends Resource
 
     protected static string|\BackedEnum|null $navigationIcon = 'heroicon-o-map-pin';
 
-    protected static string|\UnitEnum|null $navigationGroup = 'Reference data';
+    protected static string|\UnitEnum|null $navigationGroup = 'Reference';
 
     protected static ?int $navigationSort = 80;
 

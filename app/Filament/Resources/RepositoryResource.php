@@ -3,6 +3,7 @@
 namespace App\Filament\Resources;
 
 use App\Filament\Resources\RepositoryResource\Pages;
+use App\Filament\Resources\RepositoryResource\RelationManagers;
 use App\Models\Repository;
 use Filament\Actions\BulkActionGroup;
 use Filament\Actions\DeleteBulkAction;
@@ -23,9 +24,9 @@ class RepositoryResource extends Resource
 
     protected static string|\BackedEnum|null $navigationIcon = 'heroicon-o-building-library';
 
-    protected static string|\UnitEnum|null $navigationGroup = 'Settings';
+    protected static string|\UnitEnum|null $navigationGroup = 'Administration';
 
-    protected static ?int $navigationSort = 90;
+    protected static ?int $navigationSort = 20;
 
     protected static ?string $recordTitleAttribute = 'name';
 
@@ -179,7 +180,7 @@ class RepositoryResource extends Resource
     public static function getRelations(): array
     {
         return [
-            //
+            RelationManagers\UsersRelationManager::class,
         ];
     }
 

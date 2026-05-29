@@ -71,11 +71,13 @@ class TwoFactorProfile extends Page
      */
     public string $disablePassword = '';
 
-    protected static string|\UnitEnum|null $navigationGroup = 'Settings';
+    protected static string|\UnitEnum|null $navigationGroup = 'My account';
 
-    protected static ?int $navigationSort = 20;
+    protected static ?int $navigationSort = 10;
 
     protected static string|\BackedEnum|null $navigationIcon = 'heroicon-o-shield-check';
+
+    protected static ?string $navigationLabel = 'Two-factor authentication';
 
     protected static ?string $title = 'Two-factor authentication';
 

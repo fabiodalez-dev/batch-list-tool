@@ -8,6 +8,7 @@ use Filament\Panel;
 use Illuminate\Database\Eloquent\Factories\HasFactory;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
 use Illuminate\Database\Eloquent\Relations\BelongsToMany;
+use Illuminate\Database\Eloquent\Relations\HasMany;
 use Illuminate\Database\Eloquent\SoftDeletes;
 use Illuminate\Foundation\Auth\User as Authenticatable;
 use Illuminate\Notifications\Notifiable;
@@ -15,8 +16,15 @@ use Lab404\Impersonate\Models\Impersonate;
 use Laravel\Fortify\TwoFactorAuthenticatable;
 use OwenIt\Auditing\Auditable;
 use OwenIt\Auditing\Contracts\Auditable as AuditableContract;
+use OwenIt\Auditing\Models\Audit;
 use Spatie\Permission\Traits\HasRoles;
 
+/**
+ * @property bool $must_change_password
+ * @property int $preferred_page_size
+ * @property string|null $locale
+ * @property string|null $timezone
+ */
 class User extends Authenticatable implements AuditableContract, FilamentUser
 {
     /** @use HasFactory<UserFactory> */
@@ -30,7 +38,12 @@ class User extends Authenticatable implements AuditableContract, FilamentUser
     use TwoFactorAuthenticatable;
 
     protected $fillable = [
-        'name', 'email', 'password', 'default_repository_id', 'is_active',
+        'name', 'email', 'password', 'default_repository_id', 'is_active', 'must_change_password',
+        'preferred_page_size', 'locale', 'timezone',
+    ];
+
+    protected $attributes = [
+        'must_change_password' => false,
     ];
 
     protected $hidden = [
@@ -42,6 +55,17 @@ class User extends Authenticatable implements AuditableContract, FilamentUser
         'password', 'remember_token',
         'two_factor_secret', 'two_factor_recovery_codes', 'two_factor_confirmed_at',
     ];
+
+    /**
+     * All audit events performed BY this user (i.e. `audits.user_id = $this->id`).
+     *
+     * Named `activityAudits` to avoid clashing with owen-it's built-in `audits()`
+     * relation, which returns audits OF this record (where auditable = user).
+     */
+    public function activityAudits(): HasMany
+    {
+        return $this->hasMany(Audit::class, 'user_id')->latest();
+    }
 
     public function defaultRepository(): BelongsTo
     {
@@ -88,6 +112,32 @@ class User extends Authenticatable implements AuditableContract, FilamentUser
             'email_verified_at' => 'datetime',
             'password' => 'hashed',
             'is_active' => 'boolean',
+            'must_change_password' => 'boolean',
+            'preferred_page_size' => 'integer',
         ];
+    }
+
+    /**
+     * Clear `must_change_password` when a user changes their OWN password.
+     *
+     * The edge-case rule: the admin "reset password" action deliberately sets
+     * `password` AND `must_change_password = true` for a DIFFERENT user. We
+     * must NOT clear the flag there. The guard is:
+     *   auth()->check() AND auth()->id() === this user's PK.
+     *
+     * Uses the same `static::saving(...)` pattern as Box::booted().
+     */
+    protected static function booted(): void
+    {
+        static::saving(function (self $user): void {
+            if (
+                $user->must_change_password
+                && $user->isDirty('password')
+                && auth()->check()
+                && (int) auth()->id() === (int) $user->getKey()
+            ) {
+                $user->must_change_password = false;
+            }
+        });
     }
 }

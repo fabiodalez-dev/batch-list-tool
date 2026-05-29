@@ -124,7 +124,11 @@ return [
     'policies' => [
         'path' => app_path('Policies'),
         'merge' => true,
-        'generate' => true,
+        // Project keeps hand-written policies (with custom guards e.g. UserPolicy
+        // anti-escalation). shield:generate must NOT overwrite them — it only
+        // generates the DB permissions. Set to false so policy files are never
+        // regenerated/clobbered by `shield:generate` (incl. the seeder call).
+        'generate' => false,
         'methods' => [
             'viewAny', 'view', 'create', 'update', 'delete', 'deleteAny', 'restore',
             'forceDelete', 'forceDeleteAny', 'restoreAny', 'replicate', 'reorder',

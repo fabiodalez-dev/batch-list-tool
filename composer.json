@@ -39,6 +39,7 @@
         "spatie/laravel-model-states": "^2.14",
         "spatie/laravel-permission": "^7.0",
         "spatie/laravel-schemaless-attributes": "^2.6",
+        "spatie/laravel-settings": "^3.9",
         "spatie/laravel-tags": "^4.11",
         "staudenmeir/eloquent-has-many-deep": "^1.22"
     },

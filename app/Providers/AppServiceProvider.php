@@ -2,12 +2,22 @@
 
 namespace App\Providers;
 
+use App\Listeners\LogAuthenticationEvent;
 use App\Models\Document;
 use App\Models\User;
 use App\Observers\DocumentObserver;
+use App\Settings\AuditSettings;
+use Filament\Tables\Table;
+use Illuminate\Auth\Events\Failed;
+use Illuminate\Auth\Events\Lockout;
+use Illuminate\Auth\Events\Login;
+use Illuminate\Auth\Events\Logout;
+use Illuminate\Auth\Events\PasswordReset;
+use Illuminate\Support\Facades\Event;
 use Illuminate\Support\Facades\Gate;
 use Illuminate\Support\ServiceProvider;
 use Laravel\Telescope\TelescopeServiceProvider;
+use OwenIt\Auditing\Models\Audit;
 use Spatie\Health\Checks\Checks\BackupsCheck;
 use Spatie\Health\Checks\Checks\DatabaseCheck;
 use Spatie\Health\Checks\Checks\ScheduleCheck;
@@ -35,6 +45,53 @@ class AppServiceProvider extends ServiceProvider
     public function boot(): void
     {
         Document::observe(DocumentObserver::class);
+
+        // Apply each user's preferred_page_size as the default pagination page
+        // option for every Filament table. The closure runs at table-render time
+        // (after the request is bootstrapped), so auth() is available.
+        // Wrapped defensively: a null/invalid value must never break a page.
+        Table::configureUsing(function (Table $table): void {
+            try {
+                $size = auth()->user()?->preferred_page_size;
+                if ($size && is_int($size) && $size > 0) {
+                    $table->defaultPaginationPageOption($size);
+                }
+            } catch (\Throwable) {
+                // Never let a missing preference crash a page.
+            }
+        });
+
+        // Authentication event listeners — write every login lifecycle event to
+        // the audit trail (RFQ §3.1.5). Registered here to mirror the
+        // LogImpersonation pattern (no separate EventServiceProvider needed).
+        Event::listen(Login::class, [LogAuthenticationEvent::class, 'handleLogin']);
+        Event::listen(Logout::class, [LogAuthenticationEvent::class, 'handleLogout']);
+        Event::listen(Failed::class, [LogAuthenticationEvent::class, 'handleFailed']);
+        Event::listen(Lockout::class, [LogAuthenticationEvent::class, 'handleLockout']);
+        Event::listen(PasswordReset::class, [LogAuthenticationEvent::class, 'handlePasswordReset']);
+
+        // Mirror AuditSettings::enabled at runtime so that toggling the Audit
+        // settings page actually stops new audit rows being written.
+        //
+        // owen-it/laravel-auditing only checks config('audit.enabled') at model
+        // boot (to decide whether to register the observer). After boot, the
+        // runtime on/off switch is Audit::$auditingGloballyDisabled. We set
+        // both so that:
+        //   - Fresh boots with auditing off never register the observer.
+        //   - Long-running processes (Octane, queue workers) honour the setting
+        //     without needing a restart.
+        //
+        // Wrapped in a defensive try/catch: during early boot or fresh installs
+        // the settings table may not yet exist. In that case we leave both
+        // values at their defaults rather than crashing the entire request.
+        try {
+            $auditEnabled = app(AuditSettings::class)->enabled;
+            config(['audit.enabled' => $auditEnabled]);
+            Audit::$auditingGloballyDisabled = ! $auditEnabled;
+        } catch (\Throwable) {
+            // Settings table unavailable (migration not yet run, test isolation,
+            // etc.) — fall back to the defaults in config/audit.php.
+        }
 
         // Laravel Pulse dashboard access: restrict /pulse to super_admin and admin
         // roles only. Pulse's PulseServiceProvider checks Gate::check('viewPulse')

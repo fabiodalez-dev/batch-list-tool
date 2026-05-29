@@ -52,17 +52,27 @@ class TwoFactorEnrolment extends Page
 
     protected string $view = 'filament.pages.auth.two-factor-enrolment';
 
-    protected static string|\UnitEnum|null $navigationGroup = 'Account';
+    protected static string|\UnitEnum|null $navigationGroup = 'My account';
 
-    protected static ?int $navigationSort = 90;
+    protected static ?int $navigationSort = 20;
 
     protected static string|\BackedEnum|null $navigationIcon = 'heroicon-o-shield-check';
 
-    protected static ?string $navigationLabel = 'Two-factor authentication';
+    protected static ?string $navigationLabel = 'Set up two-factor';
 
     protected static ?string $title = 'Two-factor authentication';
 
     protected static ?string $slug = 'two-factor-enrolment';
+
+    /**
+     * Hidden from the sidebar: it would be a confusing second "two-factor"
+     * entry next to TwoFactorProfile. The enrolment flow stays reachable by
+     * route (from the profile / management page and the forced-2FA login flow).
+     */
+    public static function shouldRegisterNavigation(): bool
+    {
+        return false;
+    }
 
     public static function canAccess(): bool
     {

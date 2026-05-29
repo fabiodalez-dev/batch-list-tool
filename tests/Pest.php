@@ -182,7 +182,7 @@ function bl_seedShieldPermissions(): void
     $viewer = Role::findByName('viewer', 'web');
     $viewer->syncPermissions(
         collect($all)
-            ->filter(fn ($p) => str_starts_with($p, 'view_'))
+            ->filter(fn ($p) => str_starts_with($p, 'view_') && ! str_ends_with($p, '_user'))
             ->all()
     );
 

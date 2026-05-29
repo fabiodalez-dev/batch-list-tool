@@ -57,9 +57,9 @@ class FieldPermissionMatrix extends Page
 
     protected string $view = 'filament.pages.field-permission-matrix';
 
-    protected static string|\UnitEnum|null $navigationGroup = 'Settings';
+    protected static string|\UnitEnum|null $navigationGroup = 'Administration';
 
-    protected static ?int $navigationSort = 2;
+    protected static ?int $navigationSort = 40;
 
     protected static string|\BackedEnum|null $navigationIcon = 'heroicon-o-table-cells';
 
