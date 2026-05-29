@@ -14,8 +14,8 @@
 
 <x-filament-panels::page>
     <div class="space-y-4">
-        <div class="rounded-xl border border-gray-200 dark:border-gray-700 bg-white dark:bg-gray-900 p-4">
-            <h2 class="text-base font-semibold text-gray-900 dark:text-white">
+        <div>
+            <h2 class="text-base font-semibold text-gray-950 dark:text-white">
                 Canned reports
             </h2>
             <p class="mt-1 text-sm text-gray-500 dark:text-gray-400">
@@ -54,8 +54,8 @@
         </div>
 
         @if (count($templates) > 0)
-            <div class="rounded-xl border border-gray-200 dark:border-gray-700 bg-white dark:bg-gray-900 p-4">
-                <h2 class="text-base font-semibold text-gray-900 dark:text-white">
+            <div class="pt-2">
+                <h2 class="text-base font-semibold text-gray-950 dark:text-white">
                     Saved templates
                 </h2>
                 <p class="mt-1 text-sm text-gray-500 dark:text-gray-400">
