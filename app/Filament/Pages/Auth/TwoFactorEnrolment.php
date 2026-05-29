@@ -52,13 +52,13 @@ class TwoFactorEnrolment extends Page
 
     protected string $view = 'filament.pages.auth.two-factor-enrolment';
 
-    protected static string|\UnitEnum|null $navigationGroup = 'Account';
+    protected static string|\UnitEnum|null $navigationGroup = 'My account';
 
-    protected static ?int $navigationSort = 90;
+    protected static ?int $navigationSort = 20;
 
     protected static string|\BackedEnum|null $navigationIcon = 'heroicon-o-shield-check';
 
-    protected static ?string $navigationLabel = 'Two-factor authentication';
+    protected static ?string $navigationLabel = 'Set up two-factor';
 
     protected static ?string $title = 'Two-factor authentication';
 

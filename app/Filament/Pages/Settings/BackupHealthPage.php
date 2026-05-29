@@ -50,7 +50,7 @@ class BackupHealthPage extends Page
 
     protected static string|\UnitEnum|null $navigationGroup = 'Administration';
 
-    protected static ?int $navigationSort = 95;
+    protected static ?int $navigationSort = 60;
 
     protected static string|\BackedEnum|null $navigationIcon = 'heroicon-o-shield-check';
 

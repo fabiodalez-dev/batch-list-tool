@@ -38,7 +38,7 @@ class BrandingPage extends Page
 
     protected static string|\UnitEnum|null $navigationGroup = 'Administration';
 
-    protected static ?int $navigationSort = 90;
+    protected static ?int $navigationSort = 50;
 
     protected static string|\BackedEnum|null $navigationIcon = 'heroicon-o-paint-brush';
 

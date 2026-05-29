@@ -65,7 +65,9 @@ class AdminPanelProvider extends PanelProvider
             // Source: resources/css/filament/admin/theme.css (Tailwind v4).
             ->viteTheme('resources/css/filament/admin/theme.css')
             ->plugins([
-                FilamentShieldPlugin::make(),
+                FilamentShieldPlugin::make()
+                    ->navigationGroup('Administration')
+                    ->navigationSort(30),
             ])
             // Brand palette — dusty-sandstone. 500 step (#A5613D) reads
             // "thoughtful spice" not "brand orange". Lifted from the

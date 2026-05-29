@@ -37,7 +37,7 @@ class AuditSettingsPage extends Page
 
     protected static string|\UnitEnum|null $navigationGroup = 'Administration';
 
-    protected static ?int $navigationSort = 92;
+    protected static ?int $navigationSort = 70;
 
     protected static string|\BackedEnum|null $navigationIcon = 'heroicon-o-clipboard-document-list';
 
