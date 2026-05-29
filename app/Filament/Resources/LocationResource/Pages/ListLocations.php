@@ -10,7 +10,7 @@ use App\Models\Location;
 use App\Support\BulkImport\TemplateGenerator;
 use Filament\Actions;
 use Filament\Resources\Pages\ListRecords;
-use Hayderhatem\FilamentExcelImport\Actions\FullImportAction;
+use HayderHatem\FilamentExcelImport\Actions\FullImportAction;
 
 class ListLocations extends ListRecords
 {
