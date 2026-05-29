@@ -8,6 +8,7 @@ use Filament\Panel;
 use Illuminate\Database\Eloquent\Factories\HasFactory;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
 use Illuminate\Database\Eloquent\Relations\BelongsToMany;
+use Illuminate\Database\Eloquent\Relations\HasMany;
 use Illuminate\Database\Eloquent\SoftDeletes;
 use Illuminate\Foundation\Auth\User as Authenticatable;
 use Illuminate\Notifications\Notifiable;
@@ -15,6 +16,7 @@ use Lab404\Impersonate\Models\Impersonate;
 use Laravel\Fortify\TwoFactorAuthenticatable;
 use OwenIt\Auditing\Auditable;
 use OwenIt\Auditing\Contracts\Auditable as AuditableContract;
+use OwenIt\Auditing\Models\Audit;
 use Spatie\Permission\Traits\HasRoles;
 
 class User extends Authenticatable implements AuditableContract, FilamentUser
@@ -46,6 +48,17 @@ class User extends Authenticatable implements AuditableContract, FilamentUser
         'password', 'remember_token',
         'two_factor_secret', 'two_factor_recovery_codes', 'two_factor_confirmed_at',
     ];
+
+    /**
+     * All audit events performed BY this user (i.e. `audits.user_id = $this->id`).
+     *
+     * Named `activityAudits` to avoid clashing with owen-it's built-in `audits()`
+     * relation, which returns audits OF this record (where auditable = user).
+     */
+    public function activityAudits(): HasMany
+    {
+        return $this->hasMany(Audit::class, 'user_id')->latest();
+    }
 
     public function defaultRepository(): BelongsTo
     {
