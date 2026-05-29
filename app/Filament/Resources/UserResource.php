@@ -5,6 +5,7 @@ namespace App\Filament\Resources;
 use App\Filament\Resources\UserResource\Pages;
 use App\Models\User;
 use App\Support\RoleLabels;
+use Filament\Actions\Action;
 use Filament\Actions\BulkActionGroup;
 use Filament\Actions\DeleteBulkAction;
 use Filament\Actions\EditAction;
@@ -12,12 +13,14 @@ use Filament\Actions\ViewAction;
 use Filament\Forms;
 use Filament\Infolists\Components\IconEntry;
 use Filament\Infolists\Components\TextEntry;
+use Filament\Notifications\Notification;
 use Filament\Resources\Resource;
 use Filament\Schemas\Components\Section;
 use Filament\Schemas\Schema;
 use Filament\Tables;
 use Filament\Tables\Table;
 use Illuminate\Support\Facades\Hash;
+use Illuminate\Support\Str;
 
 class UserResource extends Resource
 {
@@ -204,6 +207,37 @@ class UserResource extends Resource
             ->actions([
                 ViewAction::make(),
                 EditAction::make(),
+                Action::make('resetPassword')
+                    ->label('Reset password')
+                    ->icon('heroicon-o-key')
+                    ->requiresConfirmation()
+                    ->visible(fn (User $record): bool => (bool) auth()->user()?->can('update', $record))
+                    ->action(function (User $record): void {
+                        $tmp = Str::password(16);
+                        $record->forceFill([
+                            'password' => Hash::make($tmp),
+                            'must_change_password' => true,
+                        ])->save();
+
+                        Notification::make()
+                            ->title('Password reset')
+                            ->body("Temporary password: {$tmp}")
+                            ->success()
+                            ->send();
+                    }),
+                Action::make('toggleActive')
+                    ->label(fn (User $record): string => $record->is_active ? 'Deactivate' : 'Activate')
+                    ->icon(fn (User $record): string => $record->is_active ? 'heroicon-o-no-symbol' : 'heroicon-o-check-circle')
+                    ->requiresConfirmation()
+                    ->visible(fn (User $record): bool => ! $record->is(auth()->user()) && (bool) auth()->user()?->can('update', $record))
+                    ->action(function (User $record): void {
+                        $record->forceFill(['is_active' => ! $record->is_active])->save();
+
+                        Notification::make()
+                            ->title($record->is_active ? 'User activated' : 'User deactivated')
+                            ->success()
+                            ->send();
+                    }),
             ])
             ->bulkActions([
                 BulkActionGroup::make([
