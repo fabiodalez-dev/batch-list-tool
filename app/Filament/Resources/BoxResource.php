@@ -146,6 +146,13 @@ class BoxResource extends Resource
                     ->schema([
                         $g(Forms\Components\TextInput::make('barcode')
                             ->maxLength(64)),
+                        // RFQ Contract App.2-i — the yellow security seal that
+                        // closes the box belongs to the BOX; every change is
+                        // logged to box_seal_number_history (see Seal history).
+                        $g(Forms\Components\TextInput::make('seal_number')
+                            ->label('Seal #')
+                            ->maxLength(255)
+                            ->helperText('Yellow security seal closing the box. Changes are kept in the seal history.')),
                         $g(Forms\Components\Select::make('barcode_status')
                             ->options(collect(Box::BARCODE_STATUSES)->mapWithKeys(fn ($s) => [$s => $s]))
                             ->required()
@@ -263,6 +270,12 @@ class BoxResource extends Resource
                     ->schema([
                         TextEntry::make('barcode')
                             ->label('Barcode')
+                            ->copyable()
+                            ->placeholder('—'),
+                        TextEntry::make('seal_number')
+                            ->label('Seal #')
+                            ->badge()
+                            ->color('primary')
                             ->copyable()
                             ->placeholder('—'),
                         TextEntry::make('barcode_status')
@@ -444,6 +457,7 @@ class BoxResource extends Resource
     {
         return [
             BoxResource\RelationManagers\BarcodeHistoryRelationManager::class,
+            BoxResource\RelationManagers\SealNumberHistoryRelationManager::class,
         ];
     }
 

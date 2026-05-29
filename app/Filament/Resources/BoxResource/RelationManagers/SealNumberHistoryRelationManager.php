@@ -1,8 +1,7 @@
 <?php
 
-namespace App\Filament\Resources\DocumentResource\RelationManagers;
+namespace App\Filament\Resources\BoxResource\RelationManagers;
 
-use Filament\Actions\CreateAction;
 use Filament\Actions\ViewAction;
 use Filament\Forms;
 use Filament\Resources\RelationManagers\RelationManager;
@@ -14,52 +13,56 @@ use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Database\Eloquent\Model;
 
 /**
- * Renders the seal_number change timeline on the Document edit/view page.
+ * Renders the seal-number change timeline on the Box edit/view page
+ * (RFQ Contract App.2-i — the yellow security seal belongs to the BOX, and a
+ * history of every seal number is kept for all boxes, especially the Batch 50
+ * wills reserve).
  *
- * Read-only: no inline create / edit / delete is offered, because the rows
- * are appended automatically by the Document model's `updating` hook
- * (RFQ §3.1.5 — seal-number chain-of-custody). The header CreateAction
- * remains hidden by default; only admin / super_admin can append rows by
- * hand (e.g. to back-fill a missing transition during data migration).
+ * Read-only — history is append-only and entries are inserted by the Box
+ * model's `created` / `updated` hooks. No create/edit/delete actions are
+ * exposed: the only legitimate way to add a row is by changing the parent
+ * Box's `seal_number`.
  */
 class SealNumberHistoryRelationManager extends RelationManager
 {
     protected static string $relationship = 'sealNumberHistory';
 
-    protected static ?string $title = 'Seal number history';
+    protected static ?string $title = 'Seal history';
 
-    protected static ?string $recordTitleAttribute = 'previous_seal_number';
+    protected static ?string $recordTitleAttribute = 'new_value';
 
     public function form(Schema $schema): Schema
     {
+        // The form schema is required by the RelationManager base class even
+        // when no create/edit actions are exposed; we keep it minimal so the
+        // ViewAction modal can still render the fields cleanly.
         return $schema->schema([
-            Forms\Components\TextInput::make('previous_seal_number')
-                ->required()->maxLength(50),
-            Forms\Components\TextInput::make('new_seal_number')->maxLength(50),
-            Forms\Components\DateTimePicker::make('changed_at')
-                ->default(now())
-                ->required(),
-            Forms\Components\TextInput::make('reason')->maxLength(255),
+            Forms\Components\TextInput::make('old_value')->disabled()->maxLength(255),
+            Forms\Components\TextInput::make('new_value')->disabled()->maxLength(255),
+            Forms\Components\DateTimePicker::make('changed_at')->disabled(),
+            Forms\Components\Textarea::make('notes')->disabled(),
         ]);
     }
 
     public function table(Table $table): Table
     {
         return $table
-            ->recordTitleAttribute('previous_seal_number')
+            ->recordTitleAttribute('new_value')
             ->defaultSort('changed_at', 'desc')
             ->columns([
-                Tables\Columns\TextColumn::make('previous_seal_number')
-                    ->label('From')
+                Tables\Columns\TextColumn::make('old_value')
+                    ->label('Seal from')
                     ->searchable()
                     ->sortable()
-                    ->copyable(),
+                    ->copyable()
+                    ->placeholder('—'),
 
-                Tables\Columns\TextColumn::make('new_seal_number')
-                    ->label('To')
+                Tables\Columns\TextColumn::make('new_value')
+                    ->label('Seal to')
                     ->searchable()
                     ->sortable()
-                    ->copyable(),
+                    ->copyable()
+                    ->placeholder('—'),
 
                 Tables\Columns\TextColumn::make('changed_at')
                     ->label('Changed')
@@ -70,8 +73,8 @@ class SealNumberHistoryRelationManager extends RelationManager
                     ->label('By')
                     ->toggleable(),
 
-                Tables\Columns\TextColumn::make('reason')
-                    ->label('Reason')
+                Tables\Columns\TextColumn::make('notes')
+                    ->label('Notes')
                     ->limit(50)
                     ->toggleable(),
             ])
@@ -104,18 +107,7 @@ class SealNumberHistoryRelationManager extends RelationManager
                         return $i;
                     }),
             ])
-            ->headerActions([
-                CreateAction::make()
-                    ->visible(fn (): bool => static::userCanManage())
-                    ->mutateFormDataUsing(function (array $data): array {
-                        $owner = $this->getOwnerRecord();
-                        $data['document_id'] = $owner->getKey();
-                        $data['repository_id'] = $owner->repository_id;
-                        $data['changed_by_user_id'] = auth()->id();
-
-                        return $data;
-                    }),
-            ])
+            ->headerActions([])
             ->actions([
                 ViewAction::make(),
             ])
@@ -125,23 +117,5 @@ class SealNumberHistoryRelationManager extends RelationManager
     public static function canViewForRecord(Model $ownerRecord, string $pageClass): bool
     {
         return true;
-    }
-
-    /**
-     * Only admin / super_admin can write rows by hand.
-     */
-    protected static function userCanManage(): bool
-    {
-        $user = auth()->user();
-
-        if ($user === null) {
-            return false;
-        }
-
-        if (method_exists($user, 'hasAnyRole')) {
-            return $user->hasAnyRole(['super_admin', 'admin']);
-        }
-
-        return false;
     }
 }

@@ -101,12 +101,11 @@ describe('REQ-3.1.7 Barcode IN/OUT/PERM_OUT + history', function () {
     it('whitespace-only barcodes are normalised at the boot hook')->todo('Feature\\BoxBarcodeHistoryTest');
 })->group('rfq:3.1.7');
 
-/* ─── REQ-3.1.8 Seal number history ──────────────────────────────── */
+/* ─── REQ-3.1.8 Seal number history (on the BOX) ──────────────────── */
 describe('REQ-3.1.8 Seal number history', function () {
-    it('updating seal_number appends to document_seal_number_history')->todo('Feature\\DocumentSealNumberHistoryTest');
-    it('unchanged seal_number does NOT create a history row')->todo('Feature\\DocumentSealNumberHistoryTest');
-    it('history relation manager renders rows in reverse chronological order')->todo('Feature\\DocumentSealNumberHistoryTest');
-    it('cross-tenant access to seal history is blocked')->todo('Feature\\DocumentSealNumberHistoryTest');
+    it('setting a box seal_number appends to box_seal_number_history')->todo('Feature\\Boxes\\BoxSealHistoryTest');
+    it('unchanged seal_number does NOT create a history row')->todo('Feature\\Boxes\\BoxSealHistoryTest');
+    it('history relation manager renders rows in reverse chronological order')->todo('Feature\\Boxes\\BoxSealHistoryTest');
 })->group('rfq:3.1.8');
 
 /* ─── REQ-3.1.9 Configurable location hierarchies ────────────────── */

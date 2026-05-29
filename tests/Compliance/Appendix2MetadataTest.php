@@ -27,7 +27,7 @@ describe('APP2-i RAS Box', function () {
     it('batches table accepts numbers 1-32 (Main Collection range)')->todo('Feature\\RfqCompliance\\Appendix1RulesTest');
     it('batch_number is unique per repository')->todo('Feature\\RfqCompliance\\Appendix1RulesTest');
     it('box_number is unique within a batch')->todo('Feature\\Resources\\BoxResourceTest');
-    it('seal_number history captures every change')->todo('Feature\\DocumentSealNumberHistoryTest');
+    it('box seal_number history captures every change')->todo('Feature\\Boxes\\BoxSealHistoryTest');
 })->group('rfq:app2-i');
 
 /* ─── APP2-ii In Situ Box ────────────────────────────────────────── */

@@ -46,7 +46,7 @@ class Box extends Model implements AuditableContract, Sortable
     protected $fillable = [
         'sort_order',
         'box_type', 'box_number', 'batch_id', 'parent_box_id',
-        'barcode', 'barcode_status', 'location_id', 'disinfestation_date',
+        'barcode', 'seal_number', 'barcode_status', 'location_id', 'disinfestation_date',
         'is_legacy', 'notes',
         // RFQ Appendix 2 §vii — "box destroyed" business state.
         'destroyed_at', 'destroyed_by_user_id', 'destroyed_reason',
@@ -105,6 +105,18 @@ class Box extends Model implements AuditableContract, Sortable
     public function barcodeHistory(): HasMany
     {
         return $this->hasMany(BoxBarcodeHistory::class)->latest('changed_at');
+    }
+
+    /**
+     * Append-only log of seal-number transitions for this box
+     * (RFQ Contract App.2-i — the yellow security seal belongs to the BOX,
+     * and a history of every seal number is kept for all boxes, especially
+     * the Batch 50 wills reserve). Ordered descending by `changed_at` so the
+     * most recent change is first; callers can override with `->orderBy(...)`.
+     */
+    public function sealNumberHistory(): HasMany
+    {
+        return $this->hasMany(BoxSealNumberHistory::class)->orderByDesc('changed_at');
     }
 
     /**
@@ -320,6 +332,24 @@ class Box extends Model implements AuditableContract, Sortable
     }
 
     /**
+     * Append a row to box_seal_number_history for this box.
+     *
+     * Public surface so back-fills / importers can record transitions
+     * directly. The model hooks call this internally on every change to
+     * `seal_number` (RFQ Contract App.2-i).
+     */
+    public function recordSealChange(?string $old, ?string $new, ?string $notes = null): void
+    {
+        $this->sealNumberHistory()->create([
+            'old_value' => $old,
+            'new_value' => $new,
+            'changed_by_user_id' => Auth::id(),
+            'changed_at' => now(),
+            'notes' => $notes,
+        ]);
+    }
+
+    /**
      * Multi-tenant scoping (RFQ §3.5.1).
      *
      * `boxes` has no `repository_id` column — tenancy is derived from
@@ -375,6 +405,32 @@ class Box extends Model implements AuditableContract, Sortable
 
         static::updated(function (self $box): void {
             $box->flushPendingBarcodeTransition();
+        });
+
+        // RFQ Contract App.2-i — seal-number chain-of-custody. The yellow
+        // security seal belongs to the BOX; every transition is recorded in
+        // box_seal_number_history. Split across `created` / `updated` (rather
+        // than a single `saved`) so the "from" side is unambiguous: on insert
+        // it is always null, on update it is the pre-save original. A single
+        // `saved` hook could not tell the two apart because `wasRecentlyCreated`
+        // is not reset across later update() calls on the same instance.
+        static::created(function (self $box): void {
+            if ($box->seal_number === null) {
+                return;
+            }
+            $box->recordSealChange(null, $box->seal_number);
+        });
+
+        static::updated(function (self $box): void {
+            if (! $box->wasChanged('seal_number')) {
+                return;
+            }
+            $old = $box->getOriginal('seal_number');
+            $new = $box->seal_number;
+            if ($old === $new) {
+                return;
+            }
+            $box->recordSealChange($old, $new);
         });
     }
 

@@ -114,7 +114,7 @@ class Document extends Model implements AuditableContract, HasMedia, Sortable
         'barcode_ras_3', 'status_3', 'barcode_ras_4', 'status_4',
         'barcode_in_2', 'barcode_ras_2_alt', 'status_1_alt',
         'barcode_ras_2_alt2', 'status_2_alt',
-        'seal_number', 'disinfestation_date_1', 'disinfestation_date_2', 'disinfestation_date_3',
+        'disinfestation_date_1', 'disinfestation_date_2', 'disinfestation_date_3',
         'catalogue_identifier', 'nra_location', 'museum_location', 'practice',
         'dates', 'deeds', 'current_box_type', 'colour_code', 'digitised', 'torre',
         'accession_code_legacy', 'object_reference_number', 'tracking', 'museum_reference',
@@ -137,17 +137,6 @@ class Document extends Model implements AuditableContract, HasMedia, Sortable
 
     /** @internal DocumentBuilder bulk-update guard bypass flag */
     private static bool $bypassAuditGuard = false;
-
-    /**
-     * Pending seal_number transitions, keyed by document primary key.
-     *
-     * Captured in `updating` (when the original value is still readable via
-     * getOriginal) and consumed in `updated` (after persistence, so the
-     * eventual auto-increment id and final dirty state are known).
-     *
-     * @var array<int|string, array{previous: ?string, new: ?string}>
-     */
-    private static array $pendingSealTransitions = [];
 
     /**
      * Sort within the current_box. Documents in box A and documents in box B
@@ -255,32 +244,6 @@ class Document extends Model implements AuditableContract, HasMedia, Sortable
     {
         return $this->identifierHistory()
             ->pluck('previous_identifier')
-            ->unique()
-            ->values();
-    }
-
-    /**
-     * Append-only log of seal_number transitions for this document
-     * (RFQ §3.1.5 — seal-number chain-of-custody). Returns rows ordered
-     * descending by `changed_at` so the most recent change is first;
-     * callers can override with `->orderBy(...)`.
-     */
-    public function sealNumberHistory(): HasMany
-    {
-        return $this->hasMany(DocumentSealNumberHistory::class)->latest('changed_at');
-    }
-
-    /**
-     * Distinct list of previous seal numbers this document has ever held.
-     * Built from the `sealNumberHistory` log; uniqueness is enforced in PHP
-     * so the result is stable across DB drivers (SQLite collation quirks).
-     *
-     * @return Collection<int,string>
-     */
-    public function previousSealNumbers(): Collection
-    {
-        return $this->sealNumberHistory()
-            ->pluck('previous_seal_number')
             ->unique()
             ->values();
     }
@@ -551,17 +514,10 @@ class Document extends Model implements AuditableContract, HasMedia, Sortable
     }
 
     /**
-     * Boot hooks for Document — wires the seal_number audit trail directly
-     * on the model (no separate observer class) so the chain-of-custody for
-     * physical seals is recorded transparently on every save().
-     *
-     * The two-phase pattern (capture-in-updating, write-in-updated) mirrors
-     * {@see DocumentObserver} for the identifier column —
-     * it avoids the classic "isDirty returns false after save" pitfall.
-     *
-     * The identifier audit trail intentionally stays in the dedicated
-     * DocumentObserver class for backwards-compatibility; the seal_number
-     * trail lives here per the implementation brief.
+     * Boot hooks for Document — enforces the enum + Batch-50 invariants on
+     * every save(). The identifier audit trail lives in the dedicated
+     * {@see DocumentObserver} class. (Seal-number history is a property of
+     * the Box, not the Document — see {@see Box::sealNumberHistory()}.)
      */
     protected static function booted(): void
     {
@@ -617,46 +573,6 @@ class Document extends Model implements AuditableContract, HasMedia, Sortable
                     }
                 }
             }
-        });
-
-        static::updating(function (Document $document): void {
-            if (! $document->isDirty('seal_number')) {
-                return;
-            }
-
-            $previous = $document->getOriginal('seal_number');
-            $new = $document->seal_number;
-
-            // Skip both-null transitions and pure whitespace-only changes:
-            // they add noise without auditable signal.
-            if ($previous === null && $new === null) {
-                return;
-            }
-            if (trim((string) $previous) === trim((string) $new)) {
-                return;
-            }
-
-            self::$pendingSealTransitions[$document->getKey()] = [
-                'previous' => $previous,
-                'new' => $new,
-            ];
-        });
-
-        static::updated(function (Document $document): void {
-            $key = $document->getKey();
-
-            if (! array_key_exists($key, self::$pendingSealTransitions)) {
-                return;
-            }
-
-            $transition = self::$pendingSealTransitions[$key];
-            unset(self::$pendingSealTransitions[$key]);
-
-            DocumentSealNumberHistory::recordChange(
-                document: $document,
-                previous: $transition['previous'],
-                new: $transition['new'],
-            );
         });
     }
 

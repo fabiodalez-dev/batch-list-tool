@@ -69,7 +69,6 @@ class DocumentResource extends Resource
         'dates',
         'notes',
         'deeds',
-        'seal_number',
         'nra_location',
         'museum_location',
         'accession_code_legacy',
@@ -203,11 +202,10 @@ class DocumentResource extends Resource
                             ->columnSpanFull()),
                     ]),
 
-                Section::make('Seal & disinfestation')
+                Section::make('Disinfestation')
                     ->columnSpanFull()
                     ->columns(3)
                     ->schema([
-                        $g(Forms\Components\TextInput::make('seal_number')->maxLength(50)),
                         $g(Forms\Components\DatePicker::make('disinfestation_date')->label('Disinfestation (current)')),
                         $g(Forms\Components\Toggle::make('is_in_disinfestation')
                             ->label('Currently in disinfestation')
@@ -622,12 +620,6 @@ class DocumentResource extends Resource
                             ->formatStateUsing(fn ($state): string => $state ? 'Yes' : 'No')
                             ->color(fn ($state): string => $state ? 'warning' : 'gray')
                             ->columnSpanFull(),
-                        TextEntry::make('seal_number')
-                            ->label('Current seal #')
-                            ->badge()
-                            ->color('primary')
-                            ->copyable()
-                            ->placeholder('—'),
                         RepeatableEntry::make('disinfestation_timeline_rows')
                             ->label('History')
                             ->state(fn (?Document $record): array => $record
@@ -654,7 +646,6 @@ class DocumentResource extends Resource
                         TextEntry::make('identifier')->badge()->color('primary')->copyable()->placeholder('—'),
                         TextEntry::make('catalogue_identifier')->label('Catalogue ID')->copyable()->placeholder('—'),
                         TextEntry::make('barcode_in')->label('Barcode (IN)')->copyable()->placeholder('—'),
-                        TextEntry::make('seal_number')->label('Seal #')->copyable()->placeholder('—'),
                     ]),
 
                 Section::make('Legacy box history (RAS / In Situ)')
@@ -1005,7 +996,6 @@ class DocumentResource extends Resource
     {
         return [
             DocumentResource\RelationManagers\IdentifierHistoryRelationManager::class,
-            DocumentResource\RelationManagers\SealNumberHistoryRelationManager::class,
             DocumentResource\RelationManagers\FlagsRelationManager::class,
         ];
     }

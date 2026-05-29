@@ -34,8 +34,8 @@ use Illuminate\Support\Facades\DB;
  *
  * Tenancy-cascade (review H-3): after re-stamping `documents.repository_id`,
  * we cascade the new tenancy onto the document's child rows that mirror
- * it — `document_flags`, `document_identifier_history`,
- * `document_seal_number_history`. Without this cascade, the document would
+ * it — `document_flags`, `document_identifier_history`. Without this
+ * cascade, the document would
  * be visible to operators in the new repo BUT their flags / history
  * panels would render empty because those tables are scoped by
  * `repository_id` (BelongsToRepository) and still point at the old tenant.
@@ -140,10 +140,6 @@ final class MoveToRepositoryAction
                     ->update(['repository_id' => $repo->getKey()]);
 
                 DB::table('document_identifier_history')
-                    ->where('document_id', $doc->getKey())
-                    ->update(['repository_id' => $repo->getKey()]);
-
-                DB::table('document_seal_number_history')
                     ->where('document_id', $doc->getKey())
                     ->update(['repository_id' => $repo->getKey()]);
 

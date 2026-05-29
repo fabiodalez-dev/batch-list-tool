@@ -379,11 +379,6 @@ class DocumentImporter extends Importer
                 ->label('Museum Reference')
                 ->guess(['Museum Reference', 'museum_reference'])
                 ->rules(['nullable', 'string']),
-
-            ImportColumn::make('seal_number')
-                ->label('Seal Number')
-                ->guess(['Seal Number', 'seal_number'])
-                ->rules(['nullable', 'string', 'max:50']),
         ];
     }
 
