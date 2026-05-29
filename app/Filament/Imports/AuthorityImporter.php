@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace App\Filament\Imports;
 
+use App\Filament\Imports\Concerns\SkipsExistingRows;
 use App\Models\Authority;
 use App\Support\BulkImport\SpreadsheetParsers;
 use Filament\Actions\Imports\ImportColumn;
@@ -31,6 +32,8 @@ use Filament\Actions\Imports\Models\Import;
  */
 class AuthorityImporter extends Importer
 {
+    use SkipsExistingRows;
+
     protected static ?string $model = Authority::class;
 
     /**
@@ -135,9 +138,12 @@ class AuthorityImporter extends Importer
      */
     public function resolveRecord(): ?Authority
     {
-        return Authority::query()
+        $record = Authority::query()
             ->where('identifier', $this->data['identifier'] ?? null)
             ->first() ?? new Authority;
+        $this->skipIfDuplicate($record);
+
+        return $record;
     }
 
     public static function getCompletedNotificationBody(Import $import): string

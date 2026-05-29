@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace App\Filament\Imports;
 
+use App\Filament\Imports\Concerns\SkipsExistingRows;
 use App\Models\Authority;
 use App\Models\Document;
 use App\Models\Scopes\RepositoryScope;
@@ -42,8 +43,9 @@ use Spatie\SchemalessAttributes\SchemalessAttributes;
  *     "REG: Registers Private Practice"; we split on ":" and resolve by
  *     code, falling back to title exact match.
  *
- *   - RFQ App.1 #1 (forbidden batches 33/34/36) and #5 (PERM_OUT requires
- *     disinfestation_date) are enforced by `afterFill` validation.
+ *   - RFQ App.1 #1 (forbidden batches 34/36; batch 33 is reserved for old
+ *     MAV boxes) and #5 (PERM_OUT requires disinfestation_date) are enforced
+ *     by `afterFill` validation.
  *
  * Pivot writes (document_authority) happen in `afterSave` because they
  * need the freshly-saved `id`. Resolved authority ids are stashed on the
@@ -53,6 +55,8 @@ use Spatie\SchemalessAttributes\SchemalessAttributes;
  */
 class DocumentImporter extends Importer
 {
+    use SkipsExistingRows;
+
     /**
      * Multi-value cell delimiter per RFQ Appendix-2 §xi. Hard-coded by the
      * RFQ — do NOT swap for `,` or `|` without a contract amendment, since
@@ -403,7 +407,10 @@ class DocumentImporter extends Importer
             $q->where('repository_id', $repoId);
         }
 
-        return $q->first() ?? new Document;
+        $record = $q->first() ?? new Document;
+        $this->skipIfDuplicate($record);
+
+        return $record;
     }
 
     /**

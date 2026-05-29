@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace App\Filament\Imports;
 
+use App\Filament\Imports\Concerns\SkipsExistingRows;
 use App\Models\Location;
 use App\Models\Repository;
 use Filament\Actions\Imports\ImportColumn;
@@ -41,6 +42,8 @@ use Illuminate\Validation\ValidationException;
  */
 class LocationImporter extends Importer
 {
+    use SkipsExistingRows;
+
     protected static ?string $model = Location::class;
 
     /**
@@ -213,7 +216,10 @@ class LocationImporter extends Importer
             ->where('parent_id', $parentId)
             ->first();
 
-        return $existing ?? new Location;
+        $record = $existing ?? new Location;
+        $this->skipIfDuplicate($record);
+
+        return $record;
     }
 
     public static function getCompletedNotificationBody(Import $import): string

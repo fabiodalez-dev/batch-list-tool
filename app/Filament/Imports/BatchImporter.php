@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace App\Filament\Imports;
 
+use App\Filament\Imports\Concerns\SkipsExistingRows;
 use App\Models\Batch;
 use App\Models\Scopes\RepositoryScope;
 use App\Support\BulkImport\EntityResolver;
@@ -30,6 +31,8 @@ use Filament\Actions\Imports\Models\Import;
  */
 class BatchImporter extends Importer
 {
+    use SkipsExistingRows;
+
     protected static ?string $model = Batch::class;
 
     /**
@@ -122,10 +125,13 @@ class BatchImporter extends Importer
             return new Batch;
         }
 
-        return Batch::query()
+        $record = Batch::query()
             ->withoutGlobalScope(RepositoryScope::class)
             ->where('batch_number', (int) $number)
             ->first() ?? new Batch;
+        $this->skipIfDuplicate($record);
+
+        return $record;
     }
 
     /**

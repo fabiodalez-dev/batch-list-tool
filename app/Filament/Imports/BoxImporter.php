@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace App\Filament\Imports;
 
+use App\Filament\Imports\Concerns\SkipsExistingRows;
 use App\Models\Box;
 use App\Models\Scopes\ThroughBatchRepositoryScope;
 use App\Support\BulkImport\EntityResolver;
@@ -32,6 +33,8 @@ use Illuminate\Validation\ValidationException;
  */
 class BoxImporter extends Importer
 {
+    use SkipsExistingRows;
+
     protected static ?string $model = Box::class;
 
     /**
@@ -156,10 +159,19 @@ class BoxImporter extends Importer
                 ->where('barcode', trim((string) $barcode))
                 ->first();
             if ($existing !== null) {
+                // RFQ §3.1.3 — honour the "skip duplicates" checkbox for the
+                // ONE case we can detect an existing box: a barcode hit.
+                $this->skipIfDuplicate($existing);
+
                 return $existing;
             }
         }
 
+        // note: skip_duplicates is a no-op for barcode-less rows. The only
+        // idempotent key BoxImporter can match on is the (unique) barcode;
+        // a (batch_id + box_number) lookup is not possible here because
+        // batch_id is resolved later, in the column fill closures, not in
+        // resolveRecord(). Such rows always insert a new Box.
         return new Box;
     }
 
