@@ -48,7 +48,7 @@ class EditProfile extends \Filament\Auth\Pages\EditProfile
 
     /**
      * Before persisting, guard that the chosen repository belongs to this user.
-     * Mirrors PreferencesPage::save() membership check.
+     * (PreferencesPage no longer holds the repository selector; the check lives here.)
      *
      * @param array<string, mixed> $data
      * @return array<string, mixed>

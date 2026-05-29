@@ -111,6 +111,7 @@
                                     wire:model.live="confirmCode"
                                     placeholder="123 456"
                                     class="font-mono tracking-widest"
+                                    aria-label="Authenticator 6-digit code"
                                 />
                             </x-filament::input.wrapper>
                             {{ $this->confirmAction }}

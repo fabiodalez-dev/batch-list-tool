@@ -62,6 +62,10 @@ class LogAuthenticationEvent
     public function handleFailed(Failed $event): void
     {
         try {
+            if (Audit::$auditingGloballyDisabled || ! config('audit.enabled', true)) {
+                return;
+            }
+
             $attemptedEmail = $event->credentials['email'] ?? null;
 
             $newValues = ['guard' => $event->guard];
@@ -92,6 +96,10 @@ class LogAuthenticationEvent
     public function handleLockout(Lockout $event): void
     {
         try {
+            if (Audit::$auditingGloballyDisabled || ! config('audit.enabled', true)) {
+                return;
+            }
+
             $req = $event->request;
             $attemptedEmail = $req->input('email');
 
@@ -143,6 +151,10 @@ class LogAuthenticationEvent
         array $newValues = [],
         array $oldValues = [],
     ): void {
+        if (Audit::$auditingGloballyDisabled || ! config('audit.enabled', true)) {
+            return;
+        }
+
         Audit::create([
             'user_type' => $actor->getMorphClass(),
             'user_id' => $actor->getAuthIdentifier(),

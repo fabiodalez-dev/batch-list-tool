@@ -115,6 +115,7 @@ class PreferencesPage extends Page
         $state = $this->form->getState();
 
         $user = auth()->user();
+        abort_unless($user, 403);
 
         $user->update([
             'preferred_page_size' => $state['preferred_page_size'] ?? 25,

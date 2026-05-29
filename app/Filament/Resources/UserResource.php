@@ -99,7 +99,9 @@ class UserResource extends Resource
                             ->maxLength(255),
                         Forms\Components\Toggle::make('must_change_password')
                             ->label('Force password change on next login')
-                            ->default(true),
+                            ->default(true)
+                            ->disabled(fn (string $operation): bool => $operation === 'create')
+                            ->helperText(fn (string $operation): ?string => $operation === 'create' ? 'New users always start with a forced password change.' : null),
                     ]),
 
                 Section::make('Role & access')
@@ -224,6 +226,7 @@ class UserResource extends Resource
                             ->title('Password reset')
                             ->body("Temporary password: {$tmp}")
                             ->success()
+                            ->persistent()
                             ->send();
                     }),
                 Action::make('toggleActive')

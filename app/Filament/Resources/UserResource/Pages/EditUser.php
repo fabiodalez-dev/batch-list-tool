@@ -41,6 +41,8 @@ class EditUser extends EditRecord
                     'role' => __('You cannot change your own role.'),
                 ]);
             }
+            // Prevent self-deactivation via a crafted request.
+            $data['is_active'] = true;
         }
 
         return $data;

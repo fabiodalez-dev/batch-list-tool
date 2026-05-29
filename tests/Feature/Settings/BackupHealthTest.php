@@ -67,7 +67,7 @@ it('dispatches a backup run', function () {
     // actually running a backup in the test environment.
     Artisan::shouldReceive('queue')
         ->once()
-        ->with('backup:run', ['--only-db' => false]);
+        ->with('backup:run');
 
     Livewire\Livewire::test(BackupHealthPage::class)
         ->callAction('runBackup')

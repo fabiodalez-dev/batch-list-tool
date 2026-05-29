@@ -7,7 +7,6 @@ namespace App\Filament\Pages\Settings;
 use App\Providers\Filament\AdminPanelProvider;
 use App\Settings\BrandingSettings;
 use Filament\Actions\Action;
-use Filament\Forms\Components\ColorPicker;
 use Filament\Forms\Components\FileUpload;
 use Filament\Forms\Components\TextInput;
 use Filament\Notifications\Notification;
@@ -76,7 +75,6 @@ class BrandingPage extends Page
             'brand_name' => $settings->brand_name,
             'logo_path' => $settings->logo_path,
             'logo_height' => $settings->logo_height,
-            'primary_color' => $settings->primary_color,
         ]);
     }
 
@@ -102,10 +100,6 @@ class BrandingPage extends Page
                             ->maxLength(32)
                             ->placeholder('2.25rem')
                             ->helperText('A valid CSS length, e.g. 2.25rem or 36px.'),
-
-                        ColorPicker::make('primary_color')
-                            ->label('Primary colour')
-                            ->helperText('Used as the brand accent across the panel.'),
                     ]),
 
                 Section::make('Logo')
@@ -137,10 +131,6 @@ class BrandingPage extends Page
         // Only overwrite logo_path when the upload widget produced a new value.
         if (! empty($state['logo_path'])) {
             $settings->logo_path = $state['logo_path'];
-        }
-
-        if (! empty($state['primary_color'])) {
-            $settings->primary_color = $state['primary_color'];
         }
 
         $settings->save();

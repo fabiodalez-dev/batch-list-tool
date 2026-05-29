@@ -73,6 +73,6 @@ class ActivityRelationManager extends RelationManager
 
     public static function canViewForRecord(Model $ownerRecord, string $pageClass): bool
     {
-        return true;
+        return (bool) auth()->user()?->hasAnyRole(['super_admin', 'admin']);
     }
 }

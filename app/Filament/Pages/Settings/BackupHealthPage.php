@@ -162,12 +162,14 @@ class BackupHealthPage extends Page
                 ->icon('heroicon-o-arrow-down-tray')
                 ->color('primary')
                 ->requiresConfirmation()
-                ->modalHeading('Run database backup now?')
-                ->modalDescription('This will queue a full database backup. The backup runs in the background — you can navigate away safely.')
+                ->modalHeading('Run backup now?')
+                ->modalDescription('This will queue a full backup (files + database). The backup runs in the background — you can navigate away safely.')
                 ->modalSubmitActionLabel('Yes, run backup')
                 ->visible(fn () => static::canAccess())
                 ->action(function () {
-                    Artisan::queue('backup:run', ['--only-db' => false]);
+                    abort_unless(static::canAccess(), 403);
+
+                    Artisan::queue('backup:run');
 
                     Notification::make()
                         ->title('Backup queued')
