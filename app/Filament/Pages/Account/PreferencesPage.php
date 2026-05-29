@@ -4,21 +4,20 @@ declare(strict_types=1);
 
 namespace App\Filament\Pages\Account;
 
-use App\Models\User;
 use Filament\Actions\Action;
 use Filament\Forms\Components\Select;
 use Filament\Notifications\Notification;
 use Filament\Pages\Page;
 use Filament\Schemas\Schema;
-use Illuminate\Validation\ValidationException;
 
 /**
- * RFQ §3.1 — My account › Preferences page.
+ * My account › Preferences page.
  *
- * Self-service page where the authenticated user picks their own default
- * repository. The selection is constrained to repositories the user belongs
- * to; any attempt to set a repository outside that set is rejected with a
- * validation error.
+ * Self-service page where the authenticated user sets per-user display
+ * preferences: preferred table page size, UI locale, and display timezone.
+ *
+ * NOTE: The default-repository selector was moved to the Profile page
+ * (EditProfile) to avoid duplication. It is no longer rendered here.
  */
 class PreferencesPage extends Page
 {
@@ -56,8 +55,12 @@ class PreferencesPage extends Page
     {
         abort_unless(static::canAccess(), 403);
 
+        $user = auth()->user();
+
         $this->form->fill([
-            'default_repository_id' => auth()->user()?->default_repository_id,
+            'preferred_page_size' => $user?->preferred_page_size ?? 25,
+            'locale' => $user?->locale,
+            'timezone' => $user?->timezone,
         ]);
     }
 
@@ -65,22 +68,41 @@ class PreferencesPage extends Page
 
     public function form(Schema $schema): Schema
     {
-        /** @var User $user */
-        $user = auth()->user();
-
-        $options = $user
-            ? $user->repositories()->pluck('repositories.name', 'repositories.id')->all()
-            : [];
-
         return $schema
             ->statePath('data')
             ->schema([
-                Select::make('default_repository_id')
-                    ->label('Default repository')
-                    ->options($options)
+                Select::make('preferred_page_size')
+                    ->label('Default table page size')
+                    ->options([
+                        10 => '10',
+                        25 => '25',
+                        50 => '50',
+                        100 => '100',
+                    ])
+                    ->required()
+                    ->helperText('Number of rows shown per page in every table.'),
+
+                Select::make('locale')
+                    ->label('Language')
+                    ->options([
+                        'en' => 'English',
+                        'it' => 'Italiano',
+                    ])
+                    ->nullable()
+                    ->placeholder('System default')
+                    ->helperText('UI language. Leave blank to use the system default.'),
+
+                Select::make('timezone')
+                    ->label('Display timezone')
+                    ->options(
+                        collect(\DateTimeZone::listIdentifiers())
+                            ->mapWithKeys(fn (string $tz) => [$tz => $tz])
+                            ->all()
+                    )
                     ->nullable()
                     ->searchable()
-                    ->helperText('The repository that will be pre-selected when you open the panel.'),
+                    ->placeholder('System default (UTC)')
+                    ->helperText('Timezone used when displaying dates and times.'),
             ]);
     }
 
@@ -92,23 +114,13 @@ class PreferencesPage extends Page
 
         $state = $this->form->getState();
 
-        $chosenId = $state['default_repository_id'] ?? null;
-
-        /** @var User $user */
         $user = auth()->user();
 
-        // Server-side guard: the selected repository must belong to this user.
-        if ($chosenId !== null) {
-            $allowed = $user->repositories()->pluck('repositories.id')->all();
-
-            if (! in_array((int) $chosenId, array_map('intval', $allowed), strict: true)) {
-                throw ValidationException::withMessages([
-                    'data.default_repository_id' => __('You may only select a repository you are assigned to.'),
-                ]);
-            }
-        }
-
-        $user->update(['default_repository_id' => $chosenId]);
+        $user->update([
+            'preferred_page_size' => $state['preferred_page_size'] ?? 25,
+            'locale' => $state['locale'] ?? null,
+            'timezone' => $state['timezone'] ?? null,
+        ]);
 
         Notification::make()
             ->title('Preferences saved')

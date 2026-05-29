@@ -33,6 +33,7 @@ class User extends Authenticatable implements AuditableContract, FilamentUser
 
     protected $fillable = [
         'name', 'email', 'password', 'default_repository_id', 'is_active', 'must_change_password',
+        'preferred_page_size', 'locale', 'timezone',
     ];
 
     protected $attributes = [
@@ -106,6 +107,7 @@ class User extends Authenticatable implements AuditableContract, FilamentUser
             'password' => 'hashed',
             'is_active' => 'boolean',
             'must_change_password' => 'boolean',
+            'preferred_page_size' => 'integer',
         ];
     }
 

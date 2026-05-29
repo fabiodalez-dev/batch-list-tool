@@ -9,6 +9,7 @@ use App\Filament\Widgets\DocumentsPerSeriesChart;
 use App\Filament\Widgets\PendingDisinfestationTable;
 use App\Filament\Widgets\RecentActivityWidget;
 use App\Filament\Widgets\StatsOverviewWidget;
+use App\Http\Middleware\ApplyUserPreferences;
 use App\Http\Middleware\EnsurePasswordChanged;
 use App\Settings\BrandingSettings;
 use App\Support\Avatars\LocalAvatarProvider;
@@ -118,6 +119,7 @@ class AdminPanelProvider extends PanelProvider
             ->authMiddleware([
                 Authenticate::class,
                 EnsurePasswordChanged::class,
+                ApplyUserPreferences::class,
             ]);
     }
 

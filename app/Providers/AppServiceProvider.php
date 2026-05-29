@@ -7,6 +7,7 @@ use App\Models\Document;
 use App\Models\User;
 use App\Observers\DocumentObserver;
 use App\Settings\AuditSettings;
+use Filament\Tables\Table;
 use Illuminate\Auth\Events\Failed;
 use Illuminate\Auth\Events\Lockout;
 use Illuminate\Auth\Events\Login;
@@ -44,6 +45,21 @@ class AppServiceProvider extends ServiceProvider
     public function boot(): void
     {
         Document::observe(DocumentObserver::class);
+
+        // Apply each user's preferred_page_size as the default pagination page
+        // option for every Filament table. The closure runs at table-render time
+        // (after the request is bootstrapped), so auth() is available.
+        // Wrapped defensively: a null/invalid value must never break a page.
+        Table::configureUsing(function (Table $table): void {
+            try {
+                $size = auth()->user()?->preferred_page_size;
+                if ($size && is_int($size) && $size > 0) {
+                    $table->defaultPaginationPageOption($size);
+                }
+            } catch (\Throwable) {
+                // Never let a missing preference crash a page.
+            }
+        });
 
         // Authentication event listeners — write every login lifecycle event to
         // the audit trail (RFQ §3.1.5). Registered here to mirror the
