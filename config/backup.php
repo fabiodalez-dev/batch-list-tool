@@ -13,6 +13,14 @@ use Spatie\Backup\Tasks\Monitor\HealthChecks\MaximumStorageInMegabytes;
 
 return [
 
+    /*
+     * DB safeguard (Task 8): when true, the AppServiceProvider pre-migrate
+     * safety backup is skipped. Escape hatch for emergencies (e.g. disk full)
+     * — set BACKUP_SKIP_PRE_MIGRATE=true in .env. Read via config() from app
+     * code, because env() is only reliable inside config files.
+     */
+    'skip_pre_migrate' => env('BACKUP_SKIP_PRE_MIGRATE', false),
+
     'backup' => [
         /*
          * The name of this application. You can use this name to monitor

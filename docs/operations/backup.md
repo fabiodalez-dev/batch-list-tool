@@ -197,6 +197,58 @@ unzip -l 2026-05-27-02-30-00.zip | head
 
 ---
 
+## 6. Restore the database (in-place, from the UI)
+
+> **Restoring overwrites the live database.** This is the single most
+> destructive operation in the application. The guided flow takes a fresh
+> DB-only safety snapshot *before* it touches anything, and is restricted to
+> **super_admin only**.
+
+### 6.0. Guided restore (Backup Center UI) — super_admin only
+
+The **Restore** row action on the backups list is available **only to
+super_admin** users. It is hidden for admin, editor and viewer, and the server
+re-checks the role on submit (defence in depth — not just UI hiding;
+`App\Filament\Pages\Settings\BackupHealthPage::restoreFromBackup()` calls
+`abort_unless(... hasRole('super_admin'), 403)`).
+
+1. Open **Administration → Backup & Health**.
+2. In the backups list, click **Restore** on the desired `.zip` archive.
+3. In the confirmation modal you must:
+   - tick **"I understand this will OVERWRITE the live database"**; and
+   - **type the exact current database name** shown in the helper text.
+     A mismatch aborts the restore server-side with a clear validation error
+     and nothing is imported.
+4. On submit the system runs `App\Actions\Backup\RestoreDatabase::restore()`,
+   which, in order:
+   1. **STEP A** — takes a pre-restore **safety snapshot** (`backup:run
+      --only-db`, recorded as a `backup_runs` row `type=db` "pre-restore safety
+      snapshot"). If this fails the restore is **aborted** and the database is
+      left untouched.
+   2. **STEP B** — extracts the `.sql` dump from `db-dumps/` inside the chosen
+      archive (ZipArchive) to a temp file.
+   3. **STEP C** — imports the dump into the default connection. It prefers the
+      `mysql` client (run via Symfony Process with an argument array — no shell,
+      dump streamed over stdin, password passed via `MYSQL_PWD`), otherwise
+      falls back to `DB::unprepared()`.
+   4. **STEP D** — records a `backup_runs` row `type=restore` with the outcome
+      (success/failed) and who triggered it.
+
+A safety snapshot is therefore **always** taken first; if the snapshot step
+fails the import is never reached.
+
+### 6.1bis. Manual restore fallback (database only)
+
+If the UI is unavailable, restore manually from the shell:
+
+1. **Take a fresh backup first:** `php artisan backup:run --only-db`.
+2. Locate the desired `.zip` on the backup disk
+   (default: `storage/app/<app-name>/`).
+3. Unzip it and extract the SQL dump from `db-dumps/`.
+4. Import it: `mysql -u <user> -p <database> < db-dumps/<dump>.sql`.
+
+---
+
 ## 6. Restore on a fresh server
 
 This is the disaster-recovery path. Target: a brand-new Linux box with
@@ -547,9 +599,79 @@ ssh archivetool 'cd /home/archivet/public_html && php artisan schedule:run -v'
 
 ---
 
+## 11. DB safety (pre-migrate snapshot + safe refresh)
+
+Two safeguards make destructive database operations recoverable.
+
+### 11.1. Automatic pre-migrate snapshot
+
+`App\Providers\AppServiceProvider` listens for Laravel's
+`Illuminate\Database\Events\MigrationsStarted` event. The moment a migration
+run begins on a **real (non-sqlite)** connection, it takes a DB-only safety
+backup before the migrations touch the schema:
+
+```php
+Artisan::call('backup:run', ['--only-db' => true]);
+```
+
+This covers every destructive path (`migrate:fresh`, `migrate:refresh`,
+`migrate:rollback`) as well as a plain `migrate` — so a bad migration on a DB
+holding real data is always preceded by a recoverable snapshot.
+
+Decision logic (`AppServiceProvider::shouldRunPreMigrateBackup()`, unit-tested):
+the snapshot is **skipped** when
+
+- the default connection driver is `sqlite` (local throwaway DB; the test
+  suite also runs on SQLite `:memory:` and must never trigger spatie),
+- the automated test suite is running (`app()->runningUnitTests()`), or
+- the escape hatch `BACKUP_SKIP_PRE_MIGRATE=true` is set.
+
+It runs once per process (guarded by a static flag) and is wrapped in
+try/catch: on a brand-new install where spatie/laravel-backup isn't usable
+yet, the failure is logged as a **warning** and migrations continue — a
+first-time `migrate` is never blocked by a missing backup.
+
+> **Emergency override:** set `BACKUP_SKIP_PRE_MIGRATE=true` in `.env` (then
+> `php artisan config:clear`) to disable the pre-migrate snapshot, e.g. when
+> the disk is full and you must migrate immediately.
+
+### 11.2. `db:refresh-safe` — wipe but always repopulate
+
+`migrate:fresh` leaves the dev DB empty (no admin to log in with). Use
+`db:refresh-safe` instead — it drops everything, then **always** repopulates:
+
+```bash
+php artisan db:refresh-safe            # fresh + admin seed + sample import + lookup backfill
+php artisan db:refresh-safe --samples=false   # fresh + admin seed only (no sample data)
+php artisan db:refresh-safe --force    # skip the confirmation prompt
+```
+
+What it does, in order:
+
+1. `migrate:fresh` (all tables dropped & recreated)
+2. `db:seed --class=InitialDataSeeder` (admin login + roles — **always**)
+3. `nra:import-samples` (default; disable with `--samples=false`)
+4. Backfills the `document_types` / `practices` lookup tables from the
+   DISTINCT values in the freshly imported `documents` (the create-migration
+   only seeds those when documents already exist, so after a fresh+import they
+   would otherwise be empty).
+
+Safety rails: it **aborts on `production`**, and on any non-`local`
+environment it asks for confirmation unless `--force` is passed.
+
+> **Tests never touch real data.** The whole test suite runs against SQLite
+> `:memory:`; the pre-migrate snapshot is skipped on sqlite, and
+> `db:refresh-safe` is exercised in tests only via its production-abort and
+> signature checks — it is never actually run against a real database in CI.
+
+---
+
 ## Reference
 
 - `config/backup.php` - full configuration (do not modify without re-testing)
+- `app/Providers/AppServiceProvider.php` - pre-migrate snapshot listener (`shouldRunPreMigrateBackup`)
+- `app/Console/Commands/RefreshSafe.php` - the `db:refresh-safe` command
+- `tests/Feature/Backup/DbSafeguardTest.php` - guards both safeguards
 - `routes/console.php` - the three `Schedule::command(...)` entries
 - `tests/Feature/Console/BackupScheduleTest.php` - CI guard that pins the cron expressions
 - `vendor/spatie/laravel-backup/` - upstream package (v10.2.x)

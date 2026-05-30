@@ -66,9 +66,11 @@ it('dispatches a backup run', function () {
 
     // Spy on Artisan::queue so we can assert it is called without
     // actually running a backup in the test environment.
+    // The full-backup action queues `backup:run` with an (empty) parameters
+    // array — queueBackup('full', 'backup:run') → Artisan::queue('backup:run', []).
     Artisan::shouldReceive('queue')
         ->once()
-        ->with('backup:run');
+        ->with('backup:run', []);
 
     Livewire\Livewire::test(BackupHealthPage::class)
         ->callAction('runBackup')

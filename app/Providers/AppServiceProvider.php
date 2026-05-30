@@ -3,21 +3,40 @@
 namespace App\Providers;
 
 use App\Listeners\LogAuthenticationEvent;
+use App\Listeners\RecordBackupRun;
+use App\Models\BackupDestination;
 use App\Models\Document;
 use App\Models\User;
+use App\Observers\BackupDestinationObserver;
 use App\Observers\DocumentObserver;
 use App\Settings\AuditSettings;
+use App\Settings\BackupSettings;
+use App\Support\BackupDestinations;
 use Filament\Tables\Table;
 use Illuminate\Auth\Events\Failed;
 use Illuminate\Auth\Events\Lockout;
 use Illuminate\Auth\Events\Login;
 use Illuminate\Auth\Events\Logout;
 use Illuminate\Auth\Events\PasswordReset;
+use Illuminate\Database\Events\MigrationsStarted;
+use Illuminate\Support\Facades\Artisan;
+use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Event;
 use Illuminate\Support\Facades\Gate;
+use Illuminate\Support\Facades\Log;
 use Illuminate\Support\ServiceProvider;
 use Laravel\Telescope\TelescopeServiceProvider;
 use OwenIt\Auditing\Models\Audit;
+use Spatie\Backup\Events\BackupHasFailed;
+use Spatie\Backup\Events\BackupWasSuccessful;
+use Spatie\Backup\Events\CleanupHasFailed;
+use Spatie\Backup\Events\CleanupWasSuccessful;
+use Spatie\Backup\Notifications\Notifications\BackupHasFailedNotification;
+use Spatie\Backup\Notifications\Notifications\BackupWasSuccessfulNotification;
+use Spatie\Backup\Notifications\Notifications\CleanupHasFailedNotification;
+use Spatie\Backup\Notifications\Notifications\CleanupWasSuccessfulNotification;
+use Spatie\Backup\Notifications\Notifications\HealthyBackupWasFoundNotification;
+use Spatie\Backup\Notifications\Notifications\UnhealthyBackupWasFoundNotification;
 use Spatie\Health\Checks\Checks\BackupsCheck;
 use Spatie\Health\Checks\Checks\DatabaseCheck;
 use Spatie\Health\Checks\Checks\ScheduleCheck;
@@ -26,6 +45,12 @@ use Spatie\Health\Facades\Health;
 
 class AppServiceProvider extends ServiceProvider
 {
+    /**
+     * Guard so the pre-migrate safety backup runs at most once per process,
+     * even if MigrationsStarted fires for several migration batches.
+     */
+    protected static bool $preMigrateBackupAttempted = false;
+
     /**
      * Register any application services.
      */
@@ -70,6 +95,16 @@ class AppServiceProvider extends ServiceProvider
         Event::listen(Lockout::class, [LogAuthenticationEvent::class, 'handleLockout']);
         Event::listen(PasswordReset::class, [LogAuthenticationEvent::class, 'handlePasswordReset']);
 
+        // Backup lifecycle listeners — record every spatie/laravel-backup run
+        // (and cleanup) into backup_runs so the Backup Center can show history.
+        // Same Event::listen() pattern as the auth listeners above.
+        Event::listen(BackupWasSuccessful::class, [RecordBackupRun::class, 'handleBackupWasSuccessful']);
+        Event::listen(BackupHasFailed::class, [RecordBackupRun::class, 'handleBackupHasFailed']);
+        Event::listen(CleanupWasSuccessful::class, [RecordBackupRun::class, 'handleCleanupWasSuccessful']);
+        Event::listen(CleanupHasFailed::class, [RecordBackupRun::class, 'handleCleanupHasFailed']);
+
+        $this->configureBackupNotifications();
+
         // Mirror AuditSettings::enabled at runtime so that toggling the Audit
         // settings page actually stops new audit rows being written.
         //
@@ -101,6 +136,158 @@ class AppServiceProvider extends ServiceProvider
         });
 
         $this->registerHealthChecks();
+
+        // DB safeguard (Task 8): take an automatic DB-only safety backup the
+        // moment a real (non-sqlite) migration run begins, so any destructive
+        // schema change (migrate:fresh / migrate:refresh / migrate:rollback,
+        // or even a plain migrate) is recoverable. The test suite runs against
+        // SQLite :memory:, so this never fires in CI.
+        Event::listen(MigrationsStarted::class, function (): void {
+            $this->runPreMigrateSafetyBackup();
+        });
+
+        // Register user-defined backup destinations (DB-backed) as runtime
+        // filesystem disks and wire them into spatie/laravel-backup's disk list.
+        // Self-guards on the backup_destinations table, so it is safe to call
+        // here even on a fresh install before migrations have run.
+        BackupDestinations::register();
+
+        // Single-default invariant for backup destinations. Registered here
+        // (re-runs on every app refresh, including per-test rebuilds) rather
+        // than in the model's booted() closure, which would bind to a stale
+        // event dispatcher across tests.
+        BackupDestination::observe(BackupDestinationObserver::class);
+    }
+
+    /**
+     * Decide whether a pre-migrate safety backup should run.
+     *
+     * Pure decision logic (no side effects) so it can be unit-tested directly.
+     * Returns false when:
+     *   - the explicit escape hatch BACKUP_SKIP_PRE_MIGRATE is truthy, or
+     *   - we are running the automated test suite (tests use SQLite :memory:
+     *     and must never trigger spatie/laravel-backup), or
+     *   - the default DB connection driver is sqlite (local/dev throwaway DB —
+     *     nothing worth snapshotting, and spatie can't mysqldump it anyway).
+     *
+     * Returns true for every real driver (mysql, mariadb, pgsql, …) so any
+     * destructive migration on a connection holding real data is preceded by
+     * a recoverable snapshot.
+     */
+    public static function shouldRunPreMigrateBackup(?string $driver, bool $runningTests, bool $skipFlag): bool
+    {
+        if ($skipFlag) {
+            return false;
+        }
+
+        if ($runningTests) {
+            return false;
+        }
+
+        if ($driver === null || $driver === 'sqlite') {
+            return false;
+        }
+
+        return true;
+    }
+
+    /**
+     * Wire spatie/laravel-backup mail notifications from BackupSettings.
+     *
+     * Sets the recipient list (config('backup.notifications.mail.to')) from the
+     * admin-configured BackupSettings::notify_emails. Honours the per-event
+     * toggles notify_on_success / notify_on_failure by adjusting the per-event
+     * notification channel map (config('backup.notifications.notifications')):
+     * a disabled event gets its channels cleared so spatie sends nothing for it.
+     *
+     * Wrapped defensively: on a fresh install (settings table not yet migrated)
+     * we leave the config/backup.php defaults untouched rather than crash boot.
+     */
+    protected function configureBackupNotifications(): void
+    {
+        try {
+            $settings = app(BackupSettings::class);
+
+            $recipients = array_values(array_filter(
+                $settings->notify_emails,
+                static fn ($email): bool => is_string($email) && $email !== '',
+            ));
+
+            config(['backup.notifications.mail.to' => $recipients]);
+
+            // Per-event toggles: clear the channel list for any event the admin
+            // has switched off so spatie skips sending that notification.
+            $map = (array) config('backup.notifications.notifications', []);
+
+            $successNotifications = [
+                BackupWasSuccessfulNotification::class,
+                CleanupWasSuccessfulNotification::class,
+                HealthyBackupWasFoundNotification::class,
+            ];
+            $failureNotifications = [
+                BackupHasFailedNotification::class,
+                CleanupHasFailedNotification::class,
+                UnhealthyBackupWasFoundNotification::class,
+            ];
+
+            if (! $settings->notify_on_success) {
+                foreach ($successNotifications as $notification) {
+                    if (array_key_exists($notification, $map)) {
+                        $map[$notification] = [];
+                    }
+                }
+            }
+
+            if (! $settings->notify_on_failure) {
+                foreach ($failureNotifications as $notification) {
+                    if (array_key_exists($notification, $map)) {
+                        $map[$notification] = [];
+                    }
+                }
+            }
+
+            config(['backup.notifications.notifications' => $map]);
+        } catch (\Throwable) {
+            // Settings table unavailable (fresh install / test isolation) —
+            // fall back to the config/backup.php defaults.
+        }
+    }
+
+    /**
+     * Take a DB-only safety backup before migrations proceed on a real DB.
+     *
+     * Wrapped defensively: a fresh install may not have a usable
+     * spatie/laravel-backup setup yet (no schema, no config), and a backup
+     * failure must never block the very first `migrate` of a new deployment.
+     * We log loudly and continue instead.
+     */
+    protected function runPreMigrateSafetyBackup(): void
+    {
+        if (self::$preMigrateBackupAttempted) {
+            return;
+        }
+        self::$preMigrateBackupAttempted = true;
+
+        $driver = DB::connection()->getDriverName();
+        $skipFlag = (bool) config('backup.skip_pre_migrate', false);
+
+        if (! self::shouldRunPreMigrateBackup($driver, $this->app->runningUnitTests(), $skipFlag)) {
+            return;
+        }
+
+        try {
+            Log::info('Pre-migrate safety backup: taking DB-only snapshot before migrations run.', [
+                'driver' => $driver,
+            ]);
+            Artisan::call('backup:run', ['--only-db' => true]);
+        } catch (\Throwable $e) {
+            // Do NOT block migrations on a backup failure (e.g. first-time
+            // setup before spatie is usable). Log clearly so it is visible.
+            Log::warning('Pre-migrate safety backup failed; continuing with migrations.', [
+                'driver' => $driver,
+                'error' => $e->getMessage(),
+            ]);
+        }
     }
 
     /**
