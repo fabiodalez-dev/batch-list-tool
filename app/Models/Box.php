@@ -12,6 +12,7 @@ use Illuminate\Database\Eloquent\SoftDeletes;
 use Illuminate\Support\Collection;
 use Illuminate\Support\Facades\Auth;
 use Illuminate\Support\Facades\DB;
+use Illuminate\Validation\ValidationException;
 use OwenIt\Auditing\Auditable;
 use OwenIt\Auditing\Contracts\Auditable as AuditableContract;
 use Spatie\EloquentSortable\Sortable;
@@ -369,6 +370,18 @@ class Box extends Model implements AuditableContract, Sortable
             foreignTable: 'batches',
             foreignKey: 'batch_id',
         ));
+
+        // RFQ App.1 #4 — Legacy box types (MAV, STVC) cannot be created for new
+        // records. Existing legacy rows remain fully editable (update/save).
+        // `creating` fires ONLY on INSERT — never on UPDATE — so this guard
+        // never interferes with editing a pre-existing legacy box.
+        static::creating(function (self $box): void {
+            if (in_array($box->box_type, self::LEGACY_TYPES, true)) {
+                throw ValidationException::withMessages([
+                    'box_type' => 'Legacy box types (MAV, STVC) cannot be created for new records (RFQ A1.4).',
+                ]);
+            }
+        });
 
         // RFQ App.1 #3 — IN_SITU / NRA boxes require a parent box that is a
         // RAS box. Enforce centrally (every path: UI, importer, console) on
