@@ -123,16 +123,34 @@ jobs:
         run: |
           mkdir -p ~/.ssh
           chmod 700 ~/.ssh
-          ssh-keyscan -p 22 -H "${SSH_HOST}" >> ~/.ssh/known_hosts 2>/dev/null
-          chmod 644 ~/.ssh/known_hosts
+          # ssh-keyscan toward the cPanel host intermittently times out / rate-
+          # limits the GitHub runner IPs. Retry with backoff and DO NOT let a
+          # transient miss kill the step (the deploy SSH below uses
+          # accept-new as a fallback, so a populated known_hosts is best-effort,
+          # not required).
+          ok=0
+          for attempt in 1 2 3 4 5; do
+            if ssh-keyscan -T 20 -p 22 -H "${SSH_HOST}" >> ~/.ssh/known_hosts 2>/dev/null && [ -s ~/.ssh/known_hosts ]; then
+              ok=1; break
+            fi
+            echo "ssh-keyscan attempt ${attempt} failed; retrying in $((attempt * 5))s"
+            sleep $((attempt * 5))
+          done
+          chmod 644 ~/.ssh/known_hosts 2>/dev/null || true
+          [ "$ok" = "1" ] && echo "known_hosts populated" || echo "WARN: ssh-keyscan did not populate known_hosts; deploy step will use accept-new"
 
       - name: Verify deploy script syntax locally
         run: bash -n deploy/post-deploy.sh
 
       - name: Run incremental deploy over SSH
         run: |
+          # StrictHostKeyChecking=accept-new: trust on first connect even when
+          # the Trust-deploy-host keyscan above couldn't reach the host. Safe
+          # here because the deploy uses a dedicated key and a fixed SSH_HOST.
           ssh -o ServerAliveInterval=30 \
               -o ServerAliveCountMax=6 \
+              -o StrictHostKeyChecking=accept-new \
+              -o ConnectTimeout=30 \
               "${SSH_USER}@${SSH_HOST}" \
               "DEPLOY_PATH='${DEPLOY_PATH}' BRANCH='${DEPLOY_BRANCH}' bash -s" \
               < deploy/post-deploy.sh
