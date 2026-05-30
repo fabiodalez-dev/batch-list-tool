@@ -36,12 +36,12 @@ class RefreshSafe extends Command
 
     public function handle(): int
     {
-        // MUTATION TEST (temporary): production guard removed to prove the
-        // test catches it. Will be reverted immediately.
-        // if ($this->getLaravel()->environment('production')) {
-        //     $this->error('db:refresh-safe is refused on the production environment.');
-        //     return self::FAILURE;
-        // }
+        // Never allow a destructive wipe on production.
+        if ($this->getLaravel()->environment('production')) {
+            $this->error('db:refresh-safe is refused on the production environment.');
+
+            return self::FAILURE;
+        }
 
         // Confirm on any non-local environment unless forced.
         if (! $this->option('force') && ! $this->getLaravel()->environment('local')) {
