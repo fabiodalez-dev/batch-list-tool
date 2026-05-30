@@ -24,19 +24,30 @@ return new class extends Migration
 {
     public function up(): void
     {
+        // Column + index — guarded independently from the FK so that an
+        // interrupted MariaDB deploy (column committed, FK not) still adds the
+        // FK on re-run instead of skipping it.
         if (! Schema::hasColumn('series', 'parent_id')) {
             Schema::table('series', function (Blueprint $table) {
                 $table->unsignedBigInteger('parent_id')->nullable();
                 $table->index('parent_id');
             });
+        }
 
-            // Self FK in its own ALTER so SQLite (and MariaDB) accept it.
+        // Self FK in its own ALTER so SQLite (and MariaDB) accept it. Wrapped in
+        // a tolerant try/catch: on a re-run where the FK already exists, MariaDB
+        // raises "Duplicate foreign key constraint name" — which we ignore. The
+        // column type (unsignedBigInteger) matches series.id (bigIncrements), so
+        // the first-run add always succeeds.
+        try {
             Schema::table('series', function (Blueprint $table) {
                 $table->foreign('parent_id')
                     ->references('id')
                     ->on('series')
                     ->nullOnDelete();
             });
+        } catch (Throwable) {
+            // FK already present (idempotent re-run) — nothing to do.
         }
     }
 

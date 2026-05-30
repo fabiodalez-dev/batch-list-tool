@@ -97,17 +97,28 @@ class Series extends Model implements AuditableContract, Sortable
      * over the children relation. Series is a small reference table (tens of
      * rows) so a recursive walk is cheap and avoids a materialised path.
      *
+     * @param array<int, bool> $seen Visited ids — guards against infinite
+     *                               recursion if the table ever contains a
+     *                               cycle (introduced by raw SQL/import that
+     *                               bypassed the app-side cycle rule).
      * @return EloquentCollection<int, Series>
      */
-    public function descendants(): EloquentCollection
+    public function descendants(array &$seen = []): EloquentCollection
     {
         /** @var EloquentCollection<int, Series> $collected */
         $collected = new EloquentCollection;
 
+        $seen[(int) $this->getKey()] = true;
+
         /** @var Series $child */
         foreach ($this->children as $child) {
+            $childId = (int) $child->getKey();
+            if (isset($seen[$childId])) {
+                continue; // cycle — already visited this node
+            }
+            $seen[$childId] = true;
             $collected->push($child);
-            foreach ($child->descendants() as $deep) {
+            foreach ($child->descendants($seen) as $deep) {
                 $collected->push($deep);
             }
         }
