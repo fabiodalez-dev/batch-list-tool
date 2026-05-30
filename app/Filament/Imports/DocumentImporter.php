@@ -15,6 +15,7 @@ use Filament\Actions\Imports\Exceptions\RowImportFailedException;
 use Filament\Actions\Imports\ImportColumn;
 use Filament\Actions\Imports\Importer;
 use Filament\Actions\Imports\Models\Import;
+use Illuminate\Support\Facades\DB;
 use Illuminate\Validation\ValidationException;
 use Spatie\SchemalessAttributes\SchemalessAttributes;
 
@@ -112,6 +113,25 @@ class DocumentImporter extends Importer
      * @var array<int, string>
      */
     protected static array $rowBoxStatusStash = [];
+
+    /**
+     * Per-row transactional safety (review I2 / Fix 5).
+     *
+     * Filament's import job wraps an entire CHUNK in one DB::transaction and
+     * SWALLOWS a failing row (it logs the failure but does NOT roll back). The
+     * base flow runs: beforeSave → saveRecord() [persists the row] → afterSave.
+     * So a box-status / pivot write that throws in afterSave() would otherwise
+     * leave a half-saved Document committed with the chunk while the row is
+     * reported failed.
+     *
+     * We close that gap with an explicit per-row SAVEPOINT: open a nested
+     * transaction in {@see beforeSave()} (just before the record is persisted)
+     * and release it in {@see afterSave()} once the side effects have
+     * succeeded. Any throw in between rolls back to the savepoint, undoing the
+     * document save — the row becomes atomic: it persists fully (document +
+     * box status + pivots) or not at all.
+     */
+    protected bool $rowSavepointOpen = false;
 
     /**
      * @return array<ImportColumn>
@@ -546,41 +566,52 @@ class DocumentImporter extends Importer
         }
     }
 
+    public function beforeSave(): void
+    {
+        // Defensive: if a PRIOR row's saveRecord() threw, afterSave() never ran
+        // and its savepoint could still be open (Filament's chunk job swallows
+        // the row error and moves on). Close it before opening a fresh one so
+        // the transaction nesting level can never drift across rows.
+        if ($this->rowSavepointOpen) {
+            DB::rollBack();
+            $this->rowSavepointOpen = false;
+        }
+
+        // The box-status precondition (PERM_OUT ⇒ disinfestation_date, RFQ
+        // App.1 #5) is already validated in afterFill() BEFORE we reach here,
+        // so a precondition failure never even attempts a save. This savepoint
+        // guards the residual risk: the box save() in afterSave() throwing
+        // (e.g. a model-level guard) AFTER the document row is already written.
+        DB::beginTransaction();
+        $this->rowSavepointOpen = true;
+    }
+
     /**
-     * Attach resolved authorities AFTER the Document row has its id.
-     * Done here (not in `fillRecord`) because the pivot insert needs the
-     * parent id. Reads from the static stash keyed by `spl_object_id` of
-     * the record — we populate the stash inside the column closures.
+     * Attach resolved authorities AFTER the Document row has its id, then
+     * commit (or roll back) the per-row savepoint opened in {@see beforeSave()}.
+     * The pivot + box-status writes live in {@see persistRowSideEffects()} so
+     * any failure there rolls back the just-saved document atomically.
      */
     public function afterSave(): void
     {
-        /** @var Document $record */
-        $record = $this->record;
-        $key = spl_object_id($record);
+        try {
+            $this->persistRowSideEffects();
+        } catch (\Throwable $e) {
+            // Undo the document save (and anything written since beforeSave)
+            // so a failed box-status / pivot write never leaves a half-saved
+            // row. Re-throw so Filament's job logs this as a FAILED row.
+            if ($this->rowSavepointOpen) {
+                DB::rollBack();
+                $this->rowSavepointOpen = false;
+            }
 
-        // Task 8 (B4) — apply the reconciled barcode status to the BOX (the
-        // authoritative source since Task 7). Done here, after the document
-        // has its `current_box_id`, so the box→documents mirror reaches this
-        // document. We never write documents.barcode_status directly: the
-        // box's `updated`/`created` hooks own the mirror.
-        $this->applyBoxBarcodeStatus($record);
-
-        $ids = self::$rowAuthorityStash[$key] ?? [];
-        // Drain the stash for this row so a future row reusing the same
-        // object id (rare but theoretically possible) does not inherit it.
-        unset(self::$rowAuthorityStash[$key]);
-
-        if (count($ids) === 0) {
-            return;
+            throw $e;
         }
-        $ids = array_values(array_unique($ids));
 
-        // First id = primary authority (matches LinkCreatorTextToAuthorities).
-        $pivot = [];
-        foreach ($ids as $i => $authorityId) {
-            $pivot[$authorityId] = ['is_primary' => $i === 0];
+        if ($this->rowSavepointOpen) {
+            DB::commit();
+            $this->rowSavepointOpen = false;
         }
-        $record->authorities()->syncWithoutDetaching($pivot);
     }
 
     /**
@@ -677,6 +708,45 @@ class DocumentImporter extends Importer
         }
 
         return $body;
+    }
+
+    /**
+     * Post-save side effects (box-status reconciliation + authority pivot
+     * writes). Extracted from {@see afterSave()} so they run inside the per-row
+     * savepoint and roll back atomically with the document on any failure.
+     *
+     * Reads from the static stash keyed by `spl_object_id` of the record —
+     * populated inside the column closures during fill.
+     */
+    protected function persistRowSideEffects(): void
+    {
+        /** @var Document $record */
+        $record = $this->record;
+        $key = spl_object_id($record);
+
+        // Task 8 (B4) — apply the reconciled barcode status to the BOX (the
+        // authoritative source since Task 7). Done here, after the document
+        // has its `current_box_id`, so the box→documents mirror reaches this
+        // document. We never write documents.barcode_status directly: the
+        // box's `updated`/`created` hooks own the mirror.
+        $this->applyBoxBarcodeStatus($record);
+
+        $ids = self::$rowAuthorityStash[$key] ?? [];
+        // Drain the stash for this row so a future row reusing the same
+        // object id (rare but theoretically possible) does not inherit it.
+        unset(self::$rowAuthorityStash[$key]);
+
+        if (count($ids) === 0) {
+            return;
+        }
+        $ids = array_values(array_unique($ids));
+
+        // First id = primary authority (matches LinkCreatorTextToAuthorities).
+        $pivot = [];
+        foreach ($ids as $i => $authorityId) {
+            $pivot[$authorityId] = ['is_primary' => $i === 0];
+        }
+        $record->authorities()->syncWithoutDetaching($pivot);
     }
 
     /**

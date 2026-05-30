@@ -6,6 +6,7 @@ use App\Models\Batch;
 use App\Models\Document;
 use App\Models\Repository;
 use App\Models\Series;
+use Illuminate\Database\QueryException;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 
 uses(RefreshDatabase::class);
@@ -112,4 +113,45 @@ it('does NOT record history when a document is created without a barcode', funct
     ]);
 
     expect($document->barcodeHistory()->count())->toBe(0);
+});
+
+// 6 --------------------------------------------------------------------------- (Fix 4)
+it('allows multiple documents to share a NULL barcode', function () {
+    $a = Document::withoutGlobalScopes()->create([
+        'identifier' => 'DBT-NULL-1',
+        'series_id' => $this->series->id,
+        'batch_id' => $this->batch->id,
+        'repository_id' => $this->repo->id,
+        // no barcode → NULL
+    ]);
+    $b = Document::withoutGlobalScopes()->create([
+        'identifier' => 'DBT-NULL-2',
+        'series_id' => $this->series->id,
+        'batch_id' => $this->batch->id,
+        'repository_id' => $this->repo->id,
+        // no barcode → NULL
+    ]);
+
+    expect($a->barcode)->toBeNull()
+        ->and($b->barcode)->toBeNull()
+        ->and(Document::withoutGlobalScopes()->whereNull('barcode')->count())->toBeGreaterThanOrEqual(2);
+});
+
+// 7 --------------------------------------------------------------------------- (Fix 4)
+it('rejects two documents sharing the same non-null barcode (unique violation)', function () {
+    Document::withoutGlobalScopes()->create([
+        'identifier' => 'DBT-DUP-1',
+        'series_id' => $this->series->id,
+        'batch_id' => $this->batch->id,
+        'repository_id' => $this->repo->id,
+        'barcode' => 'DOC-DUP-BC',
+    ]);
+
+    expect(fn () => Document::withoutGlobalScopes()->create([
+        'identifier' => 'DBT-DUP-2',
+        'series_id' => $this->series->id,
+        'batch_id' => $this->batch->id,
+        'repository_id' => $this->repo->id,
+        'barcode' => 'DOC-DUP-BC', // same non-null barcode → must fail
+    ]))->toThrow(QueryException::class);
 });

@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace App\Support;
 
+use Illuminate\Contracts\Auth\Authenticatable;
 use Illuminate\Support\Facades\Session;
 
 /**
@@ -38,24 +39,50 @@ class ActiveRepository
     /**
      * The currently active repository id, or null for "All repositories".
      *
-     * Reads the session first; if nothing is stored there yet, hydrates from
-     * the authenticated user's persisted preference (when available) so a fresh
-     * session restores the last choice. The value is validated against the
-     * user's allowed repositories on every read — fail-closed: an id the user
-     * can no longer access resolves to null (All).
+     * Returns a value ONLY when the user has EXPLICITLY selected a repository
+     * this session (the session key is present). When nothing is explicitly
+     * selected, this returns null ("All repositories") for EVERYONE — including
+     * privileged admin / super_admin users, so their cross-repository oversight
+     * is never silently narrowed by a stale session, a persisted preference, or
+     * a default repository.
+     *
+     * Cross-session restore of the last explicit choice is a deliberate,
+     * explicit step (see {@see restoreFromPreference()}), invoked at a session
+     * boundary — never as an implicit side effect of a scope read. This keeps
+     * the EXPAND-NEVER-RESTRICT default honest: an unselected scope is "All".
+     *
+     * The stored value is validated against the user's allowed repositories on
+     * every read — fail-closed: an id the user can no longer access resolves to
+     * null (All).
      */
     public function id(): ?int
     {
-        if (Session::has(self::SESSION_KEY)) {
-            $stored = Session::get(self::SESSION_KEY);
-            $value = $stored === null ? null : (int) $stored;
-
-            return $this->sanitise($value);
+        if (! Session::has(self::SESSION_KEY)) {
+            // Nothing EXPLICITLY selected this session → "All repositories".
+            return null;
         }
 
-        // Nothing in the session yet → hydrate from the persisted preference.
-        $persisted = $this->persistedPreference();
-        $value = $this->sanitise($persisted);
+        $stored = Session::get(self::SESSION_KEY);
+        $value = $stored === null ? null : (int) $stored;
+
+        return $this->sanitise($value);
+    }
+
+    /**
+     * Restore the last explicit choice from the user's persisted preference
+     * into the session, when the session does not already carry one. This is
+     * the EXPLICIT cross-session continuity hook — call it from a session
+     * boundary (e.g. a post-login listener / middleware), NOT from a scope.
+     *
+     * Returns the resolved active id (validated against the allowed set).
+     */
+    public function restoreFromPreference(): ?int
+    {
+        if (Session::has(self::SESSION_KEY)) {
+            return $this->id();
+        }
+
+        $value = $this->sanitise($this->persistedPreference());
         Session::put(self::SESSION_KEY, $value);
 
         return $value;
@@ -79,6 +106,47 @@ class ActiveRepository
         $this->persist($value);
 
         return $value;
+    }
+
+    /**
+     * SINGLE SOURCE OF TRUTH for "the repository ids this user may access".
+     *
+     * Folds together BOTH access paths (RFQ §3.5.1):
+     *   - the `repository_user` pivot, and
+     *   - `users.default_repository_id`
+     *
+     * so a user whose access is granted ONLY via a default repository (empty
+     * pivot) is still allowed there. Both global scopes (RepositoryScope and
+     * ThroughBatchRepositoryScope) and this resolver MUST derive their allowed
+     * set from here, so they can never diverge again (review I1 / Fix 3).
+     *
+     * Returns:
+     *   - null  → no membership-based restriction (privileged role, or no
+     *             authenticated user / CLI / queue): caller treats as "all".
+     *   - int[] → the explicit, de-duplicated allowed set (possibly empty →
+     *             the caller must fail closed: the user can see nothing).
+     *
+     * @return list<int>|null
+     */
+    public static function allowedRepositoryIdsFor(?Authenticatable $user): ?array
+    {
+        if ($user === null) {
+            return null; // CLI / queue / unauthenticated → no narrowing constraint
+        }
+
+        if (method_exists($user, 'hasAnyRole') && $user->hasAnyRole(['super_admin', 'admin'])) {
+            return null; // privileged: may scope to any repository
+        }
+
+        $ids = collect();
+        if (method_exists($user, 'repositories')) {
+            $ids = $user->repositories()->pluck('repositories.id');
+        }
+        if (! empty($user->default_repository_id)) {
+            $ids = $ids->push($user->default_repository_id);
+        }
+
+        return $ids->map(fn ($id) => (int) $id)->unique()->values()->all();
     }
 
     /**
@@ -115,24 +183,7 @@ class ActiveRepository
      */
     private function allowedRepositoryIds(): ?array
     {
-        $user = auth()->user();
-        if ($user === null) {
-            return null; // CLI / queue / unauthenticated → no narrowing constraint
-        }
-
-        if (method_exists($user, 'hasAnyRole') && $user->hasAnyRole(['super_admin', 'admin'])) {
-            return null; // privileged: may scope to any repository
-        }
-
-        $ids = collect();
-        if (method_exists($user, 'repositories')) {
-            $ids = $user->repositories()->pluck('repositories.id');
-        }
-        if (! empty($user->default_repository_id)) {
-            $ids = $ids->push($user->default_repository_id);
-        }
-
-        return $ids->map(fn ($id) => (int) $id)->unique()->values()->all();
+        return self::allowedRepositoryIdsFor(auth()->user());
     }
 
     /**

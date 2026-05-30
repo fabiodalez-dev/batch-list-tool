@@ -43,7 +43,14 @@ class ThroughBatchRepositoryScope implements Scope
 
         $active = app(ActiveRepository::class)->id();
 
-        if (method_exists($user, 'hasAnyRole') && $user->hasAnyRole(['super_admin', 'admin'])) {
+        // Allowed set computed from the SAME source of truth as RepositoryScope
+        // (pivot ∪ default_repository_id), so the two scopes can never diverge
+        // — a user whose only access is via default_repository_id (empty pivot)
+        // now sees that repository's boxes too (review I1 / Fix 3). null →
+        // privileged: no membership restriction.
+        $allowedIds = ActiveRepository::allowedRepositoryIdsFor($user);
+
+        if ($allowedIds === null) {
             // Privileged: no membership restriction, but still honour an
             // explicit active-repository narrowing chosen via the switcher.
             if ($active !== null) {
@@ -53,18 +60,16 @@ class ThroughBatchRepositoryScope implements Scope
             return;
         }
 
-        $allowedIds = method_exists($user, 'repositories')
-            ? $user->repositories()->pluck('repositories.id')->all()
-            : [];
-
         if (empty($allowedIds)) {
             $builder->whereRaw('1=0'); // user has no repos → no records visible
 
             return;
         }
 
-        // Active-repository narrowing intersected with the allowed set — never
-        // widens access. null (All) keeps the full allowed set (unchanged).
+        // Active-repository narrowing INTERSECTED with the allowed set — a
+        // stale/revoked active id (not in $allowedIds) is ignored and we fall
+        // back to the full allowed set. Never widens, never exposes a forbidden
+        // repo, never goes empty on a bad id. null (All) keeps the full set.
         if ($active !== null && in_array($active, array_map('intval', $allowedIds), true)) {
             $allowedIds = [$active];
         }

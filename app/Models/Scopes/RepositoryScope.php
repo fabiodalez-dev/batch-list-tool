@@ -33,29 +33,25 @@ class RepositoryScope implements Scope
             return; // CLI / queue / unauthenticated → no scope
         }
 
-        if (method_exists($user, 'hasAnyRole') && $user->hasAnyRole(['super_admin', 'admin'])) {
+        // Allowed set = pivot ∪ default_repository_id (shared source of truth,
+        // so this scope can never diverge from ThroughBatchRepositoryScope /
+        // ActiveRepository). null → privileged: see everything.
+        $allowed = ActiveRepository::allowedRepositoryIdsFor($user);
+        if ($allowed === null) {
             return; // admins see everything
         }
 
-        // Build the allowed repository ids: pivot table + default_repository_id
-        $allowed = collect();
-        if (method_exists($user, 'repositories')) {
-            $allowed = $user->repositories()->pluck('repositories.id');
-        }
-        if (! empty($user->default_repository_id)) {
-            $allowed = $allowed->push($user->default_repository_id);
-        }
-        $allowed = $allowed->unique()->values()->all();
-
         if (empty($allowed)) {
-            // User assigned to no repository → see nothing
+            // User assigned to no repository → see nothing (fail closed).
             $builder->whereRaw('1 = 0');
 
             return;
         }
 
-        // Active-repository narrowing. The resolver only ever returns an id the
-        // user is allowed to scope to (or null = All), so intersecting is safe.
+        // Active-repository narrowing, INTERSECTED with the allowed set: a
+        // stale/revoked active id (not in $allowed) is ignored and we fall
+        // back to the full allowed set — never widen, never expose a forbidden
+        // repo, never go empty on a bad id.
         $active = app(ActiveRepository::class)->id();
         if ($active !== null && in_array($active, array_map('intval', $allowed), true)) {
             $builder->where($model->getTable() . '.repository_id', $active);

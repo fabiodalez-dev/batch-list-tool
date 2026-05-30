@@ -245,3 +245,90 @@ test('B4: a PERM_OUT row sets the BOX to PERM_OUT (box carries disinfestation_da
     $doc->refresh();
     expect($doc->barcode_status)->toBe('PERM_OUT');
 });
+
+/* ─── Fix 5 (I2): box-status write must be safe / transactional ───────────── */
+
+test('I2: a PERM_OUT row missing a disinfestation_date is rejected BEFORE any save (no half-saved document)', function () {
+    $repo = ait_repo();
+    $u = ait_makeAdmin($repo->id);
+    $this->actingAs($u);
+    ait_series('REG');
+
+    // PERM_OUT but NO disinfestation_date → the App.1 #5 precondition must be
+    // validated in afterFill, before the document is ever persisted.
+    try {
+        ait_runDocImporter([
+            'identifier' => 'DOC-PERMOUT-NODATE',
+            'series' => 'REG',
+            'batch_number' => 12,
+            'current_box_number' => '4',
+            'status_1' => 'PERM_OUT',
+        ], $u->id, [
+            'identifier' => 'identifier',
+            'series' => 'series',
+            'batch_number' => 'batch_number',
+            'current_box_number' => 'current_box_number',
+            'status_1' => 'status_1',
+        ]);
+        $this->fail('Expected a ValidationException for PERM_OUT without disinfestation_date.');
+    } catch (ValidationException|RowImportFailedException $e) {
+        // either surface is acceptable — the row must fail.
+    }
+
+    // Nothing persisted: not the document.
+    expect(
+        Document::withoutGlobalScope(RepositoryScope::class)
+            ->where('identifier', 'DOC-PERMOUT-NODATE')->exists()
+    )->toBeFalse();
+});
+
+test('I2: a failing box-status write rolls back the just-saved document (no half-saved row)', function () {
+    $repo = ait_repo();
+    $u = ait_makeAdmin($repo->id);
+    $this->actingAs($u);
+    ait_series('REG');
+
+    // Force the BOX save to fail at the moment afterSave() writes its status,
+    // simulating any guard/DB failure that fires AFTER the document row is
+    // already saved. The per-row savepoint must roll the document back.
+    //
+    // Swap in a throw-away dispatcher (a clone, so it keeps the real
+    // model-event listeners) for the duration, then restore the original in
+    // finally{} — a leaked saving() listener would pollute later tests in the
+    // same process.
+    $originalDispatcher = Box::getEventDispatcher();
+    $tempDispatcher = clone $originalDispatcher;
+    $tempDispatcher->listen('eloquent.saving: ' . Box::class, function (Box $box): void {
+        if ($box->barcode_status === 'OUT') {
+            throw new RuntimeException('Simulated box-status write failure');
+        }
+    });
+    Box::setEventDispatcher($tempDispatcher);
+
+    try {
+        ait_runDocImporter([
+            'identifier' => 'DOC-ROLLBACK-1',
+            'series' => 'REG',
+            'batch_number' => 13,
+            'current_box_number' => '6',
+            'status_1' => 'OUT', // triggers the simulated failure on the box save
+        ], $u->id, [
+            'identifier' => 'identifier',
+            'series' => 'series',
+            'batch_number' => 'batch_number',
+            'current_box_number' => 'current_box_number',
+            'status_1' => 'status_1',
+        ]);
+        $this->fail('Expected the simulated box-status failure to surface.');
+    } catch (Throwable $e) {
+        expect($e->getMessage())->toContain('Simulated box-status write failure');
+    } finally {
+        Box::setEventDispatcher($originalDispatcher);
+    }
+
+    // The document must NOT be persisted — the savepoint rolled it back.
+    expect(
+        Document::withoutGlobalScope(RepositoryScope::class)
+            ->where('identifier', 'DOC-ROLLBACK-1')->exists()
+    )->toBeFalse();
+});
