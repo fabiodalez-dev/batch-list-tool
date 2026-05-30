@@ -47,6 +47,9 @@ class Box extends Model implements AuditableContract, Sortable
     protected $fillable = [
         'sort_order',
         'box_type', 'box_number', 'batch_id', 'parent_box_id',
+        // RFQ A1.3 — explicit NULL exception: when true the model guard allows
+        // a null parent_box_id for IN_SITU / NRA boxes (provenance genuinely unknown).
+        'provenance_unknown',
         'barcode', 'seal_number', 'barcode_status', 'location_id', 'disinfestation_date',
         'is_legacy', 'notes',
         // RFQ Appendix 2 §vii — "box destroyed" business state.
@@ -56,6 +59,7 @@ class Box extends Model implements AuditableContract, Sortable
     protected $casts = [
         'disinfestation_date' => 'date',
         'is_legacy' => 'boolean',
+        'provenance_unknown' => 'boolean',
         'destroyed_at' => 'datetime',
     ];
 
@@ -397,8 +401,17 @@ class Box extends Model implements AuditableContract, Sortable
             }
 
             if ($box->parent_box_id === null) {
+                // RFQ A1.3 — explicit-NULL exception: a box flagged as
+                // `provenance_unknown` is allowed to have no parent.
+                // The flag must be set explicitly (default false) and should
+                // be used sparingly (genuine unknown-provenance legacy records).
+                if ($box->provenance_unknown === true) {
+                    return;
+                }
+
                 throw new \DomainException(
-                    "Box type {$box->box_type} requires a parent RAS box (RFQ App.1 #3)."
+                    "Box type {$box->box_type} requires a parent RAS box (RFQ App.1 #3). "
+                    . 'Set provenance_unknown=true to allow a null parent for genuinely unknown-provenance records.'
                 );
             }
 
