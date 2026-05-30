@@ -16,8 +16,12 @@ use Illuminate\Auth\Events\Lockout;
 use Illuminate\Auth\Events\Login;
 use Illuminate\Auth\Events\Logout;
 use Illuminate\Auth\Events\PasswordReset;
+use Illuminate\Database\Events\MigrationsStarted;
+use Illuminate\Support\Facades\Artisan;
+use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Event;
 use Illuminate\Support\Facades\Gate;
+use Illuminate\Support\Facades\Log;
 use Illuminate\Support\ServiceProvider;
 use Laravel\Telescope\TelescopeServiceProvider;
 use OwenIt\Auditing\Models\Audit;
@@ -39,6 +43,12 @@ use Spatie\Health\Facades\Health;
 
 class AppServiceProvider extends ServiceProvider
 {
+    /**
+     * Guard so the pre-migrate safety backup runs at most once per process,
+     * even if MigrationsStarted fires for several migration batches.
+     */
+    protected static bool $preMigrateBackupAttempted = false;
+
     /**
      * Register any application services.
      */
@@ -125,11 +135,52 @@ class AppServiceProvider extends ServiceProvider
 
         $this->registerHealthChecks();
 
+        // DB safeguard (Task 8): take an automatic DB-only safety backup the
+        // moment a real (non-sqlite) migration run begins, so any destructive
+        // schema change (migrate:fresh / migrate:refresh / migrate:rollback,
+        // or even a plain migrate) is recoverable. The test suite runs against
+        // SQLite :memory:, so this never fires in CI.
+        Event::listen(MigrationsStarted::class, function (): void {
+            $this->runPreMigrateSafetyBackup();
+        });
+
         // Register user-defined backup destinations (DB-backed) as runtime
         // filesystem disks and wire them into spatie/laravel-backup's disk list.
         // Self-guards on the backup_destinations table, so it is safe to call
         // here even on a fresh install before migrations have run.
         BackupDestinations::register();
+    }
+
+    /**
+     * Decide whether a pre-migrate safety backup should run.
+     *
+     * Pure decision logic (no side effects) so it can be unit-tested directly.
+     * Returns false when:
+     *   - the explicit escape hatch BACKUP_SKIP_PRE_MIGRATE is truthy, or
+     *   - we are running the automated test suite (tests use SQLite :memory:
+     *     and must never trigger spatie/laravel-backup), or
+     *   - the default DB connection driver is sqlite (local/dev throwaway DB —
+     *     nothing worth snapshotting, and spatie can't mysqldump it anyway).
+     *
+     * Returns true for every real driver (mysql, mariadb, pgsql, …) so any
+     * destructive migration on a connection holding real data is preceded by
+     * a recoverable snapshot.
+     */
+    public static function shouldRunPreMigrateBackup(?string $driver, bool $runningTests, bool $skipFlag): bool
+    {
+        if ($skipFlag) {
+            return false;
+        }
+
+        if ($runningTests) {
+            return false;
+        }
+
+        if ($driver === null || $driver === 'sqlite') {
+            return false;
+        }
+
+        return true;
     }
 
     /**
@@ -191,6 +242,43 @@ class AppServiceProvider extends ServiceProvider
         } catch (\Throwable) {
             // Settings table unavailable (fresh install / test isolation) —
             // fall back to the config/backup.php defaults.
+        }
+    }
+
+    /**
+     * Take a DB-only safety backup before migrations proceed on a real DB.
+     *
+     * Wrapped defensively: a fresh install may not have a usable
+     * spatie/laravel-backup setup yet (no schema, no config), and a backup
+     * failure must never block the very first `migrate` of a new deployment.
+     * We log loudly and continue instead.
+     */
+    protected function runPreMigrateSafetyBackup(): void
+    {
+        if (self::$preMigrateBackupAttempted) {
+            return;
+        }
+        self::$preMigrateBackupAttempted = true;
+
+        $driver = DB::connection()->getDriverName();
+        $skipFlag = (bool) config('backup.skip_pre_migrate', false);
+
+        if (! self::shouldRunPreMigrateBackup($driver, $this->app->runningUnitTests(), $skipFlag)) {
+            return;
+        }
+
+        try {
+            Log::info('Pre-migrate safety backup: taking DB-only snapshot before migrations run.', [
+                'driver' => $driver,
+            ]);
+            Artisan::call('backup:run', ['--only-db' => true]);
+        } catch (\Throwable $e) {
+            // Do NOT block migrations on a backup failure (e.g. first-time
+            // setup before spatie is usable). Log clearly so it is visible.
+            Log::warning('Pre-migrate safety backup failed; continuing with migrations.', [
+                'driver' => $driver,
+                'error' => $e->getMessage(),
+            ]);
         }
     }
 
