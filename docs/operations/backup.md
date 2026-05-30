@@ -197,6 +197,58 @@ unzip -l 2026-05-27-02-30-00.zip | head
 
 ---
 
+## 6. Restore the database (in-place, from the UI)
+
+> **Restoring overwrites the live database.** This is the single most
+> destructive operation in the application. The guided flow takes a fresh
+> DB-only safety snapshot *before* it touches anything, and is restricted to
+> **super_admin only**.
+
+### 6.0. Guided restore (Backup Center UI) — super_admin only
+
+The **Restore** row action on the backups list is available **only to
+super_admin** users. It is hidden for admin, editor and viewer, and the server
+re-checks the role on submit (defence in depth — not just UI hiding;
+`App\Filament\Pages\Settings\BackupHealthPage::restoreFromBackup()` calls
+`abort_unless(... hasRole('super_admin'), 403)`).
+
+1. Open **Administration → Backup & Health**.
+2. In the backups list, click **Restore** on the desired `.zip` archive.
+3. In the confirmation modal you must:
+   - tick **"I understand this will OVERWRITE the live database"**; and
+   - **type the exact current database name** shown in the helper text.
+     A mismatch aborts the restore server-side with a clear validation error
+     and nothing is imported.
+4. On submit the system runs `App\Actions\Backup\RestoreDatabase::restore()`,
+   which, in order:
+   1. **STEP A** — takes a pre-restore **safety snapshot** (`backup:run
+      --only-db`, recorded as a `backup_runs` row `type=db` "pre-restore safety
+      snapshot"). If this fails the restore is **aborted** and the database is
+      left untouched.
+   2. **STEP B** — extracts the `.sql` dump from `db-dumps/` inside the chosen
+      archive (ZipArchive) to a temp file.
+   3. **STEP C** — imports the dump into the default connection. It prefers the
+      `mysql` client (run via Symfony Process with an argument array — no shell,
+      dump streamed over stdin, password passed via `MYSQL_PWD`), otherwise
+      falls back to `DB::unprepared()`.
+   4. **STEP D** — records a `backup_runs` row `type=restore` with the outcome
+      (success/failed) and who triggered it.
+
+A safety snapshot is therefore **always** taken first; if the snapshot step
+fails the import is never reached.
+
+### 6.1bis. Manual restore fallback (database only)
+
+If the UI is unavailable, restore manually from the shell:
+
+1. **Take a fresh backup first:** `php artisan backup:run --only-db`.
+2. Locate the desired `.zip` on the backup disk
+   (default: `storage/app/<app-name>/`).
+3. Unzip it and extract the SQL dump from `db-dumps/`.
+4. Import it: `mysql -u <user> -p <database> < db-dumps/<dump>.sql`.
+
+---
+
 ## 6. Restore on a fresh server
 
 This is the disaster-recovery path. Target: a brand-new Linux box with
