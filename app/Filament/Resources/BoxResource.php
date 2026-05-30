@@ -123,7 +123,9 @@ class BoxResource extends Resource
                             fn ($query) => $query->where('box_type', 'RAS'),
                         )
                             ->label('Parent RAS box')
-                            ->visible(fn (Get $get) => in_array($get('box_type'), ['IN_SITU', 'NRA'], true))
+                            // U3 — hide (not just de-require) when provenance is unknown;
+                            // keeping it visible but optional was confusing.
+                            ->visible(fn (Get $get) => in_array($get('box_type'), ['IN_SITU', 'NRA'], true) && ! $get('provenance_unknown'))
                             ->required(fn (Get $get) => in_array($get('box_type'), ['IN_SITU', 'NRA'], true) && ! $get('provenance_unknown'))
                             ->columnSpanFull()
                             ->rule(function (Get $get) {
@@ -145,6 +147,8 @@ class BoxResource extends Resource
                     ->columns($twoCols)
                     ->schema([
                         $g(Forms\Components\TextInput::make('barcode')
+                            ->label('Box barcode')
+                            ->helperText('Barcode label on this box. Distinct from any per-document barcodes inside it.')
                             ->maxLength(64)),
                         // RFQ Contract App.2-i — the yellow security seal that
                         // closes the box belongs to the BOX; every change is

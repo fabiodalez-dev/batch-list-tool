@@ -33,7 +33,9 @@ final class MoveBoxToLocationAction
         return Action::make($name)
             ->label('Move to location')
             ->icon('heroicon-o-map-pin')
-            ->color('primary')
+            ->color('warning')
+            // U6 — hide on destroyed boxes (mirrors DestroyBoxAction visibility guard).
+            ->visible(fn (?Box $record): bool => $record !== null && ! $record->isDestroyed())
             ->modalHeading('Move box to a different location')
             ->modalDescription('Select the target location. The change will be recorded in the audit trail.')
             ->form([

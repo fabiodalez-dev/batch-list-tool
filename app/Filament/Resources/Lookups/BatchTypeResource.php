@@ -69,7 +69,8 @@ class BatchTypeResource extends Resource
                         Forms\Components\TextInput::make('code')
                             ->required()
                             ->maxLength(32)
-                            ->unique(ignoreRecord: true),
+                            ->unique(ignoreRecord: true)
+                            ->helperText('Machine key stored on records — renaming an in-use code does not update existing rows.'),
                         Forms\Components\TextInput::make('label')
                             ->required()
                             ->maxLength(255),
@@ -123,6 +124,10 @@ class BatchTypeResource extends Resource
                     ->label(fn (BatchType $record) => $record->is_active ? 'Deactivate' : 'Activate')
                     ->icon(fn (BatchType $record) => $record->is_active ? 'heroicon-o-x-circle' : 'heroicon-o-check-circle')
                     ->color(fn (BatchType $record) => $record->is_active ? 'warning' : 'success')
+                    ->requiresConfirmation()
+                    ->modalDescription(fn (BatchType $record) => $record->is_active
+                        ? 'Deactivating this value hides it from new records app-wide. Existing records that already use it are unaffected.'
+                        : 'Re-activating this value makes it available again for new records.')
                     ->action(fn (BatchType $record) => $record->update(['is_active' => ! $record->is_active])),
                 EditAction::make(),
             ])

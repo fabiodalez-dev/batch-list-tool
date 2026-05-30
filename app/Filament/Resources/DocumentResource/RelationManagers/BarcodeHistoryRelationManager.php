@@ -120,6 +120,19 @@ class BarcodeHistoryRelationManager extends RelationManager
 
     public static function canViewForRecord(Model $ownerRecord, string $pageClass): bool
     {
-        return true;
+        $user = auth()->user();
+
+        if ($user === null) {
+            return false;
+        }
+
+        // Admins see all history; editors / viewers need the Shield perm.
+        if (method_exists($user, 'hasAnyRole') && $user->hasAnyRole(['super_admin', 'admin'])) {
+            return true;
+        }
+
+        return method_exists($user, 'can')
+            ? (bool) $user->can('view_document')
+            : false;
     }
 }

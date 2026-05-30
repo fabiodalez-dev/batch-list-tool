@@ -210,6 +210,14 @@ class DocumentResource extends Resource
                                 ->all())
                             ->default('in_box')
                             ->native(false)),
+                        // U1 — document barcode visible at the top level of the
+                        // form (not buried in the legacy-barcodes collapsed section).
+                        // Custody status is still authoritative from the box.
+                        $g(Forms\Components\TextInput::make('barcode')
+                            ->label('Document barcode (individual label)')
+                            ->maxLength(255)
+                            ->helperText('Optional barcode for this specific document. Changes are tracked in the Barcode history tab. Custody status is authoritative from the box.')
+                            ->columnSpanFull()),
                         $g(Forms\Components\TextInput::make('nra_location')->maxLength(500)
                             ->helperText('Legacy free-text. New records should use the Location Select above.')
                             ->columnSpanFull()),
@@ -299,11 +307,6 @@ class DocumentResource extends Resource
                     ->collapsed()
                     ->columns(2)
                     ->schema([
-                        $g(Forms\Components\TextInput::make('barcode')
-                            ->label('Document barcode (individual label)')
-                            ->maxLength(255)
-                            ->helperText('Optional barcode assigned to this specific document for individual labelling. Changes are tracked in the Barcode history tab. Custody status is still authoritative from the box.')
-                            ->columnSpanFull()),
                         $g(Forms\Components\TextInput::make('barcode_in')->label('Barcode (IN)')->maxLength(50)),
                         $g(Forms\Components\TextInput::make('barcode_in_2')->label('Barcode (IN) #2')->maxLength(50)),
                         $g(Forms\Components\TextInput::make('barcode_ras_1')->label('Barcode RAS 1')->maxLength(50)),
@@ -666,6 +669,13 @@ class DocumentResource extends Resource
                     ->schema([
                         TextEntry::make('identifier')->badge()->color('primary')->copyable()->placeholder('—'),
                         TextEntry::make('catalogue_identifier')->label('Catalogue ID')->copyable()->placeholder('—'),
+                        // U1 — document barcode visible in read mode (was edit-only before).
+                        // Custody status is authoritative from the box, not from this field.
+                        TextEntry::make('barcode')
+                            ->label('Document barcode (individual label)')
+                            ->copyable()
+                            ->placeholder('—')
+                            ->helperText('Individual label barcode. Custody status is authoritative from the box.'),
                         TextEntry::make('barcode_in')->label('Barcode (IN)')->copyable()->placeholder('—'),
                     ]),
 
