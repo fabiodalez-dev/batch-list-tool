@@ -99,7 +99,7 @@ it('applies the user locale via middleware', function () {
 
     app()->setLocale('en'); // reset to a known value
 
-    $middleware = new ApplyUserPreferences;
+    $middleware = app(ApplyUserPreferences::class);
     $middleware->handle(
         Request::create('/admin'),
         function ($req) {
