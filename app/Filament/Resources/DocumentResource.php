@@ -763,6 +763,13 @@ class DocumentResource extends Resource
 
         return $table
             ->defaultSort('identifier')
+            // Feedback1 — let each user choose which columns are visible and
+            // reorder them. Column visibility/order is the default per-user
+            // Filament behaviour (persisted client-side).
+            ->reorderableColumns()
+            // Feedback1 — expose first/last page links in the paginator so
+            // users can jump to the ends of the (large) document list.
+            ->extremePaginationLinks()
             // Force the table search input on even though most columns below
             // intentionally drop `->searchable()` (the omni-search closure
             // wired via `searchUsing()` is now the single source of truth
@@ -798,8 +805,8 @@ class DocumentResource extends Resource
                     // is null. Sorting / search remain on the canonical column.
                     ->state(fn (Document $record): ?string => $record->display_identifier)),
                 $gc(Tables\Columns\TextColumn::make('document_type')->toggleable()),
-                $gc(Tables\Columns\TextColumn::make('series.code')->label('Series')->badge()->sortable(), 'series_id'),
-                $gc(Tables\Columns\TextColumn::make('batch.batch_number')->label('Batch')->sortable()->alignCenter(), 'batch_id'),
+                $gc(Tables\Columns\TextColumn::make('series.code')->label('Series')->badge()->sortable()->toggleable(), 'series_id'),
+                $gc(Tables\Columns\TextColumn::make('batch.batch_number')->label('Batch')->sortable()->alignCenter()->toggleable(), 'batch_id'),
                 $gc(Tables\Columns\TextColumn::make('currentBox.box_number')->label('Box')->toggleable(), 'current_box_id'),
                 $gc(Tables\Columns\TextColumn::make('practice')->toggleable()),
                 $gc(Tables\Columns\TextColumn::make('volume_label')->label('Vol.')->toggleable()),

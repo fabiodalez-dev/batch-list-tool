@@ -30,6 +30,14 @@ class AccessionResource extends Resource
 
     protected static ?string $recordTitleAttribute = 'code';
 
+    // Feedback1 — present Accessions as "Notary Accession" across the UI
+    // (nav, breadcrumbs, page titles). The DB table/model name is unchanged.
+    protected static ?string $navigationLabel = 'Notary Accessions';
+
+    protected static ?string $modelLabel = 'Notary Accession';
+
+    protected static ?string $pluralModelLabel = 'Notary Accessions';
+
     public static function form(Schema $schema): Schema
     {
         // Layout rule (user mandate, do NOT regress): root columns(1) so every

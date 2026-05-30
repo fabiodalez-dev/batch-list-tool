@@ -288,9 +288,18 @@ final class SearchableSelects
 
     public static function authorityLabel(Authority $r): string
     {
+        // Feedback1 — creator dropdown label reads "identifier – firstname
+        // lastname" (given name before surname). Search still works on
+        // identifier + name because the underlying query targets all of
+        // identifier/surname/given_names/alternative_identifier.
         $identifier = $r->identifier ?? '—';
-        $surname = $r->surname ?? '—';
-        $given = $r->given_names !== null && $r->given_names !== '' ? ' ' . $r->given_names : '';
+        $name = trim(implode(' ', array_filter([
+            $r->given_names !== null && $r->given_names !== '' ? $r->given_names : null,
+            $r->surname !== null && $r->surname !== '' ? $r->surname : null,
+        ])));
+        if ($name === '') {
+            $name = '—';
+        }
 
         $start = $r->practice_dates_start;
         $end = $r->practice_dates_end;
@@ -299,7 +308,7 @@ final class SearchableSelects
             $dates = ' (' . ($start ?? '?') . '-' . ($end ?? '?') . ')';
         }
 
-        return "{$identifier} — {$surname}{$given}{$dates}";
+        return "{$identifier} – {$name}{$dates}";
     }
 
     /* =========================================================================

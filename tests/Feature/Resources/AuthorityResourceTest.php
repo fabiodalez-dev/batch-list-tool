@@ -60,10 +60,14 @@ function actAsAdmin_auth(): User
 
 function makeAuthority_auth(array $attrs = []): Authority
 {
+    // Feedback1 — identifiers must start with R/I and given_names is now a
+    // required form field, so the seed data satisfies the form validators
+    // that re-run on the Edit page's save() (used by several tests below).
     return Authority::create(array_merge([
-        'identifier' => 'AT-' . strtoupper(substr(uniqid(), -8)),
+        'identifier' => 'R' . strtoupper(substr(uniqid(), -8)),
         'surname' => 'Surname' . substr(uniqid(), -4),
-        'entity_type' => 'PERSON',
+        'given_names' => 'Given',
+        'entity_type' => 'Notary',
     ], $attrs));
 }
 
@@ -101,13 +105,16 @@ test('AuthorityResource create form renders with required fields', function () {
 test('AuthorityResource valid create persists row', function () {
     $this->actingAs(actAsAdmin_auth());
 
-    $identifier = 'AT-NEW-' . strtoupper(substr(uniqid(), -6));
+    // Feedback1 — identifier must start with R or I; given_names is now
+    // required; entity_type is the Notary/Interventor vocabulary.
+    $identifier = 'R-NEW-' . strtoupper(substr(uniqid(), -6));
 
     Livewire::test(CreateAuthority::class)
         ->fillForm([
             'identifier' => $identifier,
             'surname' => 'Borg',
-            'entity_type' => 'PERSON',
+            'given_names' => 'Joseph',
+            'entity_type' => 'Notary',
         ])
         ->call('create')
         ->assertHasNoFormErrors();
