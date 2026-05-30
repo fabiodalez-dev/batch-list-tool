@@ -32,7 +32,9 @@ return new class extends Migration
         Schema::create('document_barcode_history', function (Blueprint $t): void {
             $t->id();
             $t->foreignId('document_id')->constrained('documents')->cascadeOnDelete();
-            $t->unsignedBigInteger('repository_id')->nullable()->after('document_id')->index();
+            // NB: no ->after() here — column position modifiers are only valid
+            // in ALTER TABLE; MariaDB rejects them inside CREATE TABLE (1064).
+            $t->unsignedBigInteger('repository_id')->nullable()->index();
             $t->foreign('repository_id', 'doc_barcode_history_repo_fk')
                 ->references('id')->on('repositories')->nullOnDelete();
             $t->string('old_value')->nullable();
