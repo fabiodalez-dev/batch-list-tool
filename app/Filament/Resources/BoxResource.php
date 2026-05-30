@@ -7,6 +7,8 @@ use App\Filament\Concerns\AppliesFieldPermissions;
 use App\Filament\Resources\BoxResource\Pages;
 use App\Filament\Support\SearchableSelects;
 use App\Models\Box;
+use App\Models\Lookup\BarcodeStatus;
+use App\Models\Lookup\BoxType;
 use Filament\Actions\BulkActionGroup;
 use Filament\Actions\DeleteBulkAction;
 use Filament\Actions\EditAction;
@@ -60,7 +62,7 @@ class BoxResource extends Resource
                     ->columns($twoCols)
                     ->schema([
                         $g(Forms\Components\Select::make('box_type')
-                            ->options(collect(Box::TYPES)->mapWithKeys(fn ($t) => [$t => $t]))
+                            ->options(fn (): array => BoxType::options())
                             ->required()
                             ->live()  // re-evaluate visibility/required of dependent fields
                             ->helperText('RAS / IN_SITU / NRA for new boxes. MAV / STVC are legacy-only and cannot be created.')
@@ -151,7 +153,7 @@ class BoxResource extends Resource
                             ->maxLength(255)
                             ->helperText('Yellow security seal closing the box. Changes are kept in the seal history.')),
                         $g(Forms\Components\Select::make('barcode_status')
-                            ->options(collect(Box::BARCODE_STATUSES)->mapWithKeys(fn ($s) => [$s => $s]))
+                            ->options(fn (): array => BarcodeStatus::options())
                             ->required()
                             ->live()
                             ->default('IN')),

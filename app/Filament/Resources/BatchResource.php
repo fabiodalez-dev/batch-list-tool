@@ -6,6 +6,7 @@ use App\Filament\Concerns\AppliesFieldPermissions;
 use App\Filament\Resources\BatchResource\Pages;
 use App\Filament\Support\SearchableSelects;
 use App\Models\Batch;
+use App\Models\Lookup\BatchType;
 use App\Models\Repository;
 use Filament\Actions\BulkActionGroup;
 use Filament\Actions\DeleteBulkAction;
@@ -73,7 +74,14 @@ class BatchResource extends Resource
                                     }
                                 };
                             })),
-                        $g(Forms\Components\TextInput::make('type')
+                        // RFQ §3.1.11 — expose the batch_types lookup as form
+                        // options. batches.type retains its DB ENUM
+                        // (MAIN_COLLECTION / NOTARY_ACCESSION) and is NOT given a
+                        // strict model-level lookup guard, so existing data /
+                        // tests are unaffected; the Select simply surfaces the
+                        // editable controlled vocabulary in the UI.
+                        $g(Forms\Components\Select::make('type')
+                            ->options(fn (): array => BatchType::options())
                             ->required()),
                         $g(Forms\Components\TextInput::make('description')
                             ->maxLength(255)

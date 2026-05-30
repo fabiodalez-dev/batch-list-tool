@@ -3,6 +3,7 @@
 namespace App\Filament\Resources\DocumentResource\RelationManagers;
 
 use App\Models\DocumentFlag;
+use App\Models\Lookup\FlagType;
 use Filament\Actions\Action;
 use Filament\Actions\CreateAction;
 use Filament\Actions\EditAction;
@@ -244,11 +245,24 @@ class FlagsRelationManager extends RelationManager
      |  standalone DocumentFlagResource so the option lists never drift.
      |---------------------------------------------------------------------*/
 
-    /** @return array<string, string> */
+    /**
+     * RFQ §3.1.11 — flag type options are sourced from the editable
+     * flag_types lookup (active rows only); labels keep the established
+     * humanised spelling via {@see self::typeLabel()} so display does not
+     * drift. Falls back to the frozen consts if the lookup is unavailable
+     * (e.g. before the lookup migration has run).
+     *
+     * @return array<string, string>
+     */
     public static function typeOptions(): array
     {
+        $codes = FlagType::active()->pluck('code')->all();
+        if ($codes === []) {
+            $codes = DocumentFlag::TYPES;
+        }
+
         $out = [];
-        foreach (DocumentFlag::TYPES as $t) {
+        foreach ($codes as $t) {
             $out[$t] = self::typeLabel($t);
         }
 

@@ -4,7 +4,10 @@ namespace App\Models;
 
 use App\Models\Builders\DocumentBuilder;
 use App\Models\Concerns\BelongsToRepository;
+use App\Models\Lookup\CurrentBoxType;
+use App\Models\Lookup\DigitisationStatus;
 use App\Observers\DocumentObserver;
+use App\Support\Lookups;
 use Carbon\Carbon;
 use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Database\Eloquent\Factories\HasFactory;
@@ -553,6 +556,14 @@ class Document extends Model implements AuditableContract, HasMedia, Sortable
                     );
                 }
                 $document->digitised = $normalized;
+
+                // RFQ §3.1.11 (part 2 of 3) — beyond the frozen-const enum
+                // gate above, the (now-canonical) value must be an ACTIVE row
+                // in the digitisation_statuses lookup. Dirty-check so a record
+                // carrying a value that was LATER deactivated still re-saves.
+                if ($document->isDirty('digitised')) {
+                    Lookups::assertActive(DigitisationStatus::class, 'digitised', $document->digitised);
+                }
             }
 
             if ($document->current_box_type !== null) {
@@ -564,6 +575,10 @@ class Document extends Model implements AuditableContract, HasMedia, Sortable
                     );
                 }
                 $document->current_box_type = $normalized;
+
+                if ($document->isDirty('current_box_type')) {
+                    Lookups::assertActive(CurrentBoxType::class, 'current_box_type', $document->current_box_type);
+                }
             }
 
             // Gate `custody_status` in PHP too: the MySQL CHECK does not run on

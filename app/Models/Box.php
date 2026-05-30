@@ -2,7 +2,10 @@
 
 namespace App\Models;
 
+use App\Models\Lookup\BarcodeStatus;
+use App\Models\Lookup\BoxType;
 use App\Models\Scopes\ThroughBatchRepositoryScope;
+use App\Support\Lookups;
 use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Database\Eloquent\Factories\HasFactory;
 use Illuminate\Database\Eloquent\Model;
@@ -392,6 +395,20 @@ class Box extends Model implements AuditableContract, Sortable
         // create or whenever box_type / parent_box_id changes. We deliberately
         // do NOT fire on an unrelated update of a pre-existing legacy row, so a
         // barcode edit on legacy data is not blocked retroactively.
+        // RFQ §3.1.11 (part 2 of 3) — validate the ENUM-derived columns against
+        // the ACTIVE rows of the lookup tables (App\Models\Lookup\*), which are
+        // now the editable source of truth. Only assert when the value is dirty
+        // so a pre-existing record carrying a value that was LATER deactivated
+        // still loads and can be re-saved (expand, never restrict).
+        static::saving(function (self $box): void {
+            if ($box->isDirty('box_type')) {
+                Lookups::assertActive(BoxType::class, 'box_type', $box->box_type);
+            }
+            if ($box->isDirty('barcode_status')) {
+                Lookups::assertActive(BarcodeStatus::class, 'barcode_status', $box->barcode_status);
+            }
+        });
+
         static::saving(function (self $box): void {
             if (! $box->requiresParent()) {
                 return;

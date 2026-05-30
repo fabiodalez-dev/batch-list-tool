@@ -10,6 +10,8 @@ use App\Filament\Resources\DocumentResource\Pages;
 use App\Filament\Support\SearchableSelects;
 use App\Models\Document;
 use App\Models\DocumentType;
+use App\Models\Lookup\CurrentBoxType;
+use App\Models\Lookup\DigitisationStatus;
 use App\Models\Practice;
 use App\Models\Repository;
 use Filament\Actions\BulkActionGroup;
@@ -192,7 +194,7 @@ class DocumentResource extends Resource
                             ->nullable()
                             ->helperText('Repository / room / shelf / showcase / temp-holding hierarchy.')),
                         $g(Forms\Components\Select::make('current_box_type')
-                            ->options(array_combine(Document::CURRENT_BOX_TYPES, Document::CURRENT_BOX_TYPES))
+                            ->options(fn (): array => CurrentBoxType::options())
                             ->nullable()
                             ->helperText('Used for disinfestation planning: Big Brown Box counts as 2 boxes in the 250-box cycle limit.')),
                         $g(Forms\Components\Select::make('custody_status')
@@ -247,7 +249,7 @@ class DocumentResource extends Resource
                     ->schema([
                         $g(Forms\Components\TextInput::make('colour_code')->maxLength(32)),
                         $g(Forms\Components\Select::make('digitised')
-                            ->options(['VHMML' => 'VHMML', 'NRA' => 'NRA', 'none' => 'None'])
+                            ->options(fn (): array => DigitisationStatus::options())
                             ->nullable()
                             ->helperText('Digitisation source per RFQ APP2-xiii.')),
                         $g(Forms\Components\Toggle::make('torre')->columnSpanFull()),
