@@ -22,6 +22,8 @@ use Filament\Http\Middleware\DispatchServingFilamentEvent;
 use Filament\Pages;
 use Filament\Panel;
 use Filament\PanelProvider;
+use Filament\View\PanelsRenderHook;
+use Illuminate\Contracts\View\View;
 use Illuminate\Cookie\Middleware\AddQueuedCookiesToResponse;
 use Illuminate\Cookie\Middleware\EncryptCookies;
 use Illuminate\Foundation\Http\Middleware\VerifyCsrfToken;
@@ -71,6 +73,14 @@ class AdminPanelProvider extends PanelProvider
                     ->navigationGroup('Administration')
                     ->navigationSort(30),
             ])
+            // RFQ Wave 2 Task 10 (Submission §4.3.3) — topbar repository
+            // switcher with an "All repositories" option. Rendered after the
+            // global search field in the topbar; the Blade view hides itself
+            // unless the user can see more than one repository.
+            ->renderHook(
+                PanelsRenderHook::GLOBAL_SEARCH_AFTER,
+                fn (): View => view('filament.topbar.repository-switcher'),
+            )
             // Brand palette — dusty-sandstone. 500 step (#A5613D) reads
             // "thoughtful spice" not "brand orange". Lifted from the
             // editorial/spa register: paper-white shell + minimal warm

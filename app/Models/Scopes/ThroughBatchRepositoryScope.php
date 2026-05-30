@@ -2,6 +2,7 @@
 
 namespace App\Models\Scopes;
 
+use App\Support\ActiveRepository;
 use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Scope;
@@ -19,9 +20,10 @@ use Illuminate\Database\Eloquent\Scope;
  *       AND batches.repository_id IN (...)
  *   )
  *
- * Privileged roles (`super_admin`, `admin`) bypass the scope entirely.
- * Unauthenticated context (CLI, queue) also bypasses, mirroring
- * RepositoryScope's behaviour.
+ * Privileged roles (`super_admin`, `admin`) bypass the membership restriction
+ * entirely — BUT they still honour an explicit active-repository narrowing
+ * (RFQ Wave 2 Task 10) so the topbar switcher works for them too.
+ * Unauthenticated context (CLI, queue) bypasses, mirroring RepositoryScope.
  *
  * @see RepositoryScope
  */
@@ -39,8 +41,16 @@ class ThroughBatchRepositoryScope implements Scope
             return; // CLI / queue / unauthenticated → no scope
         }
 
+        $active = app(ActiveRepository::class)->id();
+
         if (method_exists($user, 'hasAnyRole') && $user->hasAnyRole(['super_admin', 'admin'])) {
-            return; // admins see everything
+            // Privileged: no membership restriction, but still honour an
+            // explicit active-repository narrowing chosen via the switcher.
+            if ($active !== null) {
+                $this->applyExists($builder, $model, [$active]);
+            }
+
+            return;
         }
 
         $allowedIds = method_exists($user, 'repositories')
@@ -53,15 +63,29 @@ class ThroughBatchRepositoryScope implements Scope
             return;
         }
 
+        // Active-repository narrowing intersected with the allowed set — never
+        // widens access. null (All) keeps the full allowed set (unchanged).
+        if ($active !== null && in_array($active, array_map('intval', $allowedIds), true)) {
+            $allowedIds = [$active];
+        }
+
+        $this->applyExists($builder, $model, $allowedIds);
+    }
+
+    /**
+     * @param list<int|string> $repositoryIds
+     */
+    private function applyExists(Builder $builder, Model $model, array $repositoryIds): void
+    {
         $foreignTable = $this->foreignTable;
         $foreignKey = $this->foreignKey;
         $childTable = $model->getTable();
 
-        $builder->whereExists(function ($query) use ($foreignTable, $foreignKey, $childTable, $allowedIds) {
+        $builder->whereExists(function ($query) use ($foreignTable, $foreignKey, $childTable, $repositoryIds) {
             $query->select($foreignTable . '.id')
                 ->from($foreignTable)
                 ->whereColumn($foreignTable . '.id', $childTable . '.' . $foreignKey)
-                ->whereIn($foreignTable . '.repository_id', $allowedIds);
+                ->whereIn($foreignTable . '.repository_id', $repositoryIds);
         });
     }
 }

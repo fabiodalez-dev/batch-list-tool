@@ -72,6 +72,16 @@ class User extends Authenticatable implements AuditableContract, FilamentUser
         return $this->belongsTo(Repository::class, 'default_repository_id');
     }
 
+    /**
+     * The user's *active* repository (RFQ Wave 2 Task 10).
+     * null = "All repositories" — the persisted mirror of the session-backed
+     * App\Support\ActiveRepository selection.
+     */
+    public function activeRepository(): BelongsTo
+    {
+        return $this->belongsTo(Repository::class, 'active_repository_id');
+    }
+
     public function repositories(): BelongsToMany
     {
         return $this->belongsToMany(Repository::class)
