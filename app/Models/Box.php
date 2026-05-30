@@ -490,10 +490,13 @@ class Box extends Model implements AuditableContract, Sortable
 
             $previousStatus = $box->getOriginal('barcode_status');
 
-            // Only a genuine transition FROM OUT / PERM_OUT into IN requires a
-            // brand-new barcode. Creating a box straight at IN, or an IN→IN
-            // no-op, is not a "re-entry" and must not demand a new barcode.
-            if (! in_array($previousStatus, ['OUT', 'PERM_OUT'], true)) {
+            // Only a transition FROM PERM_OUT into IN requires a brand-new
+            // barcode: PERM_OUT archives the barcode to the legacy/history
+            // section, so re-entering at IN needs a fresh one (Feedback1 C2.2).
+            // A plain OUT→IN (e.g. the temporary out-and-back of the
+            // disinfestation cycle) keeps the same barcode and must NOT demand a
+            // new one. Creating a box straight at IN is not a re-entry either.
+            if ($previousStatus !== 'PERM_OUT') {
                 return;
             }
 

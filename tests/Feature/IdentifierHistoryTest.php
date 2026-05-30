@@ -65,6 +65,8 @@ test('model exposes the correct fillable and casts', function () {
         'document_id',
         'previous_identifier',
         'new_identifier',
+        'previous_volume',
+        'new_volume',
         'changed_at',
         'changed_by_user_id',
         'reason',

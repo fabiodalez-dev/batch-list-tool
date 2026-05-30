@@ -126,21 +126,26 @@ it('archives the barcode to history when a RAS box transitions to PERM OUT', fun
         ->and($history->first()->new_status)->toBe('PERM_OUT');
 });
 
-it('requires a NEW barcode (present and different) when a box re-enters with status IN', function () {
+it('requires a NEW barcode (present and different) when a box re-enters with status IN after PERM OUT', function () {
     $this->actingAs(bcf_actAsSuperAdmin());
 
+    // The "new barcode on IN" rule applies to a PERM_OUT re-entry: PERM_OUT
+    // archives the barcode to history, so re-entering needs a fresh one. (A
+    // plain OUT→IN — e.g. the disinfestation out-and-back — keeps its barcode
+    // and is exercised by the disinfestation mirror tests.)
     $box = Box::factory()->create([
         'box_type' => 'RAS',
         'barcode' => 'BC-RE-1',
-        'barcode_status' => 'OUT',
+        'barcode_status' => 'PERM_OUT',
+        'disinfestation_date' => now()->toDateString(), // PERM_OUT precondition
     ]);
 
     // Re-enter as IN re-using the SAME barcode → rejected.
     expect(fn () => $box->update(['barcode_status' => 'IN']))
         ->toThrow(ValidationException::class);
 
-    // Still OUT (the save was rejected).
-    expect($box->fresh()->barcode_status)->toBe('OUT');
+    // Still PERM_OUT (the save was rejected).
+    expect($box->fresh()->barcode_status)->toBe('PERM_OUT');
 
     // Re-enter as IN with a NEW barcode → accepted.
     $box->update(['barcode_status' => 'IN', 'barcode' => 'BC-NEW-2']);
