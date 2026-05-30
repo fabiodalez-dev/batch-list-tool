@@ -17,6 +17,8 @@ use Filament\Schemas;
 use Filament\Schemas\Components\Section;
 use Filament\Schemas\Schema;
 use Filament\Tables;
+use Filament\Tables\Filters\SelectFilter;
+use Filament\Tables\Filters\TernaryFilter;
 use Filament\Tables\Table;
 
 class SeriesResource extends Resource
@@ -148,6 +150,10 @@ class SeriesResource extends Resource
         $gc = fn (mixed $col, ?string $fieldOverride = null): mixed => self::gateColumn($col, self::FIELD_PERMISSIONS_KEY, $fieldOverride);
 
         return $table
+            // Feedback1 Wave B (B1) — persist & defer filters so they survive
+            // navigation/refresh (client complaint: "filters seem to reset").
+            ->deferFilters()
+            ->persistFiltersInSession()
             ->columns([
                 $gc(Tables\Columns\TextColumn::make('code')
                     ->searchable()),
@@ -171,7 +177,28 @@ class SeriesResource extends Resource
                     ->toggleable(isToggledHiddenByDefault: true),
             ])
             ->filters([
-                //
+                // Feedback1 Wave B (B1) — dropdown-driven filters (mechanism #1)
+                // alongside the free-text search on code/title (mechanism #2).
+                // Series is a small reference table → plain SelectFilter on the
+                // distinct codes plus the two boolean flags as TernaryFilters.
+                SelectFilter::make('code')
+                    ->label('Code')
+                    ->options(fn (): array => Series::query()
+                        ->orderBy('code')
+                        ->pluck('code', 'code')
+                        ->all())
+                    ->searchable()
+                    ->multiple(),
+                TernaryFilter::make('is_wills_series')
+                    ->label('Wills series')
+                    ->placeholder('All')
+                    ->trueLabel('Wills series only')
+                    ->falseLabel('Non-wills only'),
+                TernaryFilter::make('is_active')
+                    ->label('Active')
+                    ->placeholder('All')
+                    ->trueLabel('Active only')
+                    ->falseLabel('Inactive only'),
             ])
             ->actions([
                 ViewAction::make(),

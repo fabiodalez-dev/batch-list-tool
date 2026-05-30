@@ -16,6 +16,7 @@ use Filament\Resources\Resource;
 use Filament\Schemas\Components\Section;
 use Filament\Schemas\Schema;
 use Filament\Tables;
+use Filament\Tables\Filters\SelectFilter;
 use Filament\Tables\Table;
 
 class AccessionResource extends Resource
@@ -186,6 +187,10 @@ class AccessionResource extends Resource
     public static function table(Table $table): Table
     {
         return $table
+            // Feedback1 Wave B (B1) — persist & defer filters so they survive
+            // navigation/refresh.
+            ->deferFilters()
+            ->persistFiltersInSession()
             ->columns([
                 Tables\Columns\TextColumn::make('code')
                     ->searchable(),
@@ -215,7 +220,25 @@ class AccessionResource extends Resource
                     ->toggleable(isToggledHiddenByDefault: true),
             ])
             ->filters([
-                //
+                // Feedback1 Wave B (B1) — dropdown-driven filters (mechanism #1)
+                // next to the free-text search on `code` (mechanism #2).
+                // Server-side searchable relationship selects (no preload):
+                // production carries 800+ authorities / 600+ batches.
+                SelectFilter::make('authority')
+                    ->label('Authority')
+                    ->relationship('authority', 'surname')
+                    ->searchable()
+                    ->multiple(),
+                SelectFilter::make('batch')
+                    ->label('Batch')
+                    ->relationship('batch', 'batch_number')
+                    ->searchable()
+                    ->multiple(),
+                SelectFilter::make('repository')
+                    ->label('Repository')
+                    ->relationship('repository', 'code')
+                    ->searchable()
+                    ->preload(),
             ])
             ->actions([
                 ViewAction::make(),

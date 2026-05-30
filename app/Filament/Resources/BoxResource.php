@@ -10,6 +10,7 @@ use App\Filament\Support\SearchableSelects;
 use App\Models\Box;
 use App\Models\Lookup\BarcodeStatus;
 use App\Models\Lookup\BoxType;
+use Filament\Actions\Action;
 use Filament\Actions\BulkActionGroup;
 use Filament\Actions\DeleteBulkAction;
 use Filament\Actions\EditAction;
@@ -23,6 +24,12 @@ use Filament\Schemas\Components\Section;
 use Filament\Schemas\Components\Utilities\Get;
 use Filament\Schemas\Schema;
 use Filament\Tables;
+use Filament\Tables\Filters\QueryBuilder;
+use Filament\Tables\Filters\QueryBuilder\Constraints\RelationshipConstraint;
+use Filament\Tables\Filters\QueryBuilder\Constraints\RelationshipConstraint\Operators\IsRelatedToOperator;
+use Filament\Tables\Filters\QueryBuilder\Constraints\SelectConstraint;
+use Filament\Tables\Filters\QueryBuilder\Constraints\TextConstraint;
+use Filament\Tables\Filters\SelectFilter;
 use Filament\Tables\Filters\TernaryFilter;
 use Filament\Tables\Table;
 
@@ -81,12 +88,47 @@ class BoxResource extends Resource
                                     }
                                 };
                             })),
-                        $g(Forms\Components\TextInput::make('box_number')
-                            ->required()
-                            ->maxLength(32)),
                         // Batches dropdown: ~30 rows in production, but kept on the
                         // SearchableSelects helper for label consistency.
-                        $g(SearchableSelects::batch('batch_id', 'batch')),
+                        // Feedback1 Wave B (B5) — `->live()` so box_number's
+                        // helper text + uniqueness re-evaluate when the batch
+                        // changes.
+                        $g(SearchableSelects::batch('batch_id', 'batch')
+                            ->live()),
+                        // Feedback1 Wave B (B5) — box_number is unique *within its
+                        // batch* (a batch may not have two boxes numbered "5",
+                        // but batch A and batch B may each have a box "5"). The
+                        // helper lists the numbers already taken in the selected
+                        // batch so the operator can pick a free one.
+                        $g(Forms\Components\TextInput::make('box_number')
+                            ->required()
+                            ->maxLength(32)
+                            ->live(onBlur: true)
+                            ->helperText(fn (Get $get, ?Box $record): string => self::usedBoxNumbersHelper(
+                                $get('batch_id') !== null && $get('batch_id') !== '' ? (int) $get('batch_id') : null,
+                                $record?->getKey(),
+                            ))
+                            ->rule(static function (Get $get, ?Box $record): \Closure {
+                                return static function (string $attribute, $value, \Closure $fail) use ($get, $record): void {
+                                    // Reject a box_number already used by another box
+                                    // in the same batch; ignore the current record on
+                                    // edit. No batch selected yet → nothing to check.
+                                    $batchId = $get('batch_id');
+                                    if ($batchId === null || $batchId === '' || $value === null || $value === '') {
+                                        return;
+                                    }
+
+                                    $exists = Box::query()
+                                        ->where('batch_id', (int) $batchId)
+                                        ->where('box_number', (string) $value)
+                                        ->when($record?->getKey(), fn ($q, $id) => $q->whereKeyNot($id))
+                                        ->exists();
+
+                                    if ($exists) {
+                                        $fail("Box number {$value} is already used in this batch. Box numbers must be unique within a batch.");
+                                    }
+                                };
+                            })),
                         $g(Forms\Components\Toggle::make('is_legacy')
                             ->helperText('Flags legacy data; required true when box_type is MAV or STVC.')
                             ->required()),
@@ -385,6 +427,19 @@ class BoxResource extends Resource
         $gc = fn (mixed $col, ?string $fieldOverride = null): mixed => self::gateColumn($col, self::FIELD_PERMISSIONS_KEY, $fieldOverride);
 
         return $table
+            // Feedback1 Wave B (B1) — persist & defer filters so they survive
+            // navigation/refresh and so the cross-module landings (Batch → Boxes)
+            // present a stable, query-string-driven filter state.
+            ->deferFilters()
+            ->persistFiltersInSession()
+            // Feedback1 Wave B (B4) — clicking a box row navigates to the
+            // Documents dashboard showing that box's contents. Documents'
+            // `current_box_id` SelectFilter is `->multiple()`, so the URL shape
+            // uses `values` (an array). View / Edit / Move / Destroy stay
+            // reachable via the row actions column below.
+            ->recordUrl(fn (Box $record): string => DocumentResource::getUrl('index', [
+                'tableFilters' => ['current_box_id' => ['values' => [$record->getKey()]]],
+            ]))
             ->columns([
                 $gc(Tables\Columns\TextColumn::make('box_type')),
                 $gc(Tables\Columns\TextColumn::make('box_number')
@@ -430,6 +485,53 @@ class BoxResource extends Resource
                     ->toggleable(isToggledHiddenByDefault: true),
             ])
             ->filters([
+                // Feedback1 Wave B (B3) — `batch` SelectFilter. The Batch
+                // dashboard navigates here with
+                // ?tableFilters[batch][values][]=<id>, so the filter name MUST
+                // be `batch` and it queries `batch_id` via the relationship.
+                // `->multiple()` matches the `values` URL shape used by the
+                // BatchResource recordUrl / "View boxes" action.
+                SelectFilter::make('batch')
+                    ->label('Batch')
+                    ->relationship('batch', 'batch_number')
+                    ->searchable()
+                    ->multiple(),
+
+                // Feedback1 Wave B (B1) — rich filter mechanism (#1) with
+                // AND/OR/NOT nested groups and per-field dropdown constraints,
+                // complementing the free-text search on box_number / barcode (#2).
+                QueryBuilder::make()
+                    ->constraints([
+                        RelationshipConstraint::make('batch')
+                            ->label('Batch')
+                            ->selectable(
+                                IsRelatedToOperator::make()
+                                    ->titleAttribute('batch_number')
+                                    ->searchable()
+                                    ->multiple(),
+                            ),
+                        SelectConstraint::make('box_type')
+                            ->label('Box type')
+                            ->options(array_combine(Box::TYPES, Box::TYPES))
+                            ->multiple(),
+                        TextConstraint::make('box_number')
+                            ->label('Box number'),
+                        TextConstraint::make('barcode')
+                            ->label('Barcode'),
+                        SelectConstraint::make('barcode_status')
+                            ->label('Barcode status')
+                            ->options(array_combine(Box::BARCODE_STATUSES, Box::BARCODE_STATUSES))
+                            ->multiple(),
+                        RelationshipConstraint::make('location')
+                            ->label('Location')
+                            ->selectable(
+                                IsRelatedToOperator::make()
+                                    ->titleAttribute('name')
+                                    ->searchable()
+                                    ->multiple(),
+                            ),
+                    ]),
+
                 // RFQ App.2 §vii — destroyed / active filter. Default is
                 // "All" so users see the full archive; flip to "Active"
                 // to restrict to the physical inventory.
@@ -447,6 +549,20 @@ class BoxResource extends Resource
             ->actions([
                 ViewAction::make(),
                 EditAction::make(),
+                // Feedback1 Wave B (B4) — explicit "View documents" row action:
+                // a discoverable alternative to the whole-row recordUrl.
+                Action::make('viewDocuments')
+                    ->label('View documents')
+                    ->icon('heroicon-o-rectangle-stack')
+                    ->color('gray')
+                    ->url(fn (Box $record): string => DocumentResource::getUrl('index', [
+                        'tableFilters' => ['current_box_id' => ['values' => [$record->getKey()]]],
+                    ])),
+                // Feedback1 Wave B (B6) — "Add document to this box": jump to
+                // the Document create form with current_box_id pre-filled.
+                // Gated on the document create permission; hidden on destroyed
+                // boxes (you cannot file a new document into a destroyed box).
+                self::addDocumentAction('addDocumentRow'),
                 // RFQ §3.1.6 — Move box to a different location (audited).
                 MoveBoxToLocationAction::make(),
                 // RFQ App.2 §vii — single-record "Mark as destroyed" row
@@ -459,6 +575,56 @@ class BoxResource extends Resource
                     DeleteBulkAction::make(),
                 ]),
             ]);
+    }
+
+    /**
+     * Feedback1 Wave B (B6) — "Add document to this box" action factory.
+     *
+     * Redirects to the Document create form with `current_box_id` pre-filled
+     * from the box (CreateDocument reads it from the query string). Used both
+     * as a Box row action and as a ViewBox header action. Gated on the
+     * document create permission and hidden on physically destroyed boxes.
+     */
+    public static function addDocumentAction(string $name): Action
+    {
+        return Action::make($name)
+            ->label('Add document to this box')
+            ->icon('heroicon-o-document-plus')
+            ->color('primary')
+            ->visible(fn (Box $record): bool => DocumentResource::canCreate() && ! $record->isDestroyed())
+            ->url(fn (Box $record): string => DocumentResource::getUrl('create', [
+                'current_box_id' => $record->getKey(),
+            ]));
+    }
+
+    /**
+     * Feedback1 Wave B (B5) — helper text listing the box numbers already used
+     * in the selected batch, so the operator can pick a free one. Excludes the
+     * current record on edit. Capped to keep the hint readable.
+     */
+    public static function usedBoxNumbersHelper(?int $batchId, int|string|null $ignoreId = null): string
+    {
+        if ($batchId === null) {
+            return 'Pick a batch first; box numbers must be unique within a batch.';
+        }
+
+        $used = Box::query()
+            ->where('batch_id', $batchId)
+            ->when($ignoreId, fn ($q, $id) => $q->whereKeyNot($id))
+            ->orderBy('box_number')
+            ->pluck('box_number')
+            ->filter(fn ($n): bool => $n !== null && $n !== '')
+            ->unique()
+            ->values();
+
+        if ($used->isEmpty()) {
+            return 'No box numbers used in this batch yet.';
+        }
+
+        $shown = $used->take(30)->implode(', ');
+        $suffix = $used->count() > 30 ? ', …' : '';
+
+        return "Used in this batch: {$shown}{$suffix}";
     }
 
     public static function getRelations(): array

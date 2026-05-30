@@ -8,6 +8,7 @@ use App\Filament\Support\SearchableSelects;
 use App\Models\Batch;
 use App\Models\Lookup\BatchType;
 use App\Models\Repository;
+use Filament\Actions\Action;
 use Filament\Actions\BulkActionGroup;
 use Filament\Actions\DeleteBulkAction;
 use Filament\Actions\EditAction;
@@ -20,6 +21,8 @@ use Filament\Schemas;
 use Filament\Schemas\Components\Section;
 use Filament\Schemas\Schema;
 use Filament\Tables;
+use Filament\Tables\Filters\SelectFilter;
+use Filament\Tables\Filters\TernaryFilter;
 use Filament\Tables\Table;
 
 class BatchResource extends Resource
@@ -191,6 +194,19 @@ class BatchResource extends Resource
         $gc = fn (mixed $col, ?string $fieldOverride = null): mixed => self::gateColumn($col, self::FIELD_PERMISSIONS_KEY, $fieldOverride);
 
         return $table
+            // Feedback1 Wave B (B1) — applied filters must not reset on
+            // refresh/navigation: persist them in the query string and defer
+            // their application until the operator hits "Apply".
+            ->deferFilters()
+            ->persistFiltersInSession()
+            // Feedback1 Wave B (B3) — clicking a batch row navigates to the
+            // Boxes dashboard pre-filtered to that batch. The Boxes table's
+            // `batch` SelectFilter is `->multiple()`, so the URL shape uses
+            // `values` (an array). View / Edit stay reachable via the row
+            // actions column below.
+            ->recordUrl(fn (Batch $record): string => BoxResource::getUrl('index', [
+                'tableFilters' => ['batch' => ['values' => [$record->getKey()]]],
+            ]))
             ->columns([
                 $gc(Tables\Columns\TextColumn::make('batch_number')
                     ->numeric()
@@ -217,11 +233,38 @@ class BatchResource extends Resource
                     ->toggleable(isToggledHiddenByDefault: true),
             ])
             ->filters([
-                //
+                // Feedback1 Wave B (B1) — dropdown-driven filters alongside the
+                // free-text search on `description`. BatchResource is light
+                // enough that plain SelectFilters cover it (no QueryBuilder).
+                SelectFilter::make('batch_number')
+                    ->label('Batch number')
+                    ->options(fn (): array => Batch::query()
+                        ->orderBy('batch_number')
+                        ->pluck('batch_number', 'batch_number')
+                        ->all())
+                    ->searchable()
+                    ->multiple(),
+                SelectFilter::make('type')
+                    ->options(fn (): array => BatchType::optionsWith(null))
+                    ->multiple(),
+                TernaryFilter::make('is_active')
+                    ->label('Active')
+                    ->placeholder('All')
+                    ->trueLabel('Active only')
+                    ->falseLabel('Inactive only'),
             ])
             ->actions([
                 ViewAction::make(),
                 EditAction::make(),
+                // Feedback1 Wave B (B3) — explicit "View boxes" row action as a
+                // discoverable alternative to the whole-row recordUrl above.
+                Action::make('viewBoxes')
+                    ->label('View boxes')
+                    ->icon('heroicon-o-archive-box')
+                    ->color('gray')
+                    ->url(fn (Batch $record): string => BoxResource::getUrl('index', [
+                        'tableFilters' => ['batch' => ['values' => [$record->getKey()]]],
+                    ])),
             ])
             ->bulkActions([
                 BulkActionGroup::make([

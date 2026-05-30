@@ -16,6 +16,8 @@ class ViewBox extends ViewRecord
     {
         return [
             Actions\EditAction::make(),
+            // Feedback1 Wave B (B6) — "Add document to this box" header action.
+            BoxResource::addDocumentAction('addDocumentHeader'),
             // RFQ §3.1.6 — Move box to a different location (audited).
             MoveBoxToLocationAction::make(),
             // RFQ App.2 §vii — "Mark as destroyed". The action hides
