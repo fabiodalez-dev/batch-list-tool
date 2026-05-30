@@ -41,7 +41,9 @@ return new class extends Migration
             $t->timestamp('changed_at')->useCurrent();
             $t->text('notes')->nullable();
             $t->timestamps();
-            $t->index('document_id');
+            // NB: no explicit ->index('document_id') here — foreignId()
+            // ->constrained() above already creates an index on the FK column,
+            // so a separate index would be a redundant duplicate (review F7).
         });
     }
 

@@ -33,12 +33,23 @@ class RepositoryScope implements Scope
             return; // CLI / queue / unauthenticated → no scope
         }
 
+        $active = app(ActiveRepository::class)->id();
+
         // Allowed set = pivot ∪ default_repository_id (shared source of truth,
         // so this scope can never diverge from ThroughBatchRepositoryScope /
-        // ActiveRepository). null → privileged: see everything.
+        // ActiveRepository). null → privileged: no membership restriction.
         $allowed = ActiveRepository::allowedRepositoryIdsFor($user);
         if ($allowed === null) {
-            return; // admins see everything
+            // Privileged (admin / super_admin): no membership restriction, but
+            // still honour an explicit active-repository narrowing chosen via
+            // the topbar switcher — matching ThroughBatchRepositoryScope so an
+            // admin who picks one repo sees a CONSISTENT view across Documents,
+            // Batches and Boxes. active = null (All) → unchanged: see all.
+            if ($active !== null) {
+                $builder->where($model->getTable() . '.repository_id', $active);
+            }
+
+            return;
         }
 
         if (empty($allowed)) {
@@ -52,7 +63,6 @@ class RepositoryScope implements Scope
         // stale/revoked active id (not in $allowed) is ignored and we fall
         // back to the full allowed set — never widen, never expose a forbidden
         // repo, never go empty on a bad id.
-        $active = app(ActiveRepository::class)->id();
         if ($active !== null && in_array($active, array_map('intval', $allowed), true)) {
             $builder->where($model->getTable() . '.repository_id', $active);
 

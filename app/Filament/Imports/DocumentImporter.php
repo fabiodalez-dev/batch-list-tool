@@ -557,12 +557,23 @@ class DocumentImporter extends Importer
         }
 
         // The box is the authoritative source of truth for barcode status
-        // (Task 7). Stash the resolved status and apply it to the BOX in
-        // afterSave (the document must already point at the box so the Task-7
-        // mirror can propagate the value back down). We deliberately do NOT
-        // write documents.barcode_status here — the box mirror owns it.
-        if ($resolvedStatus !== null && $record->current_box_id !== null) {
-            self::$rowBoxStatusStash[spl_object_id($record)] = $resolvedStatus;
+        // (Task 7). When the document HAS a box, stash the resolved status and
+        // apply it to the BOX in afterSave (the document must already point at
+        // the box so the Task-7 mirror can propagate the value back down). We
+        // deliberately do NOT write documents.barcode_status here in that case —
+        // the box mirror owns it.
+        if ($resolvedStatus !== null) {
+            if ($record->current_box_id !== null) {
+                self::$rowBoxStatusStash[spl_object_id($record)] = $resolvedStatus;
+            } else {
+                // Fallback (review F3): no box to be authoritative about, so
+                // write the resolved status directly onto the document column
+                // rather than silently dropping the operator's data. A1.2 still
+                // holds: PERM_OUT without a disinfestation_date already failed
+                // the row above, and the document-level saving guard re-checks
+                // it on persist — so an invalid state can never be stored.
+                $record->barcode_status = $resolvedStatus;
+            }
         }
     }
 

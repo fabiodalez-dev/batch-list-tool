@@ -559,6 +559,21 @@ class Box extends Model implements AuditableContract, Sortable
                     ->orWhereNull('barcode_status');
             })
             ->update(['barcode_status' => $status]);
+
+        // A1.2 compliance for the mirrored documents: a PERM_OUT document must
+        // carry a disinfestation_date. The box is authoritative and its own
+        // A1.2 guard (saving hook above) guarantees a PERM_OUT box has a date,
+        // so propagate that date onto every document in the box that does not
+        // already have one. This keeps each mirrored document individually
+        // compliant with the per-document A1.2 rule instead of relying solely
+        // on box authority. We only fill the gaps (whereNull) so a document's
+        // own genuine disinfestation_date is never overwritten.
+        if ($status === 'PERM_OUT' && $this->disinfestation_date !== null) {
+            Document::withoutGlobalScopes()
+                ->where('current_box_id', $this->getKey())
+                ->whereNull('disinfestation_date')
+                ->update(['disinfestation_date' => $this->disinfestation_date]);
+        }
     }
 
     /**

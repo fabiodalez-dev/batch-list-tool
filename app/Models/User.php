@@ -17,6 +17,7 @@ use Laravel\Fortify\TwoFactorAuthenticatable;
 use OwenIt\Auditing\Auditable;
 use OwenIt\Auditing\Contracts\Auditable as AuditableContract;
 use OwenIt\Auditing\Models\Audit;
+use Spatie\Permission\Models\Role;
 use Spatie\Permission\Traits\HasRoles;
 
 /**
@@ -111,7 +112,18 @@ class User extends Authenticatable implements AuditableContract, FilamentUser
         /** @var string|null $pivotRole */
         $pivotRole = $pivot?->getAttribute('role');
 
-        return $pivotRole ?? $this->getRoleNames()->first();
+        // Defence-in-depth (review F5): the pivot `role` column is free-text
+        // from the DB's point of view. This method is not yet wired into any
+        // authorization decision, but to keep it from becoming a privilege-
+        // escalation trap when it is, only trust a pivot value that is a real,
+        // defined application role. An unknown / forged string (a row hand-
+        // edited to a non-existent or mis-cased role) is ignored and we fall
+        // back to the user's global role — never escalate on garbage.
+        if ($pivotRole !== null && self::isKnownRoleName($pivotRole)) {
+            return $pivotRole;
+        }
+
+        return $this->getRoleNames()->first();
     }
 
     public function canAccessPanel(Panel $panel): bool
@@ -139,6 +151,18 @@ class User extends Authenticatable implements AuditableContract, FilamentUser
     public function canBeImpersonated(): bool
     {
         return ! $this->hasRole('super_admin');
+    }
+
+    /**
+     * True when $name is a real, defined application role (Spatie `roles`
+     * table, `web` guard). Used to reject unknown / forged pivot role values.
+     */
+    protected static function isKnownRoleName(string $name): bool
+    {
+        return Role::query()
+            ->where('name', $name)
+            ->where('guard_name', 'web')
+            ->exists();
     }
 
     protected function casts(): array

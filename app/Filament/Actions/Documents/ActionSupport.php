@@ -96,18 +96,24 @@ final class ActionSupport
 
         if ($box instanceof Box) {
             // Authoritative write on the box; the Box mirror hook propagates
-            // the value onto documents.barcode_status for every doc in the box.
+            // the value onto documents.barcode_status for every doc in the box
+            // via a bulk UPDATE — which does NOT touch this in-memory $doc.
             if ($box->barcode_status !== $status) {
                 $box->barcode_status = $status;
                 $box->save();
-            } else {
-                // Box already at the target value (mirror hook won't fire on a
-                // no-op save) — make sure THIS document is in sync anyway, in
-                // case it drifted. Direct mirror write, no audit churn.
-                if ($doc->barcode_status !== $status) {
-                    $doc->setAttribute('barcode_status', $status);
-                }
             }
+
+            // Keep the in-memory $doc consistent with the authoritative value
+            // the mirror just persisted. Without this, $doc->barcode_status
+            // stays at its pre-action value while the DB row holds $status, so
+            // a caller that reads $doc afterwards (or persists it) sees a stale
+            // status. We sync the attribute AND realign getOriginal() so the
+            // subsequent $doc->save() in the caller does not mark barcode_status
+            // dirty (it is already correct on disk) and the document-level A1.2
+            // saving guard — which only fires on a dirty barcode_status — is not
+            // re-triggered for a value the authoritative box already validated.
+            $doc->setAttribute('barcode_status', $status);
+            $doc->syncOriginalAttribute('barcode_status');
 
             return true;
         }

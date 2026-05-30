@@ -28,6 +28,11 @@ class ActiveRepositoryController extends Controller
 
         $active->set($id);
 
-        return redirect()->back();
+        // Use a fixed same-origin fallback (the admin panel root) instead of a
+        // bare back(): redirect()->back() ultimately trusts the Referer header,
+        // and with no safe previous URL it would 302 to "/". Pinning the
+        // fallback to the panel keeps the post-switch redirect predictable and
+        // same-origin regardless of the incoming Referer (review F8).
+        return redirect()->back(fallback: url('/admin'));
     }
 }

@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace App\Support;
 
+use App\Models\Repository;
 use Illuminate\Contracts\Auth\Authenticatable;
 use Illuminate\Support\Facades\Session;
 
@@ -162,9 +163,14 @@ class ActiveRepository
         $allowed = $this->allowedRepositoryIds();
 
         // Privileged users (admin / super_admin) have no membership rows but
-        // may scope to any repository — they are allowed to pick any id.
+        // may scope to any repository — they are allowed to pick any id that
+        // actually exists. A non-existent id would otherwise pin every scope to
+        // a repository_id that matches no rows → a confusing empty-scope view;
+        // reject it and fall back to null (All), fail-closed (review F6).
         if ($allowed === null) {
-            return $repositoryId;
+            return Repository::query()->whereKey($repositoryId)->exists()
+                ? $repositoryId
+                : null;
         }
 
         return in_array($repositoryId, $allowed, true) ? $repositoryId : null;
