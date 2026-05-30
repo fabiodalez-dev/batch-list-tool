@@ -32,6 +32,11 @@ use Filament\Support\Enums\FontWeight;
 use Filament\Support\Enums\TextSize;
 use Filament\Tables;
 use Filament\Tables\Filters\Filter;
+use Filament\Tables\Filters\QueryBuilder;
+use Filament\Tables\Filters\QueryBuilder\Constraints\NumberConstraint;
+use Filament\Tables\Filters\QueryBuilder\Constraints\RelationshipConstraint;
+use Filament\Tables\Filters\QueryBuilder\Constraints\RelationshipConstraint\Operators\IsRelatedToOperator;
+use Filament\Tables\Filters\QueryBuilder\Constraints\TextConstraint;
 use Filament\Tables\Filters\SelectFilter;
 use Filament\Tables\Filters\TernaryFilter;
 use Filament\Tables\Filters\TrashedFilter;
@@ -763,6 +768,12 @@ class DocumentResource extends Resource
 
         return $table
             ->defaultSort('identifier')
+            // Feedback1 Wave B (B1) — persist & defer filters so an applied
+            // filter set (free text OR the rich filters below) is not lost on
+            // navigation/refresh. This also makes the cross-module navigation
+            // (Box → Documents) land on a stable, query-string-driven filter.
+            ->deferFilters()
+            ->persistFiltersInSession()
             // Feedback1 — let each user choose which columns are visible and
             // reorder them. Column visibility/order is the default per-user
             // Filament behaviour (persisted client-side).
@@ -822,6 +833,49 @@ class DocumentResource extends Resource
             ])
             ->filtersFormColumns(3)
             ->filters([
+                // Feedback1 Wave B (B1) — rich filter mechanism (#1) with
+                // AND/OR/NOT nested groups and per-field dropdown constraints,
+                // complementing the omni free-text search bar (#2). Covers the
+                // key Document fields: series, batch, current box (relationship
+                // dropdowns), document_type (text) and the precise year range.
+                QueryBuilder::make()
+                    ->constraints([
+                        RelationshipConstraint::make('series')
+                            ->label('Series')
+                            ->selectable(
+                                IsRelatedToOperator::make()
+                                    ->titleAttribute('code')
+                                    ->searchable()
+                                    ->multiple(),
+                            ),
+                        RelationshipConstraint::make('batch')
+                            ->label('Batch')
+                            ->selectable(
+                                IsRelatedToOperator::make()
+                                    ->titleAttribute('batch_number')
+                                    ->searchable()
+                                    ->multiple(),
+                            ),
+                        RelationshipConstraint::make('currentBox')
+                            ->label('Current box')
+                            ->selectable(
+                                IsRelatedToOperator::make()
+                                    ->titleAttribute('box_number')
+                                    ->searchable()
+                                    ->multiple(),
+                            ),
+                        TextConstraint::make('document_type')
+                            ->label('Document type'),
+                        TextConstraint::make('dates')
+                            ->label('Dates (free text)'),
+                        NumberConstraint::make('dates_year_start')
+                            ->label('Year start')
+                            ->integer(),
+                        NumberConstraint::make('dates_year_end')
+                            ->label('Year end')
+                            ->integer(),
+                    ]),
+
                 // Relationship multi-selects (parity with POC creators/series/batch filters)
                 SelectFilter::make('series')
                     ->relationship('series', 'code')->searchable()->preload()->multiple(),

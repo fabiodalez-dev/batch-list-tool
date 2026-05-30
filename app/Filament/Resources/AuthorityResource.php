@@ -19,7 +19,14 @@ use Filament\Schemas\Components\Section;
 use Filament\Schemas\Components\Utilities\Get;
 use Filament\Schemas\Schema;
 use Filament\Tables;
+use Filament\Tables\Filters\Filter;
+use Filament\Tables\Filters\QueryBuilder;
+use Filament\Tables\Filters\QueryBuilder\Constraints\NumberConstraint;
+use Filament\Tables\Filters\QueryBuilder\Constraints\SelectConstraint;
+use Filament\Tables\Filters\QueryBuilder\Constraints\TextConstraint;
+use Filament\Tables\Filters\TernaryFilter;
 use Filament\Tables\Table;
+use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Database\Eloquent\Collection as EloquentCollection;
 
 class AuthorityResource extends Resource
@@ -245,6 +252,11 @@ class AuthorityResource extends Resource
         $gc = fn (mixed $col, ?string $fieldOverride = null): mixed => self::gateColumn($col, self::FIELD_PERMISSIONS_KEY, $fieldOverride);
 
         return $table
+            // Feedback1 Wave B (B1) — persist & defer filters so an applied
+            // filter set is not lost on navigation/refresh (client complaint:
+            // "when filters are applied they seem to reset").
+            ->deferFilters()
+            ->persistFiltersInSession()
             // Feedback1 — creators sorted by Identifier by default.
             ->defaultSort('identifier')
             // Feedback1 — expose first/last page links in the paginator so
@@ -289,7 +301,98 @@ class AuthorityResource extends Resource
                     ->toggleable(isToggledHiddenByDefault: true),
             ])
             ->filters([
-                //
+                // Feedback1 Wave B (B1) — rich filter mechanism (#1) on top of
+                // the free-text column search (#2). The QueryBuilder natively
+                // supports AND/OR/NOT nested groups with per-field dropdown
+                // constraints — exactly the "select a field then a dropdown"
+                // UX the client asked for. NOTE (client comment): identifier is
+                // available as a constraint here but is NOT also added as a
+                // standalone free-text filter — there is already a dedicated
+                // identifier column, so duplicating it would be redundant.
+                QueryBuilder::make()
+                    ->constraints([
+                        TextConstraint::make('identifier')
+                            ->label('Identifier'),
+                        TextConstraint::make('alternative_identifier')
+                            ->label('MS / alternative identifier'),
+                        TextConstraint::make('surname')
+                            ->label('Surname'),
+                        TextConstraint::make('given_names')
+                            ->label('Given name'),
+                        SelectConstraint::make('entity_type')
+                            ->label('Entity type')
+                            ->options(self::ENTITY_TYPES)
+                            ->multiple(),
+                        NumberConstraint::make('practice_dates_start')
+                            ->label('Practice start year')
+                            ->integer(),
+                        NumberConstraint::make('practice_dates_end')
+                            ->label('Practice end year')
+                            ->integer(),
+                    ]),
+
+                // Feedback1 Wave B (B2) — "worked between X and Y" helper. Two
+                // optional year inputs; whichever bound is filled is applied.
+                // A notary "worked in [from,to]" if their practice window
+                // overlaps it: practice_dates_end >= from AND
+                // practice_dates_start <= to. Nulls are treated as open-ended.
+                Filter::make('practice_period')
+                    ->label('Practice period')
+                    ->form([
+                        Forms\Components\TextInput::make('from')
+                            ->label('Worked after / from (year)')
+                            ->numeric(),
+                        Forms\Components\TextInput::make('to')
+                            ->label('Worked before / to (year)')
+                            ->numeric(),
+                    ])
+                    ->query(function (Builder $query, array $data): Builder {
+                        return $query
+                            ->when(
+                                $data['from'] ?? null,
+                                fn (Builder $q, $from): Builder => $q->where(
+                                    fn (Builder $q) => $q
+                                        ->whereNull('practice_dates_end')
+                                        ->orWhere('practice_dates_end', '>=', (int) $from)
+                                )
+                            )
+                            ->when(
+                                $data['to'] ?? null,
+                                fn (Builder $q, $to): Builder => $q->where(
+                                    fn (Builder $q) => $q
+                                        ->whereNull('practice_dates_start')
+                                        ->orWhere('practice_dates_start', '<=', (int) $to)
+                                )
+                            );
+                    })
+                    ->indicateUsing(function (array $data): array {
+                        $i = [];
+                        if (! empty($data['from'])) {
+                            $i[] = "Worked from {$data['from']}";
+                        }
+                        if (! empty($data['to'])) {
+                            $i[] = "Worked to {$data['to']}";
+                        }
+
+                        return $i;
+                    }),
+
+                // Feedback1 Wave B (B2) — "has MS number" ternary on the
+                // optional MS-prefixed alternative_identifier column.
+                TernaryFilter::make('has_ms_number')
+                    ->label('Has MS number')
+                    ->placeholder('All creators')
+                    ->trueLabel('Has MS number')
+                    ->falseLabel('No MS number')
+                    ->queries(
+                        true: fn (Builder $q): Builder => $q->whereNotNull('alternative_identifier')
+                            ->where('alternative_identifier', '!=', ''),
+                        false: fn (Builder $q): Builder => $q->where(
+                            fn (Builder $q) => $q->whereNull('alternative_identifier')
+                                ->orWhere('alternative_identifier', '=', '')
+                        ),
+                        blank: fn (Builder $q): Builder => $q,
+                    ),
             ])
             ->actions([
                 ViewAction::make(),
