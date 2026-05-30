@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace App\Filament\Pages\Settings;
 
+use App\Models\BackupRun;
 use App\Settings\BackupSettings;
 use Carbon\Carbon;
 use Filament\Actions\Action;
@@ -12,19 +13,26 @@ use Filament\Notifications\Notification;
 use Filament\Pages\Page;
 use Filament\Schemas\Components\Section;
 use Filament\Schemas\Schema;
+use Illuminate\Support\Collection;
 use Illuminate\Support\Facades\Artisan;
+use Illuminate\Support\Facades\Auth;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Storage;
 
 /**
- * RFQ §3.1.8 — Backup health & retention settings page.
+ * RFQ §3.1.8 — Backup Center (health, archives, on-demand runs & history).
  *
  * Provides:
  *   - A read-only health summary (last backup file info, DB connectivity,
- *     backup disk free space).
- *   - A "Run backup now" header action that queues the spatie/laravel-backup
- *     `backup:run` Artisan command.
- *   - A small form to persist the retention settings from BackupSettings
+ *     backup disk free/used space with an ok/warning/danger threshold).
+ *   - A list of every `.zip` archive across all configured destination disks
+ *     (listBackups()), each with a gated Download link and a confirmed Delete
+ *     Livewire action — both guarded against directory traversal.
+ *   - On-demand "Run backup now" / "Run DB-only" / "Run files-only" header
+ *     actions that queue the spatie/laravel-backup `backup:run` command and
+ *     record a "running" BackupRun row.
+ *   - A run-history table (last ~15 BackupRun rows).
+ *   - A form to persist the retention settings from BackupSettings
  *     (keep_daily / keep_weekly / keep_monthly).
  *
  * Gated to super_admin / admin; viewers receive a 403 on mount.
@@ -151,6 +159,115 @@ class BackupHealthPage extends Page
             ->send();
     }
 
+    // ─── backups list (per-disk archive listing) ──────────────────────────────
+
+    /**
+     * List every `.zip` backup archive across all configured destination disks.
+     *
+     * Each entry is a flat array the Blade view (and the restore action) can
+     * render directly, plus the raw `disk` + `path` used to build Download /
+     * Delete / Restore actions.
+     *
+     * @return array<int, array<string, mixed>>
+     */
+    public function listBackups(): array
+    {
+        /** @var array<int, string> $disks */
+        $disks = (array) config('backup.backup.destination.disks', ['local']);
+        $appName = (string) config('backup.backup.name', config('app.name', 'laravel-backup'));
+
+        $rows = [];
+
+        foreach ($disks as $diskName) {
+            try {
+                $disk = Storage::disk($diskName);
+
+                foreach ($disk->allFiles($appName) as $file) {
+                    if (! str_ends_with(strtolower($file), '.zip')) {
+                        continue;
+                    }
+
+                    $size = $disk->size($file);
+                    $modified = $disk->lastModified($file);
+
+                    $rows[] = [
+                        'filename' => basename($file),
+                        'disk' => $diskName,
+                        'path' => $file,
+                        'size' => $this->formatBytes($size),
+                        'size_bytes' => $size,
+                        'date' => Carbon::createFromTimestamp($modified)->toDateTimeString(),
+                        'timestamp' => $modified,
+                    ];
+                }
+            } catch (\Throwable) {
+                // Skip a disk that cannot be read; the health card surfaces the error.
+                continue;
+            }
+        }
+
+        // Most recent first.
+        usort($rows, fn (array $a, array $b) => $b['timestamp'] <=> $a['timestamp']);
+
+        return $rows;
+    }
+
+    /**
+     * Recent backup runs for the history table.
+     *
+     * @return Collection<int, BackupRun>
+     */
+    public function recentRuns(): Collection
+    {
+        return BackupRun::recent()->limit(15)->get();
+    }
+
+    /**
+     * Delete a single `.zip` backup archive (Livewire action, confirmed in UI).
+     *
+     * Applies the same path-traversal guard as the download controller:
+     * disk allow-list, `.zip`-only, and a basename rebuild under the backup
+     * directory so a crafted path can never escape it.
+     */
+    public function deleteBackup(string $disk, string $path): void
+    {
+        abort_unless(static::canAccess(), 403);
+
+        /** @var array<int, string> $disks */
+        $disks = (array) config('backup.backup.destination.disks', ['local']);
+
+        abort_unless(in_array($disk, $disks, true), 403, 'Invalid backup disk.');
+        abort_unless(str_ends_with(strtolower($path), '.zip'), 403, 'Only .zip backups can be deleted.');
+        abort_if(
+            str_contains($path, '..') || str_starts_with($path, '/') || str_starts_with($path, '\\'),
+            403,
+            'Invalid backup path.'
+        );
+
+        $appName = (string) config('backup.backup.name', config('app.name', 'laravel-backup'));
+        $safePath = trim($appName, '/') . '/' . basename($path);
+
+        $storage = Storage::disk($disk);
+
+        if ($storage->exists($safePath)) {
+            $storage->delete($safePath);
+
+            Notification::make()
+                ->title('Backup deleted')
+                ->body(basename($safePath) . ' was removed from ' . $disk . '.')
+                ->success()
+                ->send();
+        } else {
+            Notification::make()
+                ->title('Backup not found')
+                ->body('The selected backup no longer exists.')
+                ->warning()
+                ->send();
+        }
+
+        $this->health = $this->buildHealthSummary();
+    }
+
     // ─── actions ────────────────────────────────────────────────────────────
 
     /**
@@ -168,17 +285,29 @@ class BackupHealthPage extends Page
                 ->modalDescription('This will queue a full backup (files + database). The backup runs in the background — you can navigate away safely.')
                 ->modalSubmitActionLabel('Yes, run backup')
                 ->visible(fn () => static::canAccess())
-                ->action(function () {
-                    abort_unless(static::canAccess(), 403);
+                ->action(fn () => $this->queueBackup('full', 'backup:run')),
 
-                    Artisan::queue('backup:run');
+            Action::make('runDbBackup')
+                ->label('Run DB-only')
+                ->icon('heroicon-o-circle-stack')
+                ->color('gray')
+                ->requiresConfirmation()
+                ->modalHeading('Run database-only backup?')
+                ->modalDescription('This will queue a backup of the database only (no files). It runs in the background.')
+                ->modalSubmitActionLabel('Yes, back up the database')
+                ->visible(fn () => static::canAccess())
+                ->action(fn () => $this->queueBackup('db', 'backup:run', ['--only-db' => true])),
 
-                    Notification::make()
-                        ->title('Backup queued')
-                        ->body('The backup has been dispatched to the queue. Check the backup disk once the queue worker processes it.')
-                        ->success()
-                        ->send();
-                }),
+            Action::make('runFilesBackup')
+                ->label('Run files-only')
+                ->icon('heroicon-o-document-duplicate')
+                ->color('gray')
+                ->requiresConfirmation()
+                ->modalHeading('Run files-only backup?')
+                ->modalDescription('This will queue a backup of the application files only (no database). It runs in the background.')
+                ->modalSubmitActionLabel('Yes, back up the files')
+                ->visible(fn () => static::canAccess())
+                ->action(fn () => $this->queueBackup('files', 'backup:run', ['--only-files' => true])),
 
             Action::make('save')
                 ->label('Save retention')
@@ -186,6 +315,45 @@ class BackupHealthPage extends Page
                 ->color('gray')
                 ->action(fn () => $this->save()),
         ];
+    }
+
+    /**
+     * Queue a backup run via Artisan and record a "running" BackupRun row.
+     *
+     * @param 'full'|'db'|'files' $type
+     * @param array<string, mixed> $parameters
+     */
+    protected function queueBackup(string $type, string $command, array $parameters = []): void
+    {
+        abort_unless(static::canAccess(), 403);
+
+        Artisan::queue($command, $parameters);
+
+        /** @var array<int, string> $disks */
+        $disks = (array) config('backup.backup.destination.disks', ['local']);
+
+        BackupRun::create([
+            'type' => $type,
+            'destination_disk' => $disks[0] ?? 'local',
+            'status' => 'running',
+            'started_at' => now(),
+            'triggered_by_user_id' => Auth::id(),
+            'message' => 'Queued from Backup Center',
+        ]);
+
+        $label = match ($type) {
+            'db' => 'Database backup queued',
+            'files' => 'Files backup queued',
+            default => 'Backup queued',
+        };
+
+        Notification::make()
+            ->title($label)
+            ->body('The backup has been dispatched to the queue. Check the run history once the queue worker processes it.')
+            ->success()
+            ->send();
+
+        $this->health = $this->buildHealthSummary();
     }
 
     // ─── health summary ─────────────────────────────────────────────────────
@@ -272,11 +440,21 @@ class BackupHealthPage extends Page
                 return ['ok' => false, 'message' => 'Could not determine disk space'];
             }
 
+            $percentUsed = $total > 0 ? round((1 - $free / $total) * 100, 1) : 0.0;
+
+            // Threshold: ok < 75 %, warning 75–90 %, danger > 90 %.
+            $status = match (true) {
+                $percentUsed > 90 => 'danger',
+                $percentUsed >= 75 => 'warning',
+                default => 'ok',
+            };
+
             return [
                 'ok' => true,
                 'free' => $this->formatBytes((int) $free),
                 'total' => $this->formatBytes((int) $total),
-                'percent_used' => $total > 0 ? round((1 - $free / $total) * 100, 1) : 0,
+                'percent_used' => $percentUsed,
+                'status' => $status,
             ];
         } catch (\Throwable) {
             return ['ok' => false, 'message' => 'Could not determine disk space'];
