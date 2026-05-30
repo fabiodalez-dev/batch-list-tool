@@ -378,14 +378,17 @@ class Box extends Model implements AuditableContract, Sortable
             foreignKey: 'batch_id',
         ));
 
-        // RFQ App.1 #4 — Legacy box types (MAV, STVC) cannot be created for new
-        // records. Existing legacy rows remain fully editable (update/save).
-        // `creating` fires ONLY on INSERT — never on UPDATE — so this guard
-        // never interferes with editing a pre-existing legacy box.
+        // RFQ App.1 #4 — Legacy box types (MAV, STVC) cannot be created as NEW
+        // records. Historical legacy boxes are still importable, but ONLY when
+        // explicitly flagged `is_legacy = true` (the migration/import path sets
+        // it; the submission §5.4: "imported with a restricted flag; the
+        // validator forbids creating new ones"). A legacy type WITHOUT the flag
+        // is a forbidden new record. `creating` fires only on INSERT, so editing
+        // an existing legacy box is never affected.
         static::creating(function (self $box): void {
-            if (in_array($box->box_type, self::LEGACY_TYPES, true)) {
+            if (in_array($box->box_type, self::LEGACY_TYPES, true) && ! $box->is_legacy) {
                 throw ValidationException::withMessages([
-                    'box_type' => 'Legacy box types (MAV, STVC) cannot be created for new records (RFQ A1.4).',
+                    'box_type' => 'Legacy box types (MAV, STVC) cannot be created for new records; historical ones must be flagged is_legacy (RFQ A1.4).',
                 ]);
             }
         });
