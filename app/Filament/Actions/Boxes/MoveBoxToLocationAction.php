@@ -58,9 +58,13 @@ final class MoveBoxToLocationAction
                 /** @var Location|null $location */
                 $location = Location::withoutGlobalScopes()->find($locationId);
 
-                if ($location === null || $location->trashed()) {
+                // C1 — server-side guard must mirror the form filter, which only
+                // offers `is_active = true` locations. A forged submit carrying an
+                // inactive (or soft-deleted / missing) location id is rejected here
+                // so the audited move can never land a box on a disabled location.
+                if ($location === null || $location->trashed() || ! $location->is_active) {
                     Notification::make()
-                        ->title('Cannot move — target location not found or deleted')
+                        ->title('Cannot move — target location not found, deleted or inactive')
                         ->danger()
                         ->send();
 

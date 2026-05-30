@@ -18,16 +18,25 @@
 
     $repositories = collect();
     if ($user) {
-        if (method_exists($user, 'hasAnyRole') && $user->hasAnyRole(['super_admin', 'admin'])) {
-            // Privileged users may scope to any repository.
+        // C6 — the switchable set MUST come from the SAME allowed-set source the
+        // scopes use (ActiveRepository::allowedRepositoryIdsFor = pivot ∪
+        // default_repository_id). Reading $user->repositories() alone omitted a
+        // repo reachable only via default_repository_id, so a default-only user
+        // saw no switcher entry for the very repo they were scoped to.
+        $allowed = ActiveRepository::allowedRepositoryIdsFor($user);
+
+        if ($allowed === null) {
+            // Privileged (admin / super_admin): may scope to any active repository.
             $repositories = Repository::query()
                 ->where('is_active', true)
                 ->orderBy('name')
                 ->get(['id', 'name', 'code']);
-        } elseif (method_exists($user, 'repositories')) {
-            $repositories = $user->repositories()
+        } else {
+            // Non-privileged: exactly the repositories the user may access.
+            $repositories = Repository::query()
+                ->whereIn('id', $allowed)
                 ->orderBy('name')
-                ->get(['repositories.id', 'repositories.name', 'repositories.code']);
+                ->get(['id', 'name', 'code']);
         }
     }
 

@@ -34,6 +34,19 @@ it('seeds digitisation + current box types + batch types', function () {
 });
 
 it('active() scope orders by sort_order and filters inactive', function () {
+    // Filtering: an inactive row is excluded.
     BarcodeStatus::where('code', 'OUT')->update(['is_active' => false]);
     expect(BarcodeStatus::active()->pluck('code')->all())->not->toContain('OUT');
+
+    // C7 — ordering: active() must return rows in ascending sort_order.
+    // Shuffle the stored sort_order so the assertion proves the ORDER BY rather
+    // than relying on insertion order, then read it back through active().
+    BarcodeStatus::where('code', 'IN')->update(['sort_order' => 20, 'is_active' => true]);
+    BarcodeStatus::where('code', 'PERM_OUT')->update(['sort_order' => 10, 'is_active' => true]);
+
+    $ordered = BarcodeStatus::active()->pluck('code')->all();
+    expect($ordered)->toBe(['PERM_OUT', 'IN']);
+
+    $sortOrders = BarcodeStatus::active()->pluck('sort_order')->all();
+    expect($sortOrders)->toBe(collect($sortOrders)->sort()->values()->all());
 });

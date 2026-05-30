@@ -8,6 +8,9 @@ use App\Models\Scopes\RepositoryScope;
 use App\Models\User;
 use App\Support\ActiveRepository;
 use Illuminate\Foundation\Testing\RefreshDatabase;
+use Illuminate\Support\Facades\Session;
+
+use function Pest\Laravel\actingAs;
 
 /**
  * Task 10 (RFQ Wave 2) — session repository switcher with an
@@ -25,6 +28,15 @@ use Illuminate\Foundation\Testing\RefreshDatabase;
 uses(RefreshDatabase::class);
 
 beforeEach(fn () => bl_seedShieldPermissions());
+
+// The ActiveRepository scope reads the session; tests in this file set it via
+// the resolver / the POST route. Flush it after EACH test so a value left in
+// the shared in-process session never bleeds into the next test (review C6:
+// the added blade-render test would otherwise leave a primed session that
+// flipped the later route test's foreign-id assertion).
+afterEach(function () {
+    Session::flush();
+});
 
 function w2t10_uniqueBatchNumber(): int
 {
@@ -80,6 +92,15 @@ it('with a specific active repo shows only that repo', function () {
 
     $ids = Batch::query()->pluck('id');
     expect($ids)->toContain($ba->id)->not->toContain($bb->id);
+});
+
+it('defaults to All (null) when nothing is explicitly selected', function () {
+    $repo = Repository::factory()->create();
+    $user = User::factory()->create(['default_repository_id' => $repo->id]);
+    $user->assignRole('editor');
+    actingAs($user);
+
+    expect(app(ActiveRepository::class)->id())->toBeNull();
 });
 
 it('falls back to All when the active id is outside the user allowed repos', function () {
@@ -155,4 +176,28 @@ it('the switcher route sets the active repo and redirects back', function () {
         ->post(route('active-repository.update'), ['repository_id' => $foreign->id])
         ->assertRedirect('/admin');
     expect(session(ActiveRepository::SESSION_KEY))->toBeNull();
+});
+
+it('C6: the switcher lists a repository reachable only via default_repository_id', function () {
+    // Pivot grants repo A; the default grants repo B but B is NOT in the pivot.
+    $repoA = Repository::factory()->create(['name' => 'Alpha Repo', 'is_active' => true]);
+    $repoB = Repository::factory()->create(['name' => 'Beta Default Only', 'is_active' => true]);
+
+    $user = User::factory()->create(['default_repository_id' => $repoB->id]);
+    $user->assignRole('editor');
+    $user->repositories()->syncWithoutDetaching([$repoA->id]); // only A in the pivot
+
+    $this->actingAs($user);
+
+    // Allowed-set source of truth must include BOTH (pivot ∪ default).
+    expect(ActiveRepository::allowedRepositoryIdsFor($user))
+        ->toContain($repoA->id)
+        ->toContain($repoB->id);
+
+    // The rendered switcher must surface the default-only repo (B), which the
+    // old pivot-only query omitted.
+    $html = view('filament.topbar.repository-switcher')->render();
+
+    expect($html)->toContain('Beta Default Only')
+        ->and($html)->toContain('Alpha Repo');
 });

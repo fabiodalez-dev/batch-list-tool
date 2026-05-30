@@ -63,7 +63,8 @@ class BoxResource extends Resource
                     ->columns($twoCols)
                     ->schema([
                         $g(Forms\Components\Select::make('box_type')
-                            ->options(fn (): array => BoxType::options())
+                            // C4 — keep the record's current (possibly inactive) value selectable on edit.
+                            ->options(fn (?Box $record): array => BoxType::optionsWith($record?->box_type))
                             ->required()
                             ->live()  // re-evaluate visibility/required of dependent fields
                             ->helperText('RAS / IN_SITU / NRA for new boxes. MAV / STVC are legacy-only and cannot be created.')
@@ -158,7 +159,8 @@ class BoxResource extends Resource
                             ->maxLength(255)
                             ->helperText('Yellow security seal closing the box. Changes are kept in the seal history.')),
                         $g(Forms\Components\Select::make('barcode_status')
-                            ->options(fn (): array => BarcodeStatus::options())
+                            // C4 — keep the record's current (possibly inactive) value selectable on edit.
+                            ->options(fn (?Box $record): array => BarcodeStatus::optionsWith($record?->barcode_status))
                             ->required()
                             ->live()
                             ->default('IN')),

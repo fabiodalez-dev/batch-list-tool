@@ -6,6 +6,7 @@ namespace App\Filament\Resources\Lookups;
 
 use App\Filament\Resources\Lookups\BarcodeStatusResource\Pages;
 use App\Models\Lookup\BarcodeStatus;
+use Filament\Actions\Action;
 use Filament\Actions\BulkActionGroup;
 use Filament\Actions\DeleteBulkAction;
 use Filament\Actions\EditAction;
@@ -14,7 +15,6 @@ use Filament\Resources\Resource;
 use Filament\Schemas\Components\Section;
 use Filament\Schemas\Schema;
 use Filament\Tables;
-use Filament\Tables\Actions\Action;
 use Filament\Tables\Table;
 
 /**
@@ -87,6 +87,8 @@ class BarcodeStatusResource extends Resource
                         Forms\Components\Textarea::make('metadata')
                             ->rows(3)
                             ->helperText('Optional JSON metadata.')
+                            ->rules(['nullable', 'json'])
+                            ->rules(['nullable', 'json']) // C10 — reject malformed JSON so the array cast never breaks on read
                             ->columnSpanFull(),
                     ]),
             ]);

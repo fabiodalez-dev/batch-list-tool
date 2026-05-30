@@ -17,6 +17,7 @@ use Filament\Tables\Filters\SelectFilter;
 use Filament\Tables\Table;
 use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Database\Eloquent\Model;
+use Illuminate\Database\QueryException;
 
 /**
  * Renders the Document's flags timeline on the Document edit/view page
@@ -46,7 +47,9 @@ class FlagsRelationManager extends RelationManager
         return $schema->schema([
             Schemas\Components\Grid::make(2)->schema([
                 Forms\Components\Select::make('type')
-                    ->options(self::typeOptions())
+                    // C4 — keep the record's current type selectable on edit even
+                    // if its flag_types lookup row has since been deactivated.
+                    ->options(fn (?DocumentFlag $record): array => self::typeOptionsWith($record?->type))
                     ->required()
                     ->native(false)
                     ->searchable(),
@@ -256,7 +259,14 @@ class FlagsRelationManager extends RelationManager
      */
     public static function typeOptions(): array
     {
-        $codes = FlagType::active()->pluck('code')->all();
+        // C5 — the const fallback must also cover the case where the flag_types
+        // table is unavailable (e.g. before its migration, or a transient DB
+        // error): the query throws BEFORE returning an empty array, so guard it.
+        try {
+            $codes = FlagType::active()->pluck('code')->all();
+        } catch (QueryException) {
+            $codes = [];
+        }
         if ($codes === []) {
             $codes = DocumentFlag::TYPES;
         }
@@ -267,6 +277,22 @@ class FlagsRelationManager extends RelationManager
         }
 
         return $out;
+    }
+
+    /**
+     * C4 — active flag-type options PLUS the record's current value, so an
+     * inactive-but-current type stays selectable/saveable on the edit form.
+     *
+     * @return array<string, string>
+     */
+    public static function typeOptionsWith(?string $current): array
+    {
+        $options = self::typeOptions();
+        if ($current !== null && $current !== '' && ! array_key_exists($current, $options)) {
+            $options[$current] = self::typeLabel($current) . ' (inactive)';
+        }
+
+        return $options;
     }
 
     /** @return array<string, string> */

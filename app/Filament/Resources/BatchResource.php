@@ -81,7 +81,10 @@ class BatchResource extends Resource
                         // tests are unaffected; the Select simply surfaces the
                         // editable controlled vocabulary in the UI.
                         $g(Forms\Components\Select::make('type')
-                            ->options(fn (): array => BatchType::options())
+                            // C4 — include the record's CURRENT value even if it
+                            // has since been deactivated, so editing other fields
+                            // never drops/blanks a stored-but-inactive type.
+                            ->options(fn (?Batch $record): array => BatchType::optionsWith($record?->type))
                             ->required()),
                         $g(Forms\Components\TextInput::make('description')
                             ->maxLength(255)

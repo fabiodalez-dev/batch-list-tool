@@ -3,6 +3,7 @@
 namespace App\Models\Lookup;
 
 use App\Models\Document;
+use App\Models\Lookup\Concerns\HasLookupOptions;
 use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Database\Eloquent\Model;
 
@@ -12,6 +13,8 @@ use Illuminate\Database\Eloquent\Model;
  */
 class DigitisationStatus extends Model
 {
+    use HasLookupOptions;
+
     protected $table = 'digitisation_statuses';
 
     protected $fillable = ['code', 'label', 'sort_order', 'is_active', 'metadata'];

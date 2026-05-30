@@ -3,6 +3,7 @@
 namespace App\Models\Lookup;
 
 use App\Models\DocumentFlag;
+use App\Models\Lookup\Concerns\HasLookupOptions;
 use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Database\Eloquent\Model;
 
@@ -13,6 +14,8 @@ use Illuminate\Database\Eloquent\Model;
  */
 class FlagType extends Model
 {
+    use HasLookupOptions;
+
     protected $table = 'flag_types';
 
     protected $fillable = ['code', 'label', 'sort_order', 'is_active', 'metadata', 'colour'];
