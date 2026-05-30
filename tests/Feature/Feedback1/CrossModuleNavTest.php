@@ -78,10 +78,13 @@ function cmn_doc(int $repoId, int $seriesId, array $attrs = []): Document
 
 it('the BoxResource index URL carries the batch filter param shape used by BatchResource navigation', function (): void {
     $url = BoxResource::getUrl('index', [
-        'tableFilters' => ['batch' => ['values' => [42]]],
+        'filters' => ['batch' => ['values' => [42]]],
     ]);
 
-    expect($url)->toContain('tableFilters')
+    // Filament binds $tableFilters as #[Url(as: 'filters')], so the query-string
+    // key MUST be `filters` — NOT `tableFilters` — or the link lands unfiltered.
+    expect(urldecode($url))->toContain('filters')
+        ->and(urldecode($url))->not->toContain('tableFilters')
         ->and(urldecode($url))->toContain('batch')
         ->and(urldecode($url))->toContain('42');
 });
@@ -101,14 +104,33 @@ it('Boxes list given the batch filter param shows only that batch boxes (B3)', f
         ->assertCanNotSeeTableRecords([$boxB]);
 });
 
+it('arriving at the Boxes list via the navigation filter query-string applies the batch filter (B3 round-trip)', function (): void {
+    $this->actingAs(cmn_actAsSuperAdmin());
+
+    $repo = cmn_repo();
+    $batchA = Batch::factory()->create(['batch_number' => 401, 'repository_id' => $repo->id]);
+    $batchB = Batch::factory()->create(['batch_number' => 402, 'repository_id' => $repo->id]);
+    $boxA = Box::factory()->create(['batch_id' => $batchA->id, 'box_number' => 'R1']);
+    $boxB = Box::factory()->create(['batch_id' => $batchB->id, 'box_number' => 'R2']);
+
+    // Drive the EXACT query-string key Filament reads ('filters'), as produced
+    // by BatchResource::getUrl(... ['filters' => ...]) — proves the round trip.
+    Livewire::withQueryParams(['filters' => ['batch' => ['values' => [(string) $batchA->id]]]])
+        ->test(ListBoxes::class)
+        ->assertCanSeeTableRecords([$boxA])
+        ->assertCanNotSeeTableRecords([$boxB]);
+});
+
 /* ============================ B4 — Box → Documents ========================= */
 
 it('the DocumentResource index URL carries the current_box_id filter param shape (B4)', function (): void {
     $url = DocumentResource::getUrl('index', [
-        'tableFilters' => ['current_box_id' => ['values' => [7]]],
+        'filters' => ['current_box_id' => ['values' => [7]]],
     ]);
 
-    expect(urldecode($url))->toContain('current_box_id')
+    expect(urldecode($url))->toContain('filters')
+        ->and(urldecode($url))->not->toContain('tableFilters')
+        ->and(urldecode($url))->toContain('current_box_id')
         ->and(urldecode($url))->toContain('7');
 });
 
@@ -125,6 +147,23 @@ it('Documents list given the box filter param shows only that box documents (B4)
 
     Livewire::test(ListDocuments::class)
         ->filterTable('current_box_id', [$boxA->id])
+        ->assertCanSeeTableRecords([$docA])
+        ->assertCanNotSeeTableRecords([$docB]);
+});
+
+it('arriving at the Documents list via the navigation filter query-string applies the box filter (B4 round-trip)', function (): void {
+    $this->actingAs(cmn_actAsSuperAdmin());
+
+    $repo = cmn_repo();
+    $series = cmn_series();
+    $batch = Batch::factory()->create(['batch_number' => 411, 'repository_id' => $repo->id]);
+    $boxA = Box::factory()->create(['batch_id' => $batch->id, 'box_number' => 'Y1']);
+    $boxB = Box::factory()->create(['batch_id' => $batch->id, 'box_number' => 'Y2']);
+    $docA = cmn_doc($repo->id, $series->id, ['current_box_id' => $boxA->id]);
+    $docB = cmn_doc($repo->id, $series->id, ['current_box_id' => $boxB->id]);
+
+    Livewire::withQueryParams(['filters' => ['current_box_id' => ['values' => [(string) $boxA->id]]]])
+        ->test(ListDocuments::class)
         ->assertCanSeeTableRecords([$docA])
         ->assertCanNotSeeTableRecords([$docB]);
 });

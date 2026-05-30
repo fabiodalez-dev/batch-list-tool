@@ -205,7 +205,7 @@ class BatchResource extends Resource
             // `values` (an array). View / Edit stay reachable via the row
             // actions column below.
             ->recordUrl(fn (Batch $record): string => BoxResource::getUrl('index', [
-                'tableFilters' => ['batch' => ['values' => [$record->getKey()]]],
+                'filters' => ['batch' => ['values' => [$record->getKey()]]],
             ]))
             ->columns([
                 $gc(Tables\Columns\TextColumn::make('batch_number')
@@ -263,7 +263,7 @@ class BatchResource extends Resource
                     ->icon('heroicon-o-archive-box')
                     ->color('gray')
                     ->url(fn (Batch $record): string => BoxResource::getUrl('index', [
-                        'tableFilters' => ['batch' => ['values' => [$record->getKey()]]],
+                        'filters' => ['batch' => ['values' => [$record->getKey()]]],
                     ])),
             ])
             ->bulkActions([

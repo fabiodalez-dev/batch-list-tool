@@ -438,7 +438,7 @@ class BoxResource extends Resource
             // uses `values` (an array). View / Edit / Move / Destroy stay
             // reachable via the row actions column below.
             ->recordUrl(fn (Box $record): string => DocumentResource::getUrl('index', [
-                'tableFilters' => ['current_box_id' => ['values' => [$record->getKey()]]],
+                'filters' => ['current_box_id' => ['values' => [$record->getKey()]]],
             ]))
             ->columns([
                 $gc(Tables\Columns\TextColumn::make('box_type')),
@@ -556,7 +556,7 @@ class BoxResource extends Resource
                     ->icon('heroicon-o-rectangle-stack')
                     ->color('gray')
                     ->url(fn (Box $record): string => DocumentResource::getUrl('index', [
-                        'tableFilters' => ['current_box_id' => ['values' => [$record->getKey()]]],
+                        'filters' => ['current_box_id' => ['values' => [$record->getKey()]]],
                     ])),
                 // Feedback1 Wave B (B6) — "Add document to this box": jump to
                 // the Document create form with current_box_id pre-filled.
