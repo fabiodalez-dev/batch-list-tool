@@ -87,11 +87,15 @@
                         style="width: {{ $this->health['disk']['percent_used'] ?? 0 }}%"
                     ></div>
                 </div>
+                @php
+                    $diskLabel = match ($diskStatus) {
+                        'warning' => '(getting full)',
+                        'danger' => '(low space)',
+                        default => '(healthy)',
+                    };
+                @endphp
                 <p class="mt-1 text-xs text-{{ $diskColour }}-600 dark:text-{{ $diskColour }}-400">
-                    {{ $this->health['disk']['percent_used'] ?? 0 }}% used
-                    @if($diskStatus === 'ok') (healthy)
-                    @elseif($diskStatus === 'warning') (getting full)
-                    @else (low space) @endif
+                    {{ $this->health['disk']['percent_used'] ?? 0 }}% used {{ $diskLabel }}
                 </p>
             @else
                 <p class="text-xs text-gray-500 dark:text-gray-400">
@@ -140,7 +144,8 @@
                                             <x-heroicon-o-arrow-down-tray class="size-4" />
                                             Download
                                         </a>
-                                        @if(method_exists($this, 'getRestoreAction') && auth()->user()?->hasRole('super_admin'))
+                                        @php($canRestore = method_exists($this, 'getRestoreAction') && (bool) auth()->user()?->hasRole('super_admin'))
+                                        @if($canRestore)
                                             <button
                                                 type="button"
                                                 wire:click="mountAction('restore', {{ \Illuminate\Support\Js::from(['disk' => $backup['disk'], 'path' => $backup['path']]) }})"
@@ -193,14 +198,7 @@
                     </thead>
                     <tbody class="divide-y divide-gray-100 dark:divide-white/5">
                         @foreach($runs as $run)
-                            @php
-                                $statusColour = match ($run->status) {
-                                    'completed', 'success' => 'success',
-                                    'failed', 'error' => 'danger',
-                                    'running' => 'warning',
-                                    default => 'gray',
-                                };
-                            @endphp
+                            @php($statusColour = ['completed' => 'success', 'success' => 'success', 'failed' => 'danger', 'error' => 'danger', 'running' => 'warning'][$run->status] ?? 'gray')
                             <tr>
                                 <td class="py-2 pr-4 text-gray-700 dark:text-gray-200">
                                     <span class="uppercase text-xs font-semibold tracking-wide">{{ $run->type }}</span>
