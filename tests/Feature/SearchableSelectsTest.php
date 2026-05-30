@@ -270,7 +270,8 @@ it('Authority label includes practice dates when present', function () {
 
     $label = SearchableSelects::authorityLabel($a->fresh());
 
-    expect($label)->toBe('R110 — Buttigieg Antonio (1759-1798)');
+    // Feedback1 — label now reads "identifier – firstname lastname (dates)".
+    expect($label)->toBe('R110 – Antonio Buttigieg (1759-1798)');
 });
 
 it('Authority label omits dates when both endpoints are null', function () {
@@ -282,7 +283,7 @@ it('Authority label omits dates when both endpoints are null', function () {
 
     $label = SearchableSelects::authorityLabel($a->fresh());
 
-    expect($label)->toBe('R-NODATES — NoDates');
+    expect($label)->toBe('R-NODATES – NoDates');
 });
 
 /* =============================================================================

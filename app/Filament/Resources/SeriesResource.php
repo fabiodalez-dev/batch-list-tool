@@ -51,9 +51,14 @@ class SeriesResource extends Resource
                 Section::make('Identification')
                     ->columns($twoCols)
                     ->schema([
+                        // Feedback1 — Series code must be unique.
                         $g(Forms\Components\TextInput::make('code')
                             ->required()
-                            ->maxLength(16)),
+                            ->maxLength(16)
+                            ->unique(ignoreRecord: true)
+                            ->validationMessages([
+                                'unique' => 'This series code is already in use.',
+                            ])),
                         $g(Forms\Components\TextInput::make('title')
                             ->required()
                             ->maxLength(255)),
