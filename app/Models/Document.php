@@ -17,6 +17,7 @@ use Illuminate\Database\Eloquent\Relations\BelongsToMany;
 use Illuminate\Database\Eloquent\Relations\HasMany;
 use Illuminate\Database\Eloquent\SoftDeletes;
 use Illuminate\Support\Collection;
+use Illuminate\Support\Facades\Auth;
 use Illuminate\Validation\ValidationException;
 use Laravel\Scout\Searchable;
 use OwenIt\Auditing\Auditable;
@@ -126,7 +127,7 @@ class Document extends Model implements AuditableContract, HasMedia, Sortable
         'in_situ_box_1', 'in_situ_box_2', 'in_situ_box_3',
         'ras_1_box_destroyed', 'ras_2_box_destroyed',
         'in_situ_box_1_destroyed', 'in_situ_box_2_destroyed', 'in_situ_box_3_destroyed',
-        'barcode_in', 'barcode_status', 'custody_status', 'barcode_ras_1', 'status_1', 'barcode_ras_2', 'status_2',
+        'barcode_in', 'barcode_status', 'barcode', 'custody_status', 'barcode_ras_1', 'status_1', 'barcode_ras_2', 'status_2',
         'barcode_ras_3', 'status_3', 'barcode_ras_4', 'status_4',
         'barcode_in_2', 'barcode_ras_2_alt', 'status_1_alt',
         'barcode_ras_2_alt2', 'status_2_alt',
@@ -247,6 +248,18 @@ class Document extends Model implements AuditableContract, HasMedia, Sortable
     public function identifierHistory(): HasMany
     {
         return $this->hasMany(DocumentIdentifierHistory::class)->latest('changed_at');
+    }
+
+    /**
+     * Append-only log of per-document barcode value changes (Task 7b).
+     *
+     * The document's custody STATUS comes from its box (Task 7 mirror).
+     * This relation tracks only the document's OWN barcode VALUE history,
+     * mirroring the BoxSealNumberHistory pattern.
+     */
+    public function barcodeHistory(): HasMany
+    {
+        return $this->hasMany(DocumentBarcodeHistory::class)->orderByDesc('changed_at');
     }
 
     /**
@@ -623,6 +636,51 @@ class Document extends Model implements AuditableContract, HasMedia, Sortable
                     }
                 }
             }
+        });
+
+        // Task 7b — per-document barcode value change history.
+        //
+        // Mirror the box seal-number history pattern (BoxSealNumberHistory /
+        // Box::booted()): split across `created` / `updated` (not a single
+        // `saved`) so the "from" side is always unambiguous:
+        //   - created: old_value = null (document did not exist before)
+        //   - updated: old_value = getOriginal('barcode') before the save
+        //
+        // `repository_id` is taken directly from the document's own column
+        // (unlike Box, which derives it via batch).
+        //
+        // Does NOT interfere with the existing `barcode_status` mirror/guards —
+        // those handle the custody STATUS from the box; this handles only the
+        // document's own barcode VALUE.
+        static::created(function (self $document): void {
+            if ($document->barcode === null) {
+                return;
+            }
+            $document->barcodeHistory()->create([
+                'old_value' => null,
+                'new_value' => $document->barcode,
+                'changed_by_user_id' => Auth::id(),
+                'changed_at' => now(),
+                'repository_id' => $document->repository_id,
+            ]);
+        });
+
+        static::updated(function (self $document): void {
+            if (! $document->wasChanged('barcode')) {
+                return;
+            }
+            $old = $document->getOriginal('barcode');
+            $new = $document->barcode;
+            if ($old === $new) {
+                return;
+            }
+            $document->barcodeHistory()->create([
+                'old_value' => $old,
+                'new_value' => $new,
+                'changed_by_user_id' => Auth::id(),
+                'changed_at' => now(),
+                'repository_id' => $document->repository_id,
+            ]);
         });
     }
 

@@ -299,6 +299,11 @@ class DocumentResource extends Resource
                     ->collapsed()
                     ->columns(2)
                     ->schema([
+                        $g(Forms\Components\TextInput::make('barcode')
+                            ->label('Document barcode (individual label)')
+                            ->maxLength(255)
+                            ->helperText('Optional barcode assigned to this specific document for individual labelling. Changes are tracked in the Barcode history tab. Custody status is still authoritative from the box.')
+                            ->columnSpanFull()),
                         $g(Forms\Components\TextInput::make('barcode_in')->label('Barcode (IN)')->maxLength(50)),
                         $g(Forms\Components\TextInput::make('barcode_in_2')->label('Barcode (IN) #2')->maxLength(50)),
                         $g(Forms\Components\TextInput::make('barcode_ras_1')->label('Barcode RAS 1')->maxLength(50)),
@@ -1013,6 +1018,7 @@ class DocumentResource extends Resource
         return [
             DocumentResource\RelationManagers\IdentifierHistoryRelationManager::class,
             DocumentResource\RelationManagers\FlagsRelationManager::class,
+            DocumentResource\RelationManagers\BarcodeHistoryRelationManager::class,
         ];
     }
 
