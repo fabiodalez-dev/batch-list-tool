@@ -355,10 +355,12 @@ class BackupHealthPage extends Page
             'Invalid backup path.'
         );
 
-        $absolutePath = Storage::disk($disk)->path($path);
-
+        // Pass the disk + relative path (NOT a local filesystem path): the
+        // restore service streams the archive off whatever disk it lives on
+        // (local/ftp/sftp/s3) into a local temp file, so restoring from a
+        // remote destination works too.
         try {
-            $run = app(RestoreDatabase::class)->restore($disk, $absolutePath, auth()->id());
+            $run = app(RestoreDatabase::class)->restore($disk, $path, auth()->id());
 
             Notification::make()
                 ->title('Database restored')

@@ -134,3 +134,21 @@ test('BackupRun::recent() orders by started_at descending', function () {
     expect($runs->first()->started_at->toDateString())->toBe('2026-05-31');
     expect($runs->last()->started_at->toDateString())->toBe('2026-05-29');
 });
+
+it('enforces a single default destination when one is marked default via save', function () {
+    $a = BackupDestination::create([
+        'name' => 'A', 'driver' => 'local', 'disk_key' => 'bc_a',
+        'config' => ['root' => '/tmp/a'], 'is_active' => true, 'is_default' => true, 'sort_order' => 0,
+    ]);
+    expect($a->fresh()->is_default)->toBeTrue();
+
+    // Creating a second default must clear the first (single-default invariant).
+    $b = BackupDestination::create([
+        'name' => 'B', 'driver' => 'local', 'disk_key' => 'bc_b',
+        'config' => ['root' => '/tmp/b'], 'is_active' => true, 'is_default' => true, 'sort_order' => 1,
+    ]);
+
+    expect($b->fresh()->is_default)->toBeTrue()
+        ->and($a->fresh()->is_default)->toBeFalse()
+        ->and(BackupDestination::where('is_default', true)->count())->toBe(1);
+});

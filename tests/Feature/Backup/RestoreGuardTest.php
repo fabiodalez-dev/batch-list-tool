@@ -6,7 +6,9 @@ use App\Models\BackupRun;
 use App\Models\User;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Support\Facades\Artisan;
+use Illuminate\Support\Facades\Storage;
 use Illuminate\Validation\ValidationException;
+use PHPUnit\Framework\Assert;
 use Symfony\Component\HttpKernel\Exception\HttpException;
 
 uses(RefreshDatabase::class);
@@ -230,3 +232,35 @@ class SnapshotOrderProbe
     /** @var array<int, string> */
     public static array $log = [];
 }
+
+it('materialises a remote-disk archive into a local temp file before extracting', function () {
+    // Prove I-1 fix: restore reads the archive via Storage::disk()->readStream()
+    // (works for any driver), not Storage::disk()->path() (local-only).
+    Storage::fake('remote_bc');
+    config(['backup.backup.destination.disks' => ['remote_bc']]);
+
+    // A minimal zip containing a db-dumps/*.sql entry.
+    $zipPath = tempnam(sys_get_temp_dir(), 'bc-fake-') . '.zip';
+    $zip = new ZipArchive;
+    $zip->open($zipPath, ZipArchive::CREATE);
+    $zip->addFromString('db-dumps/dump.sql', 'SELECT 1;');
+    $zip->close();
+    Storage::disk('remote_bc')->put('Laravel/backup.zip', file_get_contents($zipPath));
+    @unlink($zipPath);
+
+    // Subclass that skips the real safety snapshot + import, so we only exercise
+    // the materialise+extract path (proves it can read from the faked remote disk).
+    $svc = new class extends RestoreDatabase
+    {
+        protected function safetySnapshot(): void {}
+
+        protected function importDump(string $sqlPath): void
+        {
+            // The dump must have been materialised + extracted from the remote disk.
+            Assert::assertStringContainsString('SELECT 1;', (string) file_get_contents($sqlPath));
+        }
+    };
+
+    $run = $svc->restore('remote_bc', 'Laravel/backup.zip', null);
+    expect($run->status)->toBe('success')->and($run->type)->toBe('restore');
+});

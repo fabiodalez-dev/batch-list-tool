@@ -7,6 +7,7 @@ namespace App\Actions\Backup;
 use App\Models\BackupRun;
 use Illuminate\Support\Facades\Artisan;
 use Illuminate\Support\Facades\DB;
+use Illuminate\Support\Facades\Storage;
 use RuntimeException;
 use Symfony\Component\Process\ExecutableFinder;
 use Symfony\Component\Process\Process;
@@ -50,10 +51,17 @@ class RestoreDatabase
         $this->safetySnapshot();
 
         $sqlPath = null;
+        $localZip = null;
 
         try {
+            // STEP A2 — materialise the archive on the LOCAL filesystem. The
+            // caller passes a disk key + disk-relative path; for a remote disk
+            // (ftp/sftp/s3) we stream it down to a temp file first. For a local
+            // disk this is a cheap copy. $localZip is cleaned up in finally.
+            $localZip = $this->materialiseArchive($disk, $zipPath);
+
             // STEP B — extract the .sql dump from db-dumps/ inside the zip.
-            $sqlPath = $this->extractSqlDump($zipPath);
+            $sqlPath = $this->extractSqlDump($localZip);
 
             // STEP C — import the dump into the default connection.
             $this->importDump($sqlPath);
@@ -91,7 +99,52 @@ class RestoreDatabase
             if ($sqlPath !== null) {
                 $this->safelyDeleteTempFile($sqlPath);
             }
+
+            if ($localZip !== null) {
+                $this->safelyDeleteTempFile($localZip);
+            }
         }
+    }
+
+    /**
+     * Stream the backup archive off its destination disk into a LOCAL temp file
+     * and return the local path. Works for any driver (local/ftp/sftp/s3): the
+     * read goes through Storage::disk($disk), not the local filesystem, so a
+     * remote backup can be restored too.
+     *
+     * @throws RuntimeException if the archive cannot be read.
+     */
+    protected function materialiseArchive(string $disk, string $relativePath): string
+    {
+        $storage = Storage::disk($disk);
+
+        if (! $storage->exists($relativePath)) {
+            throw new RuntimeException('Backup archive not found on disk "' . $disk . '": ' . $relativePath);
+        }
+
+        $stream = $storage->readStream($relativePath);
+
+        if ($stream === null) {
+            throw new RuntimeException('Could not open backup archive for reading: ' . $relativePath);
+        }
+
+        $localPath = tempnam(sys_get_temp_dir(), 'bl-restore-zip-') . '.zip';
+        $out = fopen($localPath, 'wb');
+
+        if ($out === false) {
+            fclose($stream);
+
+            throw new RuntimeException('Could not open a local temp file for the backup archive.');
+        }
+
+        try {
+            stream_copy_to_stream($stream, $out);
+        } finally {
+            fclose($stream);
+            fclose($out);
+        }
+
+        return $localPath;
     }
 
     /**
@@ -111,8 +164,17 @@ class RestoreDatabase
             return;
         }
 
-        if (is_file($real)) {
-            @unlink($real);
+        // Reconstruct the path from the confined temp dir + the basename only,
+        // so the value passed to unlink() can never be an attacker-influenced
+        // path that escapes the temp directory (defence-in-depth; the prefix
+        // check above already guarantees containment).
+        $safe = rtrim($tmpReal, DIRECTORY_SEPARATOR) . DIRECTORY_SEPARATOR . basename($real);
+
+        if (is_file($safe)) {
+            // $safe is rebuilt from realpath(sys_get_temp_dir()) + basename();
+            // it cannot escape the system temp directory.
+            // nosemgrep: php.lang.security.unlink-use.unlink-use
+            @unlink($safe);
         }
     }
 
