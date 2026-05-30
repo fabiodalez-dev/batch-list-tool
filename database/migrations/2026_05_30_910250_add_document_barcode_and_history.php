@@ -25,9 +25,18 @@ return new class extends Migration
 {
     public function up(): void
     {
-        Schema::table('documents', function (Blueprint $t): void {
-            $t->string('barcode')->nullable()->after('barcode_status');
-        });
+        // Idempotent: a prior partial deploy (that crashed later in this same
+        // migration) may have already added the column / created the table.
+        // Guard both so a re-run completes cleanly instead of 1060/1050-ing.
+        if (! Schema::hasColumn('documents', 'barcode')) {
+            Schema::table('documents', function (Blueprint $t): void {
+                $t->string('barcode')->nullable()->after('barcode_status');
+            });
+        }
+
+        if (Schema::hasTable('document_barcode_history')) {
+            return;
+        }
 
         Schema::create('document_barcode_history', function (Blueprint $t): void {
             $t->id();
