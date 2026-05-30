@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace App\Filament\Actions\Documents;
 
+use App\Models\Box;
 use App\Models\Document;
 use Filament\Actions\Action;
 use Filament\Actions\BulkAction;
@@ -112,11 +113,24 @@ final class MarkDisinfestedAction
                 // "Mark disinfested") expects this action to be the closing
                 // bookend: clear the in-flight flag and return barcode to IN.
                 $doc->is_in_disinfestation = false;
-                // Disinfestation returns a box to storage (IN) — but a PERM_OUT
-                // document has been permanently transferred and must NOT be
-                // silently pulled back in. Leave PERM_OUT untouched.
-                if ($doc->barcode_status !== 'PERM_OUT') {
-                    $doc->barcode_status = 'IN';
+
+                // Task 7 (B1): the BOX is authoritative for barcode status.
+                // B2 invariant (now at box level): disinfestation returns a box
+                // to storage (IN) — but a PERM_OUT box/document has been
+                // permanently transferred and must NOT be silently pulled back
+                // in. The authoritative status is the box's when boxed, else the
+                // document column. Only flip to IN when it is NOT PERM_OUT.
+                $box = $doc->current_box_id !== null
+                    ? Box::query()->find($doc->current_box_id)
+                    : null;
+                $authoritativeStatus = $box instanceof Box
+                    ? $box->barcode_status
+                    : $doc->barcode_status;
+
+                if ($authoritativeStatus !== 'PERM_OUT') {
+                    // Box-authoritative write (mirror hook propagates to docs);
+                    // falls back to the document column when there is no box.
+                    ActionSupport::applyBarcodeStatus($doc, 'IN');
                 }
 
                 ActionSupport::logPivotChange(
@@ -125,7 +139,7 @@ final class MarkDisinfestedAction
                     newValues: [
                         'disinfestation_date' => $date,
                         'is_in_disinfestation' => false,
-                        'barcode_status' => $doc->barcode_status,
+                        'barcode_status' => $authoritativeStatus !== 'PERM_OUT' ? 'IN' : 'PERM_OUT',
                     ],
                     oldValues: $oldValues,
                     tags: 'disinfestation,document',

@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace App\Filament\Actions\Documents;
 
+use App\Models\Box;
 use App\Models\Document;
 use Filament\Notifications\Notification;
 use Illuminate\Database\Eloquent\Collection as EloquentCollection;
@@ -64,6 +65,57 @@ final class ActionSupport
             'user_agent' => self::safeRequestUserAgent(),
             'tags' => $tags,
         ]);
+    }
+
+    /**
+     * RFQ Wave 2 — Task 7 (B1). Apply a barcode status to a document the
+     * BOX-AUTHORITATIVE way.
+     *
+     * The box is the single source of truth for barcode status; the document
+     * column is a synced mirror. So when the document is in a box we set the
+     * box's `barcode_status` and let the {@see Box} mirror hook
+     * propagate the value back onto every document in that box (this one
+     * included). When the document has NO current box we fall back to writing
+     * the document column directly — there is nothing to be authoritative
+     * about, and refusing the write would lose the operator's intent.
+     *
+     * B2 invariant (kept, now at box level): callers that close the
+     * disinfestation cycle must NOT silently revert a PERM_OUT box; they should
+     * skip the write when the box is already PERM_OUT (see MarkDisinfested).
+     * This helper does the literal write requested — the B2 decision lives in
+     * the caller so it can short-circuit before stamping anything.
+     *
+     * @return bool true if the box was the authoritative write target,
+     *              false if it fell back to the document column.
+     */
+    public static function applyBarcodeStatus(Document $doc, string $status): bool
+    {
+        $box = $doc->current_box_id !== null
+            ? Box::query()->find($doc->current_box_id)
+            : null;
+
+        if ($box instanceof Box) {
+            // Authoritative write on the box; the Box mirror hook propagates
+            // the value onto documents.barcode_status for every doc in the box.
+            if ($box->barcode_status !== $status) {
+                $box->barcode_status = $status;
+                $box->save();
+            } else {
+                // Box already at the target value (mirror hook won't fire on a
+                // no-op save) — make sure THIS document is in sync anyway, in
+                // case it drifted. Direct mirror write, no audit churn.
+                if ($doc->barcode_status !== $status) {
+                    $doc->setAttribute('barcode_status', $status);
+                }
+            }
+
+            return true;
+        }
+
+        // No current box → fall back to the document column (don't crash).
+        $doc->setAttribute('barcode_status', $status);
+
+        return false;
     }
 
     /**

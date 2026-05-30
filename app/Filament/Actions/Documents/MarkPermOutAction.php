@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace App\Filament\Actions\Documents;
 
+use App\Models\Box;
 use App\Models\Document;
 use Filament\Actions\Action;
 use Filament\Actions\BulkAction;
@@ -92,11 +93,32 @@ final class MarkPermOutAction
         $result = ActionSupport::performBulk(
             $records,
             function (Document $doc): void {
-                // H-1: the documents.barcode_status column now exists
-                // (migration 2026_05_28_140100). Write it and rely on
-                // the column default ('IN') for backfill of legacy rows.
                 $previousStatus = $doc->getOriginal('barcode_status');
-                $doc->setAttribute('barcode_status', 'PERM_OUT');
+
+                // Task 7 (B1): the BOX is authoritative for barcode status.
+                // PERM_OUT therefore lands on the box (mirror hook propagates
+                // it to every document in the box). A1.2 at box: a box can only
+                // be PERM_OUT if it carries a disinfestation_date — so if the
+                // box lacks one, seed it from the document's date (already
+                // validated non-null by the precondition above) before
+                // flipping the status. Falls back to the document column when
+                // the document has no current box.
+                $box = $doc->current_box_id !== null
+                    ? Box::query()->find($doc->current_box_id)
+                    : null;
+                if ($box instanceof Box) {
+                    if ($box->disinfestation_date === null) {
+                        $box->disinfestation_date = $doc->disinfestation_date;
+                    }
+                    if ($box->barcode_status !== 'PERM_OUT') {
+                        $box->barcode_status = 'PERM_OUT';
+                    }
+                    $box->save();
+                } else {
+                    // No current box — write the document column directly
+                    // (the document-level A1.2 guard still applies on save()).
+                    $doc->setAttribute('barcode_status', 'PERM_OUT');
+                }
 
                 // Explicit audit row in addition to the model's column-diff
                 // Auditable trail — gives a more descriptive `event`

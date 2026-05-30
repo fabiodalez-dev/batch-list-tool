@@ -412,6 +412,27 @@ class Box extends Model implements AuditableContract, Sortable
             }
         });
 
+        // RFQ App.1 #5 (A1.2) at the BOX level — Task 7 (B1). The box is the
+        // authoritative source of truth for barcode status, so the PERM_OUT
+        // precondition is enforced here on the box. A box cannot be PERM_OUT
+        // unless it has a disinfestation_date (see canBePermOut()). MySQL also
+        // has a CHECK constraint (create_boxes_table migration), but SQLite
+        // cannot retro-fit one, so this PHP guard is the cross-driver gate.
+        // Mirror of the document-level A1.2 guard (kept too — expand, never
+        // restrict). Only assert when the status actually moves to PERM_OUT so
+        // unrelated saves stay cheap and legacy rows that already carry the
+        // value can still re-save.
+        static::saving(function (self $box): void {
+            if (! $box->isDirty('barcode_status')) {
+                return;
+            }
+            if ($box->barcode_status === 'PERM_OUT' && ! $box->canBePermOut()) {
+                throw ValidationException::withMessages([
+                    'barcode_status' => 'A box cannot be PERM OUT without a disinfestation date (RFQ A1.2, box level).',
+                ]);
+            }
+        });
+
         static::saving(function (self $box): void {
             if (! $box->requiresParent()) {
                 return;
@@ -454,6 +475,26 @@ class Box extends Model implements AuditableContract, Sortable
             $box->flushPendingBarcodeTransition();
         });
 
+        // RFQ Wave 2 — Task 7 (B1). The BOX is authoritative for barcode
+        // status; every document currently in the box mirrors the box value.
+        // documents.barcode_status is KEPT (expand, never restrict) and stays
+        // queryable for filters / omni-search — it is now a synced mirror.
+        //
+        // Split created / updated (rather than a single `saved`) and gate the
+        // update branch on wasChanged('barcode_status') so we only propagate
+        // when the authoritative value actually moved — unrelated box saves do
+        // not touch the documents table.
+        static::created(function (self $box): void {
+            $box->mirrorBarcodeStatusToDocuments();
+        });
+
+        static::updated(function (self $box): void {
+            if (! $box->wasChanged('barcode_status')) {
+                return;
+            }
+            $box->mirrorBarcodeStatusToDocuments();
+        });
+
         // RFQ Contract App.2-i — seal-number chain-of-custody. The yellow
         // security seal belongs to the BOX; every transition is recorded in
         // box_seal_number_history. Split across `created` / `updated` (rather
@@ -479,6 +520,45 @@ class Box extends Model implements AuditableContract, Sortable
             }
             $box->recordSealChange($old, $new);
         });
+    }
+
+    /**
+     * RFQ Wave 2 — Task 7 (B1). Mirror this box's authoritative
+     * `barcode_status` onto every document currently in the box
+     * (`documents.current_box_id = box.id`).
+     *
+     * `documents.barcode_status` is KEPT as a real, queryable column (filters /
+     * omni-search keep working) — it is a synced mirror of the box value, not
+     * a competing source of truth.
+     *
+     * Implementation note: a single bulk UPDATE is used deliberately.
+     *   - It is O(1) queries regardless of how many documents are in the box.
+     *   - The DocumentBuilder bulk-update guard only blocks the `identifier`
+     *     column, so a `barcode_status` mirror passes through untouched.
+     *   - It intentionally bypasses the per-model A1.2 document `saving` guard:
+     *     the BOX is authoritative and the box-level A1.2 guard has already
+     *     validated that a PERM_OUT box carries a disinfestation_date. Forcing
+     *     the per-document guard here would reject the mirror for individual
+     *     documents that lack their own date, contradicting box authority.
+     *     The audit trail for the transition lives in box_barcode_history.
+     *
+     * Skips writing rows that already hold the target value so the mirror does
+     * not churn updated_at / audit noise on documents that are already in sync.
+     */
+    protected function mirrorBarcodeStatusToDocuments(): void
+    {
+        $status = $this->barcode_status;
+        if ($status === null) {
+            return;
+        }
+
+        Document::withoutGlobalScopes()
+            ->where('current_box_id', $this->getKey())
+            ->where(function (Builder $q) use ($status): void {
+                $q->where('barcode_status', '!=', $status)
+                    ->orWhereNull('barcode_status');
+            })
+            ->update(['barcode_status' => $status]);
     }
 
     /**
