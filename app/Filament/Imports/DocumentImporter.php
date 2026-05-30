@@ -6,10 +6,12 @@ namespace App\Filament\Imports;
 
 use App\Filament\Imports\Concerns\SkipsExistingRows;
 use App\Models\Authority;
+use App\Models\Box;
 use App\Models\Document;
 use App\Models\Scopes\RepositoryScope;
 use App\Support\BulkImport\EntityResolver;
 use App\Support\BulkImport\SpreadsheetParsers;
+use Filament\Actions\Imports\Exceptions\RowImportFailedException;
 use Filament\Actions\Imports\ImportColumn;
 use Filament\Actions\Imports\Importer;
 use Filament\Actions\Imports\Models\Import;
@@ -80,6 +82,36 @@ class DocumentImporter extends Importer
      * @var array<int, array<int, int>>
      */
     protected static array $rowAuthorityStash = [];
+
+    /**
+     * Per-row stash for the box barcode supplied via the `current_box_barcode`
+     * column. Resolved (and consistency-checked against the document's batch)
+     * centrally in {@see afterFill}, not in the column closure, so it can be
+     * cross-validated with the batch the document resolved separately. Keyed
+     * by `spl_object_id` of the record, like {@see $rowAuthorityStash}.
+     *
+     * @var array<int, string>
+     */
+    protected static array $rowBoxBarcodeStash = [];
+
+    /**
+     * Per-row stash for the box-by-number supplied via `current_box_number`.
+     * Same lifecycle/keying as {@see $rowBoxBarcodeStash}.
+     *
+     * @var array<int, string>
+     */
+    protected static array $rowBoxNumberStash = [];
+
+    /**
+     * Per-row stash for the box barcode status (B4) derived from the legacy
+     * `status_*` columns. Applied to the BOX (authoritative since Task 7) in
+     * {@see afterSave} once the document carries a `current_box_id`; the Task-7
+     * mirror then propagates the value down onto the document. Keyed by
+     * `spl_object_id` of the record.
+     *
+     * @var array<int, string>
+     */
+    protected static array $rowBoxStatusStash = [];
 
     /**
      * @return array<ImportColumn>
@@ -308,7 +340,10 @@ class DocumentImporter extends Importer
                     if ($n === null) {
                         return;
                     }
-                    $res = EntityResolver::resolveBatch($n);
+                    // Task 8 (B5) — dedup-OR-CREATE: a document referencing a
+                    // batch that does not yet exist stands the batch up in the
+                    // same run (forbidden numbers are still rejected below).
+                    $res = EntityResolver::resolveBatch($n, create: true);
                     if ($res === null) {
                         return; // unknown batch — leave FK null
                     }
@@ -334,11 +369,26 @@ class DocumentImporter extends Importer
                     if ($state === null || trim($state) === '') {
                         return;
                     }
-                    $box = EntityResolver::resolveBox(null, $record->batch_id, trim($state));
-                    if ($box !== null) {
-                        $record->current_box_id = $box['box_id'];
-                    }
+                    // Resolution is deferred to afterFill: we must know the
+                    // document's batch (resolved by a separate column) before
+                    // we create-or-match the box inside it, and we must
+                    // cross-check batch/box consistency (B5) before save.
+                    self::$rowBoxNumberStash[spl_object_id($record)] = trim($state);
                     $record->ras_box_1 = trim($state);
+                }),
+
+            // Box resolution by barcode — names a SPECIFIC existing physical
+            // box (never created on a miss). Used to detect batch/box
+            // inconsistencies (B5): the resolved box's batch must equal the
+            // document's own batch.
+            ImportColumn::make('current_box_barcode')
+                ->label('Current box barcode')
+                ->guess(['Current box barcode', 'current_box_barcode', 'Box barcode'])
+                ->fillRecordUsing(function (Document $record, ?string $state): void {
+                    if ($state === null || trim($state) === '') {
+                        return;
+                    }
+                    self::$rowBoxBarcodeStash[spl_object_id($record)] = trim($state);
                 }),
 
             // ── Barcodes ───────────────────────────────────────────────
@@ -346,6 +396,24 @@ class DocumentImporter extends Importer
                 ->label('Barcode (IN)')
                 ->guess(['Barcode (IN)', 'Barcode IN', 'barcode_in'])
                 ->rules(['nullable', 'string', 'max:50']),
+
+            // Legacy custody status (IN / OUT / PERM_OUT). Task 8 (B4): the box
+            // is the authoritative source of truth for barcode status since
+            // Task 7, so this column does NOT write documents.barcode_status —
+            // it lands on the legacy `status_1` column and is reconciled to the
+            // BOX in afterSave (the box mirror then propagates it back down).
+            ImportColumn::make('status_1')
+                ->label('Status (IN / OUT / PERM_OUT)')
+                ->guess(['Status 1', 'status_1', 'Status', 'Barcode status'])
+                ->castStateUsing(function (?string $state): ?string {
+                    if ($state === null) {
+                        return null;
+                    }
+                    $s = strtoupper(trim($state));
+
+                    return in_array($s, ['IN', 'OUT', 'PERM_OUT'], true) ? $s : null;
+                })
+                ->rules(['nullable', 'in:IN,OUT,PERM_OUT']),
 
             // ── Notes & free-form ──────────────────────────────────────
             ImportColumn::make('notes')
@@ -449,27 +517,32 @@ class DocumentImporter extends Importer
             $record->identifier = $record->catalogue_identifier;
         }
 
-        // RFQ App.1 #5 — PERM_OUT requires disinfestation_date. The
-        // document-level fields here are the legacy status columns
-        // (status_1, status_2 …) so we treat ANY of them being PERM_OUT
-        // as the trigger.
-        $statuses = [
-            $record->status_1, $record->status_2, $record->status_3, $record->status_4,
-            $record->status_1_alt, $record->status_2_alt,
-        ];
-        $isPermOut = false;
-        foreach ($statuses as $s) {
-            if (is_string($s) && strtoupper(trim($s)) === 'PERM_OUT') {
-                $isPermOut = true;
-                break;
-            }
-        }
-        if ($isPermOut && $record->disinfestation_date === null) {
+        // Task 8 (B5) — resolve the current box now that the document's batch
+        // is known, then validate batch/box consistency BEFORE save.
+        $this->resolveCurrentBox($record);
+
+        // Task 8 (B4) — reconcile the legacy `status_*` columns to a single
+        // authoritative barcode status. The legacy spreadsheet encodes status
+        // in several columns (status_1..4, *_alt); we collapse them: PERM_OUT
+        // wins (it is the strongest custody state), then OUT, then IN.
+        $resolvedStatus = $this->resolveLegacyBarcodeStatus($record);
+
+        // RFQ App.1 #5 — PERM_OUT requires disinfestation_date.
+        if ($resolvedStatus === 'PERM_OUT' && $record->disinfestation_date === null) {
             throw ValidationException::withMessages([
                 'disinfestation_date' => __(
                     'Documents with a PERM_OUT status must carry a disinfestation_date (RFQ App.1 #5).'
                 ),
             ]);
+        }
+
+        // The box is the authoritative source of truth for barcode status
+        // (Task 7). Stash the resolved status and apply it to the BOX in
+        // afterSave (the document must already point at the box so the Task-7
+        // mirror can propagate the value back down). We deliberately do NOT
+        // write documents.barcode_status here — the box mirror owns it.
+        if ($resolvedStatus !== null && $record->current_box_id !== null) {
+            self::$rowBoxStatusStash[spl_object_id($record)] = $resolvedStatus;
         }
     }
 
@@ -484,6 +557,14 @@ class DocumentImporter extends Importer
         /** @var Document $record */
         $record = $this->record;
         $key = spl_object_id($record);
+
+        // Task 8 (B4) — apply the reconciled barcode status to the BOX (the
+        // authoritative source since Task 7). Done here, after the document
+        // has its `current_box_id`, so the box→documents mirror reaches this
+        // document. We never write documents.barcode_status directly: the
+        // box's `updated`/`created` hooks own the mirror.
+        $this->applyBoxBarcodeStatus($record);
+
         $ids = self::$rowAuthorityStash[$key] ?? [];
         // Drain the stash for this row so a future row reusing the same
         // object id (rare but theoretically possible) does not inherit it.
@@ -596,5 +677,130 @@ class DocumentImporter extends Importer
         }
 
         return $body;
+    }
+
+    /**
+     * Collapse the legacy `status_*` columns into ONE barcode status, or null
+     * when none of them carries a recognised value. PERM_OUT outranks OUT,
+     * OUT outranks IN — the strongest custody state for the document/box wins.
+     */
+    protected function resolveLegacyBarcodeStatus(Document $record): ?string
+    {
+        $statuses = [
+            $record->status_1, $record->status_2, $record->status_3, $record->status_4,
+            $record->status_1_alt, $record->status_2_alt,
+        ];
+
+        $found = [];
+        foreach ($statuses as $s) {
+            if (! is_string($s)) {
+                continue;
+            }
+            $v = strtoupper(trim($s));
+            if (in_array($v, ['IN', 'OUT', 'PERM_OUT'], true)) {
+                $found[$v] = true;
+            }
+        }
+
+        return match (true) {
+            isset($found['PERM_OUT']) => 'PERM_OUT',
+            isset($found['OUT']) => 'OUT',
+            isset($found['IN']) => 'IN',
+            default => null,
+        };
+    }
+
+    /**
+     * Task 8 (B5) — resolve the current box for this row and enforce
+     * batch/box consistency.
+     *
+     * Two resolution paths, in priority order:
+     *   1. by barcode (`current_box_barcode`) — names a specific existing
+     *      box; never created on a miss.
+     *   2. by number (`current_box_number`) — create-if-absent inside the
+     *      document's resolved batch (the accession may bring a brand-new box).
+     *
+     * Consistency (B5): whichever path resolves the box, the resolved box's
+     * `batch_id` MUST equal the document's `batch_id`. A mismatch is a failed
+     * row (RowImportFailedException) — never silently saved.
+     */
+    protected function resolveCurrentBox(Document $record): void
+    {
+        $key = spl_object_id($record);
+        $barcode = self::$rowBoxBarcodeStash[$key] ?? null;
+        $number = self::$rowBoxNumberStash[$key] ?? null;
+        unset(self::$rowBoxBarcodeStash[$key], self::$rowBoxNumberStash[$key]);
+
+        $box = null;
+        if ($barcode !== null) {
+            // Barcode names a specific existing box — no create.
+            $box = EntityResolver::resolveBox($barcode);
+        }
+        if ($box === null && $number !== null && $record->batch_id !== null) {
+            // Create-or-match inside the document's resolved batch.
+            $box = EntityResolver::resolveBox(
+                null,
+                $record->batch_id,
+                $number,
+                create: true,
+            );
+        }
+
+        if ($box === null) {
+            return; // no resolvable box reference on this row
+        }
+
+        // B5 consistency — the document's batch must match its box's batch.
+        if ($record->batch_id !== null && (int) $box['batch_id'] !== (int) $record->batch_id) {
+            throw new RowImportFailedException('Document batch does not match its box batch.');
+        }
+
+        $record->current_box_id = $box['box_id'];
+    }
+
+    /**
+     * Task 8 (B4) — push the reconciled barcode status onto the BOX.
+     *
+     * The box has been authoritative for barcode status since Task 7: rather
+     * than writing `documents.barcode_status`, we set the value on the box and
+     * let its `updated` mirror propagate to every document inside it (this
+     * document included, because `current_box_id` is already set by now).
+     *
+     * For a PERM_OUT transition the box-level A1.2 guard requires the box to
+     * carry a `disinfestation_date`; we backfill it from the document's own
+     * disinfestation date when the box has none, so the guard passes and the
+     * data stays coherent (the document's date is the accession's date).
+     */
+    protected function applyBoxBarcodeStatus(Document $record): void
+    {
+        $key = spl_object_id($record);
+        $status = self::$rowBoxStatusStash[$key] ?? null;
+        unset(self::$rowBoxStatusStash[$key]);
+
+        if ($status === null || $record->current_box_id === null) {
+            return;
+        }
+
+        $box = Box::withoutGlobalScopes()->find($record->current_box_id);
+        if ($box === null) {
+            return;
+        }
+
+        // A1.2 at the box — PERM_OUT needs a disinfestation_date. Seed it from
+        // the document's date before flipping the status so the box guard passes.
+        if ($status === 'PERM_OUT'
+            && $box->disinfestation_date === null
+            && $record->disinfestation_date !== null
+        ) {
+            $box->disinfestation_date = $record->disinfestation_date;
+        }
+
+        if ($box->barcode_status !== $status) {
+            $box->barcode_status = $status;
+        }
+
+        if ($box->isDirty()) {
+            $box->save(); // triggers the Task-7 mirror onto the document(s)
+        }
     }
 }
