@@ -467,6 +467,70 @@ class Box extends Model implements AuditableContract, Sortable
             }
         });
 
+        // Feedback1 Wave C2.2 — RAS status transition rule.
+        //
+        // "RAS status default IN when created — can be changed to OUT or
+        //  PERM OUT. If changed to PERM OUT, the barcode + status go to the
+        //  legacy section (handled by the barcode-history observer below).
+        //  If status is changed (back) to IN, a NEW barcode has to be added
+        //  (mandatory) — it cannot be left blank and cannot be the same as
+        //  the barcode that was just archived."
+        //
+        // We only enforce on an actual transition INTO 'IN' (the status is
+        // dirty and the new value is 'IN'), so legacy rows that already sit at
+        // IN and unrelated saves are never blocked. The "different barcode"
+        // half is checked against the pre-save original barcode.
+        static::saving(function (self $box): void {
+            if (! $box->isDirty('barcode_status')) {
+                return;
+            }
+            if ($box->barcode_status !== 'IN') {
+                return;
+            }
+
+            $previousStatus = $box->getOriginal('barcode_status');
+
+            // Only a genuine transition FROM OUT / PERM_OUT into IN requires a
+            // brand-new barcode. Creating a box straight at IN, or an IN→IN
+            // no-op, is not a "re-entry" and must not demand a new barcode.
+            if (! in_array($previousStatus, ['OUT', 'PERM_OUT'], true)) {
+                return;
+            }
+
+            $newBarcode = trim((string) $box->barcode);
+            if ($newBarcode === '') {
+                throw ValidationException::withMessages([
+                    'barcode' => 'A new barcode is mandatory when a box re-enters with status IN (RFQ Feedback1 C2.2).',
+                ]);
+            }
+
+            $previousBarcode = trim((string) $box->getOriginal('barcode'));
+            if ($newBarcode === $previousBarcode) {
+                throw ValidationException::withMessages([
+                    'barcode' => 'The barcode must be changed to a NEW value when a box re-enters with status IN; the previous barcode is archived in the history (RFQ Feedback1 C2.2).',
+                ]);
+            }
+        });
+
+        // Feedback1 Wave C2.4 — a box marked destroyed MUST carry a destroy
+        // date. The form requires it conditionally; this model guard is the
+        // cross-path enforcement (importer / console / API) and runs only when
+        // the destruction state is being established, so unrelated saves and
+        // the markDestroyed() helper (which always stamps a date) are unaffected.
+        static::saving(function (self $box): void {
+            $destroyedReason = trim((string) $box->destroyed_reason);
+            $hasDestroyReason = $destroyedReason !== '';
+
+            // The box is considered "marked destroyed" once it carries a
+            // destroyed_at OR a destruction reason. If a reason was supplied
+            // without a date, reject — the destroy DATE is the mandatory field.
+            if ($hasDestroyReason && $box->destroyed_at === null) {
+                throw ValidationException::withMessages([
+                    'destroyed_at' => 'A destroy date is mandatory when a box is marked as destroyed (RFQ Feedback1 C2.4).',
+                ]);
+            }
+        });
+
         static::updating(function (self $box): void {
             $box->captureBarcodeTransition();
         });

@@ -115,13 +115,16 @@ test('BoxResource create RAS box persists', function () {
     $admin->save();
 
     $batch = makeBatch_box($repo->id);
-    $number = 'RAS-' . strtoupper(substr(uniqid(), -6));
+    // Feedback1 Wave C2.1 — a RAS box number is NUMERIC and a barcode is
+    // required; the batch is set via batch_id (not batch.batch_number).
+    $number = (string) random_int(100000, 999999);
 
     Livewire::test(CreateBox::class)
         ->fillForm([
             'box_type' => 'RAS',
             'box_number' => $number,
-            'batch.batch_number' => $batch->id,
+            'batch_id' => $batch->id,
+            'barcode' => 'BC-' . strtoupper(substr(uniqid(), -6)),
             'barcode_status' => 'IN',
             'is_legacy' => false,
         ])

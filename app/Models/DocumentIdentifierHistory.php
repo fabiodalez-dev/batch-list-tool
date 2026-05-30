@@ -31,6 +31,11 @@ class DocumentIdentifierHistory extends Model implements AuditableContract
         'document_id',
         'previous_identifier',
         'new_identifier',
+        // Feedback1 Wave C2.5 — the volume number the document held at the time
+        // of this identifier transition; nullable so legacy rows stay valid and
+        // a row can record an identifier change without a volume change.
+        'previous_volume',
+        'new_volume',
         'changed_at',
         'changed_by_user_id',
         'reason',

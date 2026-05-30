@@ -22,6 +22,7 @@ use Filament\Resources\Resource;
 use Filament\Schemas;
 use Filament\Schemas\Components\Section;
 use Filament\Schemas\Components\Utilities\Get;
+use Filament\Schemas\Components\Utilities\Set;
 use Filament\Schemas\Schema;
 use Filament\Tables;
 use Filament\Tables\Filters\QueryBuilder;
@@ -63,6 +64,19 @@ class BoxResource extends Resource
         // content (Textarea, helperText-heavy inputs) → columnSpanFull.
         $twoCols = ['default' => 1, 'md' => 2];
 
+        // Feedback1 Wave C2.1 — conditional box input form.
+        //   - RAS  → Batch + Box number + Barcode required; Seal optional;
+        //            status (IN/OUT/PERM OUT) defaulting to IN.
+        //   - IN_SITU / NRA → a Box IDENTIFIER (mapped to box_number, e.g.
+        //            "NRA1") + Location required; Batch / Barcode / Seal are
+        //            NOT required (they describe a RAS box, not an in-situ one).
+        //   - MAV / STVC are legacy types — kept editable but treated like RAS
+        //            for field presence so historical rows never break.
+        // The box_type Select is ->live() so these visible()/required() closures
+        // re-evaluate as the operator picks a type.
+        $isRas = fn (Get $get): bool => in_array($get('box_type'), ['RAS', 'MAV', 'STVC'], true);
+        $isInSitu = fn (Get $get): bool => in_array($get('box_type'), ['IN_SITU', 'NRA'], true);
+
         return $schema
             ->columns(1)
             ->schema([
@@ -94,7 +108,14 @@ class BoxResource extends Resource
                         // helper text + uniqueness re-evaluate when the batch
                         // changes.
                         $g(SearchableSelects::batch('batch_id', 'batch')
-                            ->live()),
+                            ->live()
+                            // C2.1 — Batch is required for RAS boxes only; an
+                            // IN_SITU / NRA box is identified by its own
+                            // identifier + location, not by a batch.
+                            ->required($isRas)
+                            ->helperText(fn (Get $get): ?string => $isInSitu($get)
+                                ? 'Optional for IN_SITU / NRA boxes.'
+                                : 'Required for RAS boxes.')),
                         // Feedback1 Wave B (B5) — box_number is unique *within its
                         // batch* (a batch may not have two boxes numbered "5",
                         // but batch A and batch B may each have a box "5"). The
@@ -104,10 +125,20 @@ class BoxResource extends Resource
                             ->required()
                             ->maxLength(32)
                             ->live(onBlur: true)
-                            ->helperText(fn (Get $get, ?Box $record): string => self::usedBoxNumbersHelper(
-                                $get('batch_id') !== null && $get('batch_id') !== '' ? (int) $get('batch_id') : null,
-                                $record?->getKey(),
-                            ))
+                            // C2.1 — label + meaning differ by type. For RAS it
+                            // is a numeric box number unique within its batch;
+                            // for IN_SITU / NRA it is the box IDENTIFIER (e.g.
+                            // "NRA1", "MAV1") stored in the same column.
+                            ->label(fn (Get $get): string => $isInSitu($get) ? 'Box identifier' : 'Box number')
+                            // C2.1 — RAS box numbers are numeric only; IN_SITU /
+                            // NRA identifiers are free-text (alphanumeric).
+                            ->numeric(fn (Get $get): bool => $isRas($get))
+                            ->helperText(fn (Get $get, ?Box $record): string => $isInSitu($get)
+                                ? 'Identifier for this in-situ box, e.g. "NRA1" or "MAV1".'
+                                : self::usedBoxNumbersHelper(
+                                    $get('batch_id') !== null && $get('batch_id') !== '' ? (int) $get('batch_id') : null,
+                                    $record?->getKey(),
+                                ))
                             ->rule(static function (Get $get, ?Box $record): \Closure {
                                 return static function (string $attribute, $value, \Closure $fail) use ($get, $record): void {
                                     // Reject a box_number already used by another box
@@ -191,7 +222,11 @@ class BoxResource extends Resource
                     ->schema([
                         $g(Forms\Components\TextInput::make('barcode')
                             ->label('Box barcode')
-                            ->helperText('Barcode label on this box. Distinct from any per-document barcodes inside it.')
+                            ->helperText(fn (Get $get): string => $isInSitu($get)
+                                ? 'Optional for IN_SITU / NRA boxes.'
+                                : 'Barcode label on this box. Required for RAS boxes. Distinct from any per-document barcodes inside it.')
+                            // C2.1 — Barcode is required for RAS boxes only.
+                            ->required($isRas)
                             ->maxLength(64)),
                         // RFQ Contract App.2-i — the yellow security seal that
                         // closes the box belongs to the BOX; every change is
@@ -239,8 +274,124 @@ class BoxResource extends Resource
                                 ->forRepository(auth()->user()?->default_repository_id),
                         )
                             ->label('Location (RFQ §3.1.9)')
-                            ->nullable()
-                            ->helperText('Repository / room / shelf / showcase / temp-holding hierarchy.')
+                            // C2.1 — Location is mandatory for IN_SITU / NRA
+                            // boxes (they live at a configured NRA location);
+                            // optional for RAS boxes (which live in a batch).
+                            ->required($isInSitu)
+                            ->helperText(fn (Get $get): string => $isInSitu($get)
+                                ? 'Required for IN_SITU / NRA boxes. Repository / room / shelf / showcase / temp-holding hierarchy.'
+                                : 'Repository / room / shelf / showcase / temp-holding hierarchy.')
+                            ->columnSpanFull()
+                            ->rule(function (Get $get) use ($isInSitu) {
+                                return function (string $attribute, $value, \Closure $fail) use ($get, $isInSitu) {
+                                    // Defence-in-depth beyond ->required(): covers
+                                    // API / bulk-import paths that bypass the
+                                    // Filament Required validator.
+                                    if ($isInSitu($get) && empty($value)) {
+                                        $fail('IN_SITU / NRA boxes must reference a Location (RFQ Feedback1 C2.1).');
+                                    }
+                                };
+                            })),
+                    ]),
+
+                // Feedback1 Wave C2.3 — editable Barcode legacy / history
+                // section. Operators can view, add and edit rows of the
+                // append-only barcode-history log directly on the box form.
+                // The model observer (Box::booted) ALSO appends rows on a
+                // barcode / status change, so this Repeater is an additive
+                // editing surface, not the only write path. Gated to users
+                // with the box update permission.
+                Section::make('Barcode legacy / history')
+                    ->columns(1)
+                    ->collapsed()
+                    ->description('Old Barcode N : Status. More can be added.')
+                    ->visible(fn (): bool => (bool) auth()->user()?->can('update_box'))
+                    ->schema([
+                        Forms\Components\Repeater::make('barcodeHistory')
+                            ->relationship()
+                            ->hiddenLabel()
+                            ->columns(2)
+                            ->columnSpanFull()
+                            ->defaultItems(0)
+                            ->addActionLabel('Add barcode history row')
+                            ->schema([
+                                // previous_barcode is NOT NULL in the schema.
+                                Forms\Components\TextInput::make('previous_barcode')
+                                    ->label('Old barcode')
+                                    ->required()
+                                    ->maxLength(64),
+                                Forms\Components\TextInput::make('new_barcode')
+                                    ->label('New barcode')
+                                    ->maxLength(64),
+                                // Status columns are ENUM(IN, OUT, PERM_OUT) on
+                                // MySQL — restrict to the valid set so a manual
+                                // row cannot violate the enum.
+                                Forms\Components\Select::make('previous_status')
+                                    ->label('Status from')
+                                    ->options(array_combine(Box::BARCODE_STATUSES, Box::BARCODE_STATUSES)),
+                                Forms\Components\Select::make('new_status')
+                                    ->label('Status to')
+                                    ->options(array_combine(Box::BARCODE_STATUSES, Box::BARCODE_STATUSES)),
+                                Forms\Components\DateTimePicker::make('changed_at')
+                                    ->label('Changed at')
+                                    ->default(now()),
+                                Forms\Components\TextInput::make('reason')
+                                    ->label('Reason')
+                                    ->maxLength(255),
+                            ]),
+                    ]),
+
+                // Feedback1 Wave C2.3 — editable Seal legacy / history section.
+                // "Seal No — date changed. More can be added."
+                Section::make('Seal legacy / history')
+                    ->columns(1)
+                    ->collapsed()
+                    ->description('Seal No — date changed. More can be added.')
+                    ->visible(fn (): bool => (bool) auth()->user()?->can('update_box'))
+                    ->schema([
+                        Forms\Components\Repeater::make('sealNumberHistory')
+                            ->relationship()
+                            ->hiddenLabel()
+                            ->columns(2)
+                            ->columnSpanFull()
+                            ->defaultItems(0)
+                            ->addActionLabel('Add seal history row')
+                            ->schema([
+                                Forms\Components\TextInput::make('old_value')
+                                    ->label('Seal from')
+                                    ->maxLength(255),
+                                Forms\Components\TextInput::make('new_value')
+                                    ->label('Seal to')
+                                    ->maxLength(255),
+                                Forms\Components\DateTimePicker::make('changed_at')
+                                    ->label('Date changed')
+                                    ->default(now()),
+                                Forms\Components\Textarea::make('notes')
+                                    ->label('Notes')
+                                    ->rows(2)
+                                    ->columnSpanFull(),
+                            ]),
+                    ]),
+
+                // Feedback1 Wave C2.4 — if a box is marked destroyed, a destroy
+                // date is mandatory. The DatePicker becomes required the moment
+                // a destruction reason is entered (the operator's signal that
+                // the box is being destroyed); the model guard (Box::booted)
+                // enforces the same rule on every other write path.
+                Section::make('Destruction')
+                    ->columns($twoCols)
+                    ->collapsed()
+                    ->description('Mark the box as physically destroyed (RFQ App.2 §vii). A destroy date is mandatory once destroyed.')
+                    ->schema([
+                        $g(Forms\Components\DateTimePicker::make('destroyed_at')
+                            ->label('Destroy date')
+                            ->helperText('Mandatory when the box is marked destroyed.')
+                            ->required(fn (Get $get): bool => filled($get('destroyed_reason')))
+                            ->live()),
+                        $g(Forms\Components\Textarea::make('destroyed_reason')
+                            ->label('Reason / where destroyed')
+                            ->rows(2)
+                            ->live(onBlur: true)
                             ->columnSpanFull()),
                     ]),
 

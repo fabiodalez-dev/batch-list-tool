@@ -175,6 +175,51 @@ class DocumentResource extends Resource
                         $g(Forms\Components\TextInput::make('deeds')->maxLength(2000)->columnSpanFull()),
                     ]),
 
+                // Feedback1 Wave C2.5 — editable history of PREVIOUS document
+                // identifications AND volume numbers. Operators can record
+                // prior identifiers / volumes the document was known by; the
+                // documents dashboard search matches these past values too
+                // (see applyOmniSearch + getGloballySearchableAttributes).
+                // The DocumentObserver ALSO appends a row on every identifier
+                // change, so this Repeater is an additive editing surface.
+                // Gated to users with the document update permission.
+                Section::make('Previous identifiers & volume numbers')
+                    ->columnSpanFull()
+                    ->collapsed()
+                    ->description('Past identifications and volume numbers this document was known by. Searchable from the documents dashboard. More can be added.')
+                    ->visible(fn (): bool => (bool) auth()->user()?->can('update_document'))
+                    ->schema([
+                        Forms\Components\Repeater::make('identifierHistory')
+                            ->relationship()
+                            ->hiddenLabel()
+                            ->columns(2)
+                            ->columnSpanFull()
+                            ->defaultItems(0)
+                            ->addActionLabel('Add previous identification')
+                            ->schema([
+                                // previous_identifier is NOT NULL in the schema.
+                                Forms\Components\TextInput::make('previous_identifier')
+                                    ->label('Previous identifier')
+                                    ->required()
+                                    ->maxLength(64),
+                                Forms\Components\TextInput::make('new_identifier')
+                                    ->label('New identifier')
+                                    ->maxLength(64),
+                                Forms\Components\TextInput::make('previous_volume')
+                                    ->label('Previous volume number')
+                                    ->maxLength(64),
+                                Forms\Components\TextInput::make('new_volume')
+                                    ->label('New volume number')
+                                    ->maxLength(64),
+                                Forms\Components\DateTimePicker::make('changed_at')
+                                    ->label('Changed at')
+                                    ->default(now()),
+                                Forms\Components\TextInput::make('reason')
+                                    ->label('Reason / note')
+                                    ->maxLength(255),
+                            ]),
+                    ]),
+
                 Section::make('Authorities (Creators)')
                     ->columnSpanFull()
                     ->columns(1)
@@ -1178,6 +1223,8 @@ class DocumentResource extends Resource
             // Identifier history (PR #8) — searching for "R7-old" finds the document
             // whose identifier was previously "R7-old", even after re-classification.
             'identifierHistory.previous_identifier',
+            // Feedback1 Wave C2.5 — also surface documents by a PAST volume number.
+            'identifierHistory.previous_volume',
         ];
     }
 
@@ -1350,8 +1397,14 @@ class DocumentResource extends Resource
 
             // Identifier history — preserves PR #8 behaviour (searching
             // for a previous identifier still finds the renamed doc).
+            // Feedback1 Wave C2.5 — extended to ALSO match the PAST volume
+            // numbers stored on the same history rows, so searching a former
+            // volume number returns the document whose CURRENT volume differs.
             $q->orWhereHas('identifierHistory', static function (Builder $h) use ($needle, $likeEsc): void {
                 $likeEsc($h, 'document_identifier_history.previous_identifier', $needle, false);
+                $likeEsc($h, 'document_identifier_history.new_identifier', $needle, true);
+                $likeEsc($h, 'document_identifier_history.previous_volume', $needle, true);
+                $likeEsc($h, 'document_identifier_history.new_volume', $needle, true);
             });
 
             // NOTE: `spatie/laravel-tags` is wired on the Document model
