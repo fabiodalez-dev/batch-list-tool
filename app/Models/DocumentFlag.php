@@ -3,6 +3,8 @@
 namespace App\Models;
 
 use App\Models\Concerns\BelongsToRepository;
+use App\Models\Lookup\FlagType;
+use App\Support\Lookups;
 use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Database\Eloquent\Factories\HasFactory;
 use Illuminate\Database\Eloquent\Model;
@@ -277,6 +279,16 @@ class DocumentFlag extends Model implements AuditableContract
 
             if (empty($flag->flagged_by_user_id) && auth()->check()) {
                 $flag->flagged_by_user_id = auth()->id();
+            }
+        });
+
+        // RFQ §3.1.11 (part 2 of 3) — validate `type` against the ACTIVE rows
+        // of the flag_types lookup (now the editable source of truth). Only
+        // assert when the value is dirty so a pre-existing flag whose type was
+        // later deactivated still loads and can be re-saved.
+        static::saving(function (DocumentFlag $flag): void {
+            if ($flag->isDirty('type')) {
+                Lookups::assertActive(FlagType::class, 'type', $flag->type);
             }
         });
     }

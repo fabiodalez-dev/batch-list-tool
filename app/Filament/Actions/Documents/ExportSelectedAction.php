@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace App\Filament\Actions\Documents;
 
+use App\Filament\Concerns\FiltersExportColumns;
 use App\Models\Batch;
 use App\Models\Box;
 use App\Models\Document;
@@ -23,6 +24,8 @@ use Illuminate\Support\Str;
  */
 final class ExportSelectedAction
 {
+    use FiltersExportColumns;
+
     public static function bulk(string $name = 'bulkExportSelected'): BulkAction
     {
         return BulkAction::make($name)
@@ -55,10 +58,26 @@ final class ExportSelectedAction
             Str::slug(now()->format('Ymd_His')),
         );
 
-        return response()->streamDownload(function () use ($records): void {
+        // Full column map in canonical order. Keys are the field names consulted
+        // by FieldPermissions; values are the CSV header labels.
+        $allColumns = [
+            'identifier' => 'Identifier',
+            'document_type' => 'Type',
+            'creator' => 'Creator(s)',
+            'series' => 'Series',
+            'batch' => 'Batch',
+            'current_box' => 'Current box',
+            'disinfestation_date' => 'Disinfestation date',
+            'notes' => 'Notes',
+        ];
+
+        // Filter columns through FieldPermissions for the current user (RFQ §3.1.4).
+        $columns = self::visibleExportColumns($allColumns);
+
+        return response()->streamDownload(function () use ($records, $columns): void {
             $out = fopen('php://output', 'wb');
             fwrite($out, "\xEF\xBB\xBF");
-            fputcsv($out, ['Identifier', 'Type', 'Creator(s)', 'Series', 'Batch', 'Current box', 'Disinfestation date', 'Notes']);
+            fputcsv($out, array_values($columns));
 
             foreach ($records as $doc) {
                 /** @var Document $doc */
@@ -68,16 +87,21 @@ final class ExportSelectedAction
                 $batch = $doc->batch;
                 /** @var Box|null $box */
                 $box = $doc->currentBox;
-                fputcsv($out, [
-                    self::sanitize($doc->identifier),
-                    self::sanitize($doc->document_type),
-                    self::sanitize($doc->authorities->pluck('surname')->filter()->implode('; ')),
-                    self::sanitize($series?->code),
-                    $batch === null ? '' : (string) $batch->batch_number,
-                    self::sanitize($box?->box_number),
-                    $doc->disinfestation_date ? $doc->disinfestation_date->format('Y-m-d') : '',
-                    self::sanitize($doc->notes),
-                ]);
+
+                // Build a full cell map keyed by field name, then emit only
+                // the visible columns in the same order as the header row.
+                $allCells = [
+                    'identifier' => self::sanitize($doc->identifier),
+                    'document_type' => self::sanitize($doc->document_type),
+                    'creator' => self::sanitize($doc->authorities->pluck('surname')->filter()->implode('; ')),
+                    'series' => self::sanitize($series?->code),
+                    'batch' => $batch === null ? '' : (string) $batch->batch_number,
+                    'current_box' => self::sanitize($box?->box_number),
+                    'disinfestation_date' => $doc->disinfestation_date ? $doc->disinfestation_date->format('Y-m-d') : '',
+                    'notes' => self::sanitize($doc->notes),
+                ];
+
+                fputcsv($out, array_intersect_key($allCells, $columns));
             }
 
             fclose($out);

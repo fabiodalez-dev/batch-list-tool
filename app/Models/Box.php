@@ -2,7 +2,10 @@
 
 namespace App\Models;
 
+use App\Models\Lookup\BarcodeStatus;
+use App\Models\Lookup\BoxType;
 use App\Models\Scopes\ThroughBatchRepositoryScope;
+use App\Support\Lookups;
 use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Database\Eloquent\Factories\HasFactory;
 use Illuminate\Database\Eloquent\Model;
@@ -12,6 +15,7 @@ use Illuminate\Database\Eloquent\SoftDeletes;
 use Illuminate\Support\Collection;
 use Illuminate\Support\Facades\Auth;
 use Illuminate\Support\Facades\DB;
+use Illuminate\Validation\ValidationException;
 use OwenIt\Auditing\Auditable;
 use OwenIt\Auditing\Contracts\Auditable as AuditableContract;
 use Spatie\EloquentSortable\Sortable;
@@ -46,6 +50,9 @@ class Box extends Model implements AuditableContract, Sortable
     protected $fillable = [
         'sort_order',
         'box_type', 'box_number', 'batch_id', 'parent_box_id',
+        // RFQ A1.3 — explicit NULL exception: when true the model guard allows
+        // a null parent_box_id for IN_SITU / NRA boxes (provenance genuinely unknown).
+        'provenance_unknown',
         'barcode', 'seal_number', 'barcode_status', 'location_id', 'disinfestation_date',
         'is_legacy', 'notes',
         // RFQ Appendix 2 §vii — "box destroyed" business state.
@@ -55,6 +62,7 @@ class Box extends Model implements AuditableContract, Sortable
     protected $casts = [
         'disinfestation_date' => 'date',
         'is_legacy' => 'boolean',
+        'provenance_unknown' => 'boolean',
         'destroyed_at' => 'datetime',
     ];
 
@@ -370,11 +378,61 @@ class Box extends Model implements AuditableContract, Sortable
             foreignKey: 'batch_id',
         ));
 
+        // RFQ App.1 #4 — Legacy box types (MAV, STVC) cannot be created as NEW
+        // records. Historical legacy boxes are still importable, but ONLY when
+        // explicitly flagged `is_legacy = true` (the migration/import path sets
+        // it; the submission §5.4: "imported with a restricted flag; the
+        // validator forbids creating new ones"). A legacy type WITHOUT the flag
+        // is a forbidden new record. `creating` fires only on INSERT, so editing
+        // an existing legacy box is never affected.
+        static::creating(function (self $box): void {
+            if (in_array($box->box_type, self::LEGACY_TYPES, true) && ! $box->is_legacy) {
+                throw ValidationException::withMessages([
+                    'box_type' => 'Legacy box types (MAV, STVC) cannot be created for new records; historical ones must be flagged is_legacy (RFQ A1.4).',
+                ]);
+            }
+        });
+
         // RFQ App.1 #3 — IN_SITU / NRA boxes require a parent box that is a
         // RAS box. Enforce centrally (every path: UI, importer, console) on
         // create or whenever box_type / parent_box_id changes. We deliberately
         // do NOT fire on an unrelated update of a pre-existing legacy row, so a
         // barcode edit on legacy data is not blocked retroactively.
+        // RFQ §3.1.11 (part 2 of 3) — validate the ENUM-derived columns against
+        // the ACTIVE rows of the lookup tables (App\Models\Lookup\*), which are
+        // now the editable source of truth. Only assert when the value is dirty
+        // so a pre-existing record carrying a value that was LATER deactivated
+        // still loads and can be re-saved (expand, never restrict).
+        static::saving(function (self $box): void {
+            if ($box->isDirty('box_type')) {
+                Lookups::assertActive(BoxType::class, 'box_type', $box->box_type);
+            }
+            if ($box->isDirty('barcode_status')) {
+                Lookups::assertActive(BarcodeStatus::class, 'barcode_status', $box->barcode_status);
+            }
+        });
+
+        // RFQ App.1 #5 (A1.2) at the BOX level — Task 7 (B1). The box is the
+        // authoritative source of truth for barcode status, so the PERM_OUT
+        // precondition is enforced here on the box. A box cannot be PERM_OUT
+        // unless it has a disinfestation_date (see canBePermOut()). MySQL also
+        // has a CHECK constraint (create_boxes_table migration), but SQLite
+        // cannot retro-fit one, so this PHP guard is the cross-driver gate.
+        // Mirror of the document-level A1.2 guard (kept too — expand, never
+        // restrict). Only assert when the status actually moves to PERM_OUT so
+        // unrelated saves stay cheap and legacy rows that already carry the
+        // value can still re-save.
+        static::saving(function (self $box): void {
+            if (! $box->isDirty('barcode_status')) {
+                return;
+            }
+            if ($box->barcode_status === 'PERM_OUT' && ! $box->canBePermOut()) {
+                throw ValidationException::withMessages([
+                    'barcode_status' => 'A box cannot be PERM OUT without a disinfestation date (RFQ A1.2, box level).',
+                ]);
+            }
+        });
+
         static::saving(function (self $box): void {
             if (! $box->requiresParent()) {
                 return;
@@ -384,8 +442,17 @@ class Box extends Model implements AuditableContract, Sortable
             }
 
             if ($box->parent_box_id === null) {
+                // RFQ A1.3 — explicit-NULL exception: a box flagged as
+                // `provenance_unknown` is allowed to have no parent.
+                // The flag must be set explicitly (default false) and should
+                // be used sparingly (genuine unknown-provenance legacy records).
+                if ($box->provenance_unknown === true) {
+                    return;
+                }
+
                 throw new \DomainException(
-                    "Box type {$box->box_type} requires a parent RAS box (RFQ App.1 #3)."
+                    "Box type {$box->box_type} requires a parent RAS box (RFQ App.1 #3). "
+                    . 'Set provenance_unknown=true to allow a null parent for genuinely unknown-provenance records.'
                 );
             }
 
@@ -406,6 +473,26 @@ class Box extends Model implements AuditableContract, Sortable
 
         static::updated(function (self $box): void {
             $box->flushPendingBarcodeTransition();
+        });
+
+        // RFQ Wave 2 — Task 7 (B1). The BOX is authoritative for barcode
+        // status; every document currently in the box mirrors the box value.
+        // documents.barcode_status is KEPT (expand, never restrict) and stays
+        // queryable for filters / omni-search — it is now a synced mirror.
+        //
+        // Split created / updated (rather than a single `saved`) and gate the
+        // update branch on wasChanged('barcode_status') so we only propagate
+        // when the authoritative value actually moved — unrelated box saves do
+        // not touch the documents table.
+        static::created(function (self $box): void {
+            $box->mirrorBarcodeStatusToDocuments();
+        });
+
+        static::updated(function (self $box): void {
+            if (! $box->wasChanged('barcode_status')) {
+                return;
+            }
+            $box->mirrorBarcodeStatusToDocuments();
         });
 
         // RFQ Contract App.2-i — seal-number chain-of-custody. The yellow
@@ -433,6 +520,60 @@ class Box extends Model implements AuditableContract, Sortable
             }
             $box->recordSealChange($old, $new);
         });
+    }
+
+    /**
+     * RFQ Wave 2 — Task 7 (B1). Mirror this box's authoritative
+     * `barcode_status` onto every document currently in the box
+     * (`documents.current_box_id = box.id`).
+     *
+     * `documents.barcode_status` is KEPT as a real, queryable column (filters /
+     * omni-search keep working) — it is a synced mirror of the box value, not
+     * a competing source of truth.
+     *
+     * Implementation note: a single bulk UPDATE is used deliberately.
+     *   - It is O(1) queries regardless of how many documents are in the box.
+     *   - The DocumentBuilder bulk-update guard only blocks the `identifier`
+     *     column, so a `barcode_status` mirror passes through untouched.
+     *   - It intentionally bypasses the per-model A1.2 document `saving` guard:
+     *     the BOX is authoritative and the box-level A1.2 guard has already
+     *     validated that a PERM_OUT box carries a disinfestation_date. Forcing
+     *     the per-document guard here would reject the mirror for individual
+     *     documents that lack their own date, contradicting box authority.
+     *     The audit trail for the transition lives in box_barcode_history.
+     *
+     * Skips writing rows that already hold the target value so the mirror does
+     * not churn updated_at / audit noise on documents that are already in sync.
+     */
+    protected function mirrorBarcodeStatusToDocuments(): void
+    {
+        $status = $this->barcode_status;
+        if ($status === null) {
+            return;
+        }
+
+        Document::withoutGlobalScopes()
+            ->where('current_box_id', $this->getKey())
+            ->where(function (Builder $q) use ($status): void {
+                $q->where('barcode_status', '!=', $status)
+                    ->orWhereNull('barcode_status');
+            })
+            ->update(['barcode_status' => $status]);
+
+        // A1.2 compliance for the mirrored documents: a PERM_OUT document must
+        // carry a disinfestation_date. The box is authoritative and its own
+        // A1.2 guard (saving hook above) guarantees a PERM_OUT box has a date,
+        // so propagate that date onto every document in the box that does not
+        // already have one. This keeps each mirrored document individually
+        // compliant with the per-document A1.2 rule instead of relying solely
+        // on box authority. We only fill the gaps (whereNull) so a document's
+        // own genuine disinfestation_date is never overwritten.
+        if ($status === 'PERM_OUT' && $this->disinfestation_date !== null) {
+            Document::withoutGlobalScopes()
+                ->where('current_box_id', $this->getKey())
+                ->whereNull('disinfestation_date')
+                ->update(['disinfestation_date' => $this->disinfestation_date]);
+        }
     }
 
     /**

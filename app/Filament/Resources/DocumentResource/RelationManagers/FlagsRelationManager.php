@@ -3,6 +3,7 @@
 namespace App\Filament\Resources\DocumentResource\RelationManagers;
 
 use App\Models\DocumentFlag;
+use App\Models\Lookup\FlagType;
 use Filament\Actions\Action;
 use Filament\Actions\CreateAction;
 use Filament\Actions\EditAction;
@@ -16,6 +17,7 @@ use Filament\Tables\Filters\SelectFilter;
 use Filament\Tables\Table;
 use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Database\Eloquent\Model;
+use Illuminate\Database\QueryException;
 
 /**
  * Renders the Document's flags timeline on the Document edit/view page
@@ -45,7 +47,9 @@ class FlagsRelationManager extends RelationManager
         return $schema->schema([
             Schemas\Components\Grid::make(2)->schema([
                 Forms\Components\Select::make('type')
-                    ->options(self::typeOptions())
+                    // C4 — keep the record's current type selectable on edit even
+                    // if its flag_types lookup row has since been deactivated.
+                    ->options(fn (?DocumentFlag $record): array => self::typeOptionsWith($record?->type))
                     ->required()
                     ->native(false)
                     ->searchable(),
@@ -244,15 +248,51 @@ class FlagsRelationManager extends RelationManager
      |  standalone DocumentFlagResource so the option lists never drift.
      |---------------------------------------------------------------------*/
 
-    /** @return array<string, string> */
+    /**
+     * RFQ §3.1.11 — flag type options are sourced from the editable
+     * flag_types lookup (active rows only); labels keep the established
+     * humanised spelling via {@see self::typeLabel()} so display does not
+     * drift. Falls back to the frozen consts if the lookup is unavailable
+     * (e.g. before the lookup migration has run).
+     *
+     * @return array<string, string>
+     */
     public static function typeOptions(): array
     {
+        // C5 — the const fallback must also cover the case where the flag_types
+        // table is unavailable (e.g. before its migration, or a transient DB
+        // error): the query throws BEFORE returning an empty array, so guard it.
+        try {
+            $codes = FlagType::active()->pluck('code')->all();
+        } catch (QueryException) {
+            $codes = [];
+        }
+        if ($codes === []) {
+            $codes = DocumentFlag::TYPES;
+        }
+
         $out = [];
-        foreach (DocumentFlag::TYPES as $t) {
+        foreach ($codes as $t) {
             $out[$t] = self::typeLabel($t);
         }
 
         return $out;
+    }
+
+    /**
+     * C4 — active flag-type options PLUS the record's current value, so an
+     * inactive-but-current type stays selectable/saveable on the edit form.
+     *
+     * @return array<string, string>
+     */
+    public static function typeOptionsWith(?string $current): array
+    {
+        $options = self::typeOptions();
+        if ($current !== null && $current !== '' && ! array_key_exists($current, $options)) {
+            $options[$current] = self::typeLabel($current) . ' (inactive)';
+        }
+
+        return $options;
     }
 
     /** @return array<string, string> */

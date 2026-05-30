@@ -10,6 +10,8 @@ use App\Filament\Resources\DocumentResource\Pages;
 use App\Filament\Support\SearchableSelects;
 use App\Models\Document;
 use App\Models\DocumentType;
+use App\Models\Lookup\CurrentBoxType;
+use App\Models\Lookup\DigitisationStatus;
 use App\Models\Practice;
 use App\Models\Repository;
 use Filament\Actions\BulkActionGroup;
@@ -192,7 +194,7 @@ class DocumentResource extends Resource
                             ->nullable()
                             ->helperText('Repository / room / shelf / showcase / temp-holding hierarchy.')),
                         $g(Forms\Components\Select::make('current_box_type')
-                            ->options(array_combine(Document::CURRENT_BOX_TYPES, Document::CURRENT_BOX_TYPES))
+                            ->options(fn (): array => CurrentBoxType::options())
                             ->nullable()
                             ->helperText('Used for disinfestation planning: Big Brown Box counts as 2 boxes in the 250-box cycle limit.')),
                         $g(Forms\Components\Select::make('custody_status')
@@ -208,6 +210,14 @@ class DocumentResource extends Resource
                                 ->all())
                             ->default('in_box')
                             ->native(false)),
+                        // U1 — document barcode visible at the top level of the
+                        // form (not buried in the legacy-barcodes collapsed section).
+                        // Custody status is still authoritative from the box.
+                        $g(Forms\Components\TextInput::make('barcode')
+                            ->label('Document barcode (individual label)')
+                            ->maxLength(255)
+                            ->helperText('Optional barcode for this specific document. Changes are tracked in the Barcode history tab. Custody status is authoritative from the box.')
+                            ->columnSpanFull()),
                         $g(Forms\Components\TextInput::make('nra_location')->maxLength(500)
                             ->helperText('Legacy free-text. New records should use the Location Select above.')
                             ->columnSpanFull()),
@@ -247,7 +257,7 @@ class DocumentResource extends Resource
                     ->schema([
                         $g(Forms\Components\TextInput::make('colour_code')->maxLength(32)),
                         $g(Forms\Components\Select::make('digitised')
-                            ->options(['VHMML' => 'VHMML', 'NRA' => 'NRA', 'none' => 'None'])
+                            ->options(fn (): array => DigitisationStatus::options())
                             ->nullable()
                             ->helperText('Digitisation source per RFQ APP2-xiii.')),
                         $g(Forms\Components\Toggle::make('torre')->columnSpanFull()),
@@ -659,6 +669,13 @@ class DocumentResource extends Resource
                     ->schema([
                         TextEntry::make('identifier')->badge()->color('primary')->copyable()->placeholder('—'),
                         TextEntry::make('catalogue_identifier')->label('Catalogue ID')->copyable()->placeholder('—'),
+                        // U1 — document barcode visible in read mode (was edit-only before).
+                        // Custody status is authoritative from the box, not from this field.
+                        TextEntry::make('barcode')
+                            ->label('Document barcode (individual label)')
+                            ->copyable()
+                            ->placeholder('—')
+                            ->helperText('Individual label barcode. Custody status is authoritative from the box.'),
                         TextEntry::make('barcode_in')->label('Barcode (IN)')->copyable()->placeholder('—'),
                     ]),
 
@@ -1011,6 +1028,7 @@ class DocumentResource extends Resource
         return [
             DocumentResource\RelationManagers\IdentifierHistoryRelationManager::class,
             DocumentResource\RelationManagers\FlagsRelationManager::class,
+            DocumentResource\RelationManagers\BarcodeHistoryRelationManager::class,
         ];
     }
 

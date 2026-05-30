@@ -250,17 +250,31 @@ final class EntityResolver
      * tenancy further upstream (`fillRecordUsing` runs INSIDE the global
      * scope, so the security boundary is preserved).
      *
+     * Task 8 (B5) — accession-import integrity. When `$create` is true the
+     * resolver becomes dedup-OR-CREATE: a batch that does not yet exist is
+     * inserted (respecting A1.1 forbidden numbers, which are rejected BEFORE
+     * any write) so a single import run can stand up the Batch + Box graph an
+     * incoming document references. Forbidden numbers can never be created —
+     * the `['forbidden' => N]` short-circuit happens above the create branch.
+     * The `type` is auto-derived from the number (1..29 → MAIN_COLLECTION,
+     * 30+ → NOTARY_ACCESSION) to mirror BatchImporter's convention.
+     *
      * @return array{batch_id:int,batch_number:int}|array{forbidden:int}|null
      */
-    public static function resolveBatch(?int $batchNumber, ?int $repositoryId = null): ?array
-    {
+    public static function resolveBatch(
+        ?int $batchNumber,
+        ?int $repositoryId = null,
+        bool $create = false,
+    ): ?array {
         if ($batchNumber === null) {
             return null;
         }
 
         if (in_array($batchNumber, Batch::FORBIDDEN_NUMBERS, true)) {
             // Signalled separately from "not found" so the importer can emit
-            // a specific human-readable error: "Batch N is reserved".
+            // a specific human-readable error: "Batch N is reserved". This is
+            // evaluated BEFORE the create branch, so a forbidden batch is
+            // never inserted (B5 + A1.1).
             return ['forbidden' => $batchNumber];
         }
 
@@ -277,32 +291,67 @@ final class EntityResolver
                 : null;
         }
 
+        if (self::$memo[$key] === null && $create) {
+            // Dedup-OR-CREATE (B5): firstOrCreate to stay idempotent under
+            // the unique batch_number even if two rows in the same run point
+            // at the same new batch. repository_id is left for the
+            // BelongsToRepository creating-hook to default from the acting
+            // user when not supplied.
+            $attrs = ['batch_number' => $batchNumber];
+            if ($repositoryId !== null) {
+                $attrs['repository_id'] = $repositoryId;
+            }
+            $batch = Batch::query()->withoutGlobalScope(RepositoryScope::class)->firstOrCreate(
+                $attrs,
+                [
+                    'type' => $batchNumber >= 30 ? 'NOTARY_ACCESSION' : 'MAIN_COLLECTION',
+                    'is_active' => true,
+                ],
+            );
+            self::$memo[$key] = ['batch_id' => (int) $batch->id, 'batch_number' => $batchNumber];
+        }
+
         return self::$memo[$key];
     }
 
     /**
      * Resolve a Box by (1) barcode (unique in the schema), or (2) the pair
-     * (batch_id, box_number). Returns `['box_id' => int]` on a unique match
-     * or `null` otherwise. Box scoping is derived via the parent Batch so
-     * we don't have to pass `repository_id` here — the global scope on
-     * `Box` already excludes boxes the user can't see.
+     * (batch_id, box_number). Returns `['box_id' => int, 'batch_id' => int]`
+     * on a unique match or `null` otherwise. Box scoping is derived via the
+     * parent Batch so we don't have to pass `repository_id` here — the global
+     * scope on `Box` already excludes boxes the user can't see.
      *
-     * @return array{box_id:int}|null
+     * `batch_id` is always echoed back in the result so the caller can
+     * validate document/box batch consistency (Task 8, B5) without a second
+     * query.
+     *
+     * Task 8 (B5) — when `$create` is true and the box is resolved by the
+     * (batch_id, box_number) pair, a missing box is inserted into the resolved
+     * batch. A barcode-only lookup never creates: a barcode names a specific
+     * existing physical box, so a miss is a genuine "unknown box" and must NOT
+     * fabricate one. Legacy box types (MAV / STVC) get `is_legacy = true`,
+     * mirroring BoxImporter so the A1.4 creating-guard accepts them.
+     *
+     * @return array{box_id:int,batch_id:int}|null
      */
     public static function resolveBox(
         ?string $barcode,
         ?int $batchId = null,
         ?string $boxNumber = null,
+        bool $create = false,
+        ?string $boxType = null,
     ): ?array {
         $barcode = self::normaliseString($barcode);
 
         if ($barcode !== null) {
             $key = "box:barcode:{$barcode}";
             if (! array_key_exists($key, self::$memo)) {
-                $id = Box::query()
+                $row = Box::query()
                     ->where('barcode', $barcode)
-                    ->value('id');
-                self::$memo[$key] = $id !== null ? ['box_id' => (int) $id] : null;
+                    ->first(['id', 'batch_id']);
+                self::$memo[$key] = $row !== null
+                    ? ['box_id' => (int) $row->id, 'batch_id' => (int) $row->batch_id]
+                    : null;
             }
             if (self::$memo[$key] !== null) {
                 return self::$memo[$key];
@@ -313,11 +362,28 @@ final class EntityResolver
         if ($batchId !== null && $boxNumber !== null) {
             $key = "box:batch_number:{$batchId}|{$boxNumber}";
             if (! array_key_exists($key, self::$memo)) {
-                $id = Box::query()
+                $row = Box::query()
                     ->where('batch_id', $batchId)
                     ->where('box_number', $boxNumber)
-                    ->value('id');
-                self::$memo[$key] = $id !== null ? ['box_id' => (int) $id] : null;
+                    ->first(['id', 'batch_id']);
+                self::$memo[$key] = $row !== null
+                    ? ['box_id' => (int) $row->id, 'batch_id' => (int) $row->batch_id]
+                    : null;
+            }
+
+            if (self::$memo[$key] === null && $create) {
+                // Dedup-OR-CREATE (B5): create the box inside the resolved
+                // batch. firstOrCreate on (batch_id, box_number) keeps two
+                // rows in the same run that reference the same new box
+                // idempotent. Legacy types are flagged is_legacy so the
+                // Box A1.4 creating-guard accepts the historical record.
+                $type = $boxType !== null ? strtoupper(trim($boxType)) : 'RAS';
+                $isLegacy = in_array($type, Box::LEGACY_TYPES, true);
+                $box = Box::query()->firstOrCreate(
+                    ['batch_id' => $batchId, 'box_number' => $boxNumber],
+                    ['box_type' => $type, 'is_legacy' => $isLegacy],
+                );
+                self::$memo[$key] = ['box_id' => (int) $box->id, 'batch_id' => (int) $box->batch_id];
             }
 
             return self::$memo[$key];

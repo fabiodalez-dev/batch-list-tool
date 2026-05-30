@@ -17,6 +17,7 @@ use Laravel\Fortify\TwoFactorAuthenticatable;
 use OwenIt\Auditing\Auditable;
 use OwenIt\Auditing\Contracts\Auditable as AuditableContract;
 use OwenIt\Auditing\Models\Audit;
+use Spatie\Permission\Models\Role;
 use Spatie\Permission\Traits\HasRoles;
 
 /**
@@ -72,11 +73,57 @@ class User extends Authenticatable implements AuditableContract, FilamentUser
         return $this->belongsTo(Repository::class, 'default_repository_id');
     }
 
+    /**
+     * The user's *active* repository (RFQ Wave 2 Task 10).
+     * null = "All repositories" — the persisted mirror of the session-backed
+     * App\Support\ActiveRepository selection.
+     */
+    public function activeRepository(): BelongsTo
+    {
+        return $this->belongsTo(Repository::class, 'active_repository_id');
+    }
+
     public function repositories(): BelongsToMany
     {
         return $this->belongsToMany(Repository::class)
-            ->withPivot('is_default')
+            ->withPivot('is_default', 'role')
             ->withTimestamps();
+    }
+
+    /**
+     * Resolve the effective role for a given repository.
+     *
+     * Priority:
+     *  1. super_admin always wins — the global role is returned unchanged.
+     *  2. A non-null pivot `role` is returned as-is.
+     *  3. Falls back to the user's first global Spatie role (e.g. admin/editor/viewer).
+     */
+    public function effectiveRoleFor(Repository $repository): ?string
+    {
+        if ($this->hasRole('super_admin')) {
+            return 'super_admin';
+        }
+
+        $pivot = $this->repositories()
+            ->where('repositories.id', $repository->getKey())
+            ->first()
+            ?->pivot;
+
+        /** @var string|null $pivotRole */
+        $pivotRole = $pivot?->getAttribute('role');
+
+        // Defence-in-depth (review F5): the pivot `role` column is free-text
+        // from the DB's point of view. This method is not yet wired into any
+        // authorization decision, but to keep it from becoming a privilege-
+        // escalation trap when it is, only trust a pivot value that is a real,
+        // defined application role. An unknown / forged string (a row hand-
+        // edited to a non-existent or mis-cased role) is ignored and we fall
+        // back to the user's global role — never escalate on garbage.
+        if ($pivotRole !== null && self::isKnownRoleName($pivotRole)) {
+            return $pivotRole;
+        }
+
+        return $this->getRoleNames()->first();
     }
 
     public function canAccessPanel(Panel $panel): bool
@@ -104,6 +151,18 @@ class User extends Authenticatable implements AuditableContract, FilamentUser
     public function canBeImpersonated(): bool
     {
         return ! $this->hasRole('super_admin');
+    }
+
+    /**
+     * True when $name is a real, defined application role (Spatie `roles`
+     * table, `web` guard). Used to reject unknown / forged pivot role values.
+     */
+    protected static function isKnownRoleName(string $name): bool
+    {
+        return Role::query()
+            ->where('name', $name)
+            ->where('guard_name', 'web')
+            ->exists();
     }
 
     protected function casts(): array

@@ -1,5 +1,6 @@
 <?php
 
+use App\Http\Controllers\ActiveRepositoryController;
 use App\Models\User;
 use Illuminate\Support\Facades\Auth;
 use Illuminate\Support\Facades\Route;
@@ -62,3 +63,16 @@ Route::get('/two-factor-challenge', function () {
 })
     ->middleware(['web', 'guest:web'])
     ->name('two-factor.login');
+
+/*
+|--------------------------------------------------------------------------
+| Active repository switcher (RFQ Wave 2 Task 10 — Submission §4.3.3)
+|--------------------------------------------------------------------------
+|
+| POST target for the topbar repository <select>. Persists the chosen active
+| repository (null = "All repositories") into the session (+ user prefs mirror)
+| and redirects back. Authenticated panel session required.
+*/
+Route::post('/admin/active-repository', [ActiveRepositoryController::class, 'update'])
+    ->middleware(['web', 'auth'])
+    ->name('active-repository.update');

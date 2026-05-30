@@ -3,10 +3,13 @@
 namespace App\Filament\Resources;
 
 use App\Filament\Actions\Boxes\DestroyBoxAction;
+use App\Filament\Actions\Boxes\MoveBoxToLocationAction;
 use App\Filament\Concerns\AppliesFieldPermissions;
 use App\Filament\Resources\BoxResource\Pages;
 use App\Filament\Support\SearchableSelects;
 use App\Models\Box;
+use App\Models\Lookup\BarcodeStatus;
+use App\Models\Lookup\BoxType;
 use Filament\Actions\BulkActionGroup;
 use Filament\Actions\DeleteBulkAction;
 use Filament\Actions\EditAction;
@@ -42,12 +45,10 @@ class BoxResource extends Resource
 
     public static function form(Schema $schema): Schema
     {
-        // Same wrapping trick as the other resources. NOTE: we do NOT
-        // gate `_parent_explicitly_unknown` — it is a transient,
-        // control-only toggle with `dehydrated(false)` whose UI rules
-        // depend on `box_type`, not on role. Gating would force
-        // `dehydrated(true)` and break the bulk-import code path that
-        // relies on this toggle being absent from the save payload.
+        // Same wrapping trick as the other resources. NOTE: `provenance_unknown`
+        // IS gated via $g() — it is a real persisted column (added in A1.3) whose
+        // visibility depends on box_type. The old transient `_parent_explicitly_unknown`
+        // has been superseded by this persistent flag.
         $g = fn (Schemas\Components\Component $c): Schemas\Components\Component => self::gateField($c, self::FIELD_PERMISSIONS_KEY);
 
         // Layout rule (user mandate): root columns(1) → full-width Sections;
@@ -62,7 +63,8 @@ class BoxResource extends Resource
                     ->columns($twoCols)
                     ->schema([
                         $g(Forms\Components\Select::make('box_type')
-                            ->options(collect(Box::TYPES)->mapWithKeys(fn ($t) => [$t => $t]))
+                            // C4 — keep the record's current (possibly inactive) value selectable on edit.
+                            ->options(fn (?Box $record): array => BoxType::optionsWith($record?->box_type))
                             ->required()
                             ->live()  // re-evaluate visibility/required of dependent fields
                             ->helperText('RAS / IN_SITU / NRA for new boxes. MAV / STVC are legacy-only and cannot be created.')
@@ -97,19 +99,18 @@ class BoxResource extends Resource
                     // is shown for either type, not IN_SITU alone.
                     ->visible(fn (Get $get) => in_array($get('box_type'), ['IN_SITU', 'NRA'], true))
                     ->schema([
-                        // RFQ Appendix-1 rule #3: In Situ boxes must reference a previous
-                        // RAS box, unless the user explicitly opts-out via the "no parent
-                        // (provenance lost)" toggle. The toggle is the documented escape
-                        // hatch for the few legacy records described in Requirements §ii
-                        // ("there are only a few exceptions where this rule is broken, as
-                        // the provenance of the document was lost ie: Unknown/NULL RAS box").
+                        // RFQ A1.3 — explicit-NULL exception: the `provenance_unknown`
+                        // Toggle is the documented escape hatch for IN_SITU / NRA boxes
+                        // whose origin RAS box is genuinely unknown. Persisted to the DB
+                        // column of the same name; the model guard reads it to allow a
+                        // null `parent_box_id` only when this flag is set.
                         // NOT gated — see comment at the top of this method.
-                        Forms\Components\Toggle::make('_parent_explicitly_unknown')
-                            ->label('Provenance lost (no parent RAS box)')
-                            ->helperText('Only tick this if the RAS box of origin is genuinely unknown — RFQ Appendix-1 rule #3 escape hatch. Use sparingly.')
-                            ->dehydrated(false)  // not persisted; control-only field
+                        $g(Forms\Components\Toggle::make('provenance_unknown')
+                            ->label('Provenance unknown (no RAS parent)')
+                            ->helperText('Only tick this if the RAS box of origin is genuinely unknown — RFQ A1.3 / Appendix-1 rule #3 escape hatch. Use sparingly.')
                             ->default(false)
-                            ->columnSpanFull(),
+                            ->live()
+                            ->columnSpanFull()),
                         // `parent_box_id` keeps its own `visible(IN_SITU)` rule —
                         // the gate trait uses `hidden()` (separate channel) so
                         // the two compose without clobbering each other.
@@ -123,8 +124,10 @@ class BoxResource extends Resource
                             fn ($query) => $query->where('box_type', 'RAS'),
                         )
                             ->label('Parent RAS box')
-                            ->visible(fn (Get $get) => in_array($get('box_type'), ['IN_SITU', 'NRA'], true))
-                            ->required(fn (Get $get) => in_array($get('box_type'), ['IN_SITU', 'NRA'], true) && ! $get('_parent_explicitly_unknown'))
+                            // U3 — hide (not just de-require) when provenance is unknown;
+                            // keeping it visible but optional was confusing.
+                            ->visible(fn (Get $get) => in_array($get('box_type'), ['IN_SITU', 'NRA'], true) && ! $get('provenance_unknown'))
+                            ->required(fn (Get $get) => in_array($get('box_type'), ['IN_SITU', 'NRA'], true) && ! $get('provenance_unknown'))
                             ->columnSpanFull()
                             ->rule(function (Get $get) {
                                 return function (string $attribute, $value, \Closure $fail) use ($get) {
@@ -134,8 +137,8 @@ class BoxResource extends Resource
                                     if (! in_array($get('box_type'), ['IN_SITU', 'NRA'], true)) {
                                         return;
                                     }
-                                    if (! $get('_parent_explicitly_unknown') && empty($value)) {
-                                        $fail('IN_SITU / NRA boxes must reference a parent RAS box (RFQ Appendix-1 rule #3). Tick "Provenance lost" only if the origin RAS box is genuinely unknown.');
+                                    if (! $get('provenance_unknown') && empty($value)) {
+                                        $fail('IN_SITU / NRA boxes must reference a parent RAS box (RFQ Appendix-1 rule #3). Tick "Provenance unknown" only if the origin RAS box is genuinely unknown.');
                                     }
                                 };
                             })),
@@ -145,6 +148,8 @@ class BoxResource extends Resource
                     ->columns($twoCols)
                     ->schema([
                         $g(Forms\Components\TextInput::make('barcode')
+                            ->label('Box barcode')
+                            ->helperText('Barcode label on this box. Distinct from any per-document barcodes inside it.')
                             ->maxLength(64)),
                         // RFQ Contract App.2-i — the yellow security seal that
                         // closes the box belongs to the BOX; every change is
@@ -154,7 +159,8 @@ class BoxResource extends Resource
                             ->maxLength(255)
                             ->helperText('Yellow security seal closing the box. Changes are kept in the seal history.')),
                         $g(Forms\Components\Select::make('barcode_status')
-                            ->options(collect(Box::BARCODE_STATUSES)->mapWithKeys(fn ($s) => [$s => $s]))
+                            // C4 — keep the record's current (possibly inactive) value selectable on edit.
+                            ->options(fn (?Box $record): array => BarcodeStatus::optionsWith($record?->barcode_status))
                             ->required()
                             ->live()
                             ->default('IN')),
@@ -441,6 +447,8 @@ class BoxResource extends Resource
             ->actions([
                 ViewAction::make(),
                 EditAction::make(),
+                // RFQ §3.1.6 — Move box to a different location (audited).
+                MoveBoxToLocationAction::make(),
                 // RFQ App.2 §vii — single-record "Mark as destroyed" row
                 // action. The action's own visible() callback hides it on
                 // already-destroyed rows, so we always register it here.

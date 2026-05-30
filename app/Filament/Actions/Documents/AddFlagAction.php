@@ -6,6 +6,7 @@ namespace App\Filament\Actions\Documents;
 
 use App\Models\Document;
 use App\Models\DocumentFlag;
+use App\Models\Lookup\FlagType;
 use Filament\Actions\Action;
 use Filament\Actions\BulkAction;
 use Filament\Forms\Components\Select;
@@ -63,8 +64,14 @@ final class AddFlagAction
      */
     private static function form(): array
     {
+        // RFQ §3.1.11 — source flag-type options from the editable flag_types
+        // lookup (active rows); fall back to the frozen consts if unavailable.
+        $typeCodes = FlagType::active()->pluck('code')->all();
+        if ($typeCodes === []) {
+            $typeCodes = DocumentFlag::TYPES;
+        }
         $typeOptions = [];
-        foreach (DocumentFlag::TYPES as $t) {
+        foreach ($typeCodes as $t) {
             $typeOptions[$t] = ucwords(str_replace('_', ' ', $t));
         }
 

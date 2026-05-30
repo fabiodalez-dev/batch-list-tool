@@ -90,7 +90,11 @@ final class SendToDisinfestationAction
                 ];
 
                 $doc->is_in_disinfestation = true;
-                $doc->barcode_status = 'OUT';
+
+                // Task 7 (B1): the BOX is authoritative for barcode status.
+                // Set OUT on the box (mirror hook propagates to its documents);
+                // fall back to the document column when there is no box.
+                ActionSupport::applyBarcodeStatus($doc, 'OUT');
 
                 ActionSupport::logPivotChange(
                     document: $doc,
