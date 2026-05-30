@@ -7,6 +7,7 @@ use App\Models\Document;
 use App\Models\User;
 use App\Observers\DocumentObserver;
 use App\Settings\AuditSettings;
+use App\Support\BackupDestinations;
 use Filament\Tables\Table;
 use Illuminate\Auth\Events\Failed;
 use Illuminate\Auth\Events\Lockout;
@@ -101,6 +102,12 @@ class AppServiceProvider extends ServiceProvider
         });
 
         $this->registerHealthChecks();
+
+        // Register user-defined backup destinations (DB-backed) as runtime
+        // filesystem disks and wire them into spatie/laravel-backup's disk list.
+        // Self-guards on the backup_destinations table, so it is safe to call
+        // here even on a fresh install before migrations have run.
+        BackupDestinations::register();
     }
 
     /**
