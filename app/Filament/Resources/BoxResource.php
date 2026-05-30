@@ -3,6 +3,7 @@
 namespace App\Filament\Resources;
 
 use App\Filament\Actions\Boxes\DestroyBoxAction;
+use App\Filament\Actions\Boxes\MoveBoxToLocationAction;
 use App\Filament\Concerns\AppliesFieldPermissions;
 use App\Filament\Resources\BoxResource\Pages;
 use App\Filament\Support\SearchableSelects;
@@ -440,6 +441,8 @@ class BoxResource extends Resource
             ->actions([
                 ViewAction::make(),
                 EditAction::make(),
+                // RFQ §3.1.6 — Move box to a different location (audited).
+                MoveBoxToLocationAction::make(),
                 // RFQ App.2 §vii — single-record "Mark as destroyed" row
                 // action. The action's own visible() callback hides it on
                 // already-destroyed rows, so we always register it here.
