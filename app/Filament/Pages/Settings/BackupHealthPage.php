@@ -4,10 +4,12 @@ declare(strict_types=1);
 
 namespace App\Filament\Pages\Settings;
 
+use App\Actions\Backup\RestoreDatabase;
 use App\Models\BackupRun;
 use App\Settings\BackupSettings;
 use Carbon\Carbon;
 use Filament\Actions\Action;
+use Filament\Forms\Components\Checkbox;
 use Filament\Forms\Components\TextInput;
 use Filament\Notifications\Notification;
 use Filament\Pages\Page;
@@ -18,6 +20,7 @@ use Illuminate\Support\Facades\Artisan;
 use Illuminate\Support\Facades\Auth;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Storage;
+use Illuminate\Validation\ValidationException;
 
 /**
  * RFQ §3.1.8 — Backup Center (health, archives, on-demand runs & history).
@@ -262,6 +265,112 @@ class BackupHealthPage extends Page
                 ->title('Backup not found')
                 ->body('The selected backup no longer exists.')
                 ->warning()
+                ->send();
+        }
+
+        $this->health = $this->buildHealthSummary();
+    }
+
+    // ─── restore (super_admin ONLY) ──────────────────────────────────────────
+
+    /**
+     * The name of the database the application is currently connected to.
+     * Used both as the value the operator must re-type to confirm a restore
+     * and as the server-side comparison target.
+     */
+    public static function currentDatabaseName(): string
+    {
+        $connection = (string) config('database.default');
+
+        return (string) config('database.connections.' . $connection . '.database', '');
+    }
+
+    /**
+     * Restore row action for the backups list. super_admin ONLY — both via
+     * UI visibility AND a server-side re-check inside the handler.
+     */
+    public function getRestoreAction(): Action
+    {
+        return Action::make('restore')
+            ->label('Restore')
+            ->icon('heroicon-o-arrow-uturn-left')
+            ->color('danger')
+            // UI visibility: super_admin ONLY (NOT admin).
+            ->visible(fn () => (bool) auth()->user()?->hasRole('super_admin'))
+            ->modalHeading('Restore database from this backup')
+            ->modalDescription('This OVERWRITES the live database with the contents of the selected backup. A fresh DB safety snapshot is taken automatically before anything is overwritten. This cannot be undone.')
+            ->modalSubmitActionLabel('Yes, overwrite the database')
+            ->form([
+                Checkbox::make('understand')
+                    ->label('I understand this will OVERWRITE the live database')
+                    ->accepted()
+                    ->required(),
+
+                TextInput::make('confirm_database')
+                    ->label('Type the current database name to confirm')
+                    ->helperText('Current database: ' . static::currentDatabaseName())
+                    ->required()
+                    ->autocomplete(false),
+            ])
+            ->action(fn (array $arguments, array $data) => $this->restoreFromBackup($arguments, $data));
+    }
+
+    /**
+     * Handle a confirmed restore request.
+     *
+     * Defence in depth:
+     *   1. server-side super_admin re-check (abort 403) — not just UI visibility;
+     *   2. the typed database name must EXACTLY match the live DB name;
+     *   3. the backup path is validated against traversal / disk allow-list.
+     *
+     * @param array<string, mixed> $arguments Row context (disk, path).
+     * @param array<string, mixed> $data Submitted modal form data.
+     */
+    public function restoreFromBackup(array $arguments, array $data): void
+    {
+        // (1) Server-side guard — super_admin ONLY, regardless of UI visibility.
+        abort_unless((bool) auth()->user()?->hasRole('super_admin'), 403);
+
+        // (2) Typed-name confirmation must match the live DB name exactly.
+        $typed = (string) ($data['confirm_database'] ?? '');
+        $expected = static::currentDatabaseName();
+
+        if ($typed !== $expected) {
+            throw ValidationException::withMessages([
+                'confirm_database' => 'The typed name does not match the current database name. Restore aborted.',
+            ]);
+        }
+
+        $disk = (string) ($arguments['disk'] ?? '');
+        $path = (string) ($arguments['path'] ?? '');
+
+        // (3) Path / disk safety (same inline guard as deleteBackup()).
+        /** @var array<int, string> $disks */
+        $disks = config('backup.backup.destination.disks', ['local']);
+        abort_unless(in_array($disk, $disks, true), 403, 'Invalid backup disk.');
+        abort_unless(str_ends_with(strtolower($path), '.zip'), 403, 'Only .zip backups can be restored.');
+        abort_if(
+            str_contains($path, '..') || str_starts_with($path, '/') || str_starts_with($path, '\\'),
+            403,
+            'Invalid backup path.'
+        );
+
+        $absolutePath = Storage::disk($disk)->path($path);
+
+        try {
+            $run = app(RestoreDatabase::class)->restore($disk, $absolutePath, auth()->id());
+
+            Notification::make()
+                ->title('Database restored')
+                ->body($run->message ?? 'The database was restored from the selected backup.')
+                ->success()
+                ->send();
+        } catch (\Throwable $e) {
+            Notification::make()
+                ->title('Restore failed')
+                ->body($e->getMessage())
+                ->danger()
+                ->persistent()
                 ->send();
         }
 

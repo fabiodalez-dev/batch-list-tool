@@ -1,6 +1,7 @@
 <?php
 
 use App\Http\Controllers\ActiveRepositoryController;
+use App\Http\Controllers\BackupDownloadController;
 use App\Models\User;
 use Illuminate\Support\Facades\Auth;
 use Illuminate\Support\Facades\Route;
@@ -76,3 +77,19 @@ Route::get('/two-factor-challenge', function () {
 Route::post('/admin/active-repository', [ActiveRepositoryController::class, 'update'])
     ->middleware(['web', 'auth'])
     ->name('active-repository.update');
+
+/*
+|--------------------------------------------------------------------------
+| Backup Center — authenticated download of a backup archive (RFQ §3.1.8)
+|--------------------------------------------------------------------------
+|
+| GET /admin/backups/download?disk=<disk>&path=<file.zip>
+|
+| Streams a single .zip backup from a configured destination disk. Gated to
+| admin / super_admin inside the controller and protected against directory
+| traversal (disk allow-list, .zip-only, basename rebuild). Lives behind the
+| panel's web + auth middleware so an authenticated session is required.
+*/
+Route::get('/admin/backups/download', BackupDownloadController::class)
+    ->middleware(['web', 'auth'])
+    ->name('backups.download');
