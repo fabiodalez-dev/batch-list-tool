@@ -27,7 +27,7 @@ class Accession extends Model implements AuditableContract
      * @see BelongsToRepository
      */
     protected $fillable = [
-        'code', 'accession_date', 'authority_id', 'batch_id', 'repository_id', 'notes',
+        'code', 'accession_number', 'accession_date', 'authority_id', 'batch_id', 'repository_id', 'notes',
     ];
 
     protected $casts = [

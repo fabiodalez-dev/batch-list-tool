@@ -20,6 +20,7 @@ use Filament\Tables;
 use Filament\Tables\Filters\SelectFilter;
 use Filament\Tables\Filters\TernaryFilter;
 use Filament\Tables\Table;
+use Illuminate\Database\Eloquent\Builder;
 
 class SeriesResource extends Resource
 {
@@ -64,6 +65,40 @@ class SeriesResource extends Resource
                         $g(Forms\Components\TextInput::make('title')
                             ->required()
                             ->maxLength(255)),
+                        // Feedback1 C1.4 — multi-level hierarchy. A series may
+                        // sit under a parent (sub-series, sub-sub-series, …).
+                        // Options EXCLUDE the record itself and all of its
+                        // descendants so a cycle cannot be formed from the UI;
+                        // the closure rule below is the server-side backstop.
+                        $g(Forms\Components\Select::make('parent_id')
+                            ->label('Parent series')
+                            ->helperText('Leave empty for a top-level series.')
+                            ->native(false)
+                            ->searchable()
+                            ->preload()
+                            ->options(function (?Series $record): array {
+                                $query = Series::query()->orderBy('code');
+                                if ($record !== null && $record->exists) {
+                                    $query->whereNotIn('id', $record->disallowedParentIds());
+                                }
+
+                                return $query->get()
+                                    ->mapWithKeys(fn (Series $s): array => [
+                                        $s->getKey() => $s->qualifiedTitle() . ' — ' . $s->title,
+                                    ])
+                                    ->all();
+                            })
+                            ->rule(static function (?Series $record): \Closure {
+                                return static function (string $attribute, mixed $value, \Closure $fail) use ($record): void {
+                                    if ($value === null || $value === '' || $record === null || ! $record->exists) {
+                                        return;
+                                    }
+                                    // Reject self or any descendant as parent.
+                                    if (in_array((int) $value, $record->disallowedParentIds(), true)) {
+                                        $fail('A series cannot be its own ancestor (cycle).');
+                                    }
+                                };
+                            })),
                         $g(Forms\Components\Toggle::make('is_wills_series')
                             ->required()),
                         $g(Forms\Components\Toggle::make('is_active')
@@ -104,6 +139,19 @@ class SeriesResource extends Resource
                         TextEntry::make('title')
                             ->label('Title')
                             ->placeholder('—'),
+                        // Feedback1 C1.4 — show the full hierarchy path and a
+                        // link to the parent series.
+                        TextEntry::make('hierarchy_path')
+                            ->label('Hierarchy')
+                            ->state(fn (?Series $record): string => $record?->qualifiedTitle() ?? '—')
+                            ->badge()
+                            ->color('gray'),
+                        TextEntry::make('parent.code')
+                            ->label('Parent series')
+                            ->url(fn (?Series $record): ?string => $record?->parent_id
+                                ? route('filament.admin.resources.series.view', ['record' => $record->parent_id])
+                                : null)
+                            ->placeholder('Top-level (no parent)'),
                         IconEntry::make('is_wills_series')
                             ->label('Wills series')
                             ->boolean(),
@@ -159,6 +207,20 @@ class SeriesResource extends Resource
                     ->searchable()),
                 $gc(Tables\Columns\TextColumn::make('title')
                     ->searchable()),
+                // Feedback1 C1.4 — full multi-level hierarchy path
+                // (e.g. "R › REG › RWL"), recursive over ancestors. Sorted off
+                // by default to keep the default grid compact; toggle on to see
+                // where each series sits in the tree.
+                Tables\Columns\TextColumn::make('hierarchy_path')
+                    ->label('Hierarchy')
+                    ->state(fn (Series $record): string => $record->qualifiedTitle())
+                    ->toggleable()
+                    ->badge()
+                    ->color('gray'),
+                $gc(Tables\Columns\TextColumn::make('parent.code')
+                    ->label('Parent')
+                    ->placeholder('—')
+                    ->toggleable(isToggledHiddenByDefault: true)),
                 $gc(Tables\Columns\IconColumn::make('is_wills_series')
                     ->boolean()),
                 $gc(Tables\Columns\IconColumn::make('is_active')
@@ -199,6 +261,25 @@ class SeriesResource extends Resource
                     ->placeholder('All')
                     ->trueLabel('Active only')
                     ->falseLabel('Inactive only'),
+                // Feedback1 C1.4 — narrow to root series, and pick a parent.
+                TernaryFilter::make('top_level')
+                    ->label('Top-level only')
+                    ->placeholder('All levels')
+                    ->trueLabel('Top-level series only')
+                    ->falseLabel('Sub-series only')
+                    ->queries(
+                        true: fn (Builder $q): Builder => $q->whereNull('parent_id'),
+                        false: fn (Builder $q): Builder => $q->whereNotNull('parent_id'),
+                        blank: fn (Builder $q): Builder => $q,
+                    ),
+                SelectFilter::make('parent_id')
+                    ->label('Parent series')
+                    ->options(fn (): array => Series::query()
+                        ->orderBy('code')
+                        ->get()
+                        ->mapWithKeys(fn (Series $s): array => [$s->getKey() => $s->qualifiedTitle()])
+                        ->all())
+                    ->searchable(),
             ])
             ->actions([
                 ViewAction::make(),
