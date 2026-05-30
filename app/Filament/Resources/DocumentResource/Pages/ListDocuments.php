@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace App\Filament\Resources\DocumentResource\Pages;
 
+use App\Filament\Concerns\FiltersExportColumns;
 use App\Filament\Imports\DocumentImporter;
 use App\Filament\Resources\DocumentResource;
 use App\Models\Document;
@@ -17,6 +18,8 @@ use Symfony\Component\HttpFoundation\StreamedResponse;
 
 class ListDocuments extends ListRecords
 {
+    use FiltersExportColumns;
+
     protected static string $resource = DocumentResource::class;
 
     /**
@@ -32,7 +35,10 @@ class ListDocuments extends ListRecords
         // call, Livewire payload tampering, …), the method itself rejects.
         abort_unless(auth()->user()?->can('view_any_document'), 403, 'Not authorized to export documents.');
 
-        $columns = [
+        // Full column map in canonical order. Keys are the field names consulted
+        // by FieldPermissions; values are the CSV header labels.
+        // Filter through FieldPermissions for the current user (RFQ §3.1.4).
+        $columns = self::visibleExportColumns([
             'identifier' => 'Identifier',
             'document_type' => 'Type',
             'creator' => 'Creator(s)',
@@ -41,7 +47,7 @@ class ListDocuments extends ListRecords
             'current_box' => 'Current box',
             'disinfestation_date' => 'Disinfestation date',
             'notes' => 'Notes',
-        ];
+        ]);
 
         $user = auth()->user();
         $repoCode = optional($user?->defaultRepository ?? null)->code ?? 'all';
@@ -67,23 +73,27 @@ class ListDocuments extends ListRecords
             fwrite($out, "\xEF\xBB\xBF");
             fputcsv($out, array_values($columns));
 
-            $query->orderBy('id')->chunk(500, function ($documents) use ($out): void {
+            $query->orderBy('id')->chunk(500, function ($documents) use ($out, $columns): void {
                 /** @var Collection<int, Document> $documents */
                 foreach ($documents as $doc) {
-                    fputcsv($out, [
-                        $this->sanitizeCsvCell($doc->identifier),
-                        $this->sanitizeCsvCell($doc->document_type),
-                        $this->sanitizeCsvCell(
+                    // Build a full cell map keyed by field name, then emit only
+                    // the visible columns (same keys as $columns) in order.
+                    $allCells = [
+                        'identifier' => $this->sanitizeCsvCell($doc->identifier),
+                        'document_type' => $this->sanitizeCsvCell($doc->document_type),
+                        'creator' => $this->sanitizeCsvCell(
                             $doc->authorities->pluck('surname')->filter()->implode('; ')
                         ),
-                        $this->sanitizeCsvCell($doc->series?->code),
+                        'series' => $this->sanitizeCsvCell($doc->series?->code),
                         // batch_number is an integer in DB — safe, but cast to string for fputcsv.
-                        (string) ($doc->batch?->batch_number ?? ''),
-                        $this->sanitizeCsvCell($doc->currentBox?->box_number),
+                        'batch' => (string) ($doc->batch?->batch_number ?? ''),
+                        'current_box' => $this->sanitizeCsvCell($doc->currentBox?->box_number),
                         // Date in canonical Y-m-d form — never starts with a CSV-dangerous char.
-                        $doc->disinfestation_date ? $doc->disinfestation_date->format('Y-m-d') : '',
-                        $this->sanitizeCsvCell($doc->notes),
-                    ]);
+                        'disinfestation_date' => $doc->disinfestation_date ? $doc->disinfestation_date->format('Y-m-d') : '',
+                        'notes' => $this->sanitizeCsvCell($doc->notes),
+                    ];
+
+                    fputcsv($out, array_intersect_key($allCells, $columns));
                 }
             });
 
