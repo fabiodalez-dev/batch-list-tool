@@ -33,6 +33,11 @@ class IdentifierHistoryRelationManager extends RelationManager
             Forms\Components\TextInput::make('previous_identifier')
                 ->required()->maxLength(64),
             Forms\Components\TextInput::make('new_identifier')->maxLength(64),
+            // Feedback1 Wave C2.5 — past / new volume numbers on the same row.
+            Forms\Components\TextInput::make('previous_volume')
+                ->label('Previous volume')->maxLength(64),
+            Forms\Components\TextInput::make('new_volume')
+                ->label('New volume')->maxLength(64),
             Forms\Components\DateTimePicker::make('changed_at')
                 ->default(now())
                 ->required(),
@@ -57,6 +62,18 @@ class IdentifierHistoryRelationManager extends RelationManager
                     ->searchable()
                     ->sortable()
                     ->copyable(),
+
+                Tables\Columns\TextColumn::make('previous_volume')
+                    ->label('Vol. from')
+                    ->searchable()
+                    ->toggleable()
+                    ->placeholder('—'),
+
+                Tables\Columns\TextColumn::make('new_volume')
+                    ->label('Vol. to')
+                    ->searchable()
+                    ->toggleable()
+                    ->placeholder('—'),
 
                 Tables\Columns\TextColumn::make('changed_at')
                     ->label('Changed')

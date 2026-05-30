@@ -17,7 +17,9 @@ use Filament\Schemas\Components\Section;
 use Filament\Schemas\Schema;
 use Filament\Tables;
 use Filament\Tables\Filters\SelectFilter;
+use Filament\Tables\Filters\TernaryFilter;
 use Filament\Tables\Table;
+use Illuminate\Database\Eloquent\Builder;
 
 class AccessionResource extends Resource
 {
@@ -56,6 +58,20 @@ class AccessionResource extends Resource
                             ->required()
                             ->maxLength(64),
                         Forms\Components\DatePicker::make('accession_date'),
+                        // Feedback1 C1.3 — Notary Accession Number, e.g.
+                        // "2025-124" (YYYY-NNN). Optional/nullable so existing
+                        // rows without a number keep loading and saving. The
+                        // mask guides input; the regex rule rejects malformed
+                        // values server-side with a friendly message.
+                        Forms\Components\TextInput::make('accession_number')
+                            ->label('Notary Accession Number')
+                            ->maxLength(32)
+                            ->placeholder('2025-124')
+                            ->helperText('Format: YYYY-NNN (e.g. 2025-124)')
+                            ->rules(['nullable', 'regex:/^\d{4}-\d{1,}$/'])
+                            ->validationMessages([
+                                'regex' => 'Use the format YYYY-NNN, e.g. 2025-124.',
+                            ]),
                     ]),
 
                 Section::make('Provenance & scope')
@@ -116,6 +132,10 @@ class AccessionResource extends Resource
                             ->label('Code')
                             ->badge()
                             ->color('primary')
+                            ->copyable()
+                            ->placeholder('—'),
+                        TextEntry::make('accession_number')
+                            ->label('Notary Accession Number')
                             ->copyable()
                             ->placeholder('—'),
                         TextEntry::make('accession_date')
@@ -194,6 +214,12 @@ class AccessionResource extends Resource
             ->columns([
                 Tables\Columns\TextColumn::make('code')
                     ->searchable(),
+                // Feedback1 C1.3 — Notary Accession Number, searchable.
+                Tables\Columns\TextColumn::make('accession_number')
+                    ->label('Notary Accession Number')
+                    ->searchable()
+                    ->sortable()
+                    ->placeholder('—'),
                 Tables\Columns\TextColumn::make('accession_date')
                     ->date()
                     ->sortable(),
@@ -239,6 +265,22 @@ class AccessionResource extends Resource
                     ->relationship('repository', 'code')
                     ->searchable()
                     ->preload(),
+                // Feedback1 C1.3 — quickly isolate accessions that do / do not
+                // carry a Notary Accession Number.
+                TernaryFilter::make('has_accession_number')
+                    ->label('Has Notary Accession Number')
+                    ->placeholder('All accessions')
+                    ->trueLabel('Has a number')
+                    ->falseLabel('No number')
+                    ->queries(
+                        true: fn (Builder $q): Builder => $q->whereNotNull('accession_number')
+                            ->where('accession_number', '!=', ''),
+                        false: fn (Builder $q): Builder => $q->where(
+                            fn (Builder $q) => $q->whereNull('accession_number')
+                                ->orWhere('accession_number', '=', '')
+                        ),
+                        blank: fn (Builder $q): Builder => $q,
+                    ),
             ])
             ->actions([
                 ViewAction::make(),

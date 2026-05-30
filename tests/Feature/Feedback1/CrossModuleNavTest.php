@@ -202,6 +202,8 @@ it('allows the same box_number in a different batch (B5)', function (): void {
             'box_type' => 'RAS',
             'batch_id' => $batchB->id,
             'box_number' => '7',
+            // Feedback1 Wave C2.1 — a RAS box now requires a barcode.
+            'barcode' => 'BC-CMN-7',
             'is_legacy' => false,
             'barcode_status' => 'IN',
         ])

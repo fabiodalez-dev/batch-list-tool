@@ -21,6 +21,7 @@ use Filament\Schemas\Schema;
 use Filament\Tables;
 use Filament\Tables\Filters\Filter;
 use Filament\Tables\Filters\QueryBuilder;
+use Filament\Tables\Filters\QueryBuilder\Constraints\DateConstraint;
 use Filament\Tables\Filters\QueryBuilder\Constraints\NumberConstraint;
 use Filament\Tables\Filters\QueryBuilder\Constraints\SelectConstraint;
 use Filament\Tables\Filters\QueryBuilder\Constraints\TextConstraint;
@@ -147,6 +148,13 @@ class AuthorityResource extends Resource
                                     }
                                 };
                             })),
+                        // Feedback1 C1.2 — optional NTG (Notary to Government)
+                        // date. Presence of a value is what the "worked as NTG"
+                        // filter keys off.
+                        $g(Forms\Components\DatePicker::make('ntg_date')
+                            ->label('NTG date')
+                            ->helperText('Date the creator worked as Notary to Government (if applicable)')
+                            ->native(false)),
                     ]),
 
                 Section::make('Notes')
@@ -222,6 +230,12 @@ class AuthorityResource extends Resource
                                 return '—';
                             })
                             ->columnSpanFull(),
+                        // Feedback1 C1.2 — surface the NTG date on the View page.
+                        TextEntry::make('ntg_date')
+                            ->label('NTG date')
+                            ->date()
+                            ->placeholder('—')
+                            ->columnSpanFull(),
                     ]),
 
                 Section::make('Notes')
@@ -287,6 +301,13 @@ class AuthorityResource extends Resource
                 $gc(Tables\Columns\TextColumn::make('practice_dates_end')
                     ->numeric()
                     ->sortable()),
+                // Feedback1 C1.2 — NTG date column, toggleable (off by default
+                // to keep the default grid focused on identity columns).
+                $gc(Tables\Columns\TextColumn::make('ntg_date')
+                    ->label('NTG date')
+                    ->date()
+                    ->sortable()
+                    ->toggleable(isToggledHiddenByDefault: true)),
                 Tables\Columns\TextColumn::make('created_at')
                     ->dateTime()
                     ->sortable()
@@ -329,6 +350,10 @@ class AuthorityResource extends Resource
                         NumberConstraint::make('practice_dates_end')
                             ->label('Practice end year')
                             ->integer(),
+                        // Feedback1 C1.2 — NTG date as a date constraint
+                        // (before/after/between/is-set) inside the builder.
+                        DateConstraint::make('ntg_date')
+                            ->label('NTG date'),
                     ]),
 
                 // Feedback1 Wave B (B2) — "worked between X and Y" helper. Two
@@ -391,6 +416,19 @@ class AuthorityResource extends Resource
                             fn (Builder $q) => $q->whereNull('alternative_identifier')
                                 ->orWhere('alternative_identifier', '=', '')
                         ),
+                        blank: fn (Builder $q): Builder => $q,
+                    ),
+
+                // Feedback1 C1.2 — "filter which creators worked as NTG ie:
+                // have a NTG date associated". Presence of ntg_date == NTG.
+                TernaryFilter::make('worked_as_ntg')
+                    ->label('Worked as NTG')
+                    ->placeholder('All creators')
+                    ->trueLabel('Worked as NTG')
+                    ->falseLabel('Never NTG')
+                    ->queries(
+                        true: fn (Builder $q): Builder => $q->whereNotNull('ntg_date'),
+                        false: fn (Builder $q): Builder => $q->whereNull('ntg_date'),
                         blank: fn (Builder $q): Builder => $q,
                     ),
             ])
