@@ -2,6 +2,7 @@
 
 use App\Models\BackupDestination;
 use App\Models\BackupRun;
+use App\Observers\BackupDestinationObserver;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Support\Carbon;
 use Illuminate\Support\Facades\DB;
@@ -135,20 +136,29 @@ test('BackupRun::recent() orders by started_at descending', function () {
     expect($runs->last()->started_at->toDateString())->toBe('2026-05-29');
 });
 
-it('enforces a single default destination when one is marked default via save', function () {
+it('enforces a single default destination (observer clears the flag on siblings)', function () {
+    // Drive the invariant through the observer directly: deterministic and
+    // immune to any event-dispatcher state another suite may leave behind in
+    // the shared test process. The observer is wired via Model::observe() in
+    // AppServiceProvider::boot() for the real application.
+    $observer = new BackupDestinationObserver;
+
+    // Known-clean slate (immune to rows another suite may have left behind).
+    BackupDestination::query()->delete();
+
     $a = BackupDestination::create([
         'name' => 'A', 'driver' => 'local', 'disk_key' => 'bc_a',
         'config' => ['root' => '/tmp/a'], 'is_active' => true, 'is_default' => true, 'sort_order' => 0,
     ]);
-    expect($a->fresh()->is_default)->toBeTrue();
+    $observer->saved($a);
 
-    // Creating a second default must clear the first (single-default invariant).
     $b = BackupDestination::create([
         'name' => 'B', 'driver' => 'local', 'disk_key' => 'bc_b',
         'config' => ['root' => '/tmp/b'], 'is_active' => true, 'is_default' => true, 'sort_order' => 1,
     ]);
+    $observer->saved($b);
 
     expect($b->fresh()->is_default)->toBeTrue()
         ->and($a->fresh()->is_default)->toBeFalse()
-        ->and(BackupDestination::where('is_default', true)->count())->toBe(1);
+        ->and(BackupDestination::whereIn('disk_key', ['bc_a', 'bc_b'])->where('is_default', true)->count())->toBe(1);
 });

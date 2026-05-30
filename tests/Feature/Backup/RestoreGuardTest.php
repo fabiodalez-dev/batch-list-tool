@@ -148,6 +148,13 @@ it('takes the safety snapshot before attempting any import', function () {
     // snapshot command ran first.
     $service = new class extends RestoreDatabase
     {
+        protected function materialiseArchive(string $disk, string $relativePath): string
+        {
+            // Skip the real Storage read; the ordering probe only cares that the
+            // snapshot ran before the import.
+            return $relativePath;
+        }
+
         protected function extractSqlDump(string $zipPath): string
         {
             return tempnam(sys_get_temp_dir(), 'probe') . '.sql';
@@ -246,6 +253,8 @@ it('materialises a remote-disk archive into a local temp file before extracting'
     $zip->addFromString('db-dumps/dump.sql', 'SELECT 1;');
     $zip->close();
     Storage::disk('remote_bc')->put('Laravel/backup.zip', file_get_contents($zipPath));
+    // $zipPath is a tempnam() path created two lines above — not user input.
+    // nosemgrep: php.lang.security.unlink-use.unlink-use
     @unlink($zipPath);
 
     // Subclass that skips the real safety snapshot + import, so we only exercise

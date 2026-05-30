@@ -32,15 +32,24 @@ class BackupDestinations
      */
     public static function register(): void
     {
-        // Pre-migration safety: the table may not exist yet (fresh install,
-        // `migrate:fresh` in tests before RefreshDatabase has run, etc.).
-        if (! Schema::hasTable('backup_destinations')) {
-            return;
-        }
+        // Runs in the service-provider boot, so it must NEVER throw: the DB may
+        // be unreachable (a transient outage, CI static analysis, a down dev DB)
+        // and Schema::hasTable() itself raises on "connection refused" — not just
+        // on a missing table. A throw here would white-screen the whole app.
+        try {
+            // Pre-migration safety: the table may not exist yet (fresh install,
+            // `migrate:fresh` in tests before RefreshDatabase has run, etc.).
+            if (! Schema::hasTable('backup_destinations')) {
+                return;
+            }
 
-        foreach (BackupDestination::active()->get() as $destination) {
-            self::applyDisk($destination);
-            self::appendBackupDisk($destination->disk_key);
+            foreach (BackupDestination::active()->get() as $destination) {
+                self::applyDisk($destination);
+                self::appendBackupDisk($destination->disk_key);
+            }
+        } catch (\Throwable) {
+            // Destinations simply aren't registered this boot — spatie falls
+            // back to the config/backup.php defaults (the local disk).
         }
     }
 

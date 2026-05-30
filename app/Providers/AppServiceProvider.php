@@ -4,8 +4,10 @@ namespace App\Providers;
 
 use App\Listeners\LogAuthenticationEvent;
 use App\Listeners\RecordBackupRun;
+use App\Models\BackupDestination;
 use App\Models\Document;
 use App\Models\User;
+use App\Observers\BackupDestinationObserver;
 use App\Observers\DocumentObserver;
 use App\Settings\AuditSettings;
 use App\Settings\BackupSettings;
@@ -149,6 +151,12 @@ class AppServiceProvider extends ServiceProvider
         // Self-guards on the backup_destinations table, so it is safe to call
         // here even on a fresh install before migrations have run.
         BackupDestinations::register();
+
+        // Single-default invariant for backup destinations. Registered here
+        // (re-runs on every app refresh, including per-test rebuilds) rather
+        // than in the model's booted() closure, which would bind to a stale
+        // event dispatcher across tests.
+        BackupDestination::observe(BackupDestinationObserver::class);
     }
 
     /**
