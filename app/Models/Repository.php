@@ -25,7 +25,7 @@ class Repository extends Model implements AuditableContract
     public function users(): BelongsToMany
     {
         return $this->belongsToMany(User::class)
-            ->withPivot('is_default')
+            ->withPivot('is_default', 'role')
             ->withTimestamps();
     }
 

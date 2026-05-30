@@ -75,8 +75,33 @@ class User extends Authenticatable implements AuditableContract, FilamentUser
     public function repositories(): BelongsToMany
     {
         return $this->belongsToMany(Repository::class)
-            ->withPivot('is_default')
+            ->withPivot('is_default', 'role')
             ->withTimestamps();
+    }
+
+    /**
+     * Resolve the effective role for a given repository.
+     *
+     * Priority:
+     *  1. super_admin always wins — the global role is returned unchanged.
+     *  2. A non-null pivot `role` is returned as-is.
+     *  3. Falls back to the user's first global Spatie role (e.g. admin/editor/viewer).
+     */
+    public function effectiveRoleFor(Repository $repository): ?string
+    {
+        if ($this->hasRole('super_admin')) {
+            return 'super_admin';
+        }
+
+        $pivot = $this->repositories()
+            ->where('repositories.id', $repository->getKey())
+            ->first()
+            ?->pivot;
+
+        /** @var string|null $pivotRole */
+        $pivotRole = $pivot?->getAttribute('role');
+
+        return $pivotRole ?? $this->getRoleNames()->first();
     }
 
     public function canAccessPanel(Panel $panel): bool
