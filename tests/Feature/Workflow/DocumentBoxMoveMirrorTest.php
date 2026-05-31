@@ -123,6 +123,72 @@ it('re-mirrors a document moved into a PERM_OUT box (reflects PERM_OUT + backfil
         ->and($after->disinfestation_date?->toDateString())->toBe('2026-02-20');
 });
 
+it('clears the disinfestation_date when a document moves out of a PERM_OUT box into a non-PERM_OUT box', function (): void {
+    actingAs(User::factory()->create()->assignRole('super_admin'));
+
+    [$repo, $batchPerm, $boxPerm, $series] = dbmm_ctx('IN');
+    // Reconfigure the first box as PERM_OUT with a date.
+    $boxPerm->update(['barcode_status' => 'PERM_OUT', 'disinfestation_date' => '2026-02-20']);
+
+    $batchIn = Batch::factory()->create(['repository_id' => $repo->id]);
+    $boxIn = Box::factory()->create([
+        'batch_id' => $batchIn->id,
+        'box_type' => 'RAS',
+        'barcode_status' => 'IN',
+        'barcode' => 'BC-IN-MIRROR',
+    ]);
+
+    $doc = Document::factory()->create([
+        'current_box_id' => $boxPerm->id,
+        'batch_id' => $batchPerm->id,
+        'series_id' => $series->id,
+        'repository_id' => $repo->id,
+        'barcode_status' => 'PERM_OUT',
+        'disinfestation_date' => '2026-02-20',
+    ]);
+
+    // Move OUT of the PERM_OUT box into an IN box: the full re-mirror must drop
+    // both the PERM_OUT status and the now-irrelevant disinfestation_date.
+    $doc->current_box_id = $boxIn->id;
+    $doc->save();
+
+    $moved = Document::find($doc->id);
+    expect($moved->barcode_status)->toBe('IN')
+        ->and($moved->disinfestation_date)->toBeNull()
+        ->and((int) $moved->batch_id)->toBe((int) $boxIn->batch_id);
+});
+
+it('realigns the disinfestation_date to the destination PERM_OUT box even when the document already had a different date', function (): void {
+    actingAs(User::factory()->create()->assignRole('super_admin'));
+
+    [$repo, $batchIn, $boxIn, $series] = dbmm_ctx('IN');
+
+    $batchPerm = Batch::factory()->create(['repository_id' => $repo->id]);
+    $boxPerm = Box::factory()->create([
+        'batch_id' => $batchPerm->id,
+        'box_type' => 'RAS',
+        'barcode_status' => 'PERM_OUT',
+        'disinfestation_date' => '2026-03-15',
+        'barcode' => 'BC-PERM-REALIGN',
+    ]);
+
+    $doc = Document::factory()->create([
+        'current_box_id' => $boxIn->id,
+        'batch_id' => $batchIn->id,
+        'series_id' => $series->id,
+        'repository_id' => $repo->id,
+        'barcode_status' => 'IN',
+        'disinfestation_date' => '2025-01-01', // a stale, different date
+    ]);
+
+    $doc->current_box_id = $boxPerm->id;
+    $doc->save();
+
+    $moved = Document::find($doc->id);
+    expect($moved->barcode_status)->toBe('PERM_OUT')
+        ->and($moved->disinfestation_date?->toDateString())->toBe('2026-03-15');
+});
+
 it('does not create extra document barcode-history rows or recurse on a box move', function (): void {
     actingAs(User::factory()->create()->assignRole('super_admin'));
 
@@ -232,4 +298,40 @@ it('locks current_box_id on the document edit form (disabled, not dehydrated)', 
         ->assertHasNoFormErrors();
 
     expect((int) Document::find($doc->id)->current_box_id)->toBe((int) $boxIn->id);
+});
+
+it('locks batch_id on the document edit form (disabled, not dehydrated)', function (): void {
+    $repo = Repository::factory()->create();
+    $user = User::factory()->create(['is_active' => true, 'default_repository_id' => $repo->id]);
+    $user->assignRole('super_admin');
+    $user->repositories()->syncWithoutDetaching([$repo->id => ['is_default' => true]]);
+    actingAs($user);
+
+    $batchIn = Batch::factory()->create(['repository_id' => $repo->id]);
+    $boxIn = Box::factory()->create([
+        'batch_id' => $batchIn->id, 'box_type' => 'RAS',
+        'barcode_status' => 'IN', 'barcode' => 'BC-LOCKB-IN',
+    ]);
+    $series = Series::factory()->create();
+
+    DocumentType::firstOrCreate(['name' => 'TEST'], ['is_active' => true]);
+
+    $doc = Document::factory()->create([
+        'current_box_id' => $boxIn->id,
+        'batch_id' => $batchIn->id,
+        'series_id' => $series->id,
+        'repository_id' => $repo->id,
+        'identifier' => 'LOCKB-1',
+        'document_type' => 'TEST',
+        'barcode_status' => 'IN',
+    ]);
+
+    // batch_id is disabled on edit (it follows the box via MoveToBoxAction).
+    // A save must not change the batch.
+    Livewire::test(EditDocument::class, ['record' => $doc->getRouteKey()])
+        ->assertFormFieldIsDisabled('batch_id')
+        ->call('save')
+        ->assertHasNoFormErrors();
+
+    expect((int) Document::find($doc->id)->batch_id)->toBe((int) $batchIn->id);
 });

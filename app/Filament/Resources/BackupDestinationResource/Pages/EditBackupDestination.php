@@ -29,7 +29,7 @@ class EditBackupDestination extends EditRecord
     protected function mutateFormDataBeforeFill(array $data): array
     {
         if (isset($data['config']) && is_array($data['config'])) {
-            foreach (['password', 'passphrase', 'secret'] as $secret) {
+            foreach (BackupDestinationResource::SECRET_KEYS as $secret) {
                 unset($data['config'][$secret]);
             }
         }
@@ -53,7 +53,7 @@ class EditBackupDestination extends EditRecord
 
         $config = is_array($data['config'] ?? null) ? $data['config'] : [];
 
-        foreach (['password', 'passphrase', 'secret'] as $secret) {
+        foreach (BackupDestinationResource::SECRET_KEYS as $secret) {
             if (! array_key_exists($secret, $config) && array_key_exists($secret, $existing)) {
                 $config[$secret] = $existing[$secret];
             }

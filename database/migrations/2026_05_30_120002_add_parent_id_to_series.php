@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 use Illuminate\Database\Migrations\Migration;
 use Illuminate\Database\Schema\Blueprint;
+use Illuminate\Support\Facades\Log;
 use Illuminate\Support\Facades\Schema;
 
 /**
@@ -46,8 +47,16 @@ return new class extends Migration
                     ->on('series')
                     ->nullOnDelete();
             });
-        } catch (Throwable) {
-            // FK already present (idempotent re-run) — nothing to do.
+        } catch (Throwable $e) {
+            // Expected on an idempotent re-run where the FK already exists
+            // (MariaDB: "Duplicate foreign key constraint name"). Log at
+            // warning so a GENUINE failure (e.g. type mismatch, missing
+            // referenced table) is not silently swallowed and surfaces in the
+            // deploy logs for triage. The migration intentionally continues —
+            // a duplicate FK is a no-op, not a failure.
+            Log::warning('add_parent_id_to_series: self FK add skipped/failed (likely already present)', [
+                'exception' => $e->getMessage(),
+            ]);
         }
     }
 

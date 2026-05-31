@@ -65,15 +65,18 @@ it('aborts db:refresh-safe on the production environment', function () {
     // migrate:fresh runs.
     app()->instance('env', 'production');
 
-    // --force so the only thing that can stop it is the production guard.
-    $exit = Artisan::call('db:refresh-safe', ['--force' => true]);
+    try {
+        // --force so the only thing that can stop it is the production guard.
+        $exit = Artisan::call('db:refresh-safe', ['--force' => true]);
 
-    // 1 === Symfony\Component\Console\Command\Command::FAILURE
-    expect($exit)->toBe(1)
-        ->and(Artisan::output())->toContain('refused on the production environment');
-
-    // Restore the testing environment for any later assertions in this test.
-    app()->instance('env', 'testing');
+        // 1 === Symfony\Component\Console\Command\Command::FAILURE
+        expect($exit)->toBe(1)
+            ->and(Artisan::output())->toContain('refused on the production environment');
+    } finally {
+        // Always restore the testing environment, even if an assertion above
+        // fails, so a failure here does not leak 'production' into later tests.
+        app()->instance('env', 'testing');
+    }
 });
 
 it('registers db:refresh-safe with the expected signature options', function () {

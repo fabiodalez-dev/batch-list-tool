@@ -128,7 +128,7 @@ class RestoreDatabase
             throw new RuntimeException('Could not open backup archive for reading: ' . $relativePath);
         }
 
-        $localPath = tempnam(sys_get_temp_dir(), 'bl-restore-zip-') . '.zip';
+        $localPath = $this->makeTempFile('bl-restore-zip-', '.zip');
         $out = fopen($localPath, 'wb');
 
         if ($out === false) {
@@ -145,6 +145,44 @@ class RestoreDatabase
         }
 
         return $localPath;
+    }
+
+    /**
+     * Create a uniquely-named temp file carrying the given extension, returning
+     * its path.
+     *
+     * tempnam() atomically creates a file WITHOUT the extension (e.g.
+     * /tmp/bl-restore-AbC12); appending '.sql' to that string yields a path to
+     * a DIFFERENT, non-existent file and orphans the bare tempnam file. We
+     * instead rename the file tempnam() actually created onto the
+     * extension-bearing path, so exactly one temp file exists and it is the one
+     * the caller (and safelyDeleteTempFile) operates on. Stays inside
+     * sys_get_temp_dir() so the cleanup confinement still holds.
+     *
+     * @throws RuntimeException if tempnam() fails or the rename fails.
+     */
+    protected function makeTempFile(string $prefix, string $extension): string
+    {
+        $base = tempnam(sys_get_temp_dir(), $prefix);
+
+        if ($base === false) {
+            throw new RuntimeException('Could not create a temporary file for the restore.');
+        }
+
+        $withExt = $base . $extension;
+
+        // rename() moves the actually-created temp file onto the extensioned
+        // path (same directory), leaving no orphan. If it fails, clean up the
+        // bare file and abort.
+        if (! @rename($base, $withExt)) {
+            // $base is the tempnam() path under sys_get_temp_dir(); not user input.
+            // nosemgrep: php.lang.security.unlink-use.unlink-use
+            @unlink($base);
+
+            throw new RuntimeException('Could not prepare a temporary file for the restore.');
+        }
+
+        return $withExt;
     }
 
     /**
@@ -247,7 +285,7 @@ class RestoreDatabase
                 throw new RuntimeException('Could not read SQL dump from the archive: ' . $entry);
             }
 
-            $sqlPath = tempnam(sys_get_temp_dir(), 'bl-restore-') . '.sql';
+            $sqlPath = $this->makeTempFile('bl-restore-', '.sql');
 
             if (file_put_contents($sqlPath, $contents) === false) {
                 throw new RuntimeException('Could not write extracted SQL dump to a temporary file.');

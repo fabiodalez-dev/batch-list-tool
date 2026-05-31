@@ -231,7 +231,20 @@ class DocumentResource extends Resource
                     ->columnSpanFull()
                     ->columns(2)
                     ->schema([
-                        $g(SearchableSelects::batch('batch_id', 'batch')),
+                        // F1 (review finding) — batch_id is READ-ONLY on EDIT,
+                        // mirroring current_box_id below. The audited
+                        // MoveToBoxAction keeps batch_id in sync with the box on
+                        // every move; leaving the field editable would let an
+                        // operator point a document at one box but a DIFFERENT
+                        // batch, bypassing that invariant. On CREATE it stays
+                        // editable (initial placement). Dehydrated only on create
+                        // so an edit never writes a stale value.
+                        $g(SearchableSelects::batch('batch_id', 'batch')
+                            ->disabled(fn (string $operation): bool => $operation === 'edit')
+                            ->dehydrated(fn (string $operation): bool => $operation === 'create')
+                            ->helperText(fn (string $operation): ?string => $operation === 'edit'
+                                ? 'Locked. Use the "Move to box" action to change the box; the batch follows the box automatically (writes an audited movement record).'
+                                : 'Initial batch for this document. After creation, the batch follows the box via the "Move to box" action.')),
                         // F1 (review finding) — current_box_id is READ-ONLY on
                         // EDIT so every box move is forced through the audited
                         // MoveToBoxAction (which writes a BoxMovement, keeps
