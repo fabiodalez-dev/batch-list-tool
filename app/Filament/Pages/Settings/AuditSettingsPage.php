@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace App\Filament\Pages\Settings;
 
+use App\Filament\Concerns\ExplainsPage;
 use App\Settings\AuditSettings;
 use Filament\Actions\Action;
 use Filament\Forms\Components\TextInput;
@@ -28,6 +29,8 @@ use Filament\Schemas\Schema;
  */
 class AuditSettingsPage extends Page
 {
+    use ExplainsPage;
+
     /**
      * Form state, bound to the Filament schema via statePath('data').
      *

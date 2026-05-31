@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace App\Filament\Pages;
 
+use App\Filament\Concerns\ExplainsPage;
 use App\Models\FieldPermissionOverride;
 use App\Support\FieldPermissions;
 use App\Support\RoleLabels;
@@ -32,6 +33,8 @@ use Illuminate\Support\Collection;
  */
 class FieldPermissionMatrix extends Page
 {
+    use ExplainsPage;
+
     /**
      * All four operator roles, in privilege order, for display.
      *

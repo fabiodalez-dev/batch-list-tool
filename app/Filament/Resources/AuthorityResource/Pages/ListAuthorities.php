@@ -2,6 +2,7 @@
 
 namespace App\Filament\Resources\AuthorityResource\Pages;
 
+use App\Filament\Concerns\ExplainsPage;
 use App\Filament\Imports\AuthorityImporter;
 use App\Filament\Resources\AuthorityResource;
 use App\Models\Authority;
@@ -12,6 +13,8 @@ use HayderHatem\FilamentExcelImport\Actions\FullImportAction;
 
 class ListAuthorities extends ListRecords
 {
+    use ExplainsPage;
+
     protected static string $resource = AuthorityResource::class;
 
     /**

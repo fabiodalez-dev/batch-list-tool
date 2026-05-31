@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace App\Filament\Pages\Auth;
 
+use App\Filament\Concerns\ExplainsPage;
 use App\Models\User;
 use Filament\Actions\Action;
 use Filament\Forms\Components\TextInput;
@@ -45,6 +46,8 @@ use Laravel\Fortify\Actions\EnableTwoFactorAuthentication;
  */
 class TwoFactorEnrolment extends Page
 {
+    use ExplainsPage;
+
     /**
      * @var array<string, mixed>
      */

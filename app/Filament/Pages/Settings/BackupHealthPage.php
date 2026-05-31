@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace App\Filament\Pages\Settings;
 
 use App\Actions\Backup\RestoreDatabase;
+use App\Filament\Concerns\ExplainsPage;
 use App\Filament\Resources\BackupDestinationResource;
 use App\Models\BackupRun;
 use App\Settings\BackupSettings;
@@ -45,6 +46,8 @@ use Illuminate\Validation\ValidationException;
  */
 class BackupHealthPage extends Page
 {
+    use ExplainsPage;
+
     /**
      * Form state, bound to the Filament schema via statePath('data').
      *

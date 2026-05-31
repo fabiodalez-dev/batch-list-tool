@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace App\Filament\Pages\Auth;
 
+use App\Filament\Concerns\ExplainsPage;
 use App\Models\User;
 use Filament\Forms\Components\Select;
 use Filament\Schemas\Schema;
@@ -18,6 +19,8 @@ use Illuminate\Validation\ValidationException;
  */
 class EditProfile extends \Filament\Auth\Pages\EditProfile
 {
+    use ExplainsPage;
+
     /**
      * Append the default_repository_id select after the stock fields.
      */

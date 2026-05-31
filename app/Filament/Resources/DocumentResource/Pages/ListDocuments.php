@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace App\Filament\Resources\DocumentResource\Pages;
 
+use App\Filament\Concerns\ExplainsPage;
 use App\Filament\Concerns\FiltersExportColumns;
 use App\Filament\Imports\DocumentImporter;
 use App\Filament\Resources\DocumentResource;
@@ -18,6 +19,7 @@ use Symfony\Component\HttpFoundation\StreamedResponse;
 
 class ListDocuments extends ListRecords
 {
+    use ExplainsPage;
     use FiltersExportColumns;
 
     protected static string $resource = DocumentResource::class;

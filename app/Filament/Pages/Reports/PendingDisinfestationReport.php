@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace App\Filament\Pages\Reports;
 
+use App\Filament\Concerns\ExplainsPage;
 use App\Filament\Pages\Reports\Concerns\CapsExportRows;
 use App\Filament\Pages\Reports\Concerns\HasReportTemplates;
 use App\Filament\Pages\Reports\Filters\DateRangeFilter;
@@ -39,6 +40,7 @@ use Symfony\Component\HttpFoundation\StreamedResponse;
 class PendingDisinfestationReport extends Page implements HasTable
 {
     use CapsExportRows;
+    use ExplainsPage;
     use HasReportTemplates;
     use InteractsWithTable;
 

@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace App\Filament\Pages\Reports;
 
+use App\Filament\Concerns\ExplainsPage;
 use App\Filament\Pages\Reports\Concerns\HasReportTemplates;
 use App\Filament\Resources\DocumentResource\RelationManagers\FlagsRelationManager;
 use App\Models\DocumentFlag;
@@ -43,6 +44,7 @@ use Symfony\Component\HttpFoundation\StreamedResponse;
  */
 class FlagsByTypeReport extends Page implements HasTable
 {
+    use ExplainsPage;
     use HasReportTemplates;
     use InteractsWithTable;
 

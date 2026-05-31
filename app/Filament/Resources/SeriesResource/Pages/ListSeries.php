@@ -2,6 +2,7 @@
 
 namespace App\Filament\Resources\SeriesResource\Pages;
 
+use App\Filament\Concerns\ExplainsPage;
 use App\Filament\Imports\SeriesImporter;
 use App\Filament\Resources\SeriesResource;
 use App\Models\Series;
@@ -12,6 +13,8 @@ use HayderHatem\FilamentExcelImport\Actions\FullImportAction;
 
 class ListSeries extends ListRecords
 {
+    use ExplainsPage;
+
     protected static string $resource = SeriesResource::class;
 
     /**

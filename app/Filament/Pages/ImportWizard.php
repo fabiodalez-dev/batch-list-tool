@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace App\Filament\Pages;
 
+use App\Filament\Concerns\ExplainsPage;
 use App\Filament\Imports\AuthorityImporter;
 use App\Filament\Imports\BatchImporter;
 use App\Filament\Imports\BoxImporter;
@@ -85,6 +86,8 @@ use Symfony\Component\HttpFoundation\StreamedResponse;
  */
 class ImportWizard extends Page
 {
+    use ExplainsPage;
+
     /**
      * Map of `import_type` keys → the Importer class that handles them.
      *
