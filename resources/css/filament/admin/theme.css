@@ -253,24 +253,50 @@
 }
 
 /*
- * Table-action links ("View", "View documents", …) with NO semantic colour
- * fall through to `.fi-link { color: var(--brand-orange-700) }` — a dark brown
- * (chosen to read on the cream surface). The brand 700/800 steps are NOT
- * remapped for dark mode (only 50/100/200 are, as backgrounds), so in the
- * actions column they render dark-on-dark and become illegible.
+ * Dark-mode action links (the "View / Edit / Move / Mark as destroyed" column).
  *
- * Pin them to the light brand steps (400 → 300 on hover, both untouched by the
- * dark remap). Scoped with :not([class*="fi-color"]) so the SEMANTIC links
- * (Edit=primary, Move=warning, Mark-as-destroyed=danger) keep the light
- * `dark:fi-text-color-*` shade Filament already applies — this rule must not
- * flatten them all to one colour.
+ * Two failure modes were in play:
+ *  1. Links with NO semantic colour fall through to `.fi-link { color:
+ *     var(--brand-orange-700) }` — a dark brown tuned for the cream surface,
+ *     not remapped for dark mode → dark-on-dark.
+ *  2. Links WITH a semantic colour resolve, via Filament's own
+ *     `.fi-link.fi-color:where(.dark,*)` rule, to `dark:fi-text-color-300/400`
+ *     → primary/warning/danger-300, muted mid-tones that read as "still dark"
+ *     on the warm dark surface.
+ *
+ * Fix: pin BOTH to clearly light shades. Plain + primary share one warm light
+ * tan; the other families get a light shade of their own hue so they stay
+ * semantic. Specificity `.dark .fi-link.fi-color-NAME` (0,3,0) beats Filament's
+ * `.fi-link.fi-color` (0,2,0), so these win deterministically.
  */
-.dark .fi-link:not([class*="fi-color"]) {
-    color: var(--brand-orange-400);
+.dark .fi-link:not([class*="fi-color"]),
+.dark .fi-link.fi-color-primary {
+    color: oklch(80% 0.085 58);
 }
 
-.dark .fi-link:not([class*="fi-color"]):hover {
-    color: var(--brand-orange-300);
+.dark .fi-link.fi-color-warning {
+    color: oklch(83% 0.130 85);
+}
+
+.dark .fi-link.fi-color-danger {
+    color: oklch(74% 0.150 25);
+}
+
+.dark .fi-link.fi-color-success {
+    color: oklch(78% 0.130 150);
+}
+
+.dark .fi-link.fi-color-info {
+    color: oklch(78% 0.100 240);
+}
+
+.dark .fi-link.fi-color-gray {
+    color: var(--gray-800);
+}
+
+.dark .fi-link:not([class*="fi-color"]):hover,
+.dark .fi-link[class*="fi-color"]:hover {
+    filter: brightness(1.12);
 }
 
 /* ------------------------------------------------------------------ */
@@ -678,15 +704,25 @@ input.fi-input {
     background-color: var(--warm-warning-600);
 }
 
+/* Brand colour applies only to links WITHOUT a semantic fi-color-* modifier.
+   A hard `color` here would otherwise override Filament's own colour system
+   (.fi-link.fi-color → var(--text)/var(--dark-text)) and flatten the semantic
+   action links to brown. Font-weight + hover underline stay global. */
 .fi-link {
-    color: var(--brand-orange-700);
     font-weight: 500;
 }
 
+.fi-link:not([class*="fi-color"]) {
+    color: var(--brand-orange-700);
+}
+
 .fi-link:hover {
-    color: var(--brand-orange-800);
     text-decoration: underline;
     text-underline-offset: 2px;
+}
+
+.fi-link:not([class*="fi-color"]):hover {
+    color: var(--brand-orange-800);
 }
 
 /* --- Badges / status pills ----------------------------------------- */
