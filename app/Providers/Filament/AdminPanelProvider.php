@@ -43,11 +43,12 @@ class AdminPanelProvider extends PanelProvider
             ->id('admin')
             ->path('admin')
             ->brandName($brandName)
-            // Square NAf foundation mark (raster). Square aspect ratio needs a
-            // taller height than the previous horizontal wordmark would have
-            // tolerated; 2.25rem keeps the mark legible without breaking the
-            // 64-px topbar vertical rhythm.
+            // Official NAf (Notarial Archives Foundation) wordmark. Colour
+            // (taupe) variant on the light shell; white-reversed variant in
+            // dark mode so it reads on the dark green chrome. Both served
+            // locally from /images (no CDN).
             ->brandLogo($brandLogo)
+            ->darkModeBrandLogo(asset('images/brand-logo-dark.png'))
             ->brandLogoHeight($brandLogoHeight)
             // RFQ §3.1.7 hardening — TwoFactorLogin is a stock Login subclass
             // that re-routes users with a confirmed TOTP secret to Fortify's
@@ -81,24 +82,23 @@ class AdminPanelProvider extends PanelProvider
                 PanelsRenderHook::GLOBAL_SEARCH_AFTER,
                 fn (): View => view('filament.topbar.repository-switcher'),
             )
-            // Brand palette — dusty-sandstone. 500 step (#A5613D) reads
-            // "thoughtful spice" not "brand orange". Lifted from the
-            // editorial/spa register: paper-white shell + minimal warm
-            // accent. Steps mirror --brand-orange-* in
+            // Brand palette — NAf slate green. 500 step (#4A6F77) is the
+            // official "ink-chromatography" green from the NRA & NAf 2024
+            // brand guidelines. Steps mirror --brand-* in
             // resources/css/filament/admin/theme.css.
             ->colors([
                 'primary' => [
-                    50 => '#FBF3EC',
-                    100 => '#F4E2D5',
-                    200 => '#E5C2A8',
-                    300 => '#D29D7A',
-                    400 => '#BF7B55',
-                    500 => '#A5613D',
-                    600 => '#874C2E',
-                    700 => '#663823',
-                    800 => '#442416',
-                    900 => '#2A170E',
-                    950 => '#170B06',
+                    50 => '#EFF3F4',
+                    100 => '#DBE5E7',
+                    200 => '#BCCDD0',
+                    300 => '#95AFB4',
+                    400 => '#6E9097',
+                    500 => '#4A6F77',
+                    600 => '#3E5D64',
+                    700 => '#334A50',
+                    800 => '#2B3D42',
+                    900 => '#233236',
+                    950 => '#18262A',
                 ],
             ])
             ->discoverResources(in: app_path('Filament/Resources'), for: 'App\\Filament\\Resources')
@@ -147,7 +147,7 @@ class AdminPanelProvider extends PanelProvider
         try {
             $settings = app(BrandingSettings::class);
 
-            $brandName = $settings->brand_name ?: 'Batch List Tool';
+            $brandName = $settings->brand_name ?: 'NAf';
             $brandLogoHeight = $settings->logo_height ?: '2.25rem';
 
             // Use the stored upload path only when it resolves to a locally
@@ -164,7 +164,7 @@ class AdminPanelProvider extends PanelProvider
             }
         } catch (\Throwable) {
             // Settings table missing (fresh install, migration not yet run).
-            $brandName = 'Batch List Tool';
+            $brandName = 'NAf';
             $brandLogo = asset('images/brand-logo.png');
             $brandLogoHeight = '2.25rem';
         }

@@ -1,5 +1,5 @@
 /*
- * Batch List Tool — Warm Cream / Coffee / Orange theme.
+ * NAf (Notarial Archives Foundation) — cool paper + slate-green theme.
  * Filament 5 panel theme (Tailwind v4).
  *
  * Constraints (RFQ Security Baseline §15 + project rules):
@@ -8,8 +8,10 @@
  *  - No left/right colored borders as accents (full borders or background tints).
  *  - No gradient text.
  *
- * The dominant surface is cream (h≈78), text/accents lean coffee (h≈48),
- * primary accent is a warm orange (h≈50) used sparingly.
+ * The dominant surface is a cool off-white paper (h≈214), text/structure lean
+ * to a cool slate ink, and the primary accent is the official NAf slate green
+ * (#4A6F77, h≈210) used sparingly. The cream / coffee / brand variable names
+ * are retained from the previous palette; only their values changed.
  */
 
 /* ------------------------------------------------------------------ */
@@ -69,57 +71,53 @@
 /* ------------------------------------------------------------------ */
 
 :root {
-    /* Cream — paper-white tinted, ultra-light. The previous pass still
-       read as "mustard / senape" because hue 75-78 with chroma 0.010+
-       leans yellow-warm under most monitors. Bumped lightness to near
-       paper and dropped chroma to 0.004-0.008 so the warmth is felt,
-       not seen.
-         #FCFBF8 — main page body (paper, h shifted neutral)
-         #F7F4EE — sidebar/topbar (ΔL≈2.5, almost-imperceptible lift) */
-    --cream-50:  #FCFBF8;
-    --cream-100: #F7F4EE;
-    --cream-200: #EDE8DE;
-    --cream-300: #DCD5C6;
-    --cream-400: #B0AA9B;
-    --cream-500: #87826F;
-    --cream-600: oklch(45% 0.012 60);
-    --cream-700: oklch(36% 0.013 55);
-    --cream-800: oklch(27% 0.012 50);
-    --cream-900: oklch(20% 0.010 48);
-    --cream-950: oklch(13% 0.008 46);
+    /* Paper — cool off-white surfaces (NAf identity). Hue ~213 (cool
+       slate-teal) at very low chroma so the shell reads as neutral paper
+       that harmonises with the green brand accent instead of the old warm
+       cream. Kept the --cream-* names (consumed by every component rule). */
+    --cream-50:  oklch(98.5% 0.003 215);
+    --cream-100: oklch(97% 0.005 214);
+    --cream-200: oklch(93.5% 0.007 213);
+    --cream-300: oklch(88% 0.010 213);
+    --cream-400: oklch(72% 0.012 213);
+    --cream-500: oklch(60% 0.013 213);
+    --cream-600: oklch(46% 0.013 214);
+    --cream-700: oklch(37% 0.013 214);
+    --cream-800: oklch(28% 0.012 215);
+    --cream-900: oklch(21% 0.010 216);
+    --cream-950: oklch(14% 0.008 218);
 
-    /* Coffee — text and structural accent. Hue shifted from 48 (warm
-       brown-yellow, "mustard") to 35 (slate-warm, "newspaper") so the
-       text reads neutral with just a hint of warmth instead of
-       espresso splash. Chroma also cut ~40%. */
-    --coffee-50:  oklch(96% 0.005 38);
-    --coffee-100: oklch(90% 0.010 38);
-    --coffee-200: oklch(80% 0.018 36);
-    --coffee-300: oklch(68% 0.022 36);
-    --coffee-400: oklch(54% 0.025 35);
-    --coffee-500: oklch(44% 0.025 35);
-    --coffee-600: oklch(36% 0.023 34);
-    --coffee-700: oklch(30% 0.020 33);
-    --coffee-800: oklch(22% 0.016 32);
-    --coffee-900: oklch(15% 0.012 30);
-    --coffee-950: oklch(8%  0.008 28);
+    /* Ink — text and structure. Cool neutral (hue ~215) with a faint
+       slate tint so type reads near-black with the same temperature as the
+       paper and the green accent. Kept the --coffee-* names. */
+    --coffee-50:  oklch(96% 0.004 215);
+    --coffee-100: oklch(90% 0.007 215);
+    --coffee-200: oklch(80% 0.012 214);
+    --coffee-300: oklch(68% 0.014 214);
+    --coffee-400: oklch(54% 0.016 214);
+    --coffee-500: oklch(44% 0.016 214);
+    --coffee-600: oklch(36% 0.015 215);
+    --coffee-700: oklch(30% 0.014 216);
+    --coffee-800: oklch(22% 0.013 217);
+    --coffee-900: oklch(15% 0.011 218);
+    --coffee-950: oklch(8%  0.007 220);
 
-    /* Terracotta — single accent, used sparingly. Dialed further
-       toward dusty-sandstone, hue 38 with chroma 0.085 — closer to
-       a thoughtful spice than a brand-shouty orange. */
-    --brand-orange-50:  #FBF3EC;
-    --brand-orange-100: #F4E2D5;
-    --brand-orange-200: #E5C2A8;
-    --brand-orange-300: #D29D7A;
-    --brand-orange-400: #BF7B55;
-    --brand-orange-500: #A5613D;
-    --brand-orange-600: #874C2E;
-    --brand-orange-700: #663823;
-    --brand-orange-800: oklch(22% 0.045 36);
-    --brand-orange-900: oklch(26% 0.085 38);
-    --brand-orange-950: oklch(18% 0.060 36);
+    /* Brand — NAf slate green. 500 step = #4A6F77, the official
+       "ink-chromatography" green from the NRA & NAf 2024 guidelines.
+       Tints/shades built around it; still named --brand-* throughout. */
+    --brand-50:  #EFF3F4;
+    --brand-100: #DBE5E7;
+    --brand-200: #BCCDD0;
+    --brand-300: #95AFB4;
+    --brand-400: #6E9097;
+    --brand-500: #4A6F77;
+    --brand-600: #3E5D64;
+    --brand-700: #334A50;
+    --brand-800: #2B3D42;
+    --brand-900: #233236;
+    --brand-950: #18262A;
 
-    /* Warm danger / success / warning that harmonize with the cream surface */
+    /* Semantic danger / success / warning (kept; read fine on cool paper) */
     --warm-danger-500:  oklch(60% 0.180 25);
     --warm-danger-600:  oklch(52% 0.180 25);
     --warm-success-500: oklch(60% 0.140 145);
@@ -160,17 +158,17 @@
        dark-on-dark (profile/user menu, dropdown items, native controls). Keep
        gray standard so built-ins render correctly; orient cream/coffee
        explicitly off the correct ends. */
-    --gray-50:  oklch(96% 0.012 48);
-    --gray-100: oklch(92% 0.016 48);
-    --gray-200: oklch(85% 0.020 48);
-    --gray-300: oklch(72% 0.030 48);
-    --gray-400: oklch(60% 0.040 48);
-    --gray-500: oklch(50% 0.045 48);
-    --gray-600: oklch(42% 0.045 48);
-    --gray-700: oklch(34% 0.042 48);
-    --gray-800: oklch(27% 0.040 48);
-    --gray-900: oklch(22% 0.038 48);
-    --gray-950: oklch(17% 0.034 48);
+    --gray-50:  oklch(96% 0.008 215);
+    --gray-100: oklch(92% 0.012 215);
+    --gray-200: oklch(85% 0.016 214);
+    --gray-300: oklch(72% 0.022 214);
+    --gray-400: oklch(60% 0.028 214);
+    --gray-500: oklch(50% 0.032 214);
+    --gray-600: oklch(42% 0.032 215);
+    --gray-700: oklch(34% 0.030 216);
+    --gray-800: oklch(27% 0.028 217);
+    --gray-900: oklch(22% 0.026 218);
+    --gray-950: oklch(17% 0.022 220);
 
     /* The theme paints surfaces and text from the cream and coffee scales.
        Re-point them to the correctly-oriented gray ends so surfaces darken and
@@ -199,10 +197,10 @@
     --coffee-900: var(--gray-50);  /* headings — lightest */
 
     /* Brand light tints used as BACKGROUNDS (highlighted rows, soft callouts,
-       primary badge) become subtle warm dark lifts; strong accents stay. */
-    --brand-orange-50:  oklch(25% 0.045 45);
-    --brand-orange-100: oklch(29% 0.055 42);
-    --brand-orange-200: oklch(34% 0.060 40);
+       primary badge) become subtle green dark lifts; strong accents stay. */
+    --brand-50:  oklch(25% 0.030 218);
+    --brand-100: oklch(29% 0.038 216);
+    --brand-200: oklch(34% 0.045 215);
 }
 
 /* ------------------------------------------------------------------ */
@@ -240,7 +238,7 @@
 .dark .fi-sidebar-item-button[aria-current="page"] {
     background-color: var(--cream-200);
     color: var(--coffee-900);
-    box-shadow: inset 2px 0 0 var(--brand-orange-500);
+    box-shadow: inset 2px 0 0 var(--brand-500);
 }
 
 .dark .fi-sidebar-item-icon {
@@ -249,7 +247,7 @@
 
 .dark .fi-sidebar-item-active .fi-sidebar-item-icon,
 .dark .fi-sidebar-item-button[aria-current="page"] .fi-sidebar-item-icon {
-    color: var(--brand-orange-400);
+    color: var(--brand-400);
 }
 
 .dark .fi-sidebar-group-label {
@@ -261,7 +259,7 @@
  *
  * Two failure modes were in play:
  *  1. Links with NO semantic colour fall through to `.fi-link { color:
- *     var(--brand-orange-700) }` — a dark brown tuned for the cream surface,
+ *     var(--brand-700) }` — a dark brown tuned for the cream surface,
  *     not remapped for dark mode → dark-on-dark.
  *  2. Links WITH a semantic colour resolve, via Filament's own
  *     `.fi-link.fi-color:where(.dark,*)` rule, to `dark:fi-text-color-300/400`
@@ -275,7 +273,7 @@
  */
 .dark .fi-link:not([class*="fi-color"]),
 .dark .fi-link.fi-color-primary {
-    color: oklch(80% 0.085 58);
+    color: oklch(80% 0.060 210);
 }
 
 .dark .fi-link.fi-color-warning {
@@ -316,11 +314,11 @@
 
 /* Raw table-cell anchors (not .fi-link) used brand-orange-700 (dark brown). */
 .dark .fi-ta-cell a {
-    color: oklch(80% 0.085 58);
+    color: oklch(80% 0.060 210);
 }
 
 .dark .fi-ta-cell a:hover {
-    color: oklch(87% 0.075 58);
+    color: oklch(88% 0.055 210);
 }
 
 /* Badges: light pills with dark text become dark-tinted pills with light text
@@ -332,8 +330,8 @@
 }
 
 .dark .fi-badge[data-color="primary"] {
-    background-color: oklch(30% 0.060 42);
-    color: oklch(85% 0.070 55);
+    background-color: oklch(31% 0.050 215);
+    color: oklch(84% 0.065 210);
 }
 
 .dark .fi-badge[data-color="success"] {
@@ -454,10 +452,10 @@ pre,
        border (the only place a border-left is allowed: a navigation
        affordance, not a card stripe). Text shifts to coffee-800
        weight 600 so the affordance reads through colour AND weight. */
-    background-color: var(--brand-orange-50);
+    background-color: var(--brand-50);
     color: var(--coffee-800);
     font-weight: 600;
-    box-shadow: inset 2px 0 0 var(--brand-orange-500);
+    box-shadow: inset 2px 0 0 var(--brand-500);
 }
 
 .fi-sidebar-item-icon {
@@ -466,7 +464,7 @@ pre,
 
 .fi-sidebar-item-active .fi-sidebar-item-icon,
 .fi-sidebar-item-button[aria-current="page"] .fi-sidebar-item-icon {
-    color: var(--brand-orange-600);
+    color: var(--brand-600);
 }
 
 .fi-sidebar-group-label {
@@ -570,8 +568,8 @@ pre,
 /* Selected row — accent via inset shadow, NOT a left border (rule §4) */
 .fi-ta-row[data-selected="true"],
 .fi-ta-row.fi-selected {
-    background-color: var(--brand-orange-50);
-    box-shadow: inset 2px 0 0 var(--brand-orange-500);
+    background-color: var(--brand-50);
+    box-shadow: inset 2px 0 0 var(--brand-500);
 }
 
 .fi-ta-cell {
@@ -581,15 +579,15 @@ pre,
 }
 
 .fi-ta-cell a {
-    color: var(--brand-orange-700);
+    color: var(--brand-700);
     text-decoration: none;
 }
 
 .fi-ta-cell a:hover {
-    color: var(--brand-orange-800);
+    color: var(--brand-800);
     text-decoration: underline;
     text-underline-offset: 2px;
-    text-decoration-color: var(--brand-orange-300);
+    text-decoration-color: var(--brand-300);
 }
 
 /* Identifier cells: monospace badge for R1, R12, MS511 etc. */
@@ -599,7 +597,7 @@ pre,
     font-family: var(--font-mono);
     font-variant-numeric: tabular-nums;
     color: var(--coffee-800);
-    background-color: var(--brand-orange-100);
+    background-color: var(--brand-100);
     padding: 0.125rem 0.5rem;
     border-radius: 6px;
     font-size: 0.8125rem;
@@ -612,7 +610,7 @@ pre,
 }
 
 .fi-ta-header-cell-sort-button[aria-sort]:not([aria-sort="none"]) svg {
-    color: var(--brand-orange-600);
+    color: var(--brand-600);
 }
 
 /* Pagination footer */
@@ -666,9 +664,9 @@ input.fi-input {
 .fi-input:focus,
 .fi-input:focus-visible,
 .fi-input-wrp:focus-within {
-    outline: 2px solid var(--brand-orange-300);
+    outline: 2px solid var(--brand-300);
     outline-offset: 1px;
-    border-color: var(--brand-orange-500);
+    border-color: var(--brand-500);
     box-shadow: none;
 }
 
@@ -713,20 +711,20 @@ input.fi-input {
 
 .fi-btn[data-color="primary"],
 .fi-btn-color-primary {
-    background-color: var(--brand-orange-500);
+    background-color: var(--brand-500);
     color: var(--cream-50);
     border: 0;
 }
 
 .fi-btn[data-color="primary"]:hover,
 .fi-btn-color-primary:hover {
-    background-color: var(--brand-orange-600);
+    background-color: var(--brand-600);
     color: var(--cream-50);
 }
 
 .fi-btn[data-color="primary"]:active,
 .fi-btn-color-primary:active {
-    background-color: var(--brand-orange-700);
+    background-color: var(--brand-700);
 }
 
 .fi-btn[data-color="gray"],
@@ -788,7 +786,7 @@ input.fi-input {
 }
 
 .fi-link:not([class*="fi-color"]) {
-    color: var(--brand-orange-700);
+    color: var(--brand-700);
 }
 
 .fi-link:hover {
@@ -797,7 +795,7 @@ input.fi-input {
 }
 
 .fi-link:not([class*="fi-color"]):hover {
-    color: var(--brand-orange-800);
+    color: var(--brand-800);
 }
 
 /* --- Badges / status pills ----------------------------------------- */
@@ -813,8 +811,8 @@ input.fi-input {
 }
 
 .fi-badge[data-color="primary"] {
-    background-color: var(--brand-orange-100);
-    color: var(--brand-orange-800);
+    background-color: var(--brand-100);
+    color: var(--brand-800);
 }
 
 .fi-badge[data-color="success"] {
@@ -861,7 +859,7 @@ label.fi-fo-field-wrp-label {
 }
 
 .fi-fo-field-wrp-label sup {
-    color: var(--brand-orange-600);
+    color: var(--brand-600);
 }
 
 /* --- Modals --------------------------------------------------------- */
@@ -916,8 +914,8 @@ label.fi-fo-field-wrp-label {
 }
 
 .fi-tabs-item[aria-selected="true"] {
-    color: var(--brand-orange-700);
-    box-shadow: inset 0 -2px 0 var(--brand-orange-500);
+    color: var(--brand-700);
+    box-shadow: inset 0 -2px 0 var(--brand-500);
 }
 
 /* --- Notifications (toast) ----------------------------------------- */
@@ -969,7 +967,7 @@ body:has(.fi-simple-main),
 /* Solid color brand heading on login (NO gradient text per rule §5) */
 .fi-logo,
 .fi-simple-page .fi-logo {
-    color: var(--brand-orange-700);
+    color: var(--brand-700);
     font-family: var(--font-display);
     font-weight: 500;
 }
@@ -1000,7 +998,7 @@ body:has(.fi-simple-main),
 
 /* Selection — match brand */
 ::selection {
-    background-color: var(--brand-orange-200);
+    background-color: var(--brand-200);
     color: var(--coffee-900);
 }
 
