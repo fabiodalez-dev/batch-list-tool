@@ -7,10 +7,10 @@ return new class extends SettingsMigration
     public function up(): void
     {
         // Branding
-        $this->migrator->add('branding.brand_name', 'Batch List Tool');
+        $this->migrator->add('branding.brand_name', 'NAf');
         $this->migrator->add('branding.logo_path', 'images/brand-logo.png');
-        $this->migrator->add('branding.logo_height', '2.25rem');
-        $this->migrator->add('branding.primary_color', '#A5613D');
+        $this->migrator->add('branding.logo_height', '2.5rem');
+        $this->migrator->add('branding.primary_color', '#4A6F77');
 
         // Backup
         $this->migrator->add('backup.keep_daily', 16);
