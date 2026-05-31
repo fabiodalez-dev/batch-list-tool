@@ -1,10 +1,12 @@
 <?php
 
 use App\Filament\Resources\BackupDestinationResource;
+use App\Filament\Resources\BackupDestinationResource\Pages\CreateBackupDestination;
 use App\Models\BackupDestination;
 use App\Models\User;
 use App\Support\BackupDestinations;
 use Illuminate\Foundation\Testing\RefreshDatabase;
+use Livewire\Livewire;
 use Spatie\Permission\Models\Role;
 use Spatie\Permission\PermissionRegistrar;
 
@@ -117,4 +119,39 @@ it('preserves the stored password when other fields are updated without re-enter
     expect($fresh->name)->toBe('Renamed FTP');
     expect($fresh->config['host'])->toBe('ftp.changed.test');
     expect($fresh->config['password'])->toBe('S3cr3t-Plain-Pass');
+});
+
+it('auto-generates a unique disk_key from the name when left blank', function () {
+    // First destination: disk_key derived from the name.
+    $a = BackupDestination::create([
+        'name' => 'Off-site FTP (Aruba)',
+        'driver' => 'ftp',
+        'disk_key' => BackupDestinationResource::uniqueDiskKey('Off-site FTP (Aruba)'),
+        'config' => ['host' => 'ftp.example.com'],
+    ]);
+
+    expect($a->disk_key)->toBe('off_site_ftp_aruba');
+
+    // Second destination with the SAME name gets a suffixed, non-colliding key.
+    $second = BackupDestinationResource::uniqueDiskKey('Off-site FTP (Aruba)');
+    expect($second)->toBe('off_site_ftp_aruba_2');
+
+    // A blank/symbol-only name still yields a usable key.
+    expect(BackupDestinationResource::uniqueDiskKey('   '))->toBe('backup');
+});
+
+it('fills disk_key on create when the form leaves it blank', function () {
+    test()->actingAs(bcUserWithRole('admin'));
+
+    Livewire::test(CreateBackupDestination::class)
+        ->fillForm([
+            'name' => 'Nightly SFTP',
+            'driver' => 'sftp',
+            'disk_key' => null,
+            'config' => ['host' => 'sftp.example.com', 'username' => 'u'],
+        ])
+        ->call('create')
+        ->assertHasNoFormErrors();
+
+    expect(BackupDestination::where('name', 'Nightly SFTP')->first()?->disk_key)->toBe('nightly_sftp');
 });
