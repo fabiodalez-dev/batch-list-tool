@@ -113,7 +113,12 @@ class BoxImporter extends Importer
             ImportColumn::make('barcode')
                 ->label('Barcode')
                 ->guess(['Barcode', 'barcode', 'Barcode (IN)'])
-                ->rules(['nullable', 'string', 'max:64']),
+                // RAS boxes require a barcode (Feedback1 C2.1) — enforced here at
+                // the importer input boundary (and in the Filament form), not in
+                // the model save, so legitimate bulk/seed/provisional creation of
+                // a not-yet-barcoded RAS record isn't blocked. Legacy MAV/STVC and
+                // provenance IN_SITU/NRA rows may import without a barcode.
+                ->rules(['nullable', 'string', 'max:64', 'required_if:box_type,RAS']),
 
             ImportColumn::make('barcode_status')
                 ->label('Barcode status (IN / OUT / PERM_OUT)')

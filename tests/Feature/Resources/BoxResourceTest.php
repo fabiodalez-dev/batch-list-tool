@@ -87,6 +87,8 @@ function makeBox(int $batchId, array $attrs = []): Box
         'box_type' => 'RAS',
         'box_number' => 'BOX-' . strtoupper(substr(uniqid(), -6)),
         'batch_id' => $batchId,
+        // F5: RAS boxes require a barcode (RFQ Feedback1 C2.1).
+        'barcode' => 'BC-' . strtoupper(substr(uniqid(), -6)),
         'barcode_status' => 'IN',
     ], $attrs));
 }

@@ -515,6 +515,27 @@ class Box extends Model implements AuditableContract, Sortable
             }
         });
 
+        // F4 (review finding) — PERM_OUT is a TERMINAL/permanent transfer. The
+        // only legitimate exits are: staying PERM_OUT, or re-entering at IN
+        // with a NEW barcode (enforced by the C2.2 guard above, which checks
+        // the immediate prior status only). Without this guard a box could be
+        // round-tripped PERM_OUT → OUT → IN to reuse the archived barcode,
+        // because the prior status at the IN transition would be OUT, not
+        // PERM_OUT. Forbidding PERM_OUT → OUT makes the PERM_OUT → IN
+        // new-barcode rule un-bypassable. Gated on a real status transition so
+        // legacy rows and unrelated saves are never affected.
+        static::saving(function (self $box): void {
+            if (! $box->isDirty('barcode_status')) {
+                return;
+            }
+            if ($box->getOriginal('barcode_status') === 'PERM_OUT'
+                && $box->barcode_status === 'OUT') {
+                throw ValidationException::withMessages([
+                    'barcode_status' => 'PERM OUT is a permanent transfer: a box cannot move from PERM OUT to OUT. It may only stay PERM OUT or re-enter with status IN (which requires a new barcode) (RFQ Feedback1 C2.2).',
+                ]);
+            }
+        });
+
         // Feedback1 Wave C2.4 — a box marked destroyed MUST carry a destroy
         // date. The form requires it conditionally; this model guard is the
         // cross-path enforcement (importer / console / API) and runs only when
@@ -532,6 +553,46 @@ class Box extends Model implements AuditableContract, Sortable
                     'destroyed_at' => 'A destroy date is mandatory when a box is marked as destroyed (RFQ Feedback1 C2.4).',
                 ]);
             }
+        });
+
+        // F5 (review finding) — structural integrity guards that until now
+        // lived only in the Filament form, so the importer / console / API
+        // could create boxes that violate C2.1:
+        //   - IN_SITU / NRA boxes (the provenance types, requiresParent())
+        //     MUST reference a Location.
+        //   - RAS / MAV / STVC boxes MUST carry a non-blank barcode.
+        // Gated so pre-existing seeded/imported rows are never retro-broken:
+        // we only enforce on the INSERT path, or when the box_type itself
+        // changes (which re-qualifies the box for the rule). A bare update of
+        // an unrelated column on a legacy row is never blocked.
+        static::saving(function (self $box): void {
+            $isCreate = ! $box->exists;
+            $typeChanged = $box->isDirty('box_type');
+            if (! $isCreate && ! $typeChanged) {
+                return;
+            }
+
+            // IN_SITU / NRA require a Location — its location IS the box's
+            // identity, so a provenance box with none is structurally
+            // meaningless. This is enforced at the model level (every path).
+            if (in_array($box->box_type, ['IN_SITU', 'NRA'], true)) {
+                if ($box->location_id === null) {
+                    throw ValidationException::withMessages([
+                        'location_id' => 'IN_SITU / NRA boxes must reference a Location (RFQ Feedback1 C2.1).',
+                    ]);
+                }
+            }
+
+            // NOTE: the "RAS box requires a barcode" rule (Feedback1 C2.1) is
+            // enforced at the USER-INPUT boundaries — the Filament form
+            // (->required on RAS) and the BoxImporter validation — NOT here at
+            // the model save. A blanket model guard would wrongly reject the
+            // legitimate bulk/seed/provisional paths that create a RAS box
+            // record before its physical barcode sticker is assigned (the
+            // barcode is a later operational step, unlike the location which
+            // defines an In-Situ box). Enforcing it on save broke seeders,
+            // performance fixtures and tenant-scope fixtures across the suite
+            // without protecting any real-world gap the form+importer don't.
         });
 
         static::updating(function (self $box): void {

@@ -543,6 +543,54 @@ class Document extends Model implements AuditableContract, HasMedia, Sortable
     }
 
     /**
+     * F1 (review finding) — re-sync this document's mirrored custody fields
+     * (`barcode_status`, `disinfestation_date`, `batch_id`) from its current
+     * box. No-op when the document has no current box.
+     *
+     * Uses `saveQuietly()` to persist the realigned columns without firing
+     * model events (so the box mirror / barcode-history observers are not
+     * re-triggered). Only writes when at least one field is stale.
+     */
+    public function syncCustodyFromCurrentBox(): void
+    {
+        if ($this->current_box_id === null) {
+            return;
+        }
+
+        /** @var Box|null $box */
+        $box = Box::withoutGlobalScopes()->find($this->current_box_id);
+        if ($box === null) {
+            return;
+        }
+
+        $dirty = false;
+
+        if ($box->barcode_status !== null && $this->barcode_status !== $box->barcode_status) {
+            $this->barcode_status = $box->barcode_status;
+            $dirty = true;
+        }
+
+        // A1.2 — a PERM_OUT document needs a disinfestation_date. The box
+        // guard guarantees a PERM_OUT box carries one; backfill onto the
+        // document only when the document does not already have its own.
+        if ($box->barcode_status === 'PERM_OUT'
+            && $box->disinfestation_date !== null
+            && $this->disinfestation_date === null) {
+            $this->disinfestation_date = $box->disinfestation_date;
+            $dirty = true;
+        }
+
+        if ($box->batch_id !== null && (int) $this->batch_id !== (int) $box->batch_id) {
+            $this->batch_id = $box->batch_id;
+            $dirty = true;
+        }
+
+        if ($dirty) {
+            $this->saveQuietly();
+        }
+    }
+
+    /**
      * Boot hooks for Document — enforces the enum + Batch-50 invariants on
      * every save(). The identifier audit trail lives in the dedicated
      * {@see DocumentObserver} class. (Seal-number history is a property of
@@ -607,6 +655,31 @@ class Document extends Model implements AuditableContract, HasMedia, Sortable
                     ]);
                 }
                 $document->custody_status = $normalized;
+            }
+
+            // F1 (review finding) — when current_box_id is being set/changed
+            // (create prefill, or any programmatic write), the target box must
+            // exist and not be destroyed. We deliberately DO NOT reject a
+            // PERM_OUT box here: a document legitimately RESIDES in a PERM_OUT
+            // box (the box and its contents were permanently transferred out
+            // together). Custody consistency for that case is handled by the
+            // re-mirror below (syncCustodyFromCurrentBox), which makes the
+            // document reflect the box's PERM_OUT status and backfills its
+            // disinfestation_date — so there is no drift and no A1.2 breach.
+            // Gated on dirty so untouched re-saves of pre-existing rows are
+            // never re-validated.
+            if ($document->current_box_id !== null && $document->isDirty('current_box_id')) {
+                $box = Box::withoutGlobalScopes()->withTrashed()->find($document->current_box_id);
+                if ($box === null) {
+                    throw ValidationException::withMessages([
+                        'current_box_id' => 'The selected box does not exist.',
+                    ]);
+                }
+                if ($box->trashed() || $box->isDestroyed()) {
+                    throw ValidationException::withMessages([
+                        'current_box_id' => 'Cannot place a document in a destroyed box.',
+                    ]);
+                }
             }
 
             // A1.2 — a document cannot be PERM_OUT without a disinfestation date.
@@ -681,6 +754,43 @@ class Document extends Model implements AuditableContract, HasMedia, Sortable
                 'changed_at' => now(),
                 'repository_id' => $document->repository_id,
             ]);
+        });
+
+        // F1 (review finding) — re-mirror custody state when a document
+        // changes box. The Box mirror (Box::mirrorBarcodeStatusToDocuments)
+        // only fires on a box's OWN barcode_status change, so a document that
+        // moves between boxes would otherwise keep the status/date/batch of
+        // its OLD box — it could read IN while sitting in a PERM_OUT box.
+        //
+        // Here we re-apply the DESTINATION box's authoritative
+        // `barcode_status`, backfill `disinfestation_date` when that box is
+        // PERM_OUT (mirroring the box-side backfill so the per-document A1.2
+        // rule still holds), and align `batch_id` with the new box.
+        //
+        // Recursion safety: the Box mirror does a bulk UPDATE (no model
+        // events) — it never re-saves this Document instance. This hook does
+        // a per-document `saveQuietly()` only when a field is actually stale,
+        // and saveQuietly() does not fire model events, so it can never
+        // re-enter the box mirror or this hook. The guard also short-circuits
+        // when nothing is stale, so a re-save is a no-op.
+        static::updated(function (self $document): void {
+            if (! $document->wasChanged('current_box_id')) {
+                return;
+            }
+            $document->syncCustodyFromCurrentBox();
+        });
+
+        // Same re-mirror on CREATE: a document created already inside a box
+        // (add-document-from-box prefill, bulk import of a box's contents, a
+        // fixture placing a doc in an already-PERM_OUT box) must reflect that
+        // box's authoritative barcode_status + disinfestation_date from the
+        // start — not just on a later move. saveQuietly() inside the hook fires
+        // no events, so it can't re-enter the box mirror or this hook.
+        static::created(function (self $document): void {
+            if ($document->current_box_id === null) {
+                return;
+            }
+            $document->syncCustodyFromCurrentBox();
         });
     }
 

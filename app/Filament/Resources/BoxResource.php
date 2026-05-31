@@ -294,17 +294,17 @@ class BoxResource extends Resource
                             })),
                     ]),
 
-                // Feedback1 Wave C2.3 — editable Barcode legacy / history
-                // section. Operators can view, add and edit rows of the
-                // append-only barcode-history log directly on the box form.
-                // The model observer (Box::booted) ALSO appends rows on a
-                // barcode / status change, so this Repeater is an additive
-                // editing surface, not the only write path. Gated to users
-                // with the box update permission.
+                // F3 (review finding) — the barcode-history log is an
+                // append-only audit trail written EXCLUSIVELY by the model
+                // observer (Box::booted → recordBarcodeChange) on every
+                // barcode / status change. This Repeater is READ-ONLY so the
+                // form is not a second, conflicting write path (which produced
+                // duplicate rows + a mutable audit log). It mirrors the
+                // read-only RelationManager shown next to the form.
                 Section::make('Barcode legacy / history')
                     ->columns(1)
                     ->collapsed()
-                    ->description('Old Barcode N : Status. More can be added.')
+                    ->description('Old Barcode N : Status. Read-only — written automatically when the barcode/status changes.')
                     ->visible(fn (): bool => (bool) auth()->user()?->can('update_box'))
                     ->schema([
                         Forms\Components\Repeater::make('barcodeHistory')
@@ -313,7 +313,14 @@ class BoxResource extends Resource
                             ->columns(2)
                             ->columnSpanFull()
                             ->defaultItems(0)
-                            ->addActionLabel('Add barcode history row')
+                            ->addable(false)
+                            ->deletable(false)
+                            ->reorderable(false)
+                            // Children disabled + repeater not dehydrated: no
+                            // edits to existing rows reach the DB. Single write
+                            // path stays the observer (recordBarcodeChange).
+                            ->disabled()
+                            ->dehydrated(false)
                             ->schema([
                                 // previous_barcode is NOT NULL in the schema.
                                 Forms\Components\TextInput::make('previous_barcode')
@@ -341,12 +348,14 @@ class BoxResource extends Resource
                             ]),
                     ]),
 
-                // Feedback1 Wave C2.3 — editable Seal legacy / history section.
-                // "Seal No — date changed. More can be added."
+                // F3 (review finding) — seal-number history is an append-only
+                // audit trail written EXCLUSIVELY by the model observer
+                // (Box::booted → recordSealChange) on every seal_number change.
+                // READ-ONLY here so the form is not a second write path.
                 Section::make('Seal legacy / history')
                     ->columns(1)
                     ->collapsed()
-                    ->description('Seal No — date changed. More can be added.')
+                    ->description('Seal No — date changed. Read-only — written automatically when the seal number changes.')
                     ->visible(fn (): bool => (bool) auth()->user()?->can('update_box'))
                     ->schema([
                         Forms\Components\Repeater::make('sealNumberHistory')
@@ -355,7 +364,11 @@ class BoxResource extends Resource
                             ->columns(2)
                             ->columnSpanFull()
                             ->defaultItems(0)
-                            ->addActionLabel('Add seal history row')
+                            ->addable(false)
+                            ->deletable(false)
+                            ->reorderable(false)
+                            ->disabled()
+                            ->dehydrated(false)
                             ->schema([
                                 Forms\Components\TextInput::make('old_value')
                                     ->label('Seal from')
