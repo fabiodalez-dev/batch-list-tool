@@ -2,6 +2,7 @@
 
 namespace App\Filament\Resources\BoxResource\Pages;
 
+use App\Filament\Concerns\ExplainsPage;
 use App\Filament\Imports\BoxImporter;
 use App\Filament\Resources\BoxResource;
 use App\Models\Box;
@@ -12,6 +13,8 @@ use HayderHatem\FilamentExcelImport\Actions\FullImportAction;
 
 class ListBoxes extends ListRecords
 {
+    use ExplainsPage;
+
     protected static string $resource = BoxResource::class;
 
     /**

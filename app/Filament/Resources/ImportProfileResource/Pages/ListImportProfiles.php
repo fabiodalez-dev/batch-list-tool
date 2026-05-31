@@ -4,11 +4,14 @@ declare(strict_types=1);
 
 namespace App\Filament\Resources\ImportProfileResource\Pages;
 
+use App\Filament\Concerns\ExplainsPage;
 use App\Filament\Resources\ImportProfileResource;
 use Filament\Resources\Pages\ListRecords;
 
 class ListImportProfiles extends ListRecords
 {
+    use ExplainsPage;
+
     protected static string $resource = ImportProfileResource::class;
 
     /**

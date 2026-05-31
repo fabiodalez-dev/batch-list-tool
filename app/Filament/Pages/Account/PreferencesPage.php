@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace App\Filament\Pages\Account;
 
+use App\Filament\Concerns\ExplainsPage;
 use Filament\Actions\Action;
 use Filament\Forms\Components\Select;
 use Filament\Notifications\Notification;
@@ -23,6 +24,8 @@ use Filament\Schemas\Schema;
  */
 class PreferencesPage extends Page
 {
+    use ExplainsPage;
+
     /**
      * Form state, bound to the Filament schema via statePath('data').
      *

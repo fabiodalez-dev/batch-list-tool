@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace App\Filament\Pages;
 
+use App\Filament\Concerns\ExplainsPage;
 use App\Filament\Pages\Reports\BoxMovementHistoryReport;
 use App\Filament\Pages\Reports\DocumentsByBatchReport;
 use App\Filament\Pages\Reports\DocumentsByCreatorReport;
@@ -42,6 +43,8 @@ use Illuminate\Support\Facades\Cache;
  */
 class Reports extends Page
 {
+    use ExplainsPage;
+
     protected string $view = 'filament.pages.reports';
 
     protected static string|\UnitEnum|null $navigationGroup = 'Operations';

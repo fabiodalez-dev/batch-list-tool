@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace App\Filament\Pages\Settings;
 
+use App\Filament\Concerns\ExplainsPage;
 use App\Providers\Filament\AdminPanelProvider;
 use App\Settings\BrandingSettings;
 use Filament\Actions\Action;
@@ -32,6 +33,8 @@ use Illuminate\Support\HtmlString;
  */
 class BrandingPage extends Page
 {
+    use ExplainsPage;
+
     /**
      * Form state, bound to the Filament schema via statePath('data').
      *

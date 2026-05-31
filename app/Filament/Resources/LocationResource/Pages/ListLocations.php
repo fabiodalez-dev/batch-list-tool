@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace App\Filament\Resources\LocationResource\Pages;
 
+use App\Filament\Concerns\ExplainsPage;
 use App\Filament\Imports\LocationImporter;
 use App\Filament\Resources\LocationResource;
 use App\Models\Location;
@@ -14,6 +15,8 @@ use HayderHatem\FilamentExcelImport\Actions\FullImportAction;
 
 class ListLocations extends ListRecords
 {
+    use ExplainsPage;
+
     protected static string $resource = LocationResource::class;
 
     protected function getHeaderActions(): array

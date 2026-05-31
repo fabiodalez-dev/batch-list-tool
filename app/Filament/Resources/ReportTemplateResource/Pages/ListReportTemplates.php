@@ -2,11 +2,14 @@
 
 namespace App\Filament\Resources\ReportTemplateResource\Pages;
 
+use App\Filament\Concerns\ExplainsPage;
 use App\Filament\Resources\ReportTemplateResource;
 use Filament\Resources\Pages\ListRecords;
 
 class ListReportTemplates extends ListRecords
 {
+    use ExplainsPage;
+
     protected static string $resource = ReportTemplateResource::class;
 
     /**

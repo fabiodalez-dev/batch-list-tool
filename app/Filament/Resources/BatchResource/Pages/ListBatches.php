@@ -2,6 +2,7 @@
 
 namespace App\Filament\Resources\BatchResource\Pages;
 
+use App\Filament\Concerns\ExplainsPage;
 use App\Filament\Imports\BatchImporter;
 use App\Filament\Resources\BatchResource;
 use App\Models\Batch;
@@ -12,6 +13,8 @@ use HayderHatem\FilamentExcelImport\Actions\FullImportAction;
 
 class ListBatches extends ListRecords
 {
+    use ExplainsPage;
+
     protected static string $resource = BatchResource::class;
 
     /**

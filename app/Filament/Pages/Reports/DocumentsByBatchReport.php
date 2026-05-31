@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace App\Filament\Pages\Reports;
 
+use App\Filament\Concerns\ExplainsPage;
 use App\Filament\Pages\Reports\Concerns\HasReportTemplates;
 use App\Filament\Pages\Reports\Filters\DateRangeFilter;
 use App\Models\Concerns\BelongsToRepository;
@@ -37,6 +38,7 @@ use Symfony\Component\HttpFoundation\StreamedResponse;
  */
 class DocumentsByBatchReport extends Page implements HasTable
 {
+    use ExplainsPage;
     use HasReportTemplates;
     use InteractsWithTable;
 
