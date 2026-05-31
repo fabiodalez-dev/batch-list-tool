@@ -172,10 +172,11 @@
     --gray-900: oklch(22% 0.038 48);
     --gray-950: oklch(17% 0.034 48);
 
-    /* The theme paints surfaces and text from --cream-*/--coffee-*. Re-point
-       them to the correctly-oriented gray ends so surfaces darken and text
-       lightens. Cream = SURFACES → dark end (gray-950…500). Coffee = TEXT →
-       light end (gray-50…). The brand accents (orange 400–700) stay as-is. */
+    /* The theme paints surfaces and text from the cream and coffee scales.
+       Re-point them to the correctly-oriented gray ends so surfaces darken and
+       text lightens. Cream = SURFACES, mapped to the dark end (gray-950…500).
+       Coffee = TEXT, mapped to the light end (gray-50…). The brand accents
+       (orange 400–700) stay as-is. */
 
     /* Cream = surfaces: cream-50 darkest (page) → cream-500 lightest fill. */
     --cream-50:  var(--gray-950); /* page body — darkest */
