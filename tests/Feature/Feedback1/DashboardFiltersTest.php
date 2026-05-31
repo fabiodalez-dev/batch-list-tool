@@ -20,6 +20,7 @@ use App\Models\User;
 use Filament\Tables\Filters\QueryBuilder;
 use Filament\Tables\Table;
 use Illuminate\Foundation\Testing\RefreshDatabase;
+use Illuminate\Support\Facades\Schema;
 use Livewire\Livewire;
 use Spatie\Permission\Models\Role;
 
@@ -212,4 +213,31 @@ it('Batch type SelectFilter narrows to the chosen type', function (): void {
         ->filterTable('type', ['NOTARY_ACCESSION'])
         ->assertCanSeeTableRecords([$notary])
         ->assertCanNotSeeTableRecords([$main]);
+});
+
+it('has_ms_number partitions creators exactly, treating whitespace-only as no MS (TRIM parity)', function (): void {
+    $this->actingAs(df_actAsSuperAdmin());
+
+    $withMs = df_authority(['identifier' => 'R20001', 'alternative_identifier' => 'MS123']);
+    $noMs = df_authority(['identifier' => 'R20002', 'alternative_identifier' => null]);
+    $blankMs = df_authority(['identifier' => 'R20003', 'alternative_identifier' => '   ']);
+
+    Livewire::test(ListAuthorities::class)
+        ->filterTable('has_ms_number', true)
+        ->assertCanSeeTableRecords([$withMs])
+        ->assertCanNotSeeTableRecords([$noMs, $blankMs]);
+
+    Livewire::test(ListAuthorities::class)
+        ->filterTable('has_ms_number', false)
+        ->assertCanSeeTableRecords([$noMs, $blankMs])
+        ->assertCanNotSeeTableRecords([$withMs]);
+});
+
+it('indexes the Authority filter columns for performance', function (): void {
+    $schema = Schema::class;
+
+    expect($schema::hasIndex('authorities', 'authorities_practice_dates_start_index'))->toBeTrue()
+        ->and($schema::hasIndex('authorities', 'authorities_practice_dates_end_index'))->toBeTrue()
+        ->and($schema::hasIndex('authorities', 'authorities_ntg_date_index'))->toBeTrue()
+        ->and($schema::hasIndex('authorities', 'authorities_alternative_identifier_index'))->toBeTrue();
 });
