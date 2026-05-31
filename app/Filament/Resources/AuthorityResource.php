@@ -409,13 +409,13 @@ class AuthorityResource extends Resource
                     ->placeholder('All creators')
                     ->trueLabel('Has MS number')
                     ->falseLabel('No MS number')
+                    // TRIM parity so the two branches partition the set exactly:
+                    // a whitespace-only alternative_identifier counts as "no MS
+                    // number" on BOTH sides (without TRIM, a single space would
+                    // slip into "has" but not "no").
                     ->queries(
-                        true: fn (Builder $q): Builder => $q->whereNotNull('alternative_identifier')
-                            ->where('alternative_identifier', '!=', ''),
-                        false: fn (Builder $q): Builder => $q->where(
-                            fn (Builder $q) => $q->whereNull('alternative_identifier')
-                                ->orWhere('alternative_identifier', '=', '')
-                        ),
+                        true: fn (Builder $q): Builder => $q->whereRaw("TRIM(COALESCE(alternative_identifier, '')) <> ''"),
+                        false: fn (Builder $q): Builder => $q->whereRaw("TRIM(COALESCE(alternative_identifier, '')) = ''"),
                         blank: fn (Builder $q): Builder => $q,
                     ),
 
