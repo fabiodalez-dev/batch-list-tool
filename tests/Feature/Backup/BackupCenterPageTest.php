@@ -3,6 +3,7 @@
 declare(strict_types=1);
 
 use App\Filament\Pages\Settings\BackupHealthPage;
+use App\Filament\Resources\BackupDestinationResource;
 use App\Models\BackupRun;
 use App\Models\User;
 use Illuminate\Foundation\Testing\RefreshDatabase;
@@ -170,4 +171,25 @@ it('deletes a backup archive via the Livewire action', function () {
         ->call('deleteBackup', $disk, $path);
 
     expect(Storage::disk($disk)->exists($path))->toBeFalse();
+});
+
+it('exposes the Configure destinations header action to admins, pointing at the destinations resource', function () {
+    $this->actingAs(backupUserWithRole('admin'));
+
+    // The action exists on the page and resolves to the BackupDestinationResource
+    // index URL (where host/port/credentials live — this page does not hold them).
+    livewire(BackupHealthPage::class)
+        ->assertActionExists('configureDestinations')
+        ->assertActionHasUrl(
+            'configureDestinations',
+            BackupDestinationResource::getUrl(),
+        );
+});
+
+it('keeps the destinations resource admin-only (gate consistent with the link)', function () {
+    $this->actingAs(backupUserWithRole('viewer'));
+    expect(BackupDestinationResource::canAccess())->toBeFalse();
+
+    $this->actingAs(backupUserWithRole('admin'));
+    expect(BackupDestinationResource::canAccess())->toBeTrue();
 });

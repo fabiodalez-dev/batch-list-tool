@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace App\Filament\Pages\Settings;
 
 use App\Actions\Backup\RestoreDatabase;
+use App\Filament\Resources\BackupDestinationResource;
 use App\Models\BackupRun;
 use App\Settings\BackupSettings;
 use Carbon\Carbon;
@@ -387,6 +388,17 @@ class BackupHealthPage extends Page
     protected function getHeaderActions(): array
     {
         return [
+            // Discoverability: the host/port/credentials of FTP/SFTP/S3 backup
+            // targets are configured in the separate "Backup destinations"
+            // resource, not on this page. Link straight to it.
+            Action::make('configureDestinations')
+                ->label('Configure destinations')
+                ->icon('heroicon-o-cloud-arrow-up')
+                ->color('gray')
+                ->url(fn (): string => BackupDestinationResource::getUrl())
+                ->visible(fn (): bool => static::canAccess()
+                    && BackupDestinationResource::canAccess()),
+
             Action::make('runBackup')
                 ->label('Run backup now')
                 ->icon('heroicon-o-arrow-down-tray')
