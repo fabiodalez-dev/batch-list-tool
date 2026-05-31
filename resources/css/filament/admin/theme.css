@@ -202,6 +202,57 @@
 }
 
 /* ------------------------------------------------------------------ */
+/* Block 3b — Dark-mode chrome contrast (explicit, high-specificity)   */
+/* ------------------------------------------------------------------ */
+/*
+ * The sidebar/topbar rules below (Block 5) set colours from the cream/coffee
+ * scales with plain single-class selectors. In dark mode Filament's own
+ * `.dark .fi-sidebar-*` rules are MORE specific and win the cascade, leaving
+ * the nav text at a dim value → "sidebar items illegible in dark mode".
+ *
+ * These `.dark`-prefixed rules match Filament's specificity AND come later in
+ * the stylesheet, so they deterministically win: dark warm surface + clearly
+ * light text/icons. Values are pulled from the dark --gray ramp above
+ * (gray-50 ≈ 22% surface, gray-800/900 ≈ 90–95% text) so contrast is strong.
+ */
+.dark .fi-sidebar,
+.dark .fi-topbar,
+.dark .fi-topbar > nav {
+    background-color: var(--gray-50);
+}
+
+.dark .fi-sidebar-nav-groups,
+.dark .fi-sidebar-item-button,
+.dark .fi-sidebar-item-label {
+    color: var(--gray-800);
+}
+
+.dark .fi-sidebar-item-button:hover {
+    background-color: var(--gray-200);
+    color: var(--gray-900);
+}
+
+.dark .fi-sidebar-item-active .fi-sidebar-item-button,
+.dark .fi-sidebar-item-button[aria-current="page"] {
+    background-color: var(--gray-200);
+    color: var(--gray-900);
+    box-shadow: inset 2px 0 0 var(--brand-orange-500);
+}
+
+.dark .fi-sidebar-item-icon {
+    color: var(--gray-600);
+}
+
+.dark .fi-sidebar-item-active .fi-sidebar-item-icon,
+.dark .fi-sidebar-item-button[aria-current="page"] .fi-sidebar-item-icon {
+    color: var(--brand-orange-500);
+}
+
+.dark .fi-sidebar-group-label {
+    color: var(--gray-600);
+}
+
+/* ------------------------------------------------------------------ */
 /* Block 4 — Typography                                                */
 /* ------------------------------------------------------------------ */
 
