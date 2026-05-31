@@ -191,7 +191,7 @@ it('requires the destroy date in the edit form once a reason is entered', functi
         ->assertHasFormErrors(['destroyed_at']);
 });
 
-it('adds an editable barcode history row through the box edit form (C2.3)', function () {
+it('does NOT persist a manually-filled barcode history row — the log is read-only (F3)', function () {
     $user = bcf_actAsSuperAdmin();
     $this->actingAs($user);
 
@@ -203,6 +203,10 @@ it('adds an editable barcode history row through the box edit form (C2.3)', func
         'barcode_status' => 'IN',
     ]);
 
+    // F3: the barcodeHistory Repeater is disabled + not dehydrated, so a
+    // manually-filled row must NOT reach the DB. The audit log is written
+    // exclusively by the model observer (recordBarcodeChange). Submitting a
+    // forged row through the form is a no-op.
     Livewire::test(EditBox::class, ['record' => $box->getRouteKey()])
         ->fillForm([
             'barcodeHistory' => [
@@ -219,5 +223,5 @@ it('adds an editable barcode history row through the box edit form (C2.3)', func
         ->call('save')
         ->assertHasNoFormErrors();
 
-    expect($box->barcodeHistory()->where('previous_barcode', 'LEGACY-BC-9')->exists())->toBeTrue();
+    expect($box->barcodeHistory()->where('previous_barcode', 'LEGACY-BC-9')->exists())->toBeFalse();
 });

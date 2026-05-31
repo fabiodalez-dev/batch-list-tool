@@ -1,0 +1,222 @@
+<?php
+
+declare(strict_types=1);
+
+use App\Filament\Resources\DocumentResource\Pages\EditDocument;
+use App\Models\Batch;
+use App\Models\Box;
+use App\Models\BoxBarcodeHistory;
+use App\Models\Document;
+use App\Models\DocumentBarcodeHistory;
+use App\Models\DocumentType;
+use App\Models\Repository;
+use App\Models\Series;
+use App\Models\User;
+use Illuminate\Foundation\Testing\RefreshDatabase;
+use Illuminate\Validation\ValidationException;
+use Livewire\Livewire;
+
+use function Pest\Laravel\actingAs;
+
+uses(RefreshDatabase::class);
+
+beforeEach(fn () => bl_seedShieldPermissions());
+
+/**
+ * @return array{0: Repository, 1: Batch, 2: Box, 3: Series}
+ */
+function dbmm_ctx(string $boxStatus = 'IN'): array
+{
+    $repo = Repository::factory()->create();
+    $batch = Batch::factory()->create(['repository_id' => $repo->id]);
+    $box = Box::factory()->create([
+        'batch_id' => $batch->id,
+        'box_type' => 'RAS',
+        'barcode_status' => $boxStatus,
+        'barcode' => 'BC-' . strtoupper(substr(uniqid(), -6)),
+    ]);
+    $series = Series::factory()->create();
+
+    return [$repo, $batch, $box, $series];
+}
+
+it('re-mirrors barcode_status + batch_id when a document moves to another box (model save)', function (): void {
+    actingAs(User::factory()->create()->assignRole('super_admin'));
+
+    [$repo, $batchIn, $boxIn, $series] = dbmm_ctx('IN');
+
+    $batchOut = Batch::factory()->create(['repository_id' => $repo->id]);
+    $boxOut = Box::factory()->create([
+        'batch_id' => $batchOut->id,
+        'box_type' => 'RAS',
+        'barcode_status' => 'OUT',
+        'barcode' => 'BC-OUT-1',
+    ]);
+
+    $doc = Document::factory()->create([
+        'current_box_id' => $boxIn->id,
+        'batch_id' => $batchIn->id,
+        'series_id' => $series->id,
+        'repository_id' => $repo->id,
+        'barcode_status' => 'IN',
+    ]);
+
+    // Move the document to the OUT box.
+    $doc->current_box_id = $boxOut->id;
+    $doc->save();
+
+    $fresh = Document::find($doc->id);
+    expect($fresh->barcode_status)->toBe('OUT');
+    expect((int) $fresh->batch_id)->toBe((int) $boxOut->batch_id);
+});
+
+it('rejects moving a document into a PERM_OUT box, and backfills the date when the box goes PERM_OUT around it', function (): void {
+    actingAs(User::factory()->create()->assignRole('super_admin'));
+
+    [$repo, $batchIn, $boxIn, $series] = dbmm_ctx('IN');
+
+    $batchPerm = Batch::factory()->create(['repository_id' => $repo->id]);
+    $boxPerm = Box::factory()->create([
+        'batch_id' => $batchPerm->id,
+        'box_type' => 'RAS',
+        'barcode_status' => 'PERM_OUT',
+        'disinfestation_date' => '2026-02-20',
+        'barcode' => 'BC-PERM-1',
+    ]);
+
+    $doc = Document::factory()->create([
+        'current_box_id' => $boxIn->id,
+        'batch_id' => $batchIn->id,
+        'series_id' => $series->id,
+        'repository_id' => $repo->id,
+        'barcode_status' => 'IN',
+        'disinfestation_date' => null,
+    ]);
+
+    // F1: a document cannot be MOVED into a PERM_OUT box (the placement guard
+    // rejects it). PERM_OUT is reached only by the box transitioning while the
+    // document is inside.
+    $doc->current_box_id = $boxPerm->id;
+    expect(fn () => $doc->save())->toThrow(ValidationException::class);
+
+    // Legitimate path: the box the doc is IN transitions to PERM_OUT — the box
+    // mirror flips the doc to PERM_OUT and backfills the disinfestation_date.
+    $fresh = Document::find($doc->id);
+    $fresh->current_box_id = $boxIn->id; // ensure clean state
+    $boxIn->update(['barcode_status' => 'PERM_OUT', 'disinfestation_date' => '2026-02-20']);
+
+    $after = Document::find($doc->id);
+    expect($after->barcode_status)->toBe('PERM_OUT');
+    expect($after->disinfestation_date?->toDateString())->toBe('2026-02-20');
+});
+
+it('does not create extra document barcode-history rows or recurse on a box move', function (): void {
+    actingAs(User::factory()->create()->assignRole('super_admin'));
+
+    [$repo, $batchIn, $boxIn, $series] = dbmm_ctx('IN');
+
+    $batchOut = Batch::factory()->create(['repository_id' => $repo->id]);
+    $boxOut = Box::factory()->create([
+        'batch_id' => $batchOut->id,
+        'box_type' => 'RAS',
+        'barcode_status' => 'OUT',
+        'barcode' => 'BC-OUT-2',
+    ]);
+
+    $doc = Document::factory()->create([
+        'current_box_id' => $boxIn->id,
+        'batch_id' => $batchIn->id,
+        'series_id' => $series->id,
+        'repository_id' => $repo->id,
+        'barcode_status' => 'IN',
+        'barcode' => null,
+    ]);
+
+    $beforeDocHist = DocumentBarcodeHistory::where('document_id', $doc->id)->count();
+    $beforeBoxHist = BoxBarcodeHistory::where('box_id', $boxOut->id)->count();
+
+    $doc->current_box_id = $boxOut->id;
+    $doc->save();
+
+    // The custody re-sync uses saveQuietly() (no model events), so the
+    // per-document barcode-VALUE history is untouched (barcode did not change)
+    // and the destination box's own barcode history is not written either.
+    expect(DocumentBarcodeHistory::where('document_id', $doc->id)->count())->toBe($beforeDocHist);
+    expect(BoxBarcodeHistory::where('box_id', $boxOut->id)->count())->toBe($beforeBoxHist);
+});
+
+it('re-mirrors status when the document is moved via the Move-to-box flow (programmatic box change persists)', function (): void {
+    actingAs(User::factory()->create()->assignRole('super_admin'));
+
+    [$repo, $batchIn, $boxIn, $series] = dbmm_ctx('IN');
+
+    $batchOut = Batch::factory()->create(['repository_id' => $repo->id]);
+    $boxOut = Box::factory()->create([
+        'batch_id' => $batchOut->id,
+        'box_type' => 'RAS',
+        'barcode_status' => 'OUT',
+        'barcode' => 'BC-OUT-3',
+    ]);
+
+    $doc = Document::factory()->create([
+        'current_box_id' => $boxIn->id,
+        'batch_id' => $batchIn->id,
+        'series_id' => $series->id,
+        'repository_id' => $repo->id,
+        'barcode_status' => 'IN',
+    ]);
+
+    // Simulate what MoveToBoxAction does to the model.
+    $doc->current_box_id = $boxOut->id;
+    $doc->batch_id = $boxOut->batch_id;
+    $doc->save();
+
+    $fresh = Document::find($doc->id);
+    expect($fresh->barcode_status)->toBe('OUT');
+});
+
+it('locks current_box_id on the document edit form (disabled, not dehydrated)', function (): void {
+    $repo = Repository::factory()->create();
+    $user = User::factory()->create(['is_active' => true, 'default_repository_id' => $repo->id]);
+    $user->assignRole('super_admin');
+    $user->repositories()->syncWithoutDetaching([$repo->id => ['is_default' => true]]);
+    actingAs($user);
+
+    $batchIn = Batch::factory()->create(['repository_id' => $repo->id]);
+    $boxIn = Box::factory()->create([
+        'batch_id' => $batchIn->id, 'box_type' => 'RAS',
+        'barcode_status' => 'IN', 'barcode' => 'BC-LOCK-IN',
+    ]);
+    $series = Series::factory()->create();
+
+    $batchOut = Batch::factory()->create(['repository_id' => $repo->id]);
+    $boxOut = Box::factory()->create([
+        'batch_id' => $batchOut->id,
+        'box_type' => 'RAS',
+        'barcode_status' => 'IN',
+        'barcode' => 'BC-OUT-4',
+    ]);
+
+    // The edit form re-validates document_type against the active lookup.
+    DocumentType::firstOrCreate(['name' => 'TEST'], ['is_active' => true]);
+
+    $doc = Document::factory()->create([
+        'current_box_id' => $boxIn->id,
+        'batch_id' => $batchIn->id,
+        'series_id' => $series->id,
+        'repository_id' => $repo->id,
+        'identifier' => 'LOCK-1',
+        'document_type' => 'TEST',
+        'barcode_status' => 'IN',
+    ]);
+
+    // The current_box_id field is disabled on the edit form (box moves are
+    // forced through the audited MoveToBoxAction). Assert the form renders it
+    // disabled and that a save does not change the box.
+    Livewire::test(EditDocument::class, ['record' => $doc->getRouteKey()])
+        ->assertFormFieldIsDisabled('current_box_id')
+        ->call('save')
+        ->assertHasNoFormErrors();
+
+    expect((int) Document::find($doc->id)->current_box_id)->toBe((int) $boxIn->id);
+});

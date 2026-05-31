@@ -232,7 +232,19 @@ class DocumentResource extends Resource
                     ->columns(2)
                     ->schema([
                         $g(SearchableSelects::batch('batch_id', 'batch')),
-                        $g(SearchableSelects::box('current_box_id', 'currentBox')),
+                        // F1 (review finding) — current_box_id is READ-ONLY on
+                        // EDIT so every box move is forced through the audited
+                        // MoveToBoxAction (which writes a BoxMovement, keeps
+                        // batch_id in sync, and rejects PERM_OUT / destroyed
+                        // targets). On CREATE it stays editable so the Wave-B
+                        // "add document to this box" prefill keeps working; the
+                        // model `creating` guard validates the chosen box.
+                        $g(SearchableSelects::box('current_box_id', 'currentBox')
+                            ->disabled(fn (string $operation): bool => $operation === 'edit')
+                            ->dehydrated(fn (string $operation): bool => $operation === 'create')
+                            ->helperText(fn (string $operation): ?string => $operation === 'edit'
+                                ? 'Locked. Use the "Move to box" action to change the box (writes an audited movement record).'
+                                : 'Initial box for this document. After creation, use the "Move to box" action to change it.')),
                         $g(SearchableSelects::accession('accession_id')),
                         $g(SearchableSelects::location(
                             'location_id',

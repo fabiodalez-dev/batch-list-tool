@@ -130,8 +130,14 @@ test('setting a box to PERM_OUT with a disinfestation_date is allowed and mirror
 test('MarkDisinfested on a PERM_OUT box keeps PERM_OUT at the box level (B2 invariant)', function () {
     $this->actingAs(tap(User::factory()->create(), fn ($u) => $u->assignRole('super_admin')));
 
-    $box = bab_box(['barcode_status' => 'PERM_OUT', 'disinfestation_date' => now()->subDay()]);
-    $doc = bab_docInBox($box, [
+    // Realistic sequence: the document is placed while the box is still
+    // assignable (IN), THEN the box is permanently transferred out — the box
+    // mirror flips the document to PERM_OUT. (Creating a document directly
+    // into an already-PERM_OUT box is now rejected by the F1 placement guard.)
+    $box = bab_box(['barcode_status' => 'IN']);
+    $doc = bab_docInBox($box, ['barcode_status' => 'IN']);
+
+    $box->update([
         'barcode_status' => 'PERM_OUT',
         'disinfestation_date' => now()->subDay(),
     ]);
