@@ -252,6 +252,27 @@
     color: var(--gray-600);
 }
 
+/*
+ * Table-action links ("View", "View documents", …) with NO semantic colour
+ * fall through to `.fi-link { color: var(--brand-orange-700) }` — a dark brown
+ * (chosen to read on the cream surface). The brand 700/800 steps are NOT
+ * remapped for dark mode (only 50/100/200 are, as backgrounds), so in the
+ * actions column they render dark-on-dark and become illegible.
+ *
+ * Pin them to the light brand steps (400 → 300 on hover, both untouched by the
+ * dark remap). Scoped with :not([class*="fi-color"]) so the SEMANTIC links
+ * (Edit=primary, Move=warning, Mark-as-destroyed=danger) keep the light
+ * `dark:fi-text-color-*` shade Filament already applies — this rule must not
+ * flatten them all to one colour.
+ */
+.dark .fi-link:not([class*="fi-color"]) {
+    color: var(--brand-orange-400);
+}
+
+.dark .fi-link:not([class*="fi-color"]):hover {
+    color: var(--brand-orange-300);
+}
+
 /* ------------------------------------------------------------------ */
 /* Block 4 — Typography                                                */
 /* ------------------------------------------------------------------ */
