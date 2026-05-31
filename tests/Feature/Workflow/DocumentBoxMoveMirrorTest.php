@@ -13,7 +13,6 @@ use App\Models\Repository;
 use App\Models\Series;
 use App\Models\User;
 use Illuminate\Foundation\Testing\RefreshDatabase;
-use Illuminate\Validation\ValidationException;
 use Livewire\Livewire;
 
 use function Pest\Laravel\actingAs;
@@ -70,7 +69,7 @@ it('re-mirrors barcode_status + batch_id when a document moves to another box (m
     expect((int) $fresh->batch_id)->toBe((int) $boxOut->batch_id);
 });
 
-it('rejects moving a document into a PERM_OUT box, and backfills the date when the box goes PERM_OUT around it', function (): void {
+it('re-mirrors a document moved into a PERM_OUT box (reflects PERM_OUT + backfills the date), and also when the box goes PERM_OUT around it', function (): void {
     actingAs(User::factory()->create()->assignRole('super_admin'));
 
     [$repo, $batchIn, $boxIn, $series] = dbmm_ctx('IN');
@@ -93,21 +92,35 @@ it('rejects moving a document into a PERM_OUT box, and backfills the date when t
         'disinfestation_date' => null,
     ]);
 
-    // F1: a document cannot be MOVED into a PERM_OUT box (the placement guard
-    // rejects it). PERM_OUT is reached only by the box transitioning while the
-    // document is inside.
+    // F1 (CRIT-2): a document legitimately RESIDES in a PERM_OUT box (it was
+    // transferred out with the box). Moving it there is allowed and the
+    // re-mirror makes the document reflect the box's PERM_OUT status and
+    // backfills its disinfestation_date — so it can never read IN while sitting
+    // in a PERM_OUT box, and the per-document A1.2 rule still holds.
     $doc->current_box_id = $boxPerm->id;
-    expect(fn () => $doc->save())->toThrow(ValidationException::class);
+    $doc->save();
 
-    // Legitimate path: the box the doc is IN transitions to PERM_OUT — the box
-    // mirror flips the doc to PERM_OUT and backfills the disinfestation_date.
-    $fresh = Document::find($doc->id);
-    $fresh->current_box_id = $boxIn->id; // ensure clean state
-    $boxIn->update(['barcode_status' => 'PERM_OUT', 'disinfestation_date' => '2026-02-20']);
+    $moved = Document::find($doc->id);
+    expect($moved->barcode_status)->toBe('PERM_OUT')
+        ->and($moved->disinfestation_date?->toDateString())->toBe('2026-02-20')
+        ->and($moved->batch_id)->toBe($batchPerm->id);
 
-    $after = Document::find($doc->id);
-    expect($after->barcode_status)->toBe('PERM_OUT');
-    expect($after->disinfestation_date?->toDateString())->toBe('2026-02-20');
+    // The other path: the box a document is IN transitions to PERM_OUT — the
+    // box mirror flips the doc to PERM_OUT and backfills the date.
+    [$repo2, $batchIn2, $boxIn2, $series2] = dbmm_ctx('IN');
+    $doc2 = Document::factory()->create([
+        'current_box_id' => $boxIn2->id,
+        'batch_id' => $batchIn2->id,
+        'series_id' => $series2->id,
+        'repository_id' => $repo2->id,
+        'barcode_status' => 'IN',
+        'disinfestation_date' => null,
+    ]);
+    $boxIn2->update(['barcode_status' => 'PERM_OUT', 'disinfestation_date' => '2026-02-20']);
+
+    $after = Document::find($doc2->id);
+    expect($after->barcode_status)->toBe('PERM_OUT')
+        ->and($after->disinfestation_date?->toDateString())->toBe('2026-02-20');
 });
 
 it('does not create extra document barcode-history rows or recurse on a box move', function (): void {

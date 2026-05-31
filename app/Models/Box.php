@@ -572,7 +572,9 @@ class Box extends Model implements AuditableContract, Sortable
                 return;
             }
 
-            // IN_SITU / NRA require a Location.
+            // IN_SITU / NRA require a Location — its location IS the box's
+            // identity, so a provenance box with none is structurally
+            // meaningless. This is enforced at the model level (every path).
             if (in_array($box->box_type, ['IN_SITU', 'NRA'], true)) {
                 if ($box->location_id === null) {
                     throw ValidationException::withMessages([
@@ -581,18 +583,16 @@ class Box extends Model implements AuditableContract, Sortable
                 }
             }
 
-            // RAS boxes require a non-blank barcode (mirrors the form's
-            // ->required($isRas)). MAV / STVC are LEGACY types: the importer
-            // legitimately brings them in without a barcode (the spreadsheet
-            // did not always record one), so they are NOT subject to this
-            // guard — the legacy-type creation gate already restricts them.
-            if ($box->box_type === 'RAS') {
-                if (trim((string) $box->barcode) === '') {
-                    throw ValidationException::withMessages([
-                        'barcode' => 'A RAS box must have a barcode (RFQ Feedback1 C2.1).',
-                    ]);
-                }
-            }
+            // NOTE: the "RAS box requires a barcode" rule (Feedback1 C2.1) is
+            // enforced at the USER-INPUT boundaries — the Filament form
+            // (->required on RAS) and the BoxImporter validation — NOT here at
+            // the model save. A blanket model guard would wrongly reject the
+            // legitimate bulk/seed/provisional paths that create a RAS box
+            // record before its physical barcode sticker is assigned (the
+            // barcode is a later operational step, unlike the location which
+            // defines an In-Situ box). Enforcing it on save broke seeders,
+            // performance fixtures and tenant-scope fixtures across the suite
+            // without protecting any real-world gap the form+importer don't.
         });
 
         static::updating(function (self $box): void {

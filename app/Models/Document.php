@@ -659,10 +659,15 @@ class Document extends Model implements AuditableContract, HasMedia, Sortable
 
             // F1 (review finding) — when current_box_id is being set/changed
             // (create prefill, or any programmatic write), the target box must
-            // exist and be assignable (not soft-deleted, not destroyed, not
-            // PERM_OUT). This blocks landing a document in a PERM_OUT/destroyed
-            // box via the form/import without it being rejected. Gated on dirty
-            // so untouched re-saves of pre-existing rows are never re-validated.
+            // exist and not be destroyed. We deliberately DO NOT reject a
+            // PERM_OUT box here: a document legitimately RESIDES in a PERM_OUT
+            // box (the box and its contents were permanently transferred out
+            // together). Custody consistency for that case is handled by the
+            // re-mirror below (syncCustodyFromCurrentBox), which makes the
+            // document reflect the box's PERM_OUT status and backfills its
+            // disinfestation_date — so there is no drift and no A1.2 breach.
+            // Gated on dirty so untouched re-saves of pre-existing rows are
+            // never re-validated.
             if ($document->current_box_id !== null && $document->isDirty('current_box_id')) {
                 $box = Box::withoutGlobalScopes()->withTrashed()->find($document->current_box_id);
                 if ($box === null) {
@@ -673,11 +678,6 @@ class Document extends Model implements AuditableContract, HasMedia, Sortable
                 if ($box->trashed() || $box->isDestroyed()) {
                     throw ValidationException::withMessages([
                         'current_box_id' => 'Cannot place a document in a destroyed box.',
-                    ]);
-                }
-                if ($box->barcode_status === 'PERM_OUT') {
-                    throw ValidationException::withMessages([
-                        'current_box_id' => 'Cannot place a document in a box that is permanently transferred out (PERM_OUT).',
                     ]);
                 }
             }
@@ -775,6 +775,19 @@ class Document extends Model implements AuditableContract, HasMedia, Sortable
         // when nothing is stale, so a re-save is a no-op.
         static::updated(function (self $document): void {
             if (! $document->wasChanged('current_box_id')) {
+                return;
+            }
+            $document->syncCustodyFromCurrentBox();
+        });
+
+        // Same re-mirror on CREATE: a document created already inside a box
+        // (add-document-from-box prefill, bulk import of a box's contents, a
+        // fixture placing a doc in an already-PERM_OUT box) must reflect that
+        // box's authoritative barcode_status + disinfestation_date from the
+        // start — not just on a later move. saveQuietly() inside the hook fires
+        // no events, so it can't re-enter the box mirror or this hook.
+        static::created(function (self $document): void {
+            if ($document->current_box_id === null) {
                 return;
             }
             $document->syncCustodyFromCurrentBox();
