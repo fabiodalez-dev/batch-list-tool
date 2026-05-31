@@ -71,7 +71,15 @@ return [
     'super_admin' => [
         'enabled' => true,
         'name' => 'super_admin',
-        'define_via_gate' => false,
+        // define_via_gate=true registers a Gate::before that grants the
+        // super_admin role EVERY ability, instead of relying on each permission
+        // being explicitly assigned to the role. Without it, a resource whose
+        // Shield permissions were never generated (e.g. UserResource —
+        // view_any_user did not exist in the permissions table) stays invisible
+        // even to super_admin. This matches how the app already treats
+        // super_admin (FieldPermissionMatrix hard-codes super_admin as always
+        // allowed) and is the canonical "super admin = unrestricted" pattern.
+        'define_via_gate' => true,
         'intercept_gate' => 'before',
     ],
 
