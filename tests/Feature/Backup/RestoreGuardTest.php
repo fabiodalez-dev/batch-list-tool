@@ -10,6 +10,7 @@ use Illuminate\Support\Facades\Storage;
 use Illuminate\Validation\ValidationException;
 use PHPUnit\Framework\Assert;
 use Symfony\Component\HttpKernel\Exception\HttpException;
+use Tests\Support\SnapshotOrderProbe;
 
 uses(RefreshDatabase::class);
 
@@ -230,15 +231,6 @@ it('aborts and records no restore when the snapshot command exits non-zero', fun
     expect($service->importReached)->toBeFalse();
     expect(BackupRun::where('type', 'restore')->count())->toBe(0);
 });
-
-/**
- * Shared ordering log for the snapshot-first test.
- */
-class SnapshotOrderProbe
-{
-    /** @var array<int, string> */
-    public static array $log = [];
-}
 
 it('materialises a remote-disk archive into a local temp file before extracting', function () {
     // Prove I-1 fix: restore reads the archive via Storage::disk()->readStream()

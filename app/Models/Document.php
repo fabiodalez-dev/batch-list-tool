@@ -565,18 +565,41 @@ class Document extends Model implements AuditableContract, HasMedia, Sortable
 
         $dirty = false;
 
+        // The document's barcode_status BEFORE this sync — used to detect a
+        // transition OUT of PERM_OUT custody below.
+        $previousStatus = $this->getOriginal('barcode_status');
+
         if ($box->barcode_status !== null && $this->barcode_status !== $box->barcode_status) {
             $this->barcode_status = $box->barcode_status;
             $dirty = true;
         }
 
-        // A1.2 — a PERM_OUT document needs a disinfestation_date. The box
-        // guard guarantees a PERM_OUT box carries one; backfill onto the
-        // document only when the document does not already have its own.
-        if ($box->barcode_status === 'PERM_OUT'
-            && $box->disinfestation_date !== null
-            && $this->disinfestation_date === null) {
-            $this->disinfestation_date = $box->disinfestation_date;
+        // A1.2 — keep the document's disinfestation_date in step with the box.
+        //
+        //   - Box PERM_OUT: realign the document to the box's date (the box
+        //     guard guarantees a PERM_OUT box carries one). Realign even when
+        //     the document already had a date — the box is authoritative for a
+        //     PERM_OUT custody, so a doc moving BETWEEN PERM_OUT boxes reflects
+        //     the destination's date and never drifts.
+        //
+        //   - Box NOT PERM_OUT, and the document is LEAVING a PERM_OUT custody
+        //     (its prior status was PERM_OUT): the date it carried was the
+        //     mirror of the old PERM_OUT box, so clear it — it no longer
+        //     reflects the current box.
+        //
+        // We deliberately do NOT clear a date on a non-PERM_OUT box when the
+        // document was not previously PERM_OUT: a document can legitimately
+        // hold a disinfestation_date while sitting IN a box (it was disinfested
+        // but stays in storage — see MarkDisinfested and RFQ §3.1.4). Blanket
+        // clearing would destroy that genuine record.
+        if ($box->barcode_status === 'PERM_OUT') {
+            if ($box->disinfestation_date !== null
+                && (string) $this->disinfestation_date !== (string) $box->disinfestation_date) {
+                $this->disinfestation_date = $box->disinfestation_date;
+                $dirty = true;
+            }
+        } elseif ($previousStatus === 'PERM_OUT' && $this->disinfestation_date !== null) {
+            $this->disinfestation_date = null;
             $dirty = true;
         }
 
@@ -586,6 +609,14 @@ class Document extends Model implements AuditableContract, HasMedia, Sortable
         }
 
         if ($dirty) {
+            // F1 (review finding) — saveQuietly() bypasses the model `saving`
+            // hooks, including the Batch-50 wills-only guard. Re-apply that
+            // guard here so re-mirroring batch_id into (or out of) the wills
+            // reserve cannot establish an inconsistent state behind the quiet
+            // save. Recursion safety is preserved: saveQuietly() still fires
+            // no events.
+            self::assertWillsBatchInvariant($this->batch_id, $this->series_id);
+
             $this->saveQuietly();
         }
     }
@@ -695,19 +726,7 @@ class Document extends Model implements AuditableContract, HasMedia, Sortable
             // when the placement actually changes, to keep unrelated saves cheap.
             if ($document->batch_id !== null
                 && ($document->isDirty('batch_id') || $document->isDirty('series_id'))) {
-                $batch = Batch::withoutGlobalScopes()->find($document->batch_id);
-                if ($batch !== null && (int) $batch->batch_number === Batch::WILLS_BATCH) {
-                    $series = $document->series_id !== null
-                        ? Series::find($document->series_id)
-                        : null;
-                    if ($series === null || ! $series->is_wills_series) {
-                        throw new \DomainException(
-                            'Batch ' . Batch::WILLS_BATCH
-                            . ' is reserved for wills documents (RFQ App.1 #2); '
-                            . 'assign a wills series before placing the document there.'
-                        );
-                    }
-                }
+                self::assertWillsBatchInvariant($document->batch_id, $document->series_id);
             }
         });
 
@@ -810,6 +829,37 @@ class Document extends Model implements AuditableContract, HasMedia, Sortable
             return parent::performUpdate($query);
         } finally {
             static::$bypassAuditGuard = $previous;
+        }
+    }
+
+    /**
+     * RFQ App.1 #2 — Batch 50 is reserved for wills documents. A document
+     * placed in the wills-reserve batch MUST belong to a wills series.
+     *
+     * Extracted so BOTH the `saving()` guard and the quiet custody re-mirror
+     * ({@see self::syncCustodyFromCurrentBox()}) enforce the same invariant —
+     * the latter uses saveQuietly() and would otherwise skip the guard.
+     *
+     * @throws \DomainException when the placement violates the wills reserve.
+     */
+    private static function assertWillsBatchInvariant(int|string|null $batchId, int|string|null $seriesId): void
+    {
+        if ($batchId === null) {
+            return;
+        }
+
+        $batch = Batch::withoutGlobalScopes()->find($batchId);
+        if ($batch === null || (int) $batch->batch_number !== Batch::WILLS_BATCH) {
+            return;
+        }
+
+        $series = $seriesId !== null ? Series::find($seriesId) : null;
+        if ($series === null || ! $series->is_wills_series) {
+            throw new \DomainException(
+                'Batch ' . Batch::WILLS_BATCH
+                . ' is reserved for wills documents (RFQ App.1 #2); '
+                . 'assign a wills series before placing the document there.'
+            );
         }
     }
 }

@@ -33,7 +33,7 @@ class BackupDestinationResource extends Resource
      *
      * @var list<string>
      */
-    protected const SECRET_KEYS = ['password', 'passphrase', 'secret'];
+    public const SECRET_KEYS = ['password', 'passphrase', 'secret'];
 
     protected static ?string $model = BackupDestination::class;
 

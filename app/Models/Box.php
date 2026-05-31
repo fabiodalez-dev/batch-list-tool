@@ -542,6 +542,14 @@ class Box extends Model implements AuditableContract, Sortable
         // the destruction state is being established, so unrelated saves and
         // the markDestroyed() helper (which always stamps a date) are unaffected.
         static::saving(function (self $box): void {
+            // F7 (review finding) — only enforce when the destruction state is
+            // actually being established/changed, matching the other guards.
+            // An unrelated re-save of a box (even one already in a bad legacy
+            // state) must not be blocked by this rule.
+            if (! $box->isDirty(['destroyed_at', 'destroyed_reason'])) {
+                return;
+            }
+
             $destroyedReason = trim((string) $box->destroyed_reason);
             $hasDestroyReason = $destroyedReason !== '';
 
@@ -568,7 +576,12 @@ class Box extends Model implements AuditableContract, Sortable
         static::saving(function (self $box): void {
             $isCreate = ! $box->exists;
             $typeChanged = $box->isDirty('box_type');
-            if (! $isCreate && ! $typeChanged) {
+            // F2 (review finding) — also re-check when location_id itself
+            // changes: an update that NULLs the location_id of an existing
+            // IN_SITU / NRA box would otherwise slip past the create/type gate
+            // and leave a provenance box without the Location that defines it.
+            $locationChanged = $box->isDirty('location_id');
+            if (! $isCreate && ! $typeChanged && ! $locationChanged) {
                 return;
             }
 
