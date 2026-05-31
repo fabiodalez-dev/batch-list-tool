@@ -151,54 +151,57 @@
 
 /* Dark mode keeps the warmth — never falls back to cold gray. */
 .dark {
-    --gray-50:  oklch(22% 0.040 48);
-    --gray-100: oklch(18% 0.038 48);
-    --gray-200: oklch(24% 0.045 48);
-    --gray-300: oklch(32% 0.050 48);
-    --gray-400: oklch(50% 0.060 48);
-    --gray-500: oklch(62% 0.060 48);
-    --gray-600: oklch(74% 0.055 48);
-    --gray-700: oklch(82% 0.045 48);
-    --gray-800: oklch(90% 0.030 48);
-    --gray-900: oklch(95% 0.020 48);
-    --gray-950: oklch(98% 0.012 48);
+    /* STANDARD dark neutral ramp: 50 = lightest, 950 = darkest — the SAME
+       orientation as light mode and as Tailwind/Filament expect. A previous
+       version INVERTED this (50 dark → 950 light) to feed the cream/coffee
+       remaps below, but Filament's own components are authored as
+       `dark:text-gray-200`, `dark:bg-gray-900`, … and rely on the standard
+       orientation. The inversion turned every built-in dark utility text
+       dark-on-dark (profile/user menu, dropdown items, native controls). Keep
+       gray standard so built-ins render correctly; orient cream/coffee
+       explicitly off the correct ends. */
+    --gray-50:  oklch(96% 0.012 48);
+    --gray-100: oklch(92% 0.016 48);
+    --gray-200: oklch(85% 0.020 48);
+    --gray-300: oklch(72% 0.030 48);
+    --gray-400: oklch(60% 0.040 48);
+    --gray-500: oklch(50% 0.045 48);
+    --gray-600: oklch(42% 0.045 48);
+    --gray-700: oklch(34% 0.042 48);
+    --gray-800: oklch(27% 0.040 48);
+    --gray-900: oklch(22% 0.038 48);
+    --gray-950: oklch(17% 0.034 48);
 
-    /* The theme paints surfaces and text directly from the --cream-* and
-       --coffee-* scales (body bg = --cream-50, body text = --coffee-800, plus
-       ~30 cream surfaces and 65 coffee/cream text rules). Those were defined
-       only in :root, so in dark mode the BACKGROUNDS stayed light (the bug:
-       "text changes, background doesn't"). Re-point the cream/coffee scales —
-       and the light brand tints used as backgrounds — to the warm dark --gray
-       ramp above so every surface darkens and every text lightens, consistently
-       and without inventing a second set of shades. The brand accent steps
-       (orange 400–700, used for buttons/badges) are left untouched: they read
-       fine on a dark surface. */
+    /* The theme paints surfaces and text from --cream-*/--coffee-*. Re-point
+       them to the correctly-oriented gray ends so surfaces darken and text
+       lightens. Cream = SURFACES → dark end (gray-950…500). Coffee = TEXT →
+       light end (gray-50…). The brand accents (orange 400–700) stay as-is. */
 
-    /* Cream = surfaces: light steps must become dark surfaces. */
-    --cream-50:  var(--gray-100); /* page body — darkest */
-    --cream-100: var(--gray-50);  /* sidebar / topbar / sections — lifted */
-    --cream-200: var(--gray-200); /* bands / subtle fills */
-    --cream-300: var(--gray-300); /* borders / dividers */
-    --cream-400: var(--gray-400); /* muted icons / placeholders */
+    /* Cream = surfaces: cream-50 darkest (page) → cream-500 lightest fill. */
+    --cream-50:  var(--gray-950); /* page body — darkest */
+    --cream-100: var(--gray-900); /* sidebar / topbar / sections — lifted */
+    --cream-200: var(--gray-800); /* bands / borders */
+    --cream-300: var(--gray-700); /* dividers */
+    --cream-400: var(--gray-600); /* muted icons / placeholders */
     --cream-500: var(--gray-500);
 
-    /* Coffee = text/structure: dark steps must become light in dark mode. */
-    --coffee-50:  var(--gray-100);
-    --coffee-100: var(--gray-200);
-    --coffee-200: var(--gray-300);
-    --coffee-300: var(--gray-400);
+    /* Coffee = text/structure: coffee-900 lightest (headings) → coffee-50. */
+    --coffee-50:  var(--gray-900);
+    --coffee-100: var(--gray-800);
+    --coffee-200: var(--gray-700);
+    --coffee-300: var(--gray-600);
     --coffee-400: var(--gray-500);
-    --coffee-500: var(--gray-500);
-    --coffee-600: var(--gray-600);
-    --coffee-700: var(--gray-700);
-    --coffee-800: var(--gray-800); /* body text — light */
-    --coffee-900: var(--gray-900); /* headings — lightest */
+    --coffee-500: var(--gray-400); /* muted text */
+    --coffee-600: var(--gray-300);
+    --coffee-700: var(--gray-200);
+    --coffee-800: var(--gray-100); /* body text — light */
+    --coffee-900: var(--gray-50);  /* headings — lightest */
 
-    /* Brand light tints used as backgrounds (highlighted rows, soft callouts)
-       become subtle lifted dark surfaces; the strong accents stay as-is. */
-    --brand-orange-50:  var(--gray-100);
-    --brand-orange-100: var(--gray-200);
-    --brand-orange-200: var(--gray-300);
+    /* Brand light tints used as BACKGROUNDS (highlighted rows, soft callouts,
+       primary badge) become subtle warm dark lifts; strong accents stay. */
+    --brand-orange-50:  oklch(25% 0.045 45);
+    --brand-orange-100: oklch(29% 0.055 42);
+    --brand-orange-200: oklch(34% 0.060 40);
 }
 
 /* ------------------------------------------------------------------ */
@@ -212,44 +215,44 @@
  *
  * These `.dark`-prefixed rules match Filament's specificity AND come later in
  * the stylesheet, so they deterministically win: dark warm surface + clearly
- * light text/icons. Values are pulled from the dark --gray ramp above
- * (gray-50 ≈ 22% surface, gray-800/900 ≈ 90–95% text) so contrast is strong.
+ * light text/icons. Sourced from the (now correctly-oriented) cream/coffee
+ * scales — cream = dark surface, coffee = light text — so contrast is strong.
  */
 .dark .fi-sidebar,
 .dark .fi-topbar,
 .dark .fi-topbar > nav {
-    background-color: var(--gray-50);
+    background-color: var(--cream-100);
 }
 
 .dark .fi-sidebar-nav-groups,
 .dark .fi-sidebar-item-button,
 .dark .fi-sidebar-item-label {
-    color: var(--gray-800);
+    color: var(--coffee-700);
 }
 
 .dark .fi-sidebar-item-button:hover {
-    background-color: var(--gray-200);
-    color: var(--gray-900);
+    background-color: var(--cream-200);
+    color: var(--coffee-900);
 }
 
 .dark .fi-sidebar-item-active .fi-sidebar-item-button,
 .dark .fi-sidebar-item-button[aria-current="page"] {
-    background-color: var(--gray-200);
-    color: var(--gray-900);
+    background-color: var(--cream-200);
+    color: var(--coffee-900);
     box-shadow: inset 2px 0 0 var(--brand-orange-500);
 }
 
 .dark .fi-sidebar-item-icon {
-    color: var(--gray-600);
+    color: var(--coffee-500);
 }
 
 .dark .fi-sidebar-item-active .fi-sidebar-item-icon,
 .dark .fi-sidebar-item-button[aria-current="page"] .fi-sidebar-item-icon {
-    color: var(--brand-orange-500);
+    color: var(--brand-orange-400);
 }
 
 .dark .fi-sidebar-group-label {
-    color: var(--gray-600);
+    color: var(--coffee-500);
 }
 
 /*
@@ -291,12 +294,83 @@
 }
 
 .dark .fi-link.fi-color-gray {
-    color: var(--gray-800);
+    color: var(--coffee-700);
 }
 
 .dark .fi-link:not([class*="fi-color"]):hover,
 .dark .fi-link[class*="fi-color"]:hover {
     filter: brightness(1.12);
+}
+
+/* ------------------------------------------------------------------ */
+/* Block 3c — Dark-mode component fixes (badges, cell links, buttons)  */
+/* ------------------------------------------------------------------ */
+/*
+ * Surfaces/text driven by cream/coffee are handled by the remap above. These
+ * remaining rules touch values that are NOT cream/coffee and were authored for
+ * the cream surface only: hardcoded light badge fills, the brand-orange link
+ * colour on raw <a> cells, the brand-orange-800 primary-badge text, and the
+ * light-on-colour button labels (--cream-50, which is dark in dark mode).
+ */
+
+/* Raw table-cell anchors (not .fi-link) used brand-orange-700 (dark brown). */
+.dark .fi-ta-cell a {
+    color: oklch(80% 0.085 58);
+}
+
+.dark .fi-ta-cell a:hover {
+    color: oklch(87% 0.075 58);
+}
+
+/* Badges: light pills with dark text become dark-tinted pills with light text
+   of the same hue (primary was the worst — brand-orange-800 text on a dark
+   lift = dark-on-dark). */
+.dark .fi-badge {
+    background-color: var(--cream-200);
+    color: var(--coffee-800);
+}
+
+.dark .fi-badge[data-color="primary"] {
+    background-color: oklch(30% 0.060 42);
+    color: oklch(85% 0.070 55);
+}
+
+.dark .fi-badge[data-color="success"] {
+    background-color: oklch(30% 0.060 150);
+    color: oklch(86% 0.100 150);
+}
+
+.dark .fi-badge[data-color="warning"] {
+    background-color: oklch(33% 0.065 80);
+    color: oklch(88% 0.110 85);
+}
+
+.dark .fi-badge[data-color="danger"] {
+    background-color: oklch(32% 0.070 25);
+    color: oklch(85% 0.110 25);
+}
+
+.dark .fi-badge[data-color="gray"] {
+    background-color: var(--cream-200);
+    color: var(--coffee-700);
+}
+
+/* Solid coloured buttons: the label was --cream-50 (a light surface token that
+   correctly becomes DARK in dark mode) → dark-on-colour. Pin a near-white
+   label so it reads on the accent fill in both modes; the amber warning button
+   keeps a dark label (warm-warning-500 stays a light amber in dark). */
+.dark .fi-btn[data-color="primary"],
+.dark .fi-btn-color-primary,
+.dark .fi-btn[data-color="danger"],
+.dark .fi-btn-color-danger,
+.dark .fi-btn[data-color="success"],
+.dark .fi-btn-color-success {
+    color: oklch(98% 0.008 60);
+}
+
+.dark .fi-btn[data-color="warning"],
+.dark .fi-btn-color-warning {
+    color: oklch(25% 0.060 80);
 }
 
 /* ------------------------------------------------------------------ */
