@@ -32,10 +32,14 @@ return new class extends Migration
             $table->integer('sort_order')->default(0);
             $table->timestamps();
 
-            // Each key must be unique within a repository + entity_type scope
-            $table->unique(['repository_id', 'entity_type', 'key']);
+            // Each key must be unique within a repository + entity_type scope.
+            // Explicit SHORT index names: the auto-generated name (table + all
+            // four columns + suffix) exceeds MariaDB's 64-char identifier limit
+            // (error 1059). SQLite has no such limit, so this only surfaced on
+            // the prod MariaDB, not in the SQLite test suite.
+            $table->unique(['repository_id', 'entity_type', 'key'], 'cfd_repo_entity_key_uq');
             // Composite index for active definitions listing by entity
-            $table->index(['repository_id', 'entity_type', 'is_active', 'sort_order']);
+            $table->index(['repository_id', 'entity_type', 'is_active', 'sort_order'], 'cfd_repo_entity_active_sort_idx');
         });
     }
 
