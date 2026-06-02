@@ -12,6 +12,7 @@ use App\Models\Document;
 use App\Models\Scopes\RepositoryScope;
 use App\Support\BulkImport\EntityResolver;
 use App\Support\BulkImport\SpreadsheetParsers;
+use App\Support\CustomFields\CustomFieldResolver;
 use Filament\Actions\Imports\Exceptions\RowImportFailedException;
 use Filament\Actions\Imports\ImportColumn;
 use Filament\Actions\Imports\Importer;
@@ -125,18 +126,6 @@ class DocumentImporter extends Importer
      * @var array<int, array<string, string>>
      */
     protected static array $rowCustomFieldStash = [];
-
-    /**
-     * Cached active CustomFieldDefinition collections keyed by repository_id.
-     *
-     * Keyed by (int) repository_id → EloquentCollection so long-lived queue
-     * workers processing multiple tenants in sequence never serve one tenant's
-     * definitions to another (GROUP C fix — cross-tenant leakage prevention).
-     * Reset at the start of each row via resolveCustomFieldDefinitions().
-     *
-     * @var array<int, EloquentCollection<int, CustomFieldDefinition>>
-     */
-    protected static array $customFieldDefinitionsCache = [];
 
     /**
      * Per-row transactional safety (review I2 / Fix 5).
@@ -460,37 +449,20 @@ class DocumentImporter extends Importer
     }
 
     /**
-     * Resolve active CustomFieldDefinition records for the current user's
-     * default repository (document entity type).
+     * Resolve active CustomFieldDefinition records for the active repository
+     * (document entity type). Delegates to CustomFieldResolver so the
+     * active-repo logic (ActiveRepository topbar switcher → user default →
+     * null) is centralised.
      *
-     * Results are cached per repository_id (GROUP C fix): long-lived queue
-     * workers processing multiple tenants never serve one tenant's definitions
-     * to another, because the cache is keyed by repo id rather than being a
-     * single shared nullable slot.
+     * The resolver's per-request memo replaces the local
+     * $customFieldDefinitionsCache: GROUP C fix (cross-tenant isolation) is
+     * now owned by the resolver's "{repoId}:{entityType}" cache key.
      *
      * @return EloquentCollection<int, CustomFieldDefinition>
      */
     protected static function resolveCustomFieldDefinitions(): EloquentCollection
     {
-        $repositoryId = auth()->user()?->default_repository_id;
-        if ($repositoryId === null) {
-            return new EloquentCollection;
-        }
-
-        $repoKey = (int) $repositoryId;
-
-        if (isset(static::$customFieldDefinitionsCache[$repoKey])) {
-            return static::$customFieldDefinitionsCache[$repoKey];
-        }
-
-        static::$customFieldDefinitionsCache[$repoKey] = CustomFieldDefinition::query()
-            ->where('repository_id', $repoKey)
-            ->where('entity_type', 'document')
-            ->where('is_active', true)
-            ->orderBy('sort_order')
-            ->get();
-
-        return static::$customFieldDefinitionsCache[$repoKey];
+        return CustomFieldResolver::definitionsFor('document');
     }
 
     /**
@@ -869,6 +841,14 @@ class DocumentImporter extends Importer
         $customData = self::$rowCustomFieldStash[$key] ?? null;
         unset(self::$rowCustomFieldStash[$key]);
         if ($customData !== null && method_exists($record, 'setCustomFieldData')) {
+            // No try/catch here: setCustomFieldData() coerces every value with a
+            // total (string) cast that cannot throw on a malformed cell — the
+            // only realistic exception is a DB-level persistence error
+            // (QueryException, deadlock, …). Swallowing that would commit the
+            // Document row with partial/missing custom fields and hide the
+            // failure. A persistence error MUST fail the row so it surfaces in
+            // the failed-rows report. (Per-cell "lenient" handling is moot: a
+            // bad value is stored verbatim and cast on read, never on write.)
             $record->setCustomFieldData($customData, false);  // false = merge/import semantics
         }
 
