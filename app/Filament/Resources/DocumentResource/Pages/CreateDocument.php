@@ -2,12 +2,15 @@
 
 namespace App\Filament\Resources\DocumentResource\Pages;
 
+use App\Filament\Concerns\HandlesCustomFieldForm;
 use App\Filament\Resources\DocumentResource;
 use App\Models\Box;
 use Filament\Resources\Pages\CreateRecord;
 
 class CreateDocument extends CreateRecord
 {
+    use HandlesCustomFieldForm;
+
     protected static string $resource = DocumentResource::class;
 
     /**
@@ -38,12 +41,20 @@ class CreateDocument extends CreateRecord
     /**
      * Defence in depth: even if the field is hidden by field-permissions, the
      * box assignment from the query param is still applied on create.
+     * Also strips the 'custom' sub-array so it does not reach Eloquent's fill()
+     * (delegated to HandlesCustomFieldForm::mutateFormDataBeforeCreate via
+     * explicit call because this class method shadows the trait method).
      *
      * @param array<string, mixed> $data
      * @return array<string, mixed>
      */
     protected function mutateFormDataBeforeCreate(array $data): array
     {
+        // Strip and stash custom fields (HandlesCustomFieldForm logic).
+        // Calling the trait method explicitly because this class method
+        // shadows the trait's version in PHP's method resolution order.
+        $data = $this->mutateFormDataBeforeCreateCustomFields($data);
+
         if (empty($data['current_box_id'])) {
             $boxId = $this->prefillBoxId();
             if ($boxId !== null) {

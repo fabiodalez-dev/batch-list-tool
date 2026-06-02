@@ -8,6 +8,8 @@ use App\Filament\Support\SearchableSelects;
 use App\Models\Batch;
 use App\Models\Lookup\BatchType;
 use App\Models\Repository;
+use App\Support\CustomFields\CustomFieldSchema;
+use Carbon\Carbon;
 use Filament\Actions\Action;
 use Filament\Actions\BulkActionGroup;
 use Filament\Actions\DeleteBulkAction;
@@ -19,11 +21,13 @@ use Filament\Infolists\Components\TextEntry;
 use Filament\Resources\Resource;
 use Filament\Schemas;
 use Filament\Schemas\Components\Section;
+use Filament\Schemas\Components\Utilities\Get;
 use Filament\Schemas\Schema;
 use Filament\Tables;
 use Filament\Tables\Filters\SelectFilter;
 use Filament\Tables\Filters\TernaryFilter;
 use Filament\Tables\Table;
+use Illuminate\Database\Eloquent\Builder;
 
 class BatchResource extends Resource
 {
@@ -113,10 +117,39 @@ class BatchResource extends Resource
                         )
                             ->label('Repository')
                             ->required()
+                            // live() so the Custom fields Section re-renders when
+                            // the operator picks a different repository (GROUP A fix).
+                            ->live()
                             ->default(fn () => auth()->user()?->default_repository_id)),
                         $g(Forms\Components\Toggle::make('is_active')
                             ->required()),
                     ]),
+
+                // Custom fields (EAV, per-repository).
+                // Definitions are created by super_admin via the Repository admin panel.
+                //
+                // Repository resolution order (GROUP A fix):
+                //   1. Live form state: $get('repository_id') — reflects the operator's
+                //      current selection in real-time (repository_id is ->live()).
+                //   2. Fallback to record repository_id (on edit, before any change).
+                //   3. Fallback to the user's default repository (on create, nothing selected yet).
+                Section::make('Custom fields')
+                    ->columnSpanFull()
+                    ->columns(2)
+                    ->schema(static function (Get $get, ?Batch $record): array {
+                        $repositoryId = (int) $get('repository_id')
+                            ?: $record?->repository_id
+                            ?: auth()->user()?->default_repository_id;
+
+                        return CustomFieldSchema::for('batch', $repositoryId !== null ? (int) $repositoryId : null);
+                    })
+                    ->visible(static function (Get $get, ?Batch $record): bool {
+                        $repositoryId = (int) $get('repository_id')
+                            ?: $record?->repository_id
+                            ?: auth()->user()?->default_repository_id;
+
+                        return count(CustomFieldSchema::for('batch', $repositoryId !== null ? (int) $repositoryId : null)) > 0;
+                    }),
             ]);
     }
 
@@ -177,6 +210,48 @@ class BatchResource extends Resource
                             ->color('gray'),
                     ]),
 
+                // Custom fields (EAV, per-repository) — view/infolist section.
+                // Shows label → formatted value for every active definition that
+                // has a stored value on this record.
+                Section::make('Custom fields')
+                    ->columns($twoCols)
+                    ->schema(static function (?Batch $record): array {
+                        if ($record === null) {
+                            return [];
+                        }
+                        $data = $record->getCustomFieldData();
+                        if (empty($data)) {
+                            return [];
+                        }
+                        $entries = [];
+                        foreach ($record->customFieldDefinitions()->get() as $def) {
+                            $value = $data[$def->key] ?? null;
+                            if ($value === null) {
+                                continue;
+                            }
+                            $displayValue = match ($def->type) {
+                                'boolean' => $value ? 'Yes' : 'No',
+                                'date' => $value instanceof Carbon ? $value->toDateString() : (string) $value,
+                                'datetime' => $value instanceof Carbon ? $value->toDateTimeString() : (string) $value,
+                                default => (string) $value,
+                            };
+                            $entries[] = TextEntry::make('cf_' . $def->key)
+                                ->label($def->label)
+                                ->state($displayValue)
+                                ->placeholder('—');
+                        }
+
+                        return $entries;
+                    })
+                    ->visible(static function (?Batch $record): bool {
+                        if ($record === null) {
+                            return false;
+                        }
+                        $data = $record->getCustomFieldData();
+
+                        return ! empty(array_filter($data, fn ($v) => $v !== null));
+                    }),
+
                 Section::make('Audit info')
                     ->columns($twoCols)
                     ->collapsed()
@@ -231,6 +306,8 @@ class BatchResource extends Resource
                     ->dateTime()
                     ->sortable()
                     ->toggleable(isToggledHiddenByDefault: true),
+                // Custom fields (EAV) — toggleable columns for active definitions.
+                ...DocumentResource::customFieldTableColumns('batch'),
             ])
             ->filters([
                 // Feedback1 Wave B (B1) — dropdown-driven filters alongside the
@@ -288,5 +365,13 @@ class BatchResource extends Resource
             'view' => Pages\ViewBatch::route('/{record}'),
             'edit' => Pages\EditBatch::route('/{record}/edit'),
         ];
+    }
+
+    /**
+     * Eager-load customFieldValues.definition to avoid N+1 in the table columns.
+     */
+    public static function getEloquentQuery(): Builder
+    {
+        return parent::getEloquentQuery()->with(['customFieldValues.definition']);
     }
 }

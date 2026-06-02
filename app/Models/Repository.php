@@ -43,4 +43,13 @@ class Repository extends Model implements AuditableContract
     {
         return $this->hasMany(Accession::class);
     }
+
+    /**
+     * Custom field definitions scoped to this repository.
+     * Used by the CustomFieldsRelationManager and the HasCustomFields trait.
+     */
+    public function customFieldDefinitions(): HasMany
+    {
+        return $this->hasMany(CustomFieldDefinition::class);
+    }
 }

@@ -8,12 +8,15 @@ use App\Filament\Actions\Documents\MoveToBoxAction;
 use App\Filament\Concerns\AppliesFieldPermissions;
 use App\Filament\Resources\DocumentResource\Pages;
 use App\Filament\Support\SearchableSelects;
+use App\Models\CustomFieldDefinition;
 use App\Models\Document;
 use App\Models\DocumentType;
 use App\Models\Lookup\CurrentBoxType;
 use App\Models\Lookup\DigitisationStatus;
 use App\Models\Practice;
 use App\Models\Repository;
+use App\Support\CustomFields\CustomFieldSchema;
+use Carbon\Carbon;
 use Filament\Actions\BulkActionGroup;
 use Filament\Actions\DeleteBulkAction;
 use Filament\Actions\EditAction;
@@ -27,6 +30,7 @@ use Filament\Resources\Resource;
 use Filament\Schemas;
 use Filament\Schemas\Components\Grid;
 use Filament\Schemas\Components\Section;
+use Filament\Schemas\Components\Utilities\Get;
 use Filament\Schemas\Schema;
 use Filament\Support\Enums\FontWeight;
 use Filament\Support\Enums\TextSize;
@@ -155,6 +159,9 @@ class DocumentResource extends Resource
                         )
                             ->label('Repository')
                             ->required()
+                            // live() so the Custom fields Section re-renders when
+                            // the operator picks a different repository (GROUP A fix).
+                            ->live()
                             ->default(fn () => auth()->user()?->default_repository_id)),
                         $g(Forms\Components\TextInput::make('volume_label')->label('Volume label')->maxLength(64)),
                         $g(Forms\Components\Select::make('practice')
@@ -408,6 +415,36 @@ class DocumentResource extends Resource
                         $g(Forms\Components\KeyValue::make('custom_fields')->label('Custom fields (POC json)')->columnSpanFull()),
                         $g(Forms\Components\KeyValue::make('metadata')->label('Metadata (POC json)')->columnSpanFull()),
                     ]),
+
+                // Custom fields (EAV, per-repository).
+                // Definitions are created by super_admin via the Repository admin panel.
+                //
+                // Repository resolution order (GROUP A fix):
+                //   1. Live form state: $get('repository_id') — reflects the operator's
+                //      current selection in real-time (repository_id is ->live()).
+                //   2. Fallback to record repository_id (on edit, before any change).
+                //   3. Fallback to the user's default repository (on create, nothing selected yet).
+                //
+                // The Section re-renders automatically whenever repository_id changes
+                // because Get reads a ->live() field.
+                Section::make('Custom fields')
+                    ->columnSpanFull()
+                    ->columns(2)
+                    ->collapsed(false)
+                    ->schema(static function (Get $get, ?Document $record): array {
+                        $repositoryId = (int) $get('repository_id')
+                            ?: $record?->repository_id
+                            ?: auth()->user()?->default_repository_id;
+
+                        return CustomFieldSchema::for('document', $repositoryId !== null ? (int) $repositoryId : null);
+                    })
+                    ->visible(static function (Get $get, ?Document $record): bool {
+                        $repositoryId = (int) $get('repository_id')
+                            ?: $record?->repository_id
+                            ?: auth()->user()?->default_repository_id;
+
+                        return count(CustomFieldSchema::for('document', $repositoryId !== null ? (int) $repositoryId : null)) > 0;
+                    }),
             ]);
     }
 
@@ -816,6 +853,49 @@ class DocumentResource extends Resource
                             ->columnSpanFull(),
                     ]),
 
+                // Custom fields (EAV, per-repository) — view/infolist section.
+                // Shows label → formatted value for every active definition that
+                // has a stored value on this record. Hidden when the record has no
+                // active definitions or no stored values (no empty section shown).
+                Section::make('Custom fields')
+                    ->columns($twoCols)
+                    ->schema(static function (?Document $record): array {
+                        if ($record === null) {
+                            return [];
+                        }
+                        $data = $record->getCustomFieldData();
+                        if (empty($data)) {
+                            return [];
+                        }
+                        $entries = [];
+                        foreach ($record->customFieldDefinitions()->get() as $def) {
+                            $value = $data[$def->key] ?? null;
+                            if ($value === null) {
+                                continue;
+                            }
+                            $displayValue = match ($def->type) {
+                                'boolean' => $value ? 'Yes' : 'No',
+                                'date' => $value instanceof Carbon ? $value->toDateString() : (string) $value,
+                                'datetime' => $value instanceof Carbon ? $value->toDateTimeString() : (string) $value,
+                                default => (string) $value,
+                            };
+                            $entries[] = TextEntry::make('cf_' . $def->key)
+                                ->label($def->label)
+                                ->state($displayValue)
+                                ->placeholder('—');
+                        }
+
+                        return $entries;
+                    })
+                    ->visible(static function (?Document $record): bool {
+                        if ($record === null) {
+                            return false;
+                        }
+                        $data = $record->getCustomFieldData();
+
+                        return ! empty(array_filter($data, fn ($v) => $v !== null));
+                    }),
+
                 Section::make('Audit info')
                     ->columns($twoCols)
                     ->collapsed()
@@ -900,6 +980,12 @@ class DocumentResource extends Resource
                 $gc(Tables\Columns\TextColumn::make('disinfestation_date')->label('Disinfested')->date()->sortable()->toggleable(isToggledHiddenByDefault: true)),
                 $gc(Tables\Columns\IconColumn::make('torre')->boolean()->toggleable(isToggledHiddenByDefault: true)),
                 $gc(Tables\Columns\TextColumn::make('updated_at')->dateTime()->sortable()->toggleable(isToggledHiddenByDefault: true)),
+                // Custom fields (EAV) — one TextColumn per active definition for
+                // the current user's default repository (document entity type).
+                // All hidden by default; operator can reveal via the column picker.
+                // Eager-load customFieldValues.definition to avoid N+1
+                // (see getEloquentQuery() for the base eager-load chain).
+                ...self::customFieldTableColumns('document'),
             ])
             ->filtersFormColumns(3)
             ->filters([
@@ -1212,7 +1298,62 @@ class DocumentResource extends Resource
                 // 3,113-row sample where most rows share ~10 accessions
                 // this avoids 25 round-trips per page render.
                 'accession',
+                // Custom-field EAV: eager-load definition to avoid N+1 in
+                // table columns and infolist rendering.
+                'customFieldValues.definition',
             ]);
+    }
+
+    /**
+     * Build toggleable TextColumn entries for every active custom-field
+     * definition belonging to the given entity type and the current user's
+     * default repository. All columns are hidden by default (operator reveals
+     * them via the column picker). Returns an empty array when no definitions
+     * exist so the spread operator in table() is a no-op.
+     *
+     * Used by DocumentResource::table() (and mirrored in the other resources).
+     *
+     * @return array<int, Tables\Columns\TextColumn>
+     */
+    public static function customFieldTableColumns(string $entityType): array
+    {
+        $repositoryId = auth()->user()?->default_repository_id;
+        if ($repositoryId === null) {
+            return [];
+        }
+
+        return CustomFieldDefinition::query()
+            ->where('repository_id', $repositoryId)
+            ->where('entity_type', $entityType)
+            ->where('is_active', true)
+            ->orderBy('sort_order')
+            ->get()
+            ->map(static function (CustomFieldDefinition $def): Tables\Columns\TextColumn {
+                return Tables\Columns\TextColumn::make('customFieldValues_' . $def->key)
+                    ->label($def->label)
+                    ->toggleable(isToggledHiddenByDefault: true)
+                    ->placeholder('—')
+                    ->state(static function ($record) use ($def): ?string {
+                        if (! method_exists($record, 'customFieldValues')) {
+                            return null;
+                        }
+                        // Use already-eager-loaded collection where possible.
+                        $valueModel = $record->customFieldValues
+                            ->firstWhere('custom_field_definition_id', $def->id);
+                        if ($valueModel === null) {
+                            return null;
+                        }
+                        $typed = $valueModel->getTypedValueAttribute();
+
+                        return match ($def->type) {
+                            'boolean' => $typed ? 'Yes' : 'No',
+                            'date' => $typed instanceof Carbon ? $typed->toDateString() : (string) ($typed ?? ''),
+                            'datetime' => $typed instanceof Carbon ? $typed->toDateTimeString() : (string) ($typed ?? ''),
+                            default => $typed !== null ? (string) $typed : null,
+                        };
+                    });
+            })
+            ->all();
     }
 
     /**

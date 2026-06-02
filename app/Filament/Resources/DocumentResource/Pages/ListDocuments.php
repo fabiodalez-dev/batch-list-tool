@@ -8,8 +8,10 @@ use App\Filament\Concerns\ExplainsPage;
 use App\Filament\Concerns\FiltersExportColumns;
 use App\Filament\Imports\DocumentImporter;
 use App\Filament\Resources\DocumentResource;
+use App\Models\CustomFieldDefinition;
 use App\Models\Document;
 use App\Support\BulkImport\TemplateGenerator;
+use Carbon\Carbon;
 use Filament\Actions;
 use Filament\Resources\Pages\ListRecords;
 use HayderHatem\FilamentExcelImport\Actions\FullImportAction;
@@ -51,6 +53,17 @@ class ListDocuments extends ListRecords
             'notes' => 'Notes',
         ]);
 
+        // Append active custom-field columns after the fixed ones.
+        // Column key: 'cf_<key>' to avoid collision with any fixed column name.
+        // Column header: definition label (human-readable, matches the UI).
+        $customFieldDefs = $this->getActiveCustomFieldDefinitions();
+        $customFieldColumns = [];
+        foreach ($customFieldDefs as $def) {
+            $customFieldColumns['cf_' . $def->key] = $def->label;
+        }
+
+        $allColumns = array_merge($columns, $customFieldColumns);
+
         $user = auth()->user();
         $repoCode = optional($user?->defaultRepository ?? null)->code ?? 'all';
         $filename = sprintf(
@@ -67,19 +80,22 @@ class ListDocuments extends ListRecords
                 'batch:id,batch_number',
                 'currentBox:id,box_number',
                 'authorities:id,surname',
+                // Eager-load custom field values with their definitions so the
+                // CSV row builder can resolve typed values without N+1.
+                'customFieldValues.definition',
             ]);
 
-        return response()->streamDownload(function () use ($query, $columns): void {
+        return response()->streamDownload(function () use ($query, $allColumns, $customFieldDefs): void {
             $out = fopen('php://output', 'wb');
             // UTF-8 BOM — Excel on Windows needs it for non-ASCII (Maltese accents).
             fwrite($out, "\xEF\xBB\xBF");
-            fputcsv($out, array_values($columns));
+            fputcsv($out, array_values($allColumns));
 
-            $query->orderBy('id')->chunk(500, function ($documents) use ($out, $columns): void {
+            $query->orderBy('id')->chunk(500, function ($documents) use ($out, $allColumns, $customFieldDefs): void {
                 /** @var Collection<int, Document> $documents */
                 foreach ($documents as $doc) {
                     // Build a full cell map keyed by field name, then emit only
-                    // the visible columns (same keys as $columns) in order.
+                    // the visible columns (same keys as $allColumns) in order.
                     $allCells = [
                         'identifier' => $this->sanitizeCsvCell($doc->identifier),
                         'document_type' => $this->sanitizeCsvCell($doc->document_type),
@@ -95,7 +111,26 @@ class ListDocuments extends ListRecords
                         'notes' => $this->sanitizeCsvCell($doc->notes),
                     ];
 
-                    fputcsv($out, array_intersect_key($allCells, $columns));
+                    // Append custom-field values. Use the already-eager-loaded
+                    // customFieldValues collection to avoid per-row queries.
+                    foreach ($customFieldDefs as $def) {
+                        $valueModel = $doc->customFieldValues
+                            ->firstWhere('custom_field_definition_id', $def->id);
+                        $typed = $valueModel?->getTypedValueAttribute();
+                        $cellValue = '';
+                        if ($typed !== null) {
+                            $cellValue = match ($def->type) {
+                                'boolean' => $typed ? '1' : '0',
+                                'date' => $typed instanceof Carbon ? $typed->toDateString() : (string) $typed,
+                                'datetime' => $typed instanceof Carbon ? $typed->toDateTimeString() : (string) $typed,
+                                default => (string) $typed,
+                            };
+                            $cellValue = $this->sanitizeCsvCell($cellValue);
+                        }
+                        $allCells['cf_' . $def->key] = $cellValue;
+                    }
+
+                    fputcsv($out, array_intersect_key($allCells, $allColumns));
                 }
             });
 
@@ -146,6 +181,31 @@ class ListDocuments extends ListRecords
 
             Actions\CreateAction::make(),
         ];
+    }
+
+    /**
+     * Return the active custom-field definitions for the current user's default
+     * repository (document entity type), ordered by sort_order. Used by both
+     * exportToCsv() (column headers) and the row builder (cell values).
+     *
+     * Returns an empty Collection when the user has no default repository or
+     * when no active definitions exist — safe to iterate unconditionally.
+     *
+     * @return \Illuminate\Database\Eloquent\Collection<int, CustomFieldDefinition>
+     */
+    private function getActiveCustomFieldDefinitions(): \Illuminate\Database\Eloquent\Collection
+    {
+        $repositoryId = auth()->user()?->default_repository_id;
+        if ($repositoryId === null) {
+            return new \Illuminate\Database\Eloquent\Collection;
+        }
+
+        return CustomFieldDefinition::query()
+            ->where('repository_id', $repositoryId)
+            ->where('entity_type', 'document')
+            ->where('is_active', true)
+            ->orderBy('sort_order')
+            ->get();
     }
 
     /**

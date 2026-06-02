@@ -4,7 +4,10 @@ namespace App\Filament\Resources;
 
 use App\Filament\Resources\VolumeResource\Pages;
 use App\Filament\Support\SearchableSelects;
+use App\Models\Document;
 use App\Models\Volume;
+use App\Support\CustomFields\CustomFieldSchema;
+use Carbon\Carbon;
 use Filament\Actions\BulkActionGroup;
 use Filament\Actions\DeleteBulkAction;
 use Filament\Actions\EditAction;
@@ -13,9 +16,11 @@ use Filament\Forms;
 use Filament\Infolists\Components\TextEntry;
 use Filament\Resources\Resource;
 use Filament\Schemas\Components\Section;
+use Filament\Schemas\Components\Utilities\Get;
 use Filament\Schemas\Schema;
 use Filament\Tables;
 use Filament\Tables\Table;
+use Illuminate\Database\Eloquent\Builder;
 
 class VolumeResource extends Resource
 {
@@ -45,8 +50,12 @@ class VolumeResource extends Resource
                         // Searchable autocomplete (no preload): the documents table has
                         // 3,000+ rows in production, so a `<select>` with that many
                         // options is unusable. See App\Filament\Support\SearchableSelects.
+                        // live() so the Custom fields Section re-renders when the operator
+                        // picks a different document (which may belong to a different
+                        // repository and thus expose different custom field definitions).
                         SearchableSelects::documentVia('document_id', 'document')
                             ->required()
+                            ->live()
                             ->columnSpanFull(),
                         Forms\Components\TextInput::make('volume_number')
                             ->required()
@@ -69,6 +78,36 @@ class VolumeResource extends Resource
                             ->rows(3)
                             ->columnSpanFull(),
                     ]),
+
+                // Custom fields (EAV, per-repository).
+                // For Volume the repository is derived from its document (spec §Architecture).
+                //
+                // Repository resolution order (GROUP A fix):
+                //   1. Live form state: Document::find($get('document_id'))->repository_id
+                //      document_id is ->live() (declared above) so the Section re-renders
+                //      whenever the operator picks a different document.
+                //   2. Fallback to the loaded record's document repository (on edit,
+                //      before any document selection change).
+                //   3. Fallback to the user's default repository (on create, no document yet).
+                Section::make('Custom fields')
+                    ->columnSpanFull()
+                    ->columns(2)
+                    ->schema(static function (Get $get, ?Volume $record): array {
+                        $documentId = $get('document_id');
+                        $repositoryId = ($documentId ? Document::withoutGlobalScopes()->find($documentId)?->repository_id : null)
+                            ?? $record?->document?->repository_id
+                            ?? auth()->user()?->default_repository_id;
+
+                        return CustomFieldSchema::for('volume', $repositoryId !== null ? (int) $repositoryId : null);
+                    })
+                    ->visible(static function (Get $get, ?Volume $record): bool {
+                        $documentId = $get('document_id');
+                        $repositoryId = ($documentId ? Document::withoutGlobalScopes()->find($documentId)?->repository_id : null)
+                            ?? $record?->document?->repository_id
+                            ?? auth()->user()?->default_repository_id;
+
+                        return count(CustomFieldSchema::for('volume', $repositoryId !== null ? (int) $repositoryId : null)) > 0;
+                    }),
             ]);
     }
 
@@ -126,6 +165,47 @@ class VolumeResource extends Resource
                             ->columnSpanFull(),
                     ]),
 
+                // Custom fields (EAV, per-repository) — view/infolist section.
+                // For Volume the repository is derived from its document.
+                Section::make('Custom fields')
+                    ->columns($twoCols)
+                    ->schema(static function (?Volume $record): array {
+                        if ($record === null) {
+                            return [];
+                        }
+                        $data = $record->getCustomFieldData();
+                        if (empty($data)) {
+                            return [];
+                        }
+                        $entries = [];
+                        foreach ($record->customFieldDefinitions()->get() as $def) {
+                            $value = $data[$def->key] ?? null;
+                            if ($value === null) {
+                                continue;
+                            }
+                            $displayValue = match ($def->type) {
+                                'boolean' => $value ? 'Yes' : 'No',
+                                'date' => $value instanceof Carbon ? $value->toDateString() : (string) $value,
+                                'datetime' => $value instanceof Carbon ? $value->toDateTimeString() : (string) $value,
+                                default => (string) $value,
+                            };
+                            $entries[] = TextEntry::make('cf_' . $def->key)
+                                ->label($def->label)
+                                ->state($displayValue)
+                                ->placeholder('—');
+                        }
+
+                        return $entries;
+                    })
+                    ->visible(static function (?Volume $record): bool {
+                        if ($record === null) {
+                            return false;
+                        }
+                        $data = $record->getCustomFieldData();
+
+                        return ! empty(array_filter($data, fn ($v) => $v !== null));
+                    }),
+
                 Section::make('Audit info')
                     ->columns($twoCols)
                     ->collapsed()
@@ -165,6 +245,8 @@ class VolumeResource extends Resource
                     ->dateTime()
                     ->sortable()
                     ->toggleable(isToggledHiddenByDefault: true),
+                // Custom fields (EAV) — toggleable columns for active definitions.
+                ...DocumentResource::customFieldTableColumns('volume'),
             ])
             ->filters([
                 //
@@ -195,5 +277,15 @@ class VolumeResource extends Resource
             'view' => Pages\ViewVolume::route('/{record}'),
             'edit' => Pages\EditVolume::route('/{record}/edit'),
         ];
+    }
+
+    /**
+     * Eager-load customFieldValues.definition to avoid N+1 in table columns.
+     * Also load document so Volume::customFieldRepositoryId() can resolve via
+     * document->repository_id without an additional query per row.
+     */
+    public static function getEloquentQuery(): Builder
+    {
+        return parent::getEloquentQuery()->with(['customFieldValues.definition', 'document']);
     }
 }

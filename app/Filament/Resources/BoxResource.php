@@ -7,9 +7,12 @@ use App\Filament\Actions\Boxes\MoveBoxToLocationAction;
 use App\Filament\Concerns\AppliesFieldPermissions;
 use App\Filament\Resources\BoxResource\Pages;
 use App\Filament\Support\SearchableSelects;
+use App\Models\Batch;
 use App\Models\Box;
 use App\Models\Lookup\BarcodeStatus;
 use App\Models\Lookup\BoxType;
+use App\Support\CustomFields\CustomFieldSchema;
+use Carbon\Carbon;
 use Filament\Actions\Action;
 use Filament\Actions\BulkActionGroup;
 use Filament\Actions\DeleteBulkAction;
@@ -32,6 +35,7 @@ use Filament\Tables\Filters\QueryBuilder\Constraints\TextConstraint;
 use Filament\Tables\Filters\SelectFilter;
 use Filament\Tables\Filters\TernaryFilter;
 use Filament\Tables\Table;
+use Illuminate\Database\Eloquent\Builder;
 
 class BoxResource extends Resource
 {
@@ -415,6 +419,36 @@ class BoxResource extends Resource
                             ->rows(3)
                             ->columnSpanFull()),
                     ]),
+
+                // Custom fields (EAV, per-repository).
+                // For Box the repository is derived from its batch (spec §Architecture).
+                //
+                // Repository resolution order (GROUP A fix):
+                //   1. Live form state: Batch::find($get('batch_id'))->repository_id
+                //      batch_id is ->live() (declared above) so the Section re-renders
+                //      whenever the operator picks a different batch.
+                //   2. Fallback to the loaded record's batch repository (on edit,
+                //      before any batch selection change).
+                //   3. Fallback to the user's default repository (on create, no batch yet).
+                Section::make('Custom fields')
+                    ->columnSpanFull()
+                    ->columns(2)
+                    ->schema(static function (Get $get, ?Box $record): array {
+                        $batchId = $get('batch_id');
+                        $repositoryId = ($batchId ? Batch::find($batchId)?->repository_id : null)
+                            ?? $record?->batch?->repository_id
+                            ?? auth()->user()?->default_repository_id;
+
+                        return CustomFieldSchema::for('box', $repositoryId !== null ? (int) $repositoryId : null);
+                    })
+                    ->visible(static function (Get $get, ?Box $record): bool {
+                        $batchId = $get('batch_id');
+                        $repositoryId = ($batchId ? Batch::find($batchId)?->repository_id : null)
+                            ?? $record?->batch?->repository_id
+                            ?? auth()->user()?->default_repository_id;
+
+                        return count(CustomFieldSchema::for('box', $repositoryId !== null ? (int) $repositoryId : null)) > 0;
+                    }),
             ]);
     }
 
@@ -573,6 +607,47 @@ class BoxResource extends Resource
                             ->columnSpanFull(),
                     ]),
 
+                // Custom fields (EAV, per-repository) — view/infolist section.
+                // For Box the repository is derived from its batch (spec §Architecture).
+                Section::make('Custom fields')
+                    ->columns($twoCols)
+                    ->schema(static function (?Box $record): array {
+                        if ($record === null) {
+                            return [];
+                        }
+                        $data = $record->getCustomFieldData();
+                        if (empty($data)) {
+                            return [];
+                        }
+                        $entries = [];
+                        foreach ($record->customFieldDefinitions()->get() as $def) {
+                            $value = $data[$def->key] ?? null;
+                            if ($value === null) {
+                                continue;
+                            }
+                            $displayValue = match ($def->type) {
+                                'boolean' => $value ? 'Yes' : 'No',
+                                'date' => $value instanceof Carbon ? $value->toDateString() : (string) $value,
+                                'datetime' => $value instanceof Carbon ? $value->toDateTimeString() : (string) $value,
+                                default => (string) $value,
+                            };
+                            $entries[] = TextEntry::make('cf_' . $def->key)
+                                ->label($def->label)
+                                ->state($displayValue)
+                                ->placeholder('—');
+                        }
+
+                        return $entries;
+                    })
+                    ->visible(static function (?Box $record): bool {
+                        if ($record === null) {
+                            return false;
+                        }
+                        $data = $record->getCustomFieldData();
+
+                        return ! empty(array_filter($data, fn ($v) => $v !== null));
+                    }),
+
                 Section::make('Audit info')
                     ->columns($twoCols)
                     ->collapsed()
@@ -646,6 +721,8 @@ class BoxResource extends Resource
                     ->dateTime()
                     ->sortable()
                     ->toggleable(isToggledHiddenByDefault: true),
+                // Custom fields (EAV) — toggleable columns for active definitions.
+                ...DocumentResource::customFieldTableColumns('box'),
             ])
             ->filters([
                 // Feedback1 Wave B (B3) — `batch` SelectFilter. The Batch
@@ -806,5 +883,13 @@ class BoxResource extends Resource
             'view' => Pages\ViewBox::route('/{record}'),
             'edit' => Pages\EditBox::route('/{record}/edit'),
         ];
+    }
+
+    /**
+     * Eager-load customFieldValues.definition to avoid N+1 in table columns.
+     */
+    public static function getEloquentQuery(): Builder
+    {
+        return parent::getEloquentQuery()->with(['customFieldValues.definition', 'batch']);
     }
 }

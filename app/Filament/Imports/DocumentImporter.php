@@ -7,6 +7,7 @@ namespace App\Filament\Imports;
 use App\Filament\Imports\Concerns\SkipsExistingRows;
 use App\Models\Authority;
 use App\Models\Box;
+use App\Models\CustomFieldDefinition;
 use App\Models\Document;
 use App\Models\Scopes\RepositoryScope;
 use App\Support\BulkImport\EntityResolver;
@@ -15,6 +16,7 @@ use Filament\Actions\Imports\Exceptions\RowImportFailedException;
 use Filament\Actions\Imports\ImportColumn;
 use Filament\Actions\Imports\Importer;
 use Filament\Actions\Imports\Models\Import;
+use Illuminate\Database\Eloquent\Collection as EloquentCollection;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Validation\ValidationException;
 use Spatie\SchemalessAttributes\SchemalessAttributes;
@@ -115,6 +117,28 @@ class DocumentImporter extends Importer
     protected static array $rowBoxStatusStash = [];
 
     /**
+     * Per-row stash for custom-field key→value data extracted from columns
+     * whose header matches a custom-field definition label or key. Persisted
+     * in {@see persistRowSideEffects()} via $record->setCustomFieldData().
+     * Keyed by spl_object_id of the record, same pattern as the other stashes.
+     *
+     * @var array<int, array<string, string>>
+     */
+    protected static array $rowCustomFieldStash = [];
+
+    /**
+     * Cached active CustomFieldDefinition collections keyed by repository_id.
+     *
+     * Keyed by (int) repository_id → EloquentCollection so long-lived queue
+     * workers processing multiple tenants in sequence never serve one tenant's
+     * definitions to another (GROUP C fix — cross-tenant leakage prevention).
+     * Reset at the start of each row via resolveCustomFieldDefinitions().
+     *
+     * @var array<int, EloquentCollection<int, CustomFieldDefinition>>
+     */
+    protected static array $customFieldDefinitionsCache = [];
+
+    /**
      * Per-row transactional safety (review I2 / Fix 5).
      *
      * Filament's import job wraps an entire CHUNK in one DB::transaction and
@@ -137,6 +161,345 @@ class DocumentImporter extends Importer
      * @return array<ImportColumn>
      */
     public static function getColumns(): array
+    {
+        $staticColumns = static::getStaticColumns();
+        $customColumns = static::getCustomFieldColumns();
+
+        return array_merge($staticColumns, $customColumns);
+    }
+
+    /**
+     * Idempotent matching by (identifier, repository_id) — repository
+     * tenancy is inferred from the BelongsToRepository hook on save.
+     */
+    public function resolveRecord(): ?Document
+    {
+        $identifier = $this->data['identifier'] ?? null;
+        if ($identifier === null || trim((string) $identifier) === '') {
+            return new Document;
+        }
+
+        $user = auth()->user();
+        $repoId = $user?->default_repository_id;
+
+        $q = Document::query()
+            ->withoutGlobalScope(RepositoryScope::class)
+            ->where('identifier', trim((string) $identifier));
+        if ($repoId !== null) {
+            $q->where('repository_id', $repoId);
+        }
+
+        $record = $q->first() ?? new Document;
+        $this->skipIfDuplicate($record);
+
+        return $record;
+    }
+
+    /**
+     * Post-fill validations and derived fields:
+     *
+     *  - Parse Year range from `dates` text into dates_year_start/end.
+     *  - PERM_OUT (legacy status_1 in {OUT, PERM_OUT, …}) requires
+     *    disinfestation_date — RFQ App.1 #5.
+     *  - When the operator supplies neither Identifier nor Catalogue
+     *    Identifier we synthesise an AUTO id so the row can still be
+     *    inserted (the spreadsheet column is often blank for new
+     *    documents awaiting cataloguing).
+     */
+    public function afterFill(): void
+    {
+        /** @var Document $record */
+        $record = $this->record;
+
+        // Year range derived from free-text "Dates" column.
+        if (! empty($record->dates) && $record->dates_year_start === null) {
+            [$y0, $y1] = SpreadsheetParsers::parseYearRange((string) $record->dates);
+            if ($y0 !== null) {
+                $record->dates_year_start = $y0;
+            }
+            if ($y1 !== null) {
+                $record->dates_year_end = $y1;
+            }
+        }
+
+        // Fall back the document identifier to catalogue_identifier when
+        // operator left it blank — the schema indexes `identifier`, so
+        // every row must have one.
+        if ((empty($record->identifier) || $record->identifier === 'AUTO-')
+            && ! empty($record->catalogue_identifier)
+        ) {
+            $record->identifier = $record->catalogue_identifier;
+        }
+
+        // Task 8 (B5) — resolve the current box now that the document's batch
+        // is known, then validate batch/box consistency BEFORE save.
+        $this->resolveCurrentBox($record);
+
+        // Task 8 (B4) — reconcile the legacy `status_*` columns to a single
+        // authoritative barcode status. The legacy spreadsheet encodes status
+        // in several columns (status_1..4, *_alt); we collapse them: PERM_OUT
+        // wins (it is the strongest custody state), then OUT, then IN.
+        $resolvedStatus = $this->resolveLegacyBarcodeStatus($record);
+
+        // RFQ App.1 #5 — PERM_OUT requires disinfestation_date.
+        if ($resolvedStatus === 'PERM_OUT' && $record->disinfestation_date === null) {
+            throw ValidationException::withMessages([
+                'disinfestation_date' => __(
+                    'Documents with a PERM_OUT status must carry a disinfestation_date (RFQ App.1 #5).'
+                ),
+            ]);
+        }
+
+        // The box is the authoritative source of truth for barcode status
+        // (Task 7). When the document HAS a box, stash the resolved status and
+        // apply it to the BOX in afterSave (the document must already point at
+        // the box so the Task-7 mirror can propagate the value back down). We
+        // deliberately do NOT write documents.barcode_status here in that case —
+        // the box mirror owns it.
+        if ($resolvedStatus !== null) {
+            if ($record->current_box_id !== null) {
+                self::$rowBoxStatusStash[spl_object_id($record)] = $resolvedStatus;
+            } else {
+                // Fallback (review F3): no box to be authoritative about, so
+                // write the resolved status directly onto the document column
+                // rather than silently dropping the operator's data. A1.2 still
+                // holds: PERM_OUT without a disinfestation_date already failed
+                // the row above, and the document-level saving guard re-checks
+                // it on persist — so an invalid state can never be stored.
+                $record->barcode_status = $resolvedStatus;
+            }
+        }
+    }
+
+    public function beforeSave(): void
+    {
+        // Defensive: if a PRIOR row's saveRecord() threw, afterSave() never ran
+        // and its savepoint could still be open (Filament's chunk job swallows
+        // the row error and moves on). Close it before opening a fresh one so
+        // the transaction nesting level can never drift across rows.
+        if ($this->rowSavepointOpen) {
+            DB::rollBack();
+            $this->rowSavepointOpen = false;
+        }
+
+        // The box-status precondition (PERM_OUT ⇒ disinfestation_date, RFQ
+        // App.1 #5) is already validated in afterFill() BEFORE we reach here,
+        // so a precondition failure never even attempts a save. This savepoint
+        // guards the residual risk: the box save() in afterSave() throwing
+        // (e.g. a model-level guard) AFTER the document row is already written.
+        DB::beginTransaction();
+        $this->rowSavepointOpen = true;
+    }
+
+    /**
+     * Attach resolved authorities AFTER the Document row has its id, then
+     * commit (or roll back) the per-row savepoint opened in {@see beforeSave()}.
+     * The pivot + box-status writes live in {@see persistRowSideEffects()} so
+     * any failure there rolls back the just-saved document atomically.
+     */
+    public function afterSave(): void
+    {
+        try {
+            $this->persistRowSideEffects();
+        } catch (\Throwable $e) {
+            // Undo the document save (and anything written since beforeSave)
+            // so a failed box-status / pivot write never leaves a half-saved
+            // row. Re-throw so Filament's job logs this as a FAILED row.
+            if ($this->rowSavepointOpen) {
+                DB::rollBack();
+                $this->rowSavepointOpen = false;
+            }
+
+            throw $e;
+        }
+
+        if ($this->rowSavepointOpen) {
+            DB::commit();
+            $this->rowSavepointOpen = false;
+        }
+    }
+
+    /**
+     * Append an Authority id to the per-row stash. Keyed by the record's
+     * Object id so a single Document row accumulates multiple authorities
+     * (legacy POC allowed it) while different rows stay isolated.
+     */
+    public static function stashAuthority(Document $record, int $authorityId): void
+    {
+        $key = spl_object_id($record);
+        self::$rowAuthorityStash[$key][] = $authorityId;
+    }
+
+    /**
+     * Split a {@see SEMICOLON_DELIMITER}-delimited spreadsheet cell into a
+     * clean list of trimmed, non-empty pieces. RFQ Appendix-2 §xi — the
+     * legacy Excel encodes multiple creators in a SINGLE column delimited
+     * by `;`:
+     *
+     *   "520; 178"                       → ["520", "178"]
+     *   "Calcedonio Gatt; Angelo Cauchi" → ["Calcedonio Gatt", "Angelo Cauchi"]
+     *   "520; ; 178"                     → ["520", "178"]  (empty piece dropped)
+     *   "  R520  "                       → ["R520"]
+     *   ""                               → []
+     *
+     * Semantics worth noting:
+     *
+     * - Empty pieces (e.g. trailing `;`, double `;;`, whitespace-only) are
+     *   SILENTLY SKIPPED. This is deliberate: legacy spreadsheets routinely
+     *   carry sloppy editor whitespace and we do not want to fail an entire
+     *   row because of a stray separator.
+     * - The delimiter is fixed at {@see SEMICOLON_DELIMITER}. A comma is
+     *   NOT a fallback — names in the legacy data legitimately contain
+     *   commas (e.g. "Buttigieg, John") and treating `,` as a separator
+     *   would corrupt every such row.
+     * - Whitespace around each piece is trimmed; internal whitespace is
+     *   preserved verbatim.
+     *
+     * @return array<int, string>
+     */
+    public static function splitSemicolonList(string $raw): array
+    {
+        if (! str_contains($raw, self::SEMICOLON_DELIMITER)) {
+            $only = trim($raw);
+
+            return $only === '' ? [] : [$only];
+        }
+
+        $pieces = array_map('trim', explode(self::SEMICOLON_DELIMITER, $raw));
+
+        return array_values(array_filter(
+            $pieces,
+            static fn (string $p): bool => $p !== '',
+        ));
+    }
+
+    /**
+     * Merge an array of keys into `document.extra` without clobbering
+     * existing entries. The cast returns a SchemalessAttributes object on
+     * read (always truthy, never `null`), so the more obvious
+     * `$record->extra = array_merge($record->extra ?? [], $merge)` does
+     * not behave correctly. We pull `->toArray()` to get the canonical
+     * snapshot, merge, and re-assign — which routes through the cast's
+     * `set()` and stores the JSON-encoded result on the model.
+     *
+     * @param array<string, mixed> $merge
+     */
+    public static function mergeExtra(Document $record, array $merge): void
+    {
+        $current = $record->extra instanceof SchemalessAttributes
+            ? $record->extra->toArray()
+            : (is_array($record->extra) ? $record->extra : []);
+        $record->extra = array_merge($current, $merge);
+    }
+
+    /**
+     * Test helper — peek into the stash from a unit test without going
+     * through the full import job. Returns the pending authority ids for
+     * the given Document (or an empty array when none are stashed).
+     *
+     * @return array<int, int>
+     */
+    public static function peekStashedAuthorities(Document $record): array
+    {
+        return self::$rowAuthorityStash[spl_object_id($record)] ?? [];
+    }
+
+    public static function getCompletedNotificationBody(Import $import): string
+    {
+        $body = 'Documents import completed: '
+            . number_format($import->successful_rows) . ' rows processed';
+        if (($failed = $import->getFailedRowsCount()) > 0) {
+            $body .= ', ' . number_format($failed) . ' failed';
+        }
+
+        return $body;
+    }
+
+    /**
+     * Build ImportColumn entries for every active custom-field definition in the
+     * current user's default repository (document entity type). The column is
+     * guessed by both the field key and the field label (case-insensitive).
+     * Values are stashed in {@see $rowCustomFieldStash} and written via
+     * $record->setCustomFieldData() in persistRowSideEffects().
+     *
+     * GROUP C+D fix: an empty mapped cell (operator mapped the column but the
+     * cell is blank) is stored as null in the stash so persistRowSideEffects()
+     * passes it through to setCustomFieldData(null for that key), which then
+     * deletes the existing value for that field on update. Unmapped/absent
+     * columns are never added to the stash, so they are untouched when
+     * setCustomFieldData is called with replaceMissing=false (merge semantics).
+     *
+     * @return array<ImportColumn>
+     */
+    protected static function getCustomFieldColumns(): array
+    {
+        $defs = static::resolveCustomFieldDefinitions();
+        if ($defs->isEmpty()) {
+            return [];
+        }
+
+        $columns = [];
+        foreach ($defs as $def) {
+            $columns[] = ImportColumn::make('custom_field_' . $def->key)
+                ->label($def->label . ' (custom field)')
+                ->guess([$def->label, $def->key, 'cf_' . $def->key])
+                ->rules(['nullable', 'string'])
+                ->fillRecordUsing(static function (Document $record, ?string $state) use ($def): void {
+                    $key = spl_object_id($record);
+                    // Always stash the key so persistRowSideEffects() knows this
+                    // column was mapped. A null/empty value clears the existing
+                    // stored value on update (merge-mode delete). An absent column
+                    // (never reaches this closure) is left untouched.
+                    static::$rowCustomFieldStash[$key][$def->key] = ($state !== null && trim($state) !== '')
+                        ? trim($state)
+                        : null;
+                });
+        }
+
+        return $columns;
+    }
+
+    /**
+     * Resolve active CustomFieldDefinition records for the current user's
+     * default repository (document entity type).
+     *
+     * Results are cached per repository_id (GROUP C fix): long-lived queue
+     * workers processing multiple tenants never serve one tenant's definitions
+     * to another, because the cache is keyed by repo id rather than being a
+     * single shared nullable slot.
+     *
+     * @return EloquentCollection<int, CustomFieldDefinition>
+     */
+    protected static function resolveCustomFieldDefinitions(): EloquentCollection
+    {
+        $repositoryId = auth()->user()?->default_repository_id;
+        if ($repositoryId === null) {
+            return new EloquentCollection;
+        }
+
+        $repoKey = (int) $repositoryId;
+
+        if (isset(static::$customFieldDefinitionsCache[$repoKey])) {
+            return static::$customFieldDefinitionsCache[$repoKey];
+        }
+
+        static::$customFieldDefinitionsCache[$repoKey] = CustomFieldDefinition::query()
+            ->where('repository_id', $repoKey)
+            ->where('entity_type', 'document')
+            ->where('is_active', true)
+            ->orderBy('sort_order')
+            ->get();
+
+        return static::$customFieldDefinitionsCache[$repoKey];
+    }
+
+    /**
+     * The fixed (non-EAV) import columns. Extracted so getColumns() can merge
+     * them with the dynamic custom-field columns without duplication.
+     *
+     * @return array<ImportColumn>
+     */
+    protected static function getStaticColumns(): array
     {
         return [
             // ── Identification ──────────────────────────────────────────
@@ -475,253 +838,6 @@ class DocumentImporter extends Importer
     }
 
     /**
-     * Idempotent matching by (identifier, repository_id) — repository
-     * tenancy is inferred from the BelongsToRepository hook on save.
-     */
-    public function resolveRecord(): ?Document
-    {
-        $identifier = $this->data['identifier'] ?? null;
-        if ($identifier === null || trim((string) $identifier) === '') {
-            return new Document;
-        }
-
-        $user = auth()->user();
-        $repoId = $user?->default_repository_id;
-
-        $q = Document::query()
-            ->withoutGlobalScope(RepositoryScope::class)
-            ->where('identifier', trim((string) $identifier));
-        if ($repoId !== null) {
-            $q->where('repository_id', $repoId);
-        }
-
-        $record = $q->first() ?? new Document;
-        $this->skipIfDuplicate($record);
-
-        return $record;
-    }
-
-    /**
-     * Post-fill validations and derived fields:
-     *
-     *  - Parse Year range from `dates` text into dates_year_start/end.
-     *  - PERM_OUT (legacy status_1 in {OUT, PERM_OUT, …}) requires
-     *    disinfestation_date — RFQ App.1 #5.
-     *  - When the operator supplies neither Identifier nor Catalogue
-     *    Identifier we synthesise an AUTO id so the row can still be
-     *    inserted (the spreadsheet column is often blank for new
-     *    documents awaiting cataloguing).
-     */
-    public function afterFill(): void
-    {
-        /** @var Document $record */
-        $record = $this->record;
-
-        // Year range derived from free-text "Dates" column.
-        if (! empty($record->dates) && $record->dates_year_start === null) {
-            [$y0, $y1] = SpreadsheetParsers::parseYearRange((string) $record->dates);
-            if ($y0 !== null) {
-                $record->dates_year_start = $y0;
-            }
-            if ($y1 !== null) {
-                $record->dates_year_end = $y1;
-            }
-        }
-
-        // Fall back the document identifier to catalogue_identifier when
-        // operator left it blank — the schema indexes `identifier`, so
-        // every row must have one.
-        if ((empty($record->identifier) || $record->identifier === 'AUTO-')
-            && ! empty($record->catalogue_identifier)
-        ) {
-            $record->identifier = $record->catalogue_identifier;
-        }
-
-        // Task 8 (B5) — resolve the current box now that the document's batch
-        // is known, then validate batch/box consistency BEFORE save.
-        $this->resolveCurrentBox($record);
-
-        // Task 8 (B4) — reconcile the legacy `status_*` columns to a single
-        // authoritative barcode status. The legacy spreadsheet encodes status
-        // in several columns (status_1..4, *_alt); we collapse them: PERM_OUT
-        // wins (it is the strongest custody state), then OUT, then IN.
-        $resolvedStatus = $this->resolveLegacyBarcodeStatus($record);
-
-        // RFQ App.1 #5 — PERM_OUT requires disinfestation_date.
-        if ($resolvedStatus === 'PERM_OUT' && $record->disinfestation_date === null) {
-            throw ValidationException::withMessages([
-                'disinfestation_date' => __(
-                    'Documents with a PERM_OUT status must carry a disinfestation_date (RFQ App.1 #5).'
-                ),
-            ]);
-        }
-
-        // The box is the authoritative source of truth for barcode status
-        // (Task 7). When the document HAS a box, stash the resolved status and
-        // apply it to the BOX in afterSave (the document must already point at
-        // the box so the Task-7 mirror can propagate the value back down). We
-        // deliberately do NOT write documents.barcode_status here in that case —
-        // the box mirror owns it.
-        if ($resolvedStatus !== null) {
-            if ($record->current_box_id !== null) {
-                self::$rowBoxStatusStash[spl_object_id($record)] = $resolvedStatus;
-            } else {
-                // Fallback (review F3): no box to be authoritative about, so
-                // write the resolved status directly onto the document column
-                // rather than silently dropping the operator's data. A1.2 still
-                // holds: PERM_OUT without a disinfestation_date already failed
-                // the row above, and the document-level saving guard re-checks
-                // it on persist — so an invalid state can never be stored.
-                $record->barcode_status = $resolvedStatus;
-            }
-        }
-    }
-
-    public function beforeSave(): void
-    {
-        // Defensive: if a PRIOR row's saveRecord() threw, afterSave() never ran
-        // and its savepoint could still be open (Filament's chunk job swallows
-        // the row error and moves on). Close it before opening a fresh one so
-        // the transaction nesting level can never drift across rows.
-        if ($this->rowSavepointOpen) {
-            DB::rollBack();
-            $this->rowSavepointOpen = false;
-        }
-
-        // The box-status precondition (PERM_OUT ⇒ disinfestation_date, RFQ
-        // App.1 #5) is already validated in afterFill() BEFORE we reach here,
-        // so a precondition failure never even attempts a save. This savepoint
-        // guards the residual risk: the box save() in afterSave() throwing
-        // (e.g. a model-level guard) AFTER the document row is already written.
-        DB::beginTransaction();
-        $this->rowSavepointOpen = true;
-    }
-
-    /**
-     * Attach resolved authorities AFTER the Document row has its id, then
-     * commit (or roll back) the per-row savepoint opened in {@see beforeSave()}.
-     * The pivot + box-status writes live in {@see persistRowSideEffects()} so
-     * any failure there rolls back the just-saved document atomically.
-     */
-    public function afterSave(): void
-    {
-        try {
-            $this->persistRowSideEffects();
-        } catch (\Throwable $e) {
-            // Undo the document save (and anything written since beforeSave)
-            // so a failed box-status / pivot write never leaves a half-saved
-            // row. Re-throw so Filament's job logs this as a FAILED row.
-            if ($this->rowSavepointOpen) {
-                DB::rollBack();
-                $this->rowSavepointOpen = false;
-            }
-
-            throw $e;
-        }
-
-        if ($this->rowSavepointOpen) {
-            DB::commit();
-            $this->rowSavepointOpen = false;
-        }
-    }
-
-    /**
-     * Append an Authority id to the per-row stash. Keyed by the record's
-     * Object id so a single Document row accumulates multiple authorities
-     * (legacy POC allowed it) while different rows stay isolated.
-     */
-    public static function stashAuthority(Document $record, int $authorityId): void
-    {
-        $key = spl_object_id($record);
-        self::$rowAuthorityStash[$key][] = $authorityId;
-    }
-
-    /**
-     * Split a {@see SEMICOLON_DELIMITER}-delimited spreadsheet cell into a
-     * clean list of trimmed, non-empty pieces. RFQ Appendix-2 §xi — the
-     * legacy Excel encodes multiple creators in a SINGLE column delimited
-     * by `;`:
-     *
-     *   "520; 178"                       → ["520", "178"]
-     *   "Calcedonio Gatt; Angelo Cauchi" → ["Calcedonio Gatt", "Angelo Cauchi"]
-     *   "520; ; 178"                     → ["520", "178"]  (empty piece dropped)
-     *   "  R520  "                       → ["R520"]
-     *   ""                               → []
-     *
-     * Semantics worth noting:
-     *
-     * - Empty pieces (e.g. trailing `;`, double `;;`, whitespace-only) are
-     *   SILENTLY SKIPPED. This is deliberate: legacy spreadsheets routinely
-     *   carry sloppy editor whitespace and we do not want to fail an entire
-     *   row because of a stray separator.
-     * - The delimiter is fixed at {@see SEMICOLON_DELIMITER}. A comma is
-     *   NOT a fallback — names in the legacy data legitimately contain
-     *   commas (e.g. "Buttigieg, John") and treating `,` as a separator
-     *   would corrupt every such row.
-     * - Whitespace around each piece is trimmed; internal whitespace is
-     *   preserved verbatim.
-     *
-     * @return array<int, string>
-     */
-    public static function splitSemicolonList(string $raw): array
-    {
-        if (! str_contains($raw, self::SEMICOLON_DELIMITER)) {
-            $only = trim($raw);
-
-            return $only === '' ? [] : [$only];
-        }
-
-        $pieces = array_map('trim', explode(self::SEMICOLON_DELIMITER, $raw));
-
-        return array_values(array_filter(
-            $pieces,
-            static fn (string $p): bool => $p !== '',
-        ));
-    }
-
-    /**
-     * Merge an array of keys into `document.extra` without clobbering
-     * existing entries. The cast returns a SchemalessAttributes object on
-     * read (always truthy, never `null`), so the more obvious
-     * `$record->extra = array_merge($record->extra ?? [], $merge)` does
-     * not behave correctly. We pull `->toArray()` to get the canonical
-     * snapshot, merge, and re-assign — which routes through the cast's
-     * `set()` and stores the JSON-encoded result on the model.
-     *
-     * @param array<string, mixed> $merge
-     */
-    public static function mergeExtra(Document $record, array $merge): void
-    {
-        $current = $record->extra instanceof SchemalessAttributes
-            ? $record->extra->toArray()
-            : (is_array($record->extra) ? $record->extra : []);
-        $record->extra = array_merge($current, $merge);
-    }
-
-    /**
-     * Test helper — peek into the stash from a unit test without going
-     * through the full import job. Returns the pending authority ids for
-     * the given Document (or an empty array when none are stashed).
-     *
-     * @return array<int, int>
-     */
-    public static function peekStashedAuthorities(Document $record): array
-    {
-        return self::$rowAuthorityStash[spl_object_id($record)] ?? [];
-    }
-
-    public static function getCompletedNotificationBody(Import $import): string
-    {
-        $body = 'Documents import completed: '
-            . number_format($import->successful_rows) . ' rows processed';
-        if (($failed = $import->getFailedRowsCount()) > 0) {
-            $body .= ', ' . number_format($failed) . ' failed';
-        }
-
-        return $body;
-    }
-
-    /**
      * Post-save side effects (box-status reconciliation + authority pivot
      * writes). Extracted from {@see afterSave()} so they run inside the per-row
      * savepoint and roll back atomically with the document on any failure.
@@ -741,6 +857,20 @@ class DocumentImporter extends Importer
         // document. We never write documents.barcode_status directly: the
         // box's `updated`/`created` hooks own the mirror.
         $this->applyBoxBarcodeStatus($record);
+
+        // Custom fields (EAV) — persist stashed key→value pairs via the trait.
+        // The stash is populated by the dynamic custom-field ImportColumn closures.
+        //
+        // GROUP C+D fix: use merge semantics (replaceMissing=false) so unmapped
+        // columns are left untouched on update. Only keys that were explicitly
+        // mapped in this import run are processed (upsert or delete); absent keys
+        // (columns the operator did not map) are not touched. An empty mapped cell
+        // is stored as null in the stash → deletes that specific field value.
+        $customData = self::$rowCustomFieldStash[$key] ?? null;
+        unset(self::$rowCustomFieldStash[$key]);
+        if ($customData !== null && method_exists($record, 'setCustomFieldData')) {
+            $record->setCustomFieldData($customData, false);  // false = merge/import semantics
+        }
 
         $ids = self::$rowAuthorityStash[$key] ?? [];
         // Drain the stash for this row so a future row reusing the same
