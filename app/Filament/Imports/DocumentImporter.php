@@ -841,7 +841,14 @@ class DocumentImporter extends Importer
         $customData = self::$rowCustomFieldStash[$key] ?? null;
         unset(self::$rowCustomFieldStash[$key]);
         if ($customData !== null && method_exists($record, 'setCustomFieldData')) {
-            $record->setCustomFieldData($customData, false);  // false = merge/import semantics
+            try {
+                $record->setCustomFieldData($customData, false);  // false = merge/import semantics
+            } catch (\Throwable) {
+                // Lenient: a bad custom cell must NOT fail the row.
+                // The spec contract (§4) is consistent across all four importers:
+                // a type-coercion or EAV write error is swallowed so an otherwise
+                // valid Document row is not rejected because of a custom-field cell.
+            }
         }
 
         $ids = self::$rowAuthorityStash[$key] ?? [];

@@ -1,7 +1,7 @@
-# Custom Fields in Import/Export Excel — Design Spec (round 2)
+# Custom Fields in Import/Export — Design Spec (round 2)
 
 **Goal:** The per-repository custom fields (built in the prior round) must be
-present in the **import template (.xlsx)**, the **export (CSV/Excel)**, and be
+present in the **import template (.xlsx)**, the **export (.csv)**, and be
 **importable by the correct column** — dynamically, per entity, for Document,
 Batch, Box, and Volume. The import template must be generated dynamically so the
 custom-field columns for the *active* repository always appear (no empty/missing
@@ -29,7 +29,7 @@ NEVER `migrate:fresh`. No CDN. Comments in English.
 
 Create `app/Support/CustomFields/CustomFieldResolver.php`:
 
-```
+```php
 final class CustomFieldResolver
 {
     // Active repository id for the current request: ActiveRepository::id()

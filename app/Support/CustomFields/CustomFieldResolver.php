@@ -46,20 +46,31 @@ final class CustomFieldResolver
      */
     public static function activeRepositoryId(): ?int
     {
-        // Guard: if there is no authenticated user and we're not in an HTTP
-        // context (CLI / queue), return null rather than crashing.
+        // Guard: the container resolution of ActiveRepository is the ONLY
+        // operation wrapped here. If the container cannot bind the class
+        // (e.g. a CLI/queue context where the service provider is absent)
+        // we fall through to the user default. An exception thrown by
+        // $ar->id() itself MUST propagate — a bad id() means a real
+        // tenant-identity error and must never silently fall back to the
+        // wrong repository.
+        $ar = null;
+
         try {
-            /** @var ActiveRepository|null $ar */
-            $ar = app(ActiveRepository::class);
-            if ($ar !== null) {
-                $id = $ar->id();
-                if ($id !== null) {
-                    return $id;
-                }
-            }
+            /** @var ActiveRepository|null $resolved */
+            $resolved = app(ActiveRepository::class);
+            $ar = $resolved;
         } catch (\Throwable) {
-            // Container cannot resolve ActiveRepository (e.g. CLI test context
-            // without a service provider) — fall through to the default.
+            // Container cannot resolve ActiveRepository (e.g. CLI test
+            // context without a service provider) — fall through to default.
+        }
+
+        if ($ar !== null) {
+            // id() is called OUTSIDE the try-catch — a failing id() must
+            // propagate (wrong tenant is worse than a crash).
+            $id = $ar->id();
+            if ($id !== null) {
+                return $id;
+            }
         }
 
         // Fallback: the user's persisted default repository (queue workers,

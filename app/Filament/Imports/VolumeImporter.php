@@ -142,7 +142,10 @@ class VolumeImporter extends Importer
         // Peek at the stash — if the closure fired but found no matching document
         // the stash holds null, meaning the identifier was unresolvable.
         if (array_key_exists($key, self::$rowDocumentIdStash) && self::$rowDocumentIdStash[$key] === null) {
-            unset(self::$rowDocumentIdStash[$key]);
+            // Drain BOTH stash entries before throwing so the static maps do not
+            // grow unboundedly when many rows fail — afterSave() never runs for a
+            // row rejected here.
+            unset(self::$rowDocumentIdStash[$key], self::$rowCustomFieldStash[$key]);
 
             throw ValidationException::withMessages([
                 'document_identifier' => __('No document found with this identifier in the active repository.'),
@@ -151,6 +154,9 @@ class VolumeImporter extends Importer
 
         // Also guard the case where the column was never mapped at all.
         if ($record->document_id === null) {
+            // Drain stash on this failure path too.
+            unset(self::$rowDocumentIdStash[$key], self::$rowCustomFieldStash[$key]);
+
             throw new RowImportFailedException(
                 'document_identifier is required and must resolve to an existing document in the active repository.'
             );

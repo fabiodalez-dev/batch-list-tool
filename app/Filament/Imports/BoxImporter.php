@@ -132,6 +132,11 @@ class BoxImporter extends Importer
         }
 
         if ($record->barcode_status === 'PERM_OUT' && $record->disinfestation_date === null) {
+            // Drain the stash before throwing so the static map does not grow
+            // unboundedly when many rows fail — afterSave() never runs for a
+            // row rejected here.
+            unset(self::$rowCustomFieldStash[spl_object_id($record)]);
+
             // We refuse the row with a validation exception — this is what
             // surfaces in the per-row failed export.
             throw ValidationException::withMessages([
@@ -140,6 +145,9 @@ class BoxImporter extends Importer
         }
 
         if (in_array($record->box_type, ['IN_SITU', 'NRA'], true) && $record->parent_box_id === null) {
+            // Drain the stash on this failure path too.
+            unset(self::$rowCustomFieldStash[spl_object_id($record)]);
+
             // RFQ #3 — IN_SITU / NRA boxes MUST reference a parent RAS box.
             // Reject the row instead of inserting an orphan.
             throw ValidationException::withMessages([

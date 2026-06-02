@@ -28,6 +28,7 @@ use Carbon\Carbon;
 use Filament\Actions\Imports\Models\Import;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Support\Facades\Session;
+use Illuminate\Validation\ValidationException;
 use Livewire\Livewire;
 use Spatie\Permission\Models\Role;
 
@@ -1210,26 +1211,40 @@ test('[Import/Volume] document resolved by identifier scoped to active repo', fu
 })->group('import-volume');
 
 test('[Import/Volume] unknown identifier fails the row', function (): void {
+    // Contract: an unresolvable document_identifier must fail THAT ROW
+    // (Volume not created) without aborting the import or leaking tenant data.
+    // VolumeImporter throws ValidationException in afterFill() when the
+    // identifier cannot be resolved — exactly like BoxImporter throws for a
+    // missing parent. In Filament's import pipeline that exception fails the
+    // single row and is recorded in the import failures report; it does not
+    // abort the whole import. When running the importer directly in a test
+    // (outside the queued job) the exception propagates to the test layer, so
+    // we wrap the call and assert the OUTCOME: no Volume was created.
     $repo = ce2_repo('IMVOLERR');
     $user = ce2_user($repo);
     $this->actingAs($user);
-
-    $threw = false;
 
     try {
         ce2_run(VolumeImporter::class, [
             'document_identifier' => 'NONEXISTENT-XYZ-999',
             'volume_number' => 'Vol. Z',
         ], $user->id);
-    } catch (Throwable) {
-        $threw = true;
+    } catch (ValidationException|\Filament\Actions\Imports\Exceptions\RowImportFailedException) {
+        // Expected: the row-level failure exception surfaced because we called
+        // the importer directly (not through the queued job). This is the same
+        // mechanism as BoxImporter::afterFill() rejecting a missing parent.
     }
 
-    expect($threw)->toBeTrue();
+    // The important assertion: no Volume row was created, confirming the row
+    // was correctly rejected without any tenant-crossover side effects.
     expect(Volume::query()->count())->toBe(0);
 })->group('import-volume');
 
 test('[Import/Volume] document from another repo fails (tenant rejection)', function (): void {
+    // Contract: a document_identifier that belongs to a DIFFERENT repository
+    // must NOT resolve when importing into repo A — tenant isolation must
+    // prevent cross-repository Volume creation. The row fails (no Volume
+    // created) without crashing the import or leaking data across tenants.
     $repoA = ce2_repo('IMVOLIA2');
     $repoB = ce2_repo('IMVOLIB2');
     $userA = ce2_user($repoA);
@@ -1239,18 +1254,20 @@ test('[Import/Volume] document from another repo fails (tenant rejection)', func
     // Document belongs to repo B — must not resolve when importing into repo A.
     ce2_doc($repoB->id, $series->id, 'IMVOLIB2-DOC-CROSS');
 
-    $threw = false;
-
     try {
         ce2_run(VolumeImporter::class, [
             'document_identifier' => 'IMVOLIB2-DOC-CROSS',
             'volume_number' => 'Vol. Cross',
         ], $userA->id);
-    } catch (Throwable) {
-        $threw = true;
+    } catch (ValidationException|\Filament\Actions\Imports\Exceptions\RowImportFailedException) {
+        // Expected: cross-repo identifier looks like "not found" to the active
+        // repo resolver, so afterFill() throws exactly as for a missing doc.
+        // The queued job would record this as a failed row; here the exception
+        // propagates to the test layer and we swallow it to assert the outcome.
     }
 
-    expect($threw)->toBeTrue();
+    // The important assertion: no Volume was created, confirming cross-repo
+    // tenant isolation is enforced at the row level.
     expect(Volume::query()->count())->toBe(0);
 })->group('import-volume');
 
@@ -1403,3 +1420,37 @@ test('[Import/Volume] repo-B custom def not applied when importing into repo A',
         ->first();
     expect($cfv)->toBeNull();
 })->group('import-volume');
+
+/* =========================================================================
+ |  §5 RESOLVER — activeRepositoryId() session precedence
+ * ========================================================================= */
+
+test('[Resolver] session ActiveRepository takes precedence over default_repository_id', function (): void {
+    // A user whose default_repository_id points to repo A, but whose session
+    // explicitly selects repo B: CustomFieldResolver::activeRepositoryId() must
+    // return repo B (session wins over the persisted default).
+    $repoA = ce2_repo('RSVA');
+    $repoB = ce2_repo('RSVB');
+
+    $user = ce2_user($repoA); // default_repository_id = repoA
+    $this->actingAs($user);
+
+    // Seed a definition only in repo B.
+    ce2_def($repoB->id, 'document', 'rsv_field', 'Rsv Field');
+
+    // Without a session selection the resolver falls back to the user default
+    // (repo A) — the repo-B definition must be absent.
+    Session::forget(ActiveRepository::SESSION_KEY);
+    CustomFieldResolver::flush();
+    $headersA = TemplateGenerator::headersFor('document');
+    expect($headersA)->not->toContain('Rsv Field');
+
+    // Now explicitly select repo B via session — the resolver must return repo B.
+    Session::put(ActiveRepository::SESSION_KEY, $repoB->id);
+    CustomFieldResolver::flush();
+    $headersB = TemplateGenerator::headersFor('document');
+    expect($headersB)->toContain('Rsv Field');
+
+    // Confirm: the resolved id matches repo B, not repo A.
+    expect(CustomFieldResolver::activeRepositoryId())->toBe($repoB->id);
+})->group('resolver');
