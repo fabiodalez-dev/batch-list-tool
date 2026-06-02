@@ -15,7 +15,11 @@ jobs:
   test:
     name: PHP ${{ matrix.php }} · Pest + PHPStan + Pint
     runs-on: ubuntu-latest
-    timeout-minutes: 20
+    # 30 min: the Pest suite grew past ~21 min (1320 tests, incl. the custom-fields
+    # Livewire/HTTP suites) and was tripping the previous 20 min cap mid-run — a
+    # timeout, not a red test. --parallel stays off (Filament tests race on the
+    # shared in-memory SQLite connection, per the run step below).
+    timeout-minutes: 30
 
     # PHP 8.3 dropped from the matrix on 2026-05-27: symfony/* 8.x (bumped
     # to 8.0.13 for CVE-2026-48761/48760/48736/48784) requires PHP 8.4 in
