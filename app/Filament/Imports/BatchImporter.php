@@ -6,11 +6,14 @@ namespace App\Filament\Imports;
 
 use App\Filament\Imports\Concerns\SkipsExistingRows;
 use App\Models\Batch;
+use App\Models\CustomFieldDefinition;
 use App\Models\Scopes\RepositoryScope;
 use App\Support\BulkImport\EntityResolver;
+use App\Support\CustomFields\CustomFieldResolver;
 use Filament\Actions\Imports\ImportColumn;
 use Filament\Actions\Imports\Importer;
 use Filament\Actions\Imports\Models\Import;
+use Illuminate\Database\Eloquent\Collection as EloquentCollection;
 
 /**
  * RFQ §3.1.3 — Bulk import for {@see Batch}.
@@ -36,9 +39,112 @@ class BatchImporter extends Importer
     protected static ?string $model = Batch::class;
 
     /**
+     * Per-row stash for custom-field key→value data extracted from columns
+     * whose header matches a custom-field definition label or key. Persisted
+     * in {@see afterSave()} via $record->setCustomFieldData().
+     * Keyed by spl_object_id of the record, same pattern as DocumentImporter.
+     *
+     * @var array<int, array<string, string|null>>
+     */
+    protected static array $rowCustomFieldStash = [];
+
+    /**
      * @return array<ImportColumn>
      */
     public static function getColumns(): array
+    {
+        return array_merge(static::getStaticColumns(), static::getCustomFieldColumns());
+    }
+
+    /**
+     * Persist custom-field side effects after the Batch row has been saved.
+     * Uses merge semantics (replaceMissing=false) so unmapped columns are not
+     * touched — identical pattern to DocumentImporter::persistRowSideEffects().
+     */
+    public function afterSave(): void
+    {
+        /** @var Batch $record */
+        $record = $this->record;
+        $key = spl_object_id($record);
+
+        $customData = self::$rowCustomFieldStash[$key] ?? null;
+        unset(self::$rowCustomFieldStash[$key]);
+
+        if ($customData !== null && method_exists($record, 'setCustomFieldData')) {
+            try {
+                $record->setCustomFieldData($customData, false);
+            } catch (\Throwable) {
+                // Lenient: a bad custom cell must NOT fail the row.
+                // The row itself has already been persisted successfully.
+            }
+        }
+    }
+
+    /**
+     * Idempotent matching by `batch_number` (unique in schema). Re-running
+     * the same file updates existing rows; new numbers get inserted.
+     *
+     * We bypass the RepositoryScope here because operators with
+     * super_admin / admin privileges can legitimately update batches in any
+     * tenant — the BelongsToRepository hook does the real tenancy check
+     * when we call save().
+     */
+    public function resolveRecord(): ?Batch
+    {
+        $number = $this->data['batch_number'] ?? null;
+        if ($number === null) {
+            return new Batch;
+        }
+
+        $record = Batch::query()
+            ->withoutGlobalScope(RepositoryScope::class)
+            ->where('batch_number', (int) $number)
+            ->first() ?? new Batch;
+        $this->skipIfDuplicate($record);
+
+        return $record;
+    }
+
+    /**
+     * Default type=NOTARY_ACCESSION when batch_number ≥ 30 and the
+     * operator left the Type column unmapped or blank — matches the
+     * sample-data convention used by `nra:import-samples`.
+     */
+    public function afterFill(): void
+    {
+        /** @var Batch $record */
+        $record = $this->record;
+        if ($record->batch_number !== null
+            && (int) $record->batch_number >= 30
+            && empty($record->type)
+        ) {
+            $record->type = 'NOTARY_ACCESSION';
+        }
+        if (empty($record->type)) {
+            $record->type = 'MAIN_COLLECTION';
+        }
+        if ($record->is_active === null) {
+            $record->is_active = true;
+        }
+    }
+
+    public static function getCompletedNotificationBody(Import $import): string
+    {
+        $body = 'Batches import completed: '
+            . number_format($import->successful_rows) . ' rows processed';
+        if (($failed = $import->getFailedRowsCount()) > 0) {
+            $body .= ', ' . number_format($failed) . ' failed';
+        }
+
+        return $body;
+    }
+
+    /**
+     * Static (non-EAV) import columns for Batch.
+     *
+     * @return array<ImportColumn>
+     */
+    protected static function getStaticColumns(): array
     {
         return [
             ImportColumn::make('batch_number')
@@ -110,61 +216,46 @@ class BatchImporter extends Importer
     }
 
     /**
-     * Idempotent matching by `batch_number` (unique in schema). Re-running
-     * the same file updates existing rows; new numbers get inserted.
+     * Dynamic custom-field columns for the 'batch' entity type.
      *
-     * We bypass the RepositoryScope here because operators with
-     * super_admin / admin privileges can legitimately update batches in any
-     * tenant — the BelongsToRepository hook does the real tenancy check
-     * when we call save().
+     * Mirrors DocumentImporter::getCustomFieldColumns(). Each column is guessed
+     * by the definition label, the cf_{key} form, and the bare key so operators
+     * can use either the friendly label or the internal key as a column header.
+     *
+     * Values are stashed in {@see $rowCustomFieldStash} and persisted in
+     * {@see afterSave()} via $record->setCustomFieldData(..., false) (merge
+     * semantics — only mapped columns touch existing values).
+     *
+     * A bad custom-field cell (wrong type, unrecognised value) must NOT fail
+     * the row. Type coercion is lenient: if the raw string cannot be parsed
+     * the value is stored as-is (the trait handles the final cast on read).
+     *
+     * @return array<ImportColumn>
      */
-    public function resolveRecord(): ?Batch
+    protected static function getCustomFieldColumns(): array
     {
-        $number = $this->data['batch_number'] ?? null;
-        if ($number === null) {
-            return new Batch;
+        /** @var EloquentCollection<int, CustomFieldDefinition> $defs */
+        $defs = CustomFieldResolver::definitionsFor('batch');
+        if ($defs->isEmpty()) {
+            return [];
         }
 
-        $record = Batch::query()
-            ->withoutGlobalScope(RepositoryScope::class)
-            ->where('batch_number', (int) $number)
-            ->first() ?? new Batch;
-        $this->skipIfDuplicate($record);
-
-        return $record;
-    }
-
-    /**
-     * Default type=NOTARY_ACCESSION when batch_number ≥ 30 and the
-     * operator left the Type column unmapped or blank — matches the
-     * sample-data convention used by `nra:import-samples`.
-     */
-    public function afterFill(): void
-    {
-        /** @var Batch $record */
-        $record = $this->record;
-        if ($record->batch_number !== null
-            && (int) $record->batch_number >= 30
-            && empty($record->type)
-        ) {
-            $record->type = 'NOTARY_ACCESSION';
-        }
-        if (empty($record->type)) {
-            $record->type = 'MAIN_COLLECTION';
-        }
-        if ($record->is_active === null) {
-            $record->is_active = true;
-        }
-    }
-
-    public static function getCompletedNotificationBody(Import $import): string
-    {
-        $body = 'Batches import completed: '
-            . number_format($import->successful_rows) . ' rows processed';
-        if (($failed = $import->getFailedRowsCount()) > 0) {
-            $body .= ', ' . number_format($failed) . ' failed';
+        $columns = [];
+        foreach ($defs as $def) {
+            $columns[] = ImportColumn::make('custom_field_' . $def->key)
+                ->label($def->label . ' (custom field)')
+                ->guess([$def->label, $def->key, 'cf_' . $def->key])
+                ->rules(['nullable', 'string'])
+                ->fillRecordUsing(static function (Batch $record, ?string $state) use ($def): void {
+                    $key = spl_object_id($record);
+                    // Always stash the key — null/empty means "clear this field".
+                    // Absent columns (never reach this closure) are left untouched.
+                    static::$rowCustomFieldStash[$key][$def->key] = ($state !== null && trim($state) !== '')
+                        ? trim($state)
+                        : null;
+                });
         }
 
-        return $body;
+        return $columns;
     }
 }

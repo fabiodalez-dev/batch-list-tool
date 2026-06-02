@@ -11,7 +11,8 @@ use App\Filament\Resources\DocumentResource;
 use App\Models\CustomFieldDefinition;
 use App\Models\Document;
 use App\Support\BulkImport\TemplateGenerator;
-use Carbon\Carbon;
+use App\Support\CustomFields\CustomFieldCsv;
+use App\Support\CustomFields\CustomFieldResolver;
 use Filament\Actions;
 use Filament\Resources\Pages\ListRecords;
 use HayderHatem\FilamentExcelImport\Actions\FullImportAction;
@@ -117,17 +118,8 @@ class ListDocuments extends ListRecords
                         $valueModel = $doc->customFieldValues
                             ->firstWhere('custom_field_definition_id', $def->id);
                         $typed = $valueModel?->getTypedValueAttribute();
-                        $cellValue = '';
-                        if ($typed !== null) {
-                            $cellValue = match ($def->type) {
-                                'boolean' => $typed ? '1' : '0',
-                                'date' => $typed instanceof Carbon ? $typed->toDateString() : (string) $typed,
-                                'datetime' => $typed instanceof Carbon ? $typed->toDateTimeString() : (string) $typed,
-                                default => (string) $typed,
-                            };
-                            $cellValue = $this->sanitizeCsvCell($cellValue);
-                        }
-                        $allCells['cf_' . $def->key] = $cellValue;
+                        $raw = CustomFieldCsv::format($def, $typed);
+                        $allCells['cf_' . $def->key] = $raw !== '' ? $this->sanitizeCsvCell($raw) : '';
                     }
 
                     fputcsv($out, array_intersect_key($allCells, $allColumns));
@@ -184,28 +176,18 @@ class ListDocuments extends ListRecords
     }
 
     /**
-     * Return the active custom-field definitions for the current user's default
-     * repository (document entity type), ordered by sort_order. Used by both
-     * exportToCsv() (column headers) and the row builder (cell values).
+     * Return the active custom-field definitions for the active repository
+     * (document entity type), ordered by sort_order. Delegates to
+     * CustomFieldResolver so the active-repo logic is centralised.
      *
-     * Returns an empty Collection when the user has no default repository or
+     * Returns an empty Collection when the resolver finds no repository or
      * when no active definitions exist — safe to iterate unconditionally.
      *
      * @return \Illuminate\Database\Eloquent\Collection<int, CustomFieldDefinition>
      */
     private function getActiveCustomFieldDefinitions(): \Illuminate\Database\Eloquent\Collection
     {
-        $repositoryId = auth()->user()?->default_repository_id;
-        if ($repositoryId === null) {
-            return new \Illuminate\Database\Eloquent\Collection;
-        }
-
-        return CustomFieldDefinition::query()
-            ->where('repository_id', $repositoryId)
-            ->where('entity_type', 'document')
-            ->where('is_active', true)
-            ->orderBy('sort_order')
-            ->get();
+        return CustomFieldResolver::definitionsFor('document');
     }
 
     /**

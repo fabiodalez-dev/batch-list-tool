@@ -6,12 +6,15 @@ namespace App\Filament\Imports;
 
 use App\Filament\Imports\Concerns\SkipsExistingRows;
 use App\Models\Box;
+use App\Models\CustomFieldDefinition;
 use App\Models\Scopes\ThroughBatchRepositoryScope;
 use App\Support\BulkImport\EntityResolver;
 use App\Support\BulkImport\SpreadsheetParsers;
+use App\Support\CustomFields\CustomFieldResolver;
 use Filament\Actions\Imports\ImportColumn;
 use Filament\Actions\Imports\Importer;
 use Filament\Actions\Imports\Models\Import;
+use Illuminate\Database\Eloquent\Collection as EloquentCollection;
 use Illuminate\Validation\ValidationException;
 
 /**
@@ -38,9 +41,130 @@ class BoxImporter extends Importer
     protected static ?string $model = Box::class;
 
     /**
+     * Per-row stash for custom-field key→value data. Persisted in
+     * {@see afterSave()} via $record->setCustomFieldData(..., false).
+     * Keyed by spl_object_id of the record.
+     *
+     * @var array<int, array<string, string|null>>
+     */
+    protected static array $rowCustomFieldStash = [];
+
+    /**
      * @return array<ImportColumn>
      */
     public static function getColumns(): array
+    {
+        return array_merge(static::getStaticColumns(), static::getCustomFieldColumns());
+    }
+
+    /**
+     * Persist custom-field side effects after the Box row has been saved.
+     * Uses merge semantics (replaceMissing=false): only explicitly mapped
+     * columns touch stored values. Failures are swallowed so a bad custom
+     * cell never fails an otherwise valid row.
+     */
+    public function afterSave(): void
+    {
+        /** @var Box $record */
+        $record = $this->record;
+        $key = spl_object_id($record);
+
+        $customData = self::$rowCustomFieldStash[$key] ?? null;
+        unset(self::$rowCustomFieldStash[$key]);
+
+        if ($customData !== null && method_exists($record, 'setCustomFieldData')) {
+            try {
+                $record->setCustomFieldData($customData, false);
+            } catch (\Throwable) {
+                // Lenient: a bad custom cell must NOT fail the row.
+            }
+        }
+    }
+
+    /**
+     * Idempotent matching: only the (unique) barcode is used for duplicate
+     * detection. A (batch_id, box_number) fallback is NOT implemented — see the
+     * note in the body: batch_id is resolved later in the column fill closures,
+     * not here, so barcode-less rows always insert a new Box.
+     */
+    public function resolveRecord(): ?Box
+    {
+        $barcode = $this->data['barcode'] ?? null;
+        if ($barcode !== null && trim((string) $barcode) !== '') {
+            $existing = Box::query()
+                ->withoutGlobalScope(ThroughBatchRepositoryScope::class)
+                ->where('barcode', trim((string) $barcode))
+                ->first();
+            if ($existing !== null) {
+                // RFQ §3.1.3 — honour the "skip duplicates" checkbox for the
+                // ONE case we can detect an existing box: a barcode hit.
+                $this->skipIfDuplicate($existing);
+
+                return $existing;
+            }
+        }
+
+        // note: skip_duplicates is a no-op for barcode-less rows. The only
+        // idempotent key BoxImporter can match on is the (unique) barcode;
+        // a (batch_id + box_number) lookup is not possible here because
+        // batch_id is resolved later, in the column fill closures, not in
+        // resolveRecord(). Such rows always insert a new Box.
+        return new Box;
+    }
+
+    /**
+     * Apply the three RFQ rules that depend on multiple fields:
+     *
+     *  #3 — IN_SITU and NRA require a parent RAS box. If the operator
+     *       supplied no parent barcode we cannot proceed safely; we leave
+     *       parent_box_id null and let the row fail with an explicit
+     *       validation message via the `before save` check.
+     *  #4 — MAV / STVC force `is_legacy = true`.
+     *  #5 — PERM_OUT requires `disinfestation_date`.
+     */
+    public function afterFill(): void
+    {
+        /** @var Box $record */
+        $record = $this->record;
+
+        if (in_array($record->box_type, ['MAV', 'STVC'], true)) {
+            $record->is_legacy = true;
+        }
+
+        if ($record->barcode_status === 'PERM_OUT' && $record->disinfestation_date === null) {
+            // We refuse the row with a validation exception — this is what
+            // surfaces in the per-row failed export.
+            throw ValidationException::withMessages([
+                'disinfestation_date' => __('Boxes marked PERM_OUT must carry a disinfestation_date.'),
+            ]);
+        }
+
+        if (in_array($record->box_type, ['IN_SITU', 'NRA'], true) && $record->parent_box_id === null) {
+            // RFQ #3 — IN_SITU / NRA boxes MUST reference a parent RAS box.
+            // Reject the row instead of inserting an orphan.
+            throw ValidationException::withMessages([
+                'parent_box_id' => __('IN_SITU and NRA boxes must reference a parent RAS box (via barcode).'),
+            ]);
+        }
+    }
+
+    public static function getCompletedNotificationBody(Import $import): string
+    {
+        $body = 'Boxes import completed: '
+            . number_format($import->successful_rows) . ' rows processed';
+        if (($failed = $import->getFailedRowsCount()) > 0) {
+            $body .= ', ' . number_format($failed) . ' failed';
+        }
+
+        return $body;
+    }
+
+    /**
+     * Static (non-EAV) import columns for Box.
+     *
+     * @return array<ImportColumn>
+     */
+    protected static function getStaticColumns(): array
     {
         return [
             ImportColumn::make('box_number')
@@ -153,80 +277,39 @@ class BoxImporter extends Importer
     }
 
     /**
-     * Idempotent matching: only the (unique) barcode is used for duplicate
-     * detection. A (batch_id, box_number) fallback is NOT implemented — see the
-     * note in the body: batch_id is resolved later in the column fill closures,
-     * not here, so barcode-less rows always insert a new Box.
-     */
-    public function resolveRecord(): ?Box
-    {
-        $barcode = $this->data['barcode'] ?? null;
-        if ($barcode !== null && trim((string) $barcode) !== '') {
-            $existing = Box::query()
-                ->withoutGlobalScope(ThroughBatchRepositoryScope::class)
-                ->where('barcode', trim((string) $barcode))
-                ->first();
-            if ($existing !== null) {
-                // RFQ §3.1.3 — honour the "skip duplicates" checkbox for the
-                // ONE case we can detect an existing box: a barcode hit.
-                $this->skipIfDuplicate($existing);
-
-                return $existing;
-            }
-        }
-
-        // note: skip_duplicates is a no-op for barcode-less rows. The only
-        // idempotent key BoxImporter can match on is the (unique) barcode;
-        // a (batch_id + box_number) lookup is not possible here because
-        // batch_id is resolved later, in the column fill closures, not in
-        // resolveRecord(). Such rows always insert a new Box.
-        return new Box;
-    }
-
-    /**
-     * Apply the three RFQ rules that depend on multiple fields:
+     * Dynamic custom-field columns for the 'box' entity type.
      *
-     *  #3 — IN_SITU and NRA require a parent RAS box. If the operator
-     *       supplied no parent barcode we cannot proceed safely; we leave
-     *       parent_box_id null and let the row fail with an explicit
-     *       validation message via the `before save` check.
-     *  #4 — MAV / STVC force `is_legacy = true`.
-     *  #5 — PERM_OUT requires `disinfestation_date`.
+     * Mirrors DocumentImporter::getCustomFieldColumns() / BatchImporter equivalent.
+     * Values are stashed in {@see $rowCustomFieldStash} and persisted in
+     * {@see afterSave()} with merge semantics so unmapped columns are untouched.
+     *
+     * A bad custom-field cell must NOT fail the row — the try/catch in
+     * afterSave() absorbs any type-coercion error after the Box row is saved.
+     *
+     * @return array<ImportColumn>
      */
-    public function afterFill(): void
+    protected static function getCustomFieldColumns(): array
     {
-        /** @var Box $record */
-        $record = $this->record;
-
-        if (in_array($record->box_type, ['MAV', 'STVC'], true)) {
-            $record->is_legacy = true;
+        /** @var EloquentCollection<int, CustomFieldDefinition> $defs */
+        $defs = CustomFieldResolver::definitionsFor('box');
+        if ($defs->isEmpty()) {
+            return [];
         }
 
-        if ($record->barcode_status === 'PERM_OUT' && $record->disinfestation_date === null) {
-            // We refuse the row with a validation exception — this is what
-            // surfaces in the per-row failed export.
-            throw ValidationException::withMessages([
-                'disinfestation_date' => __('Boxes marked PERM_OUT must carry a disinfestation_date.'),
-            ]);
+        $columns = [];
+        foreach ($defs as $def) {
+            $columns[] = ImportColumn::make('custom_field_' . $def->key)
+                ->label($def->label . ' (custom field)')
+                ->guess([$def->label, $def->key, 'cf_' . $def->key])
+                ->rules(['nullable', 'string'])
+                ->fillRecordUsing(static function (Box $record, ?string $state) use ($def): void {
+                    $key = spl_object_id($record);
+                    static::$rowCustomFieldStash[$key][$def->key] = ($state !== null && trim($state) !== '')
+                        ? trim($state)
+                        : null;
+                });
         }
 
-        if (in_array($record->box_type, ['IN_SITU', 'NRA'], true) && $record->parent_box_id === null) {
-            // RFQ #3 — IN_SITU / NRA boxes MUST reference a parent RAS box.
-            // Reject the row instead of inserting an orphan.
-            throw ValidationException::withMessages([
-                'parent_box_id' => __('IN_SITU and NRA boxes must reference a parent RAS box (via barcode).'),
-            ]);
-        }
-    }
-
-    public static function getCompletedNotificationBody(Import $import): string
-    {
-        $body = 'Boxes import completed: '
-            . number_format($import->successful_rows) . ' rows processed';
-        if (($failed = $import->getFailedRowsCount()) > 0) {
-            $body .= ', ' . number_format($failed) . ' failed';
-        }
-
-        return $body;
+        return $columns;
     }
 }

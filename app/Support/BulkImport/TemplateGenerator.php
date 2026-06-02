@@ -6,6 +6,7 @@ namespace App\Support\BulkImport;
 
 use App\Filament\Imports\BatchImporter;
 use App\Filament\Imports\BoxImporter;
+use App\Support\CustomFields\CustomFieldResolver;
 use PhpOffice\PhpSpreadsheet\Cell\Coordinate;
 use PhpOffice\PhpSpreadsheet\Cell\DataType;
 use PhpOffice\PhpSpreadsheet\Spreadsheet;
@@ -124,6 +125,7 @@ final class TemplateGenerator
         'box' => [],
         'location' => [],
         'document' => [],
+        'volume' => [],
     ];
 
     /**
@@ -170,6 +172,20 @@ final class TemplateGenerator
      * Return the ordered header list for an entity. Public so tests and the
      * wizard can inspect without round-tripping through xlsx.
      *
+     * **Repo-dependent after spec §2**: for entities that support custom fields
+     * (document, batch, box, volume) the static base headers are returned
+     * FIRST (byte-for-byte contract preserved), then the active custom-field
+     * labels for the resolved repository are APPENDED in sort_order order.
+     *
+     * - "Static" headers = the legacy constants / synthesise*Headers() output.
+     *   Their position, spelling, and duplicate behaviour are frozen contracts.
+     * - "Dynamic" headers = the label of each active CustomFieldDefinition
+     *   for the entity in the active repository (via CustomFieldResolver).
+     *   Tests must seed definitions + set the active repo to assert appended columns.
+     *
+     * Authority and series are reference tables and carry no custom fields —
+     * they always return the pure static array.
+     *
      * @return array<int, string>
      */
     public static function headersFor(string $entity): array
@@ -178,17 +194,33 @@ final class TemplateGenerator
             throw new \InvalidArgumentException("Unknown template entity: {$entity}");
         }
 
-        return match ($entity) {
+        $staticHeaders = match ($entity) {
             'authority' => self::AUTHORITY_HEADERS,
             'series' => self::SERIES_HEADERS,
             'document' => self::DOCUMENT_HEADERS,
             'batch' => self::synthesiseBatchHeaders(),
             'box' => self::synthesiseBoxHeaders(),
             'location' => self::synthesiseLocationHeaders(),
+            'volume' => self::synthesiseVolumeHeaders(),
         };
         // Note: the `array_key_exists` guard above narrows $entity to the
         // exact key set covered by the match arms, so PHPStan correctly
         // flags any `default` here as unreachable.
+
+        // Authority, series, and location have no custom fields — skip the
+        // resolver call entirely (avoids an unnecessary DB query on every
+        // template download for these entities).
+        if (in_array($entity, ['authority', 'series', 'location'], strict: true)) {
+            return $staticHeaders;
+        }
+
+        // Append active custom-field labels for the resolved repository,
+        // ordered by sort_order (resolver handles repo resolution + memo).
+        $customLabels = CustomFieldResolver::definitionsFor($entity)
+            ->pluck('label')
+            ->all();
+
+        return array_merge($staticHeaders, $customLabels);
     }
 
     /**
@@ -258,9 +290,46 @@ final class TemplateGenerator
     }
 
     /**
+     * Synthetic Volume headers — mirrors the VolumeImporter static columns
+     * exactly (import phase §4 must keep these names in sync):
+     *
+     *   document_identifier  — required; resolves the parent Document by its
+     *                          identifier, scoped to the active repository.
+     *   volume_number        — the Volume.volume_number column.
+     *   dates_start          — Volume.dates_start (Y-m-d or human-readable).
+     *   dates_end            — Volume.dates_end   (Y-m-d or human-readable).
+     *   notes                — Volume.notes (free text).
+     *
+     * CONTRACT: the Import phase (spec §4, VolumeImporter::getColumns()) MUST
+     * declare exactly these column keys in the same order so that a
+     * "download template → fill → re-upload" round-trip requires zero remapping.
+     * If the VolumeImporter static columns ever change, update BOTH this method
+     * AND the importer, then bump GENERATOR_VERSION.
+     *
+     * @return array<int, string>
+     */
+    private static function synthesiseVolumeHeaders(): array
+    {
+        return [
+            'document_identifier', // FK: resolves Volume.document_id via Document.identifier
+            'volume_number',
+            'dates_start',
+            'dates_end',
+            'notes',
+        ];
+    }
+
+    /**
      * Build the Spreadsheet with a single data sheet (headers in row 1,
      * everything below blank) plus a hidden metadata sheet that lets us
      * detect tampering / staleness at re-upload time.
+     *
+     * The `_template_meta` sheet carries a `custom_field_keys` row listing
+     * the `cf_{key}` column identifiers for any dynamic custom-field columns
+     * appended after the static base headers. An empty string means no custom
+     * fields were present when the template was generated (stale-template
+     * detection: if the operator's active repo has custom fields but the
+     * template has none listed, warn and suggest re-downloading).
      *
      * @param array<int, string> $headers
      */
@@ -298,6 +367,16 @@ final class TemplateGenerator
             }
         }
 
+        // Collect the cf_{key} identifiers for any custom fields appended to
+        // this template, so the _template_meta sheet can list them explicitly.
+        // Authority, series, and location carry no custom fields — skip.
+        $customFieldKeys = [];
+        if (! in_array($entity, ['authority', 'series', 'location'], strict: true)) {
+            $customFieldKeys = CustomFieldResolver::definitionsFor($entity)
+                ->map(fn ($def) => 'cf_' . $def->key)
+                ->all();
+        }
+
         // Sheet 1: hidden metadata. The operator never sees this; we use it
         // to detect tampered or stale templates at upload time.
         $meta = $spreadsheet->createSheet();
@@ -309,6 +388,8 @@ final class TemplateGenerator
                 ['entity', $entity],
                 ['expected_column_count', (string) count($headers)],
                 ['generator_version', self::GENERATOR_VERSION],
+                // Comma-separated cf_{key} list; empty string = no custom fields.
+                ['custom_field_keys', implode(',', $customFieldKeys)],
             ],
             null,
             'A1'
@@ -333,6 +414,7 @@ final class TemplateGenerator
             'box' => 'Boxes',
             'location' => 'Locations',
             'document' => 'Documents',
+            'volume' => 'Volumes',
             default => 'Template',
         };
     }
