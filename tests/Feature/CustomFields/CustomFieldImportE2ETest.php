@@ -45,6 +45,14 @@ beforeEach(function () {
     CustomFieldResolver::flush();
 });
 
+// Purge any temp workbook this test class created — runs even when an
+// assertion above fails mid-test, so nothing is left in sys_get_temp_dir().
+afterEach(function () {
+    foreach (glob(sys_get_temp_dir() . '/cf_e2e_*') ?: [] as $leftover) {
+        File::delete($leftover);
+    }
+});
+
 /**
  * Capture the streamed .xlsx into a temp path and return [path, headerRow].
  *
@@ -58,7 +66,13 @@ function cfe2e_downloadTemplate(string $entity): array
     $response->sendContent();
     $binary = (string) ob_get_clean();
 
-    $path = tempnam(sys_get_temp_dir(), 'cf_e2e_') . '.xlsx';
+    // tempnam() physically creates the file and returns its path; rename it to
+    // a .xlsx so PhpSpreadsheet's extension-based reader detection works AND no
+    // orphan extension-less file is left behind (concatenating '.xlsx' onto the
+    // tempnam result would write a *second* file and leak the first).
+    $base = tempnam(sys_get_temp_dir(), 'cf_e2e_');
+    $path = $base . '.xlsx';
+    File::move($base, $path);
     file_put_contents($path, $binary);
 
     // Re-read with PhpSpreadsheet — the same parser the import action uses for
@@ -75,18 +89,6 @@ function cfe2e_downloadTemplate(string $entity): array
     }
 
     return [$path, $headerRow];
-}
-
-/**
- * Delete a temp template file, but only if it really lives under the system
- * temp dir (defence-in-depth against an unexpected path — these are always
- * tempnam() outputs in this test, never user input).
- */
-function cfe2e_cleanup(string $path): void
-{
-    // Use the Laravel filesystem facade (not a raw unlink) — only removes the
-    // tempnam() workbook we created for this assertion.
-    File::delete($path);
 }
 
 it('writes the active repository custom-field column into the real Document .xlsx and imports its value', function () {
@@ -161,8 +163,6 @@ it('writes the active repository custom-field column into the real Document .xls
 
     expect($stored)->not->toBeNull()
         ->and($stored->value)->toBe('verified');
-
-    cfe2e_cleanup($path);
 });
 
 it('does not append a custom column to the .xlsx when no active repository is selected', function () {
@@ -186,6 +186,4 @@ it('does not append a custom column to the .xlsx when no active repository is se
 
     expect($headers)->toContain('Identifier')
         ->and($headers)->not->toContain('OCR State');
-
-    cfe2e_cleanup($path);
 });
