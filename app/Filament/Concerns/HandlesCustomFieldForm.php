@@ -110,7 +110,10 @@ trait HandlesCustomFieldForm
      */
     protected function mutateFormDataBeforeCreateCustomFields(array $data): array
     {
-        $this->pendingCustomFieldData = $data['custom'] ?? [];
+        // Normalise: 'custom' must be an array before assigning to the typed
+        // property — a scalar (malformed payload) would otherwise TypeError.
+        $custom = $data['custom'] ?? [];
+        $this->pendingCustomFieldData = is_array($custom) ? $custom : [];
         unset($data['custom']);
 
         return $data;
@@ -125,7 +128,10 @@ trait HandlesCustomFieldForm
      */
     protected function mutateFormDataBeforeSaveCustomFields(array $data): array
     {
-        $this->pendingCustomFieldData = $data['custom'] ?? [];
+        // Normalise: 'custom' must be an array before assigning to the typed
+        // property — a scalar (malformed payload) would otherwise TypeError.
+        $custom = $data['custom'] ?? [];
+        $this->pendingCustomFieldData = is_array($custom) ? $custom : [];
         unset($data['custom']);
 
         return $data;

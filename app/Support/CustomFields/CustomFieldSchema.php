@@ -82,7 +82,11 @@ final class CustomFieldSchema
         $name = 'custom.' . $def->key;
 
         $component = match ($def->type) {
-            'textarea' => Textarea::make($name)->rows(3)->columnSpanFull(),
+            // maxLength caps the value well under the MariaDB TEXT byte limit
+            // (65,535 bytes — fewer chars under multi-byte charsets). Without
+            // it a very long value would save on SQLite (tests) yet fail only
+            // on the prod MariaDB column. 60,000 leaves headroom for UTF-8.
+            'textarea' => Textarea::make($name)->rows(3)->maxLength(60000)->columnSpanFull(),
             'number' => TextInput::make($name)->numeric(),
             'boolean' => Toggle::make($name),
             'date' => DatePicker::make($name),
