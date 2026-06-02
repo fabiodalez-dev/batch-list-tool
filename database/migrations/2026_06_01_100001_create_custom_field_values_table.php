@@ -26,8 +26,15 @@ return new class extends Migration
             $table->text('value')->nullable();
             $table->timestamps();
 
-            // One value per (definition, entity instance)
-            $table->unique(['custom_field_definition_id', 'customizable_type', 'customizable_id']);
+            // One value per (definition, entity instance). Explicit SHORT name:
+            // the auto-generated unique name
+            // (custom_field_values_custom_field_definition_id_customizable_type_customizable_id_unique)
+            // far exceeds MariaDB's 64-char identifier limit (error 1059).
+            // SQLite has no such limit, so it only surfaced on the prod MariaDB.
+            $table->unique(
+                ['custom_field_definition_id', 'customizable_type', 'customizable_id'],
+                'cfv_def_customizable_uq',
+            );
         });
     }
 
