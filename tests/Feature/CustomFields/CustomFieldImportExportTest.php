@@ -25,6 +25,7 @@ use App\Support\BulkImport\EntityResolver;
 use App\Support\BulkImport\TemplateGenerator;
 use App\Support\CustomFields\CustomFieldResolver;
 use Carbon\Carbon;
+use Filament\Actions\Imports\Exceptions\RowImportFailedException;
 use Filament\Actions\Imports\Models\Import;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Support\Facades\Session;
@@ -1229,7 +1230,7 @@ test('[Import/Volume] unknown identifier fails the row', function (): void {
             'document_identifier' => 'NONEXISTENT-XYZ-999',
             'volume_number' => 'Vol. Z',
         ], $user->id);
-    } catch (ValidationException|\Filament\Actions\Imports\Exceptions\RowImportFailedException) {
+    } catch (ValidationException|RowImportFailedException) {
         // Expected: the row-level failure exception surfaced because we called
         // the importer directly (not through the queued job). This is the same
         // mechanism as BoxImporter::afterFill() rejecting a missing parent.
@@ -1259,7 +1260,7 @@ test('[Import/Volume] document from another repo fails (tenant rejection)', func
             'document_identifier' => 'IMVOLIB2-DOC-CROSS',
             'volume_number' => 'Vol. Cross',
         ], $userA->id);
-    } catch (ValidationException|\Filament\Actions\Imports\Exceptions\RowImportFailedException) {
+    } catch (ValidationException|RowImportFailedException) {
         // Expected: cross-repo identifier looks like "not found" to the active
         // repo resolver, so afterFill() throws exactly as for a missing doc.
         // The queued job would record this as a failed row; here the exception

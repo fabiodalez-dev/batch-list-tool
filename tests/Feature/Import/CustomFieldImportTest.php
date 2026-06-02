@@ -17,6 +17,7 @@ use App\Models\User;
 use App\Models\Volume;
 use App\Support\BulkImport\EntityResolver;
 use App\Support\CustomFields\CustomFieldResolver;
+use Filament\Actions\Imports\Exceptions\RowImportFailedException;
 use Filament\Actions\Imports\Models\Import;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Validation\ValidationException;
@@ -625,7 +626,7 @@ test('Volume import: unknown document identifier fails the row', function (): vo
             'document_identifier' => 'NONEXISTENT-DOC-XYZ',
             'volume_number' => 'Vol. Z',
         ], $user->id);
-    } catch (ValidationException|\Filament\Actions\Imports\Exceptions\RowImportFailedException) {
+    } catch (ValidationException|RowImportFailedException) {
         // Expected row-level failure — same mechanism as BoxImporter rejecting
         // a missing parent. In the queued job this becomes a failed-row entry;
         // here it propagates and we just verify no Volume was persisted.
@@ -654,7 +655,7 @@ test('Volume import: document from another repository fails the row', function (
             'document_identifier' => 'VOLIB-DOC-XTEN',
             'volume_number' => 'Vol. Cross',
         ], $userA->id);
-    } catch (ValidationException|\Filament\Actions\Imports\Exceptions\RowImportFailedException) {
+    } catch (ValidationException|RowImportFailedException) {
         // Expected: the cross-repo document identifier resolves as "not found"
         // under repo A, so afterFill() rejects the row. The queued job records
         // this as a failed row; here the exception surfaces in the test layer.
