@@ -119,14 +119,25 @@ trait HasCustomFields
      * entity_type) are processed; unknown or inactive definition keys in $data
      * are silently ignored to prevent storing orphaned data.
      *
-     * Rows for definitions whose key is NOT present in $data (or whose value is
-     * null) are deleted (clean slate for omitted fields). This mirrors the
-     * behaviour of the Filament form: unchecking a required toggle submits null,
-     * and null means "remove the stored row".
+     * $replaceMissing controls the behaviour for definitions whose key is NOT
+     * present in $data:
+     *
+     *   true  (default — form semantics): every active definition absent from $data
+     *          is deleted. This gives "replace / clean-slate" semantics: the Filament
+     *          form submits all fields for the active definitions (or null for blanked
+     *          fields), so any missing key genuinely means "the operator cleared it".
+     *
+     *   false (import / merge semantics): only keys explicitly present in $data are
+     *          processed. Definitions whose key is absent in $data are left untouched,
+     *          so a partial CSV import that maps only some custom columns does NOT
+     *          silently wipe the others. An explicit null value in $data still deletes
+     *          that specific row (the operator intentionally cleared the cell).
      *
      * @param array<string, mixed> $data Key-value pairs keyed by definition key.
+     * @param bool $replaceMissing True → delete definitions absent from $data (form default).
+     *                             False → leave definitions absent from $data untouched (import).
      */
-    public function setCustomFieldData(array $data): void
+    public function setCustomFieldData(array $data, bool $replaceMissing = true): void
     {
         $definitions = $this->customFieldDefinitions()->get()->keyBy('key');
 
@@ -138,8 +149,21 @@ trait HasCustomFields
         $morphId = $this->getKey();
 
         foreach ($definitions as $key => $def) {
-            if (! array_key_exists($key, $data) || $data[$key] === null || $data[$key] === '') {
-                // Remove stored value when omitted or null.
+            $inData = array_key_exists($key, $data);
+
+            if (! $inData) {
+                if ($replaceMissing) {
+                    // Full-replace mode (form): absent key → delete stored row.
+                    $this->customFieldValues()
+                        ->where('custom_field_definition_id', $def->id)
+                        ->delete();
+                }
+                // Merge mode (import): absent key → leave untouched.
+                continue;
+            }
+
+            if ($data[$key] === null || $data[$key] === '') {
+                // Key present but null/empty → delete stored row (works in both modes).
                 $this->customFieldValues()
                     ->where('custom_field_definition_id', $def->id)
                     ->delete();

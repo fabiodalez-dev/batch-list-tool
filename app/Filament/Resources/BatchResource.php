@@ -21,6 +21,7 @@ use Filament\Infolists\Components\TextEntry;
 use Filament\Resources\Resource;
 use Filament\Schemas;
 use Filament\Schemas\Components\Section;
+use Filament\Schemas\Components\Utilities\Get;
 use Filament\Schemas\Schema;
 use Filament\Tables;
 use Filament\Tables\Filters\SelectFilter;
@@ -116,6 +117,9 @@ class BatchResource extends Resource
                         )
                             ->label('Repository')
                             ->required()
+                            // live() so the Custom fields Section re-renders when
+                            // the operator picks a different repository (GROUP A fix).
+                            ->live()
                             ->default(fn () => auth()->user()?->default_repository_id)),
                         $g(Forms\Components\Toggle::make('is_active')
                             ->required()),
@@ -123,18 +127,26 @@ class BatchResource extends Resource
 
                 // Custom fields (EAV, per-repository).
                 // Definitions are created by super_admin via the Repository admin panel.
+                //
+                // Repository resolution order (GROUP A fix):
+                //   1. Live form state: $get('repository_id') — reflects the operator's
+                //      current selection in real-time (repository_id is ->live()).
+                //   2. Fallback to record repository_id (on edit, before any change).
+                //   3. Fallback to the user's default repository (on create, nothing selected yet).
                 Section::make('Custom fields')
                     ->columnSpanFull()
                     ->columns(2)
-                    ->schema(static function (?Batch $record): array {
-                        $repositoryId = $record?->repository_id
-                            ?? auth()->user()?->default_repository_id;
+                    ->schema(static function (Get $get, ?Batch $record): array {
+                        $repositoryId = (int) $get('repository_id')
+                            ?: $record?->repository_id
+                            ?: auth()->user()?->default_repository_id;
 
                         return CustomFieldSchema::for('batch', $repositoryId !== null ? (int) $repositoryId : null);
                     })
-                    ->visible(static function (?Batch $record): bool {
-                        $repositoryId = $record?->repository_id
-                            ?? auth()->user()?->default_repository_id;
+                    ->visible(static function (Get $get, ?Batch $record): bool {
+                        $repositoryId = (int) $get('repository_id')
+                            ?: $record?->repository_id
+                            ?: auth()->user()?->default_repository_id;
 
                         return count(CustomFieldSchema::for('batch', $repositoryId !== null ? (int) $repositoryId : null)) > 0;
                     }),

@@ -67,12 +67,18 @@ class CustomFieldsRelationManager extends RelationManager
 
         return $schema->schema([
             // entity_type — scope to a specific Filament entity.
+            // GROUP E fix: immutable once the definition has associated values
+            // (changing it would silently re-scope or orphan existing stored data).
             Forms\Components\Select::make('entity_type')
                 ->label('Entity type')
                 ->options($entityTypeOptions)
                 ->required()
                 ->native(false)
-                ->helperText('Which resource this field will appear on.'),
+                ->helperText('Which resource this field will appear on.')
+                ->disabled(fn (?CustomFieldDefinition $record): bool => $record !== null && $record->values()->exists())
+                ->helperText(fn (?CustomFieldDefinition $record): string => ($record !== null && $record->values()->exists())
+                    ? 'Locked — this field has stored values. Changing the entity type would orphan existing data.'
+                    : 'Which resource this field will appear on.'),
 
             // label — human-readable name shown in forms/views.
             Forms\Components\TextInput::make('label')
@@ -132,15 +138,23 @@ class CustomFieldsRelationManager extends RelationManager
                 }),
 
             // type — determines which Filament component is rendered.
+            // GROUP E fix: immutable once the definition has associated values
+            // (changing type would silently reinterpret existing stored data —
+            // e.g. turning a boolean '1' into a number or a date string).
             Forms\Components\Select::make('type')
                 ->label('Type')
                 ->options($typeOptions)
                 ->required()
                 ->native(false)
                 ->live()
-                ->helperText('Determines input widget and value casting.'),
+                ->disabled(fn (?CustomFieldDefinition $record): bool => $record !== null && $record->values()->exists())
+                ->helperText(fn (?CustomFieldDefinition $record): string => ($record !== null && $record->values()->exists())
+                    ? 'Locked — this field has stored values. Changing the type would silently reinterpret existing data.'
+                    : 'Determines input widget and value casting.'),
 
             // options — repeater for select fields only.
+            // GROUP E fix: also disabled when the definition has stored values
+            // (adding/removing/changing options would misrepresent existing data).
             Forms\Components\Repeater::make('options')
                 ->label('Options')
                 ->helperText('Add one row per selectable option.')
@@ -160,7 +174,8 @@ class CustomFieldsRelationManager extends RelationManager
                         ->maxLength(128),
                 ])
                 ->visible(fn (Get $get): bool => $get('type') === 'select')
-                ->required(fn (Get $get): bool => $get('type') === 'select'),
+                ->required(fn (Get $get): bool => $get('type') === 'select')
+                ->disabled(fn (?CustomFieldDefinition $record): bool => $record !== null && $record->values()->exists()),
 
             // Toggles.
             Forms\Components\Toggle::make('is_required')

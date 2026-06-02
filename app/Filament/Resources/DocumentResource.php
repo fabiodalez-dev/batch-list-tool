@@ -30,6 +30,7 @@ use Filament\Resources\Resource;
 use Filament\Schemas;
 use Filament\Schemas\Components\Grid;
 use Filament\Schemas\Components\Section;
+use Filament\Schemas\Components\Utilities\Get;
 use Filament\Schemas\Schema;
 use Filament\Support\Enums\FontWeight;
 use Filament\Support\Enums\TextSize;
@@ -158,6 +159,9 @@ class DocumentResource extends Resource
                         )
                             ->label('Repository')
                             ->required()
+                            // live() so the Custom fields Section re-renders when
+                            // the operator picks a different repository (GROUP A fix).
+                            ->live()
                             ->default(fn () => auth()->user()?->default_repository_id)),
                         $g(Forms\Components\TextInput::make('volume_label')->label('Volume label')->maxLength(64)),
                         $g(Forms\Components\Select::make('practice')
@@ -414,21 +418,30 @@ class DocumentResource extends Resource
 
                 // Custom fields (EAV, per-repository).
                 // Definitions are created by super_admin via the Repository admin panel.
-                // On create: resolve repository from form state or user default.
-                // On edit:   resolved from the record's own repository_id.
+                //
+                // Repository resolution order (GROUP A fix):
+                //   1. Live form state: $get('repository_id') — reflects the operator's
+                //      current selection in real-time (repository_id is ->live()).
+                //   2. Fallback to record repository_id (on edit, before any change).
+                //   3. Fallback to the user's default repository (on create, nothing selected yet).
+                //
+                // The Section re-renders automatically whenever repository_id changes
+                // because Get reads a ->live() field.
                 Section::make('Custom fields')
                     ->columnSpanFull()
                     ->columns(2)
                     ->collapsed(false)
-                    ->schema(static function (?Document $record): array {
-                        $repositoryId = $record?->repository_id
-                            ?? auth()->user()?->default_repository_id;
+                    ->schema(static function (Get $get, ?Document $record): array {
+                        $repositoryId = (int) $get('repository_id')
+                            ?: $record?->repository_id
+                            ?: auth()->user()?->default_repository_id;
 
                         return CustomFieldSchema::for('document', $repositoryId !== null ? (int) $repositoryId : null);
                     })
-                    ->visible(static function (?Document $record): bool {
-                        $repositoryId = $record?->repository_id
-                            ?? auth()->user()?->default_repository_id;
+                    ->visible(static function (Get $get, ?Document $record): bool {
+                        $repositoryId = (int) $get('repository_id')
+                            ?: $record?->repository_id
+                            ?: auth()->user()?->default_repository_id;
 
                         return count(CustomFieldSchema::for('document', $repositoryId !== null ? (int) $repositoryId : null)) > 0;
                     }),

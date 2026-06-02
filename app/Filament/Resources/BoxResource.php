@@ -7,6 +7,7 @@ use App\Filament\Actions\Boxes\MoveBoxToLocationAction;
 use App\Filament\Concerns\AppliesFieldPermissions;
 use App\Filament\Resources\BoxResource\Pages;
 use App\Filament\Support\SearchableSelects;
+use App\Models\Batch;
 use App\Models\Box;
 use App\Models\Lookup\BarcodeStatus;
 use App\Models\Lookup\BoxType;
@@ -421,20 +422,29 @@ class BoxResource extends Resource
 
                 // Custom fields (EAV, per-repository).
                 // For Box the repository is derived from its batch (spec §Architecture).
-                // On create: resolved from the selected batch's repository.
-                // On edit:   resolved from the loaded record via batch->repository_id.
+                //
+                // Repository resolution order (GROUP A fix):
+                //   1. Live form state: Batch::find($get('batch_id'))->repository_id
+                //      batch_id is ->live() (declared above) so the Section re-renders
+                //      whenever the operator picks a different batch.
+                //   2. Fallback to the loaded record's batch repository (on edit,
+                //      before any batch selection change).
+                //   3. Fallback to the user's default repository (on create, no batch yet).
                 Section::make('Custom fields')
                     ->columnSpanFull()
                     ->columns(2)
-                    ->schema(static function (?Box $record): array {
-                        // On edit, use the batch already linked to the record.
-                        $repositoryId = $record?->batch?->repository_id
+                    ->schema(static function (Get $get, ?Box $record): array {
+                        $batchId = $get('batch_id');
+                        $repositoryId = ($batchId ? Batch::find($batchId)?->repository_id : null)
+                            ?? $record?->batch?->repository_id
                             ?? auth()->user()?->default_repository_id;
 
                         return CustomFieldSchema::for('box', $repositoryId !== null ? (int) $repositoryId : null);
                     })
-                    ->visible(static function (?Box $record): bool {
-                        $repositoryId = $record?->batch?->repository_id
+                    ->visible(static function (Get $get, ?Box $record): bool {
+                        $batchId = $get('batch_id');
+                        $repositoryId = ($batchId ? Batch::find($batchId)?->repository_id : null)
+                            ?? $record?->batch?->repository_id
                             ?? auth()->user()?->default_repository_id;
 
                         return count(CustomFieldSchema::for('box', $repositoryId !== null ? (int) $repositoryId : null)) > 0;

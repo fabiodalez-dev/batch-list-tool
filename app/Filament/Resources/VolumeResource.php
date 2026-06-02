@@ -4,6 +4,7 @@ namespace App\Filament\Resources;
 
 use App\Filament\Resources\VolumeResource\Pages;
 use App\Filament\Support\SearchableSelects;
+use App\Models\Document;
 use App\Models\Volume;
 use App\Support\CustomFields\CustomFieldSchema;
 use Carbon\Carbon;
@@ -15,6 +16,7 @@ use Filament\Forms;
 use Filament\Infolists\Components\TextEntry;
 use Filament\Resources\Resource;
 use Filament\Schemas\Components\Section;
+use Filament\Schemas\Components\Utilities\Get;
 use Filament\Schemas\Schema;
 use Filament\Tables;
 use Filament\Tables\Table;
@@ -48,8 +50,12 @@ class VolumeResource extends Resource
                         // Searchable autocomplete (no preload): the documents table has
                         // 3,000+ rows in production, so a `<select>` with that many
                         // options is unusable. See App\Filament\Support\SearchableSelects.
+                        // live() so the Custom fields Section re-renders when the operator
+                        // picks a different document (which may belong to a different
+                        // repository and thus expose different custom field definitions).
                         SearchableSelects::documentVia('document_id', 'document')
                             ->required()
+                            ->live()
                             ->columnSpanFull(),
                         Forms\Components\TextInput::make('volume_number')
                             ->required()
@@ -75,19 +81,29 @@ class VolumeResource extends Resource
 
                 // Custom fields (EAV, per-repository).
                 // For Volume the repository is derived from its document (spec §Architecture).
-                // On create: resolved from selected document's repository.
-                // On edit:   resolved from the loaded record via document->repository_id.
+                //
+                // Repository resolution order (GROUP A fix):
+                //   1. Live form state: Document::find($get('document_id'))->repository_id
+                //      document_id is ->live() (declared above) so the Section re-renders
+                //      whenever the operator picks a different document.
+                //   2. Fallback to the loaded record's document repository (on edit,
+                //      before any document selection change).
+                //   3. Fallback to the user's default repository (on create, no document yet).
                 Section::make('Custom fields')
                     ->columnSpanFull()
                     ->columns(2)
-                    ->schema(static function (?Volume $record): array {
-                        $repositoryId = $record?->document?->repository_id
+                    ->schema(static function (Get $get, ?Volume $record): array {
+                        $documentId = $get('document_id');
+                        $repositoryId = ($documentId ? Document::withoutGlobalScopes()->find($documentId)?->repository_id : null)
+                            ?? $record?->document?->repository_id
                             ?? auth()->user()?->default_repository_id;
 
                         return CustomFieldSchema::for('volume', $repositoryId !== null ? (int) $repositoryId : null);
                     })
-                    ->visible(static function (?Volume $record): bool {
-                        $repositoryId = $record?->document?->repository_id
+                    ->visible(static function (Get $get, ?Volume $record): bool {
+                        $documentId = $get('document_id');
+                        $repositoryId = ($documentId ? Document::withoutGlobalScopes()->find($documentId)?->repository_id : null)
+                            ?? $record?->document?->repository_id
                             ?? auth()->user()?->default_repository_id;
 
                         return count(CustomFieldSchema::for('volume', $repositoryId !== null ? (int) $repositoryId : null)) > 0;

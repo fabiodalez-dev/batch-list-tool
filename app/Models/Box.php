@@ -91,10 +91,22 @@ class Box extends Model implements AuditableContract, Sortable
      * Box has no direct repository_id column — derive it from the parent batch
      * so custom-field definitions are scoped to the correct repository.
      *
+     * Guards against stale eager-loaded relations: if batch_id changed after the
+     * `batch` relation was loaded (e.g. the field was re-assigned in memory before
+     * save), we unset the stale relation so the fresh FK is re-loaded from DB.
+     *
      * @see HasCustomFields::customFieldRepositoryId()
      */
     public function customFieldRepositoryId(): ?int
     {
+        // If the 'batch' relation is already loaded but its PK no longer matches
+        // the current batch_id FK, the cached relation is stale — evict it so the
+        // re-load below fetches the correct batch (and thus the correct repository).
+        if ($this->relationLoaded('batch')
+            && $this->batch?->getKey() !== $this->batch_id) {
+            $this->unsetRelation('batch');
+        }
+
         // Use already-loaded relation when available; fall back to a fresh load.
         $batch = $this->relationLoaded('batch') ? $this->batch : $this->batch()->first();
 

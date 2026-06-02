@@ -127,13 +127,16 @@ class DocumentImporter extends Importer
     protected static array $rowCustomFieldStash = [];
 
     /**
-     * Cached active CustomFieldDefinition collection for the current user's
-     * default repository (document entity type). Loaded once per job run
-     * (static) to avoid a SELECT on every row. May be null before first access.
+     * Cached active CustomFieldDefinition collections keyed by repository_id.
      *
-     * @var EloquentCollection<int, CustomFieldDefinition>|null
+     * Keyed by (int) repository_id → EloquentCollection so long-lived queue
+     * workers processing multiple tenants in sequence never serve one tenant's
+     * definitions to another (GROUP C fix — cross-tenant leakage prevention).
+     * Reset at the start of each row via resolveCustomFieldDefinitions().
+     *
+     * @var array<int, EloquentCollection<int, CustomFieldDefinition>>
      */
-    protected static ?EloquentCollection $customFieldDefinitionsCache = null;
+    protected static array $customFieldDefinitionsCache = [];
 
     /**
      * Per-row transactional safety (review I2 / Fix 5).
@@ -419,6 +422,13 @@ class DocumentImporter extends Importer
      * Values are stashed in {@see $rowCustomFieldStash} and written via
      * $record->setCustomFieldData() in persistRowSideEffects().
      *
+     * GROUP C+D fix: an empty mapped cell (operator mapped the column but the
+     * cell is blank) is stored as null in the stash so persistRowSideEffects()
+     * passes it through to setCustomFieldData(null for that key), which then
+     * deletes the existing value for that field on update. Unmapped/absent
+     * columns are never added to the stash, so they are untouched when
+     * setCustomFieldData is called with replaceMissing=false (merge semantics).
+     *
      * @return array<ImportColumn>
      */
     protected static function getCustomFieldColumns(): array
@@ -435,11 +445,14 @@ class DocumentImporter extends Importer
                 ->guess([$def->label, $def->key, 'cf_' . $def->key])
                 ->rules(['nullable', 'string'])
                 ->fillRecordUsing(static function (Document $record, ?string $state) use ($def): void {
-                    if ($state === null || trim($state) === '') {
-                        return;
-                    }
                     $key = spl_object_id($record);
-                    static::$rowCustomFieldStash[$key][$def->key] = trim($state);
+                    // Always stash the key so persistRowSideEffects() knows this
+                    // column was mapped. A null/empty value clears the existing
+                    // stored value on update (merge-mode delete). An absent column
+                    // (never reaches this closure) is left untouched.
+                    static::$rowCustomFieldStash[$key][$def->key] = ($state !== null && trim($state) !== '')
+                        ? trim($state)
+                        : null;
                 });
         }
 
@@ -448,32 +461,36 @@ class DocumentImporter extends Importer
 
     /**
      * Resolve active CustomFieldDefinition records for the current user's
-     * default repository (document entity type). Cached statically so the
-     * SELECT runs once per job rather than once per row.
+     * default repository (document entity type).
+     *
+     * Results are cached per repository_id (GROUP C fix): long-lived queue
+     * workers processing multiple tenants never serve one tenant's definitions
+     * to another, because the cache is keyed by repo id rather than being a
+     * single shared nullable slot.
      *
      * @return EloquentCollection<int, CustomFieldDefinition>
      */
     protected static function resolveCustomFieldDefinitions(): EloquentCollection
     {
-        if (static::$customFieldDefinitionsCache !== null) {
-            return static::$customFieldDefinitionsCache;
-        }
-
         $repositoryId = auth()->user()?->default_repository_id;
         if ($repositoryId === null) {
-            static::$customFieldDefinitionsCache = new EloquentCollection;
-
-            return static::$customFieldDefinitionsCache;
+            return new EloquentCollection;
         }
 
-        static::$customFieldDefinitionsCache = CustomFieldDefinition::query()
-            ->where('repository_id', $repositoryId)
+        $repoKey = (int) $repositoryId;
+
+        if (isset(static::$customFieldDefinitionsCache[$repoKey])) {
+            return static::$customFieldDefinitionsCache[$repoKey];
+        }
+
+        static::$customFieldDefinitionsCache[$repoKey] = CustomFieldDefinition::query()
+            ->where('repository_id', $repoKey)
             ->where('entity_type', 'document')
             ->where('is_active', true)
             ->orderBy('sort_order')
             ->get();
 
-        return static::$customFieldDefinitionsCache;
+        return static::$customFieldDefinitionsCache[$repoKey];
     }
 
     /**
@@ -842,12 +859,17 @@ class DocumentImporter extends Importer
         $this->applyBoxBarcodeStatus($record);
 
         // Custom fields (EAV) — persist stashed key→value pairs via the trait.
-        // The stash is populated by the dynamic custom-field ImportColumn closures;
-        // setCustomFieldData() handles upsert / delete against active definitions.
-        $customData = self::$rowCustomFieldStash[$key] ?? [];
+        // The stash is populated by the dynamic custom-field ImportColumn closures.
+        //
+        // GROUP C+D fix: use merge semantics (replaceMissing=false) so unmapped
+        // columns are left untouched on update. Only keys that were explicitly
+        // mapped in this import run are processed (upsert or delete); absent keys
+        // (columns the operator did not map) are not touched. An empty mapped cell
+        // is stored as null in the stash → deletes that specific field value.
+        $customData = self::$rowCustomFieldStash[$key] ?? null;
         unset(self::$rowCustomFieldStash[$key]);
-        if (! empty($customData) && method_exists($record, 'setCustomFieldData')) {
-            $record->setCustomFieldData($customData);
+        if ($customData !== null && method_exists($record, 'setCustomFieldData')) {
+            $record->setCustomFieldData($customData, false);  // false = merge/import semantics
         }
 
         $ids = self::$rowAuthorityStash[$key] ?? [];

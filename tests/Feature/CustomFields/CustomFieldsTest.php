@@ -1059,3 +1059,200 @@ test('[Export] boolean custom field serialises as 1 or 0 in CSV', function (): v
         expect($cells[$colIdx])->toBe('1');
     }
 });
+
+/* =========================================================================
+ |  GROUP G — Strengthened Livewire form tests driving via Filament UI
+ *
+ |  These tests replace the previous "call setCustomFieldData directly"
+ |  approach for Document and Box with actual Filament form submissions
+ |  via Livewire, so that GROUP A (live repository resolution) bugs would
+ |  have been caught earlier. Regression tests for cross-repository
+ |  isolation and import merge semantics are also included here.
+ * ========================================================================= */
+
+test('[Livewire/Document] form submission via EditDocument persists custom field and reloads correctly', function (): void {
+    $repo = Repository::factory()->create();
+    $series = cft_series();
+    $superAdmin = cft_user('super_admin', $repo);
+
+    $this->actingAs($superAdmin);
+
+    $def = cft_def($repo->id, 'document', 'text', ['key' => 'form_driven_key', 'label' => 'Form Driven Field']);
+    // Create document without a document_type so the Select does not complain
+    // about an unknown option value during form validation (the DocumentType table
+    // is empty in the test DB and the field is not required).
+    $doc = cft_doc($repo->id, $series->id, ['document_type' => null]);
+
+    // Drive the Filament EditDocument form: fill the custom field and save.
+    Livewire::test(EditDocument::class, ['record' => $doc->getKey()])
+        ->fillForm([
+            'repository_id' => $repo->id,  // trigger live resolution first
+            'custom' => ['form_driven_key' => 'driven_value'],
+        ])
+        ->call('save')
+        ->assertHasNoFormErrors();
+
+    // Assert the value was persisted to custom_field_values.
+    $stored = CustomFieldValue::where('custom_field_definition_id', $def->id)
+        ->where('customizable_type', Document::class)
+        ->where('customizable_id', $doc->id)
+        ->value('value');
+
+    expect($stored)->toBe('driven_value');
+
+    // Reload on edit: form should show the stored value.
+    Livewire::test(EditDocument::class, ['record' => $doc->getKey()])
+        ->assertFormSet(['custom' => ['form_driven_key' => 'driven_value']]);
+});
+
+test('[Livewire/Document] switching repository_id in form shows definitions for the new repo, not the old one', function (): void {
+    $repoA = Repository::factory()->create();
+    $repoB = Repository::factory()->create();
+    $series = cft_series();
+
+    $superAdmin = cft_user('super_admin', $repoA);
+    $superAdmin->repositories()->syncWithoutDetaching([$repoB->id]);
+    $this->actingAs($superAdmin);
+
+    // Repo A has a definition, repo B has a different one.
+    cft_def($repoA->id, 'document', 'text', ['key' => 'repo_a_field', 'label' => 'Repo A Field']);
+    cft_def($repoB->id, 'document', 'text', ['key' => 'repo_b_field', 'label' => 'Repo B Field']);
+
+    $doc = cft_doc($repoA->id, $series->id);
+
+    // When repository_id is set to repo B, the form should see repo B's definitions.
+    Livewire::test(EditDocument::class, ['record' => $doc->getKey()])
+        ->fillForm(['repository_id' => $repoB->id])
+        ->assertSee('Repo B Field')
+        ->assertDontSee('Repo A Field');
+});
+
+test('[Livewire/Box] form submission via EditBox persists custom field value', function (): void {
+    $repo = Repository::factory()->create();
+    $superAdmin = cft_user('super_admin', $repo);
+
+    $this->actingAs($superAdmin);
+
+    $def = cft_def($repo->id, 'box', 'text', ['key' => 'box_form_key', 'label' => 'Box Form Field']);
+    $batch = cft_batch($repo->id);
+    $box = cft_box($batch);
+
+    // Drive the EditBox form: fill batch_id (live trigger) then the custom field.
+    Livewire::test(EditBox::class, ['record' => $box->getKey()])
+        ->fillForm([
+            'batch_id' => $batch->id,
+            'custom' => ['box_form_key' => 'box_form_value'],
+        ])
+        ->call('save')
+        ->assertHasNoFormErrors();
+
+    $stored = CustomFieldValue::where('custom_field_definition_id', $def->id)
+        ->where('customizable_type', Box::class)
+        ->where('customizable_id', $box->id)
+        ->value('value');
+
+    expect($stored)->toBe('box_form_value');
+
+    // Reload: form must show stored value.
+    Livewire::test(EditBox::class, ['record' => $box->getKey()])
+        ->assertFormSet(['custom' => ['box_form_key' => 'box_form_value']]);
+});
+
+test('[Regression] definition in repo B does NOT render when document form has repo A selected', function (): void {
+    $repoA = Repository::factory()->create();
+    $repoB = Repository::factory()->create();
+    $series = cft_series();
+
+    $superAdmin = cft_user('super_admin', $repoA);
+    $this->actingAs($superAdmin);
+
+    // Only repo B has a definition — must NOT appear when the form's selected repo is A.
+    cft_def($repoB->id, 'document', 'text', ['key' => 'b_only_field', 'label' => 'B Only Field']);
+
+    $doc = cft_doc($repoA->id, $series->id);
+
+    Livewire::test(EditDocument::class, ['record' => $doc->getKey()])
+        ->fillForm(['repository_id' => $repoA->id])
+        ->assertDontSee('B Only Field');
+});
+
+/* =========================================================================
+ |  GROUP D — setCustomFieldData merge semantics (replaceMissing=false)
+ * ========================================================================= */
+
+test('[Unit] setCustomFieldData(data, replaceMissing=false) leaves untouched fields intact', function (): void {
+    $repo = Repository::factory()->create();
+    $series = cft_series();
+    $doc = cft_doc($repo->id, $series->id);
+
+    // Two definitions in the same repo.
+    cft_def($repo->id, 'document', 'text', ['key' => 'field_keep']);
+    cft_def($repo->id, 'document', 'text', ['key' => 'field_update']);
+
+    // Set both fields initially.
+    $doc->setCustomFieldData(['field_keep' => 'keep_value', 'field_update' => 'old_value']);
+
+    // Partial import: only pass field_update — field_keep must remain untouched.
+    $doc->setCustomFieldData(['field_update' => 'new_value'], false);
+
+    $keepRaw = CustomFieldValue::where('customizable_type', Document::class)
+        ->where('customizable_id', $doc->id)
+        ->whereHas('definition', fn ($q) => $q->where('key', 'field_keep'))
+        ->value('value');
+
+    $updateRaw = CustomFieldValue::where('customizable_type', Document::class)
+        ->where('customizable_id', $doc->id)
+        ->whereHas('definition', fn ($q) => $q->where('key', 'field_update'))
+        ->value('value');
+
+    expect($keepRaw)->toBe('keep_value')    // untouched by merge
+        ->and($updateRaw)->toBe('new_value');  // updated
+});
+
+test('[Unit] setCustomFieldData(data, replaceMissing=false) with null deletes only that key', function (): void {
+    $repo = Repository::factory()->create();
+    $series = cft_series();
+    $doc = cft_doc($repo->id, $series->id);
+
+    cft_def($repo->id, 'document', 'text', ['key' => 'del_key']);
+    cft_def($repo->id, 'document', 'text', ['key' => 'stay_key']);
+
+    $doc->setCustomFieldData(['del_key' => 'will_be_deleted', 'stay_key' => 'stays']);
+
+    // Merge with explicit null for del_key → deletes it; stay_key not present → untouched.
+    $doc->setCustomFieldData(['del_key' => null], false);
+
+    $delCount = CustomFieldValue::where('customizable_type', Document::class)
+        ->where('customizable_id', $doc->id)
+        ->whereHas('definition', fn ($q) => $q->where('key', 'del_key'))
+        ->count();
+
+    $stayRaw = CustomFieldValue::where('customizable_type', Document::class)
+        ->where('customizable_id', $doc->id)
+        ->whereHas('definition', fn ($q) => $q->where('key', 'stay_key'))
+        ->value('value');
+
+    expect($delCount)->toBe(0)
+        ->and($stayRaw)->toBe('stays');
+});
+
+test('[Unit] setCustomFieldData(data, replaceMissing=true) still deletes absent keys (form semantics)', function (): void {
+    $repo = Repository::factory()->create();
+    $series = cft_series();
+    $doc = cft_doc($repo->id, $series->id);
+
+    cft_def($repo->id, 'document', 'text', ['key' => 'replace_key']);
+    cft_def($repo->id, 'document', 'text', ['key' => 'absent_key']);
+
+    $doc->setCustomFieldData(['replace_key' => 'val_a', 'absent_key' => 'val_b']);
+
+    // Full-replace: only pass replace_key → absent_key must be deleted.
+    $doc->setCustomFieldData(['replace_key' => 'val_a_updated'], true);
+
+    $absentCount = CustomFieldValue::where('customizable_type', Document::class)
+        ->where('customizable_id', $doc->id)
+        ->whereHas('definition', fn ($q) => $q->where('key', 'absent_key'))
+        ->count();
+
+    expect($absentCount)->toBe(0);
+});

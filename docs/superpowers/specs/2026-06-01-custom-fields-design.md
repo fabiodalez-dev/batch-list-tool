@@ -63,8 +63,9 @@ type works on both MariaDB 10.11 and SQLite. Guard with
 - `definition(): BelongsTo`
 - `customizable(): MorphTo`
 - accessor `getTypedValueAttribute()` casting `value` per definition type
-  (bool→(bool), number→numeric, date/datetime→Carbon, select(multi)→array via json,
-  else string).
+  (bool→(bool), number→numeric, date/datetime→Carbon, select→**string** (v1: single-select
+  only, stored and returned as a plain string; multi-select JSON-array is out of scope,
+  see Non-goals), else string).
 
 ### Trait `app/Models/Concerns/HasCustomFields.php`
 Applied to Document, Batch, Box, Volume.
@@ -81,8 +82,11 @@ Applied to Document, Batch, Box, Volume.
   repository_id = customFieldRepositoryId(), entity_type = customFieldEntityType(),
   is_active = true, ordered by sort_order.
 - `getCustomFieldData(): array` — `[key => typed value]` from saved values.
-- `setCustomFieldData(array $data): void` — upsert/delete CustomFieldValue rows for
-  this record against the active definitions (only keys that belong to a definition).
+- `setCustomFieldData(array $data, bool $replaceMissing = true): void` — upsert/delete
+  CustomFieldValue rows for this record against the active definitions (only keys that
+  belong to a definition). When `$replaceMissing=true` (default, form semantics), definitions
+  absent from `$data` are deleted. When `$replaceMissing=false` (import/merge semantics),
+  only keys present in `$data` are processed; absent keys are left untouched.
 
 ---
 
@@ -146,8 +150,9 @@ Mechanism (no schema changes to host tables):
   `customFieldValues.definition`). Acceptable to limit table columns to Document for
   v1 if perf is a concern, but implement for all 4 if clean.
 - **Export** (Document already streams CSV): include active custom field columns
-  after the fixed columns. Add a small export-columns helper so other resources can
-  adopt later; Document export MUST include them.
+  after the fixed columns. **v1 scope: Document export only.** Other resources
+  (Batch, Box, Volume) are not included in v1 — the helper is structured so they
+  can adopt the pattern in a future iteration; Document export MUST include them.
 - **Import**: DocumentImporter (and the others if low-cost) should accept columns
   named after the field `label`/`key` and route them into `setCustomFieldData`.
   v1 minimum: Document import maps recognised custom-field columns.
