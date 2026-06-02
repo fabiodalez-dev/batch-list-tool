@@ -4,6 +4,7 @@ namespace App\Models;
 
 use App\Models\Builders\DocumentBuilder;
 use App\Models\Concerns\BelongsToRepository;
+use App\Models\Concerns\HasCustomFields;
 use App\Models\Lookup\CurrentBoxType;
 use App\Models\Lookup\DigitisationStatus;
 use App\Observers\DocumentObserver;
@@ -33,6 +34,7 @@ class Document extends Model implements AuditableContract, HasMedia, Sortable
 {
     use Auditable;
     use BelongsToRepository;  // RFQ §3.5.1 — multi-tenant scope
+    use HasCustomFields;
     use HasFactory;
     use HasTags;
     use InteractsWithMedia;

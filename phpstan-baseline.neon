@@ -111,7 +111,7 @@ parameters:
 		-
 			message: '#^Access to an undefined property Illuminate\\Database\\Eloquent\\Model\:\:\$repository_id\.$#'
 			identifier: property.notFound
-			count: 2
+			count: 3
 			path: app/Models/Box.php
 
 		-
@@ -227,3 +227,18 @@ parameters:
 			identifier: isset.property
 			count: 1
 			path: database/seeders/DemoDataSeeder.php
+
+		-
+			message: '#^Access to an undefined property Illuminate\\Database\\Eloquent\\Model\:\:\$repository_id\.$#'
+			identifier: property.notFound
+			count: 1
+			path: app/Models/Volume.php
+
+		-
+			# HandlesCustomFieldForm is used by Create/Edit page classes for Document, Batch, Box, Volume.
+			# Those page classes live inside app/Filament/Resources/*/Pages/ which is excluded from
+			# analysis (see excludePaths in phpstan.neon.dist). PHPStan therefore cannot see the use-site
+			# and reports the trait as unused — same false positive as AppliesFieldPermissions.php.
+			message: '#^Trait App\\Filament\\Concerns\\HandlesCustomFieldForm is used zero times and is not analysed\.$#'
+			identifier: trait.unused
+			path: app/Filament/Concerns/HandlesCustomFieldForm.php

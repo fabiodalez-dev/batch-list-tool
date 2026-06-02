@@ -3,6 +3,7 @@
 namespace App\Filament\Resources\DocumentResource\Pages;
 
 use App\Filament\Actions\Documents\DocumentActionGroup;
+use App\Filament\Concerns\HandlesCustomFieldForm;
 use App\Filament\Resources\DocumentResource;
 use Filament\Actions;
 use Filament\Actions\ActionGroup;
@@ -10,6 +11,8 @@ use Filament\Resources\Pages\EditRecord;
 
 class EditDocument extends EditRecord
 {
+    use HandlesCustomFieldForm;
+
     protected static string $resource = DocumentResource::class;
 
     protected function getHeaderActions(): array

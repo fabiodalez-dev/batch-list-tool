@@ -2,6 +2,7 @@
 
 namespace App\Models;
 
+use App\Models\Concerns\HasCustomFields;
 use App\Models\Lookup\BarcodeStatus;
 use App\Models\Lookup\BoxType;
 use App\Models\Scopes\ThroughBatchRepositoryScope;
@@ -24,6 +25,7 @@ use Spatie\EloquentSortable\SortableTrait;
 class Box extends Model implements AuditableContract, Sortable
 {
     use Auditable;
+    use HasCustomFields;
     use HasFactory;
     use SoftDeletes;
     use SortableTrait;
@@ -83,6 +85,20 @@ class Box extends Model implements AuditableContract, Sortable
     public function buildSortQuery(): Builder
     {
         return static::query()->where('batch_id', $this->batch_id);
+    }
+
+    /**
+     * Box has no direct repository_id column — derive it from the parent batch
+     * so custom-field definitions are scoped to the correct repository.
+     *
+     * @see HasCustomFields::customFieldRepositoryId()
+     */
+    public function customFieldRepositoryId(): ?int
+    {
+        // Use already-loaded relation when available; fall back to a fresh load.
+        $batch = $this->relationLoaded('batch') ? $this->batch : $this->batch()->first();
+
+        return $batch?->repository_id !== null ? (int) $batch->repository_id : null;
     }
 
     public function batch(): BelongsTo
