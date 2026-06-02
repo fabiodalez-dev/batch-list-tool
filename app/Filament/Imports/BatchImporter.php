@@ -71,12 +71,12 @@ class BatchImporter extends Importer
         unset(self::$rowCustomFieldStash[$key]);
 
         if ($customData !== null && method_exists($record, 'setCustomFieldData')) {
-            try {
-                $record->setCustomFieldData($customData, false);
-            } catch (\Throwable) {
-                // Lenient: a bad custom cell must NOT fail the row.
-                // The row itself has already been persisted successfully.
-            }
+            // No try/catch: setCustomFieldData() coerces with a total (string)
+            // cast that cannot throw on a malformed cell, so the only realistic
+            // exception is a DB persistence error — which MUST fail the row
+            // (surfacing in the failed-rows report) rather than commit the Batch
+            // with partial/missing custom fields.
+            $record->setCustomFieldData($customData, false);
         }
     }
 
