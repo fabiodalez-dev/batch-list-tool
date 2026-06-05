@@ -270,13 +270,8 @@ it('AccessionResource create form has batches field and no batch_id field', func
     $lw = Livewire::test(CreateAccession::class);
     $lw->assertFormFieldExists('batches');
 
-    // Verify the single-FK field is gone.
-    try {
-        $lw->assertFormFieldExists('batch_id');
-        $this->fail('batch_id field must not exist on AccessionResource form');
-    } catch (Exception) {
-        // expected — field does not exist
-    }
+    // Verify the single-FK field is gone: use the positive structural assertion.
+    $lw->assertFormFieldDoesNotExist('batch_id');
 });
 
 /**
@@ -302,12 +297,8 @@ it('AccessionResource edit form has batches and no batch_id', function (): void 
     $lw = Livewire::test(EditAccession::class, ['record' => $acc->getRouteKey()]);
     $lw->assertFormFieldExists('batches');
 
-    try {
-        $lw->assertFormFieldExists('batch_id');
-        $this->fail('batch_id field must not exist on AccessionResource edit form');
-    } catch (Exception) {
-        // expected
-    }
+    // Structural assertion: batch_id must not be a form component.
+    $lw->assertFormFieldDoesNotExist('batch_id');
 });
 
 /**
@@ -540,6 +531,10 @@ it('editing a Batch via Filament form replaces the accessions pivot', function (
 /**
  * Scope.1 — An accession from repo A only sees its own batches; a batch from
  *            repo B has no accessions even though the accession exists.
+ *
+ *            Crucially, the AccessionResource Eloquent query (which applies
+ *            RepositoryScope) must return ONLY repo-A rows when acting as a
+ *            repo-A-only editor — repo-B accession must be invisible.
  */
 it('accession sees only its own batches via the pivot', function (): void {
     $repoA = wbnn_repo();
@@ -549,15 +544,34 @@ it('accession sees only its own batches via the pivot', function (): void {
     $batA1 = wbnn_batch($repoA->id);
     $batA2 = wbnn_batch($repoA->id);
     $batB = wbnn_batch($repoB->id);
+    // repo-B accession — must be invisible to a repo-A actor.
+    $accB = wbnn_accession($repoB->id, 'ACC-B-SCOPE');
 
     $accA->batches()->attach([$batA1->id, $batA2->id]);
+    $accB->batches()->attach($batB->id);
 
-    // accA has 2 batches — neither is from repo B.
+    // Pivot-level assertions (no auth scope).
     expect($accA->batches()->count())->toBe(2);
     expect($accA->batches()->where('batches.id', $batB->id)->exists())->toBeFalse();
+    expect($batB->accessions()->count())->toBe(1); // accB is there
 
-    // batB from repo B has zero accessions.
-    expect($batB->accessions()->count())->toBe(0);
+    // Cross-repo isolation: authenticate as a repo-A-only editor and assert
+    // that AccessionResource::getEloquentQuery() (which applies RepositoryScope)
+    // returns only repo-A rows and excludes repo-B.
+    foreach (['super_admin', 'admin', 'editor', 'viewer'] as $r) {
+        Role::firstOrCreate(['name' => $r, 'guard_name' => 'web']);
+    }
+    $editorA = User::factory()->create(['email' => 'scope1-editor-' . uniqid() . '@test.local', 'is_active' => true]);
+    $editorA->assignRole('editor');
+    $editorA->repositories()->attach($repoA->id, ['is_default' => true]);
+
+    $this->actingAs($editorA);
+
+    $visibleIds = AccessionResource::getEloquentQuery()->pluck('accessions.id')->all();
+
+    // repo-A accession is visible; repo-B accession is excluded.
+    expect($visibleIds)->toContain($accA->id);
+    expect($visibleIds)->not->toContain($accB->id);
 });
 
 /**

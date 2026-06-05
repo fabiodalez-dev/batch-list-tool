@@ -556,7 +556,9 @@ final class SearchableSelects
         $search = trim($search);
 
         // Wave B — Accession no longer has a single batch; use batches() N:N.
-        $query = Accession::query()->with('batches');
+        // Order by batch_number so ->first() deterministically returns the lowest
+        // batch number for the label suffix (matching the stated label rule).
+        $query = Accession::query()->with(['batches' => fn ($q) => $q->orderBy('batch_number')]);
 
         if ($search === '') {
             $query->orderBy('code');
@@ -868,7 +870,8 @@ final class SearchableSelects
         }
 
         // Wave B — Accession no longer has a single batch; eager-load batches().
-        $record = Accession::withTrashed()->with('batches')->find($value);
+        // Order by batch_number so the label suffix deterministically shows the lowest number.
+        $record = Accession::withTrashed()->with(['batches' => fn ($q) => $q->orderBy('batch_number')])->find($value);
 
         if ($record === null) {
             return null;
@@ -893,7 +896,8 @@ final class SearchableSelects
             return [];
         }
 
-        $rows = Accession::withTrashed()->with('batches')->whereIn('id', $values)->get();
+        // Order by batch_number so the label suffix deterministically shows the lowest number.
+        $rows = Accession::withTrashed()->with(['batches' => fn ($q) => $q->orderBy('batch_number')])->whereIn('id', $values)->get();
         $out = [];
         foreach ($rows as $r) {
             /** @var Accession $r */

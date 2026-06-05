@@ -184,7 +184,10 @@ class BatchResource extends Resource
                                     return;
                                 }
                                 // Fetch the linked accession codes and derive the description.
-                                $codes = Accession::withoutGlobalScopes()
+                                // Uses the normal scoped query so only accessions visible
+                                // to the current user (respecting RepositoryScope) are
+                                // concatenated — preventing cross-tenant data leakage.
+                                $codes = Accession::query()
                                     ->whereIn('id', $state)
                                     ->orderBy('code')
                                     ->pluck('code')

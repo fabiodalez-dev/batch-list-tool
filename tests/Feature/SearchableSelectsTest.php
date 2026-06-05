@@ -385,11 +385,12 @@ it('Accession label includes batch number when relation is set', function () {
     $acc = Accession::create([
         'code' => 'ACC-2026-01',
         'accession_date' => '2026-01-15',
-        'batch_id' => $batch->id,
         'repository_id' => $repo->id,
     ]);
+    // Wave B: Accession↔Batch is N:N — link via the pivot, not a batch_id column.
+    $acc->batches()->attach($batch->id);
 
-    $label = SearchableSelects::accessionLabel($acc->fresh()->load('batch'));
+    $label = SearchableSelects::accessionLabel($acc->fresh()->load('batches'));
 
     expect($label)->toBe("ACC-2026-01 — batch {$batch->batch_number}");
 });

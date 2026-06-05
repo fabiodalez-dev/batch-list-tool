@@ -48,11 +48,12 @@ it('§ 3.1.4 #1: Acquisition — Accession persists with code + batch + reposito
     $acc = Accession::withoutGlobalScope(RepositoryScope::class)->create([
         'code' => 'ACC-' . uniqid(),
         'accession_date' => '2026-01-15',
-        'batch_id' => $batch->id,
         'repository_id' => $repo->id,
         'notes' => 'Joseph Tabone Accession',
     ]);
-    expect($acc->batch_id)->toBe($batch->id)
+    // Wave B: Accession↔Batch is N:N — the link lives in the accession_batch pivot.
+    $acc->batches()->attach($batch->id);
+    expect($acc->batches()->pluck('batches.id')->all())->toBe([$batch->id])
         ->and($acc->repository_id)->toBe($repo->id);
 });
 

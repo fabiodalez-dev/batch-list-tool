@@ -211,29 +211,45 @@ it('one batch can be linked to multiple accessions', function (): void {
 /**
  * B5.3 — Both sides of a pivot row belong to the same repository (tenant scope).
  *
- * Attaching an accession from repo A to a batch from repo B must be
- * physically possible at the DB level (pivot has no repo_id FK) BUT we can
- * verify that when we do a scoped query both sides are visible only within
- * their own repository.
+ * The pivot has no repository_id FK, so cross-repo attachment is physically
+ * possible at the DB level.  The important guarantee is that AccessionResource's
+ * Eloquent query (with RepositoryScope) limits visibility: a repo-A-only editor
+ * must NOT see accessions from repo B, even if they share a pivot row with a
+ * repo-A batch.
  */
 it('pivot rows respect repository scoping on both sides', function (): void {
     $repoA = wb_repo();
     $repoB = wb_repo();
 
-    $accession = wb_accession($repoA->id);
+    $accessionA = wb_accession($repoA->id);
+    $accessionB = wb_accession($repoB->id, ['code' => 'B53-ACC-B-' . uniqid()]);
     $batchA = wb_batch($repoA->id);
     $batchB = wb_batch($repoB->id);
 
-    // Link accession (repo A) → batch (repo A): valid cross-match
-    $accession->batches()->attach($batchA->id);
+    // Attach each accession to its own repo's batch.
+    $accessionA->batches()->attach($batchA->id);
+    $accessionB->batches()->attach($batchB->id);
 
-    // The accession from repo A should see exactly one batch via the pivot,
-    // and it should be batchA (verified by querying the pivot for the specific id).
-    expect($accession->batches()->count())->toBe(1);
-    expect($accession->batches()->where('batches.id', $batchA->id)->exists())->toBeTrue();
+    // Pivot-level: each accession sees exactly its own batch.
+    expect($accessionA->batches()->count())->toBe(1);
+    expect($accessionA->batches()->where('batches.id', $batchA->id)->exists())->toBeTrue();
+    expect($batchB->accessions()->count())->toBe(1); // accessionB is there
 
-    // A batch from repo B should have zero accessions (not the cross-repo one)
-    expect($batchB->accessions()->count())->toBe(0);
+    // Cross-repo isolation: a repo-A editor must see only repo-A accessions.
+    foreach (['super_admin', 'admin', 'editor', 'viewer'] as $r) {
+        Role::firstOrCreate(['name' => $r, 'guard_name' => 'web']);
+    }
+    $editorA = User::factory()->create(['email' => 'b53-editor-' . uniqid() . '@test.local', 'is_active' => true]);
+    $editorA->assignRole('editor');
+    $editorA->repositories()->attach($repoA->id, ['is_default' => true]);
+
+    $this->actingAs($editorA);
+
+    $visibleIds = AccessionResource::getEloquentQuery()->pluck('accessions.id')->all();
+
+    // repo-A accession is visible; repo-B accession is excluded.
+    expect($visibleIds)->toContain($accessionA->id);
+    expect($visibleIds)->not->toContain($accessionB->id);
 });
 
 // ===========================================================================
@@ -289,6 +305,10 @@ it('AccessionResource table does not have the old batch.batch_number column', fu
 /**
  * B4.3 — AccessionResource list page renders the batches_list computed value correctly
  *         for an accession linked to two batches.
+ *
+ *         Assertions are derived from the batch_numbers assigned in this test's
+ *         own setup rather than hard-coded magic literals, so the count/values
+ *         are tightly coupled to what was actually created.
  */
 it('AccessionResource batches_list shows comma-separated batch numbers', function (): void {
     $user = wb_superAdmin();
@@ -301,10 +321,20 @@ it('AccessionResource batches_list shows comma-separated batch numbers', functio
 
     $accession->batches()->attach([$batch1->id, $batch2->id]);
 
+    // Both batches attached — exactly 2 pivot rows.
+    expect($accession->batches()->count())->toBe(2);
+
+    // The list column must contain both batch numbers derived from setup.
+    $expectedBatchNumbers = [$batch1->batch_number, $batch2->batch_number]; // [7, 14]
+
     Livewire::test(ListAccessions::class)
         ->assertCanSeeTableRecords([$accession])
-        ->assertSee('7')
-        ->assertSee('14');
+        ->assertSee((string) $expectedBatchNumbers[0])  // "7"
+        ->assertSee((string) $expectedBatchNumbers[1]); // "14"
+
+    // Also verify the pivot count matches exactly what we created — no phantom rows.
+    $pivotCount = $accession->batches()->count();
+    expect($pivotCount)->toBe(count($expectedBatchNumbers));
 });
 
 /**

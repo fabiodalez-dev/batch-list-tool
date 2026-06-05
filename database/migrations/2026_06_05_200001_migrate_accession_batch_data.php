@@ -36,9 +36,11 @@ return new class extends Migration
         // INSERT IGNORE / ON CONFLICT DO NOTHING is engine-specific, so we
         // select rows that are NOT already in the pivot and only insert those
         // (idempotent, safe to run multiple times).
+        // Include soft-deleted accessions: if they are later restored the pivot
+        // link must still be present, since the batch_id column is about to be
+        // dropped and cannot be used for reconstruction after this migration.
         $rows = DB::table('accessions')
             ->whereNotNull('batch_id')
-            ->whereNull('deleted_at')
             ->select(['id as accession_id', 'batch_id'])
             ->get();
 
