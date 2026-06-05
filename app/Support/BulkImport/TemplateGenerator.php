@@ -126,6 +126,7 @@ final class TemplateGenerator
         'location' => [],
         'document' => [],
         'volume' => [],
+        'accession' => [],
     ];
 
     /**
@@ -202,6 +203,7 @@ final class TemplateGenerator
             'box' => self::synthesiseBoxHeaders(),
             'location' => self::synthesiseLocationHeaders(),
             'volume' => self::synthesiseVolumeHeaders(),
+            'accession' => self::synthesiseAccessionHeaders(),
         };
         // Note: the `array_key_exists` guard above narrows $entity to the
         // exact key set covered by the match arms, so PHPStan correctly
@@ -212,6 +214,16 @@ final class TemplateGenerator
         // template download for these entities).
         if (in_array($entity, ['authority', 'series', 'location'], strict: true)) {
             return $staticHeaders;
+        }
+
+        // Accession template appends custom fields for the 'document' entity
+        // type because one row = one Document at the bottom of the cascade.
+        if ($entity === 'accession') {
+            $customLabels = CustomFieldResolver::definitionsFor('document')
+                ->pluck('label')
+                ->all();
+
+            return array_merge($staticHeaders, $customLabels);
         }
 
         // Append active custom-field labels for the resolved repository,
@@ -286,6 +298,59 @@ final class TemplateGenerator
             'notes',
             'sort_order',
             'is_active',
+        ];
+    }
+
+    /**
+     * Synthetic Accession headers — the bottom-up accession sheet (Wave C,
+     * DECISIONS 2–5, 10, 11). Column order mirrors AccessionRowImporter::getColumns()
+     * so a "download template → fill → re-upload" round-trip requires no
+     * remapping. Every ancestor is auto-created from this single sheet.
+     *
+     * Column order (NAf Feedback 1, DECISION 11):
+     *   Authority → Accession metadata → Batch → Box → Document fields.
+     * Accession Type and Repository come immediately after Accession Title
+     * (before Batch Number) because they are accession-level attributes.
+     *
+     * Column name contract (must stay in sync with AccessionRowImporter guesses):
+     *   'Box Status'   → box_type field (RAS | IN_SITU | NRA)
+     *   'identifier'   → document identifier (lowercase per NAf convention)
+     *   'Volume No'    → volume_label / volume_number field
+     *   'Note'         → notes field (singular per NAf convention)
+     *
+     * CONTRACT: if AccessionRowImporter static columns change, update BOTH
+     * this method AND the importer, then bump GENERATOR_VERSION.
+     *
+     * @return array<int, string>
+     */
+    private static function synthesiseAccessionHeaders(): array
+    {
+        return [
+            // Authority (DECISION 3: multi via ;)
+            'Authority Identifier',   // required; ;-delimited R-codes
+            'Authority Name',         // optional; validate only
+            'Authority Surname',      // optional; validate only
+            // Accession
+            'Accession Number',       // required; unique accession code/number
+            'Accession Title',        // optional; human-readable title
+            'Accession Type',         // optional; NOTARY_ACCESSION | MAIN_COLLECTION
+            'Repository',             // optional; repo code (defaults to user's default)
+            // Batch (N:N, DECISION 1)
+            'Batch Number',           // required; integer
+            // Box
+            'Box No',                 // required; unique within batch
+            'Box Barcode',            // required for RAS; globally unique
+            'Box Status',             // optional; RAS | IN_SITU | NRA (default: RAS)
+            // Document (DECISIONS 4, 5, 7, 10)
+            'identifier',             // optional; auto-generated when blank (DECISION 4)
+            'Document Type',          // required
+            'Series',                 // required; code or "CODE: Title"
+            'Volume No',              // optional; renamed from volume_label (DECISION 7)
+            'Part Number',            // optional; DECISION 5
+            'Practice',               // optional
+            'Dates',                  // optional; free-text range
+            'Deeds',                  // optional
+            'Note',                   // optional
         ];
     }
 
@@ -415,6 +480,7 @@ final class TemplateGenerator
             'location' => 'Locations',
             'document' => 'Documents',
             'volume' => 'Volumes',
+            'accession' => 'Accession Import',
             default => 'Template',
         };
     }
