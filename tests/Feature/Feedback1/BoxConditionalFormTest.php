@@ -60,11 +60,12 @@ it('RAS box requires batch, box_number and barcode through the create form', fun
         ->assertHasFormErrors(['batch_id', 'box_number', 'barcode']);
 });
 
-it('In-Situ box requires identifier and location but NOT batch or barcode', function () {
+it('In-Situ box requires identifier, location and barcode (A10) but NOT batch', function () {
     $this->actingAs(bcf_actAsSuperAdmin());
 
-    // Missing box_number (identifier) and location → those two error; batch and
-    // barcode are NOT required for an IN_SITU box, so they must not error.
+    // A10 (Wave A) — barcode is now required for ALL box types, including
+    // IN_SITU. Missing box_number, location_id and barcode → those three error;
+    // batch_id is still NOT required for IN_SITU boxes.
     Livewire::test(CreateBox::class)
         ->fillForm([
             'box_type' => 'IN_SITU',
@@ -77,11 +78,11 @@ it('In-Situ box requires identifier and location but NOT batch or barcode', func
             'is_legacy' => false,
         ])
         ->call('create')
-        ->assertHasFormErrors(['box_number', 'location_id'])
-        ->assertHasNoFormErrors(['batch_id', 'barcode']);
+        ->assertHasFormErrors(['box_number', 'location_id', 'barcode'])
+        ->assertHasNoFormErrors(['batch_id']);
 });
 
-it('creates a valid In-Situ box with identifier + location and no batch/barcode', function () {
+it('creates a valid In-Situ box with identifier, location and barcode and no batch', function () {
     $user = bcf_actAsSuperAdmin();
     $this->actingAs($user);
 
@@ -90,6 +91,7 @@ it('creates a valid In-Situ box with identifier + location and no batch/barcode'
         'is_active' => true,
     ]);
 
+    // A10 (Wave A) — barcode is now required for all box types.
     Livewire::test(CreateBox::class)
         ->fillForm([
             'box_type' => 'IN_SITU',
@@ -98,6 +100,7 @@ it('creates a valid In-Situ box with identifier + location and no batch/barcode'
             'location_id' => $location->id,
             'is_legacy' => false,
             'barcode_status' => 'IN',
+            'barcode' => 'NRA-BC-' . uniqid(),
         ])
         ->call('create')
         ->assertHasNoFormErrors();

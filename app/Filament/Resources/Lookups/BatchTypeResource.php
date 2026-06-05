@@ -31,7 +31,7 @@ class BatchTypeResource extends Resource
 
     protected static ?int $navigationSort = 60;
 
-    protected static ?string $navigationLabel = 'Batch Types';
+    protected static ?string $navigationLabel = 'Accession Types';
 
     protected static ?string $recordTitleAttribute = 'label';
 
@@ -67,6 +67,7 @@ class BatchTypeResource extends Resource
                     ->columns(['default' => 1, 'md' => 2])
                     ->schema([
                         Forms\Components\TextInput::make('code')
+                            ->label('Identifier')
                             ->required()
                             ->maxLength(32)
                             ->unique(ignoreRecord: true)
@@ -101,6 +102,7 @@ class BatchTypeResource extends Resource
         return $table
             ->columns([
                 Tables\Columns\TextColumn::make('code')
+                    ->label('Identifier')
                     ->searchable()
                     ->sortable(),
                 Tables\Columns\TextColumn::make('label')

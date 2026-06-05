@@ -258,14 +258,15 @@ test('Batch export: no custom field columns when no definitions exist', function
     $lines = array_values(array_filter(explode("\n", trim($csv))));
     $header = str_getcsv(array_shift($lines));
 
-    // Fixed columns present.
+    // Fixed columns present (A4 Wave A added Repository as a 5th fixed column).
     expect($header)->toContain('Batch number');
     expect($header)->toContain('Type');
     expect($header)->toContain('Description');
+    expect($header)->toContain('Repository');
     expect($header)->toContain('Is active?');
 
-    // Exactly 4 fixed columns, no extras.
-    expect(count($header))->toBe(4);
+    // Exactly 5 fixed columns (Batch number, Type, Description, Repository, Is active?), no extras.
+    expect(count($header))->toBe(5);
 });
 
 test('Batch export: row without custom field value emits empty cell', function (): void {

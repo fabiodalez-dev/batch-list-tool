@@ -604,8 +604,23 @@ pre,
     font-weight: 500;
 }
 
-/* Sort indicator chevrons */
+/* Sort indicator chevrons — A5: prevent the sort arrow overlapping the
+   column header label / number. The header cell uses flexbox; giving the
+   sort button `shrink-0` and a small gap from the label keeps them apart.
+   `.fi-ta-header-cell-sort-button` wraps both the label span and the icon,
+   so we flex it with a gap; the icon itself is kept to a fixed size so the
+   label text can fill the remaining space. */
+.fi-ta-header-cell-sort-button {
+    display: inline-flex;
+    align-items: center;
+    gap: 0.375rem; /* 6 px — label ↔ arrow spacing */
+    white-space: nowrap;
+}
+
 .fi-ta-header-cell-sort-button svg {
+    flex-shrink: 0;
+    width:  0.875rem; /* 14 px */
+    height: 0.875rem;
     color: var(--coffee-500);
 }
 

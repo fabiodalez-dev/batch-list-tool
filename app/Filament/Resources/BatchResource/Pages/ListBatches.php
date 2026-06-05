@@ -41,10 +41,13 @@ class ListBatches extends ListRecords
     {
         abort_unless(auth()->user()?->can('view_any_batch'), 403, 'Not authorized to export batches.');
 
+        // A4 — include Repository column in the CSV export.
+        // Header uses sentence-case to match the original label and existing tests.
         $columns = [
             'batch_number' => 'Batch number',
             'type' => 'Type',
             'description' => 'Description',
+            'repository' => 'Repository',
             'is_active' => 'Is active?',
         ];
 
@@ -70,6 +73,9 @@ class ListBatches extends ListRecords
                 // Eager-load custom field values with their definitions so the
                 // CSV row builder can resolve typed values without N+1.
                 'customFieldValues.definition',
+                // A4 — eager-load the repository so the Repository column
+                // can be resolved without N+1.
+                'repository',
             ]);
 
         return response()->streamDownload(function () use ($query, $allColumns, $customFieldDefs): void {
@@ -86,6 +92,11 @@ class ListBatches extends ListRecords
                         'batch_number' => (string) ($batch->batch_number ?? ''),
                         'type' => $this->sanitizeCsvCell($batch->type),
                         'description' => $this->sanitizeCsvCell($batch->description),
+                        // A4 — Repository: use the code field for a compact
+                        // identifier; fall back to the name if code is blank.
+                        'repository' => $this->sanitizeCsvCell(
+                            $batch->repository?->code ?? $batch->repository?->name ?? '',
+                        ),
                         // Boolean cast to 1/0 for spreadsheet compatibility.
                         'is_active' => $batch->is_active ? '1' : '0',
                     ];
