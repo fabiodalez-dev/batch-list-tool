@@ -55,12 +55,14 @@ class SeriesResource extends Resource
                     ->columns($twoCols)
                     ->schema([
                         // Feedback1 — Series code must be unique.
+                        // A3/D9 — user-facing label is "Identifier"; DB column stays 'code'.
                         $g(Forms\Components\TextInput::make('code')
+                            ->label('Identifier')
                             ->required()
                             ->maxLength(16)
                             ->unique(ignoreRecord: true)
                             ->validationMessages([
-                                'unique' => 'This series code is already in use.',
+                                'unique' => 'This series identifier is already in use.',
                             ])),
                         $g(Forms\Components\TextInput::make('title')
                             ->required()
@@ -131,7 +133,7 @@ class SeriesResource extends Resource
                     ->columns($twoCols)
                     ->schema([
                         TextEntry::make('code')
-                            ->label('Code')
+                            ->label('Identifier')
                             ->badge()
                             ->color('primary')
                             ->copyable()
@@ -204,9 +206,12 @@ class SeriesResource extends Resource
             ->persistFiltersInSession()
             ->columns([
                 $gc(Tables\Columns\TextColumn::make('code')
-                    ->searchable()),
+                    ->label('Identifier')
+                    ->searchable()
+                    ->sortable()),
                 $gc(Tables\Columns\TextColumn::make('title')
-                    ->searchable()),
+                    ->searchable()
+                    ->sortable()),
                 // Feedback1 C1.4 — full multi-level hierarchy path
                 // (e.g. "R › REG › RWL"), recursive over ancestors. Sorted off
                 // by default to keep the default grid compact; toggle on to see
@@ -243,8 +248,9 @@ class SeriesResource extends Resource
                 // alongside the free-text search on code/title (mechanism #2).
                 // Series is a small reference table → plain SelectFilter on the
                 // distinct codes plus the two boolean flags as TernaryFilters.
+                // A3/D9 — filter label matches the column rename: "Identifier".
                 SelectFilter::make('code')
-                    ->label('Code')
+                    ->label('Identifier')
                     ->options(fn (): array => Series::query()
                         ->orderBy('code')
                         ->pluck('code', 'code')

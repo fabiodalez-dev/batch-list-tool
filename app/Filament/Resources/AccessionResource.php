@@ -3,6 +3,7 @@
 namespace App\Filament\Resources;
 
 use App\Filament\Resources\AccessionResource\Pages;
+use App\Filament\Support\CreatorColumn;
 use App\Filament\Support\SearchableSelects;
 use App\Models\Accession;
 use App\Models\Repository;
@@ -54,17 +55,19 @@ class AccessionResource extends Resource
                 Section::make('Identification')
                     ->columns($twoCols)
                     ->schema([
+                        // A3 — "Code" field renamed to "Title" in the UI.
+                        // The DB column and attribute name remain `code`.
                         Forms\Components\TextInput::make('code')
+                            ->label('Title')
                             ->required()
                             ->maxLength(64),
-                        Forms\Components\DatePicker::make('accession_date'),
-                        // Feedback1 C1.3 — Notary Accession Number, e.g.
-                        // "2025-124" (YYYY-NNN). Optional/nullable so existing
-                        // rows without a number keep loading and saving. The
-                        // mask guides input; the regex rule rejects malformed
-                        // values server-side with a friendly message.
+                        // A3 — "Accession date" → "Accession Date" (capitalised).
+                        Forms\Components\DatePicker::make('accession_date')
+                            ->label('Accession Date'),
+                        // A3 — "Notary Accession Number" → "Accession Number".
+                        // Feedback1 C1.3 — YYYY-NNN format; optional/nullable.
                         Forms\Components\TextInput::make('accession_number')
-                            ->label('Notary Accession Number')
+                            ->label('Accession Number')
                             ->maxLength(32)
                             ->placeholder('2025-124')
                             ->helperText('Format: YYYY-NNN (e.g. 2025-124)')
@@ -128,18 +131,21 @@ class AccessionResource extends Resource
                 Section::make('Identification')
                     ->columns($twoCols)
                     ->schema([
+                        // A3 — "Code" → "Title" in the infolist view.
                         TextEntry::make('code')
-                            ->label('Code')
+                            ->label('Title')
                             ->badge()
                             ->color('primary')
                             ->copyable()
                             ->placeholder('—'),
+                        // A3 — "Notary Accession Number" → "Accession Number".
                         TextEntry::make('accession_number')
-                            ->label('Notary Accession Number')
+                            ->label('Accession Number')
                             ->copyable()
                             ->placeholder('—'),
+                        // A3 — "Accession date" → "Accession Date" (capitalised).
                         TextEntry::make('accession_date')
-                            ->label('Accession date')
+                            ->label('Accession Date')
                             ->date()
                             ->placeholder('—'),
                     ]),
@@ -207,31 +213,53 @@ class AccessionResource extends Resource
     public static function table(Table $table): Table
     {
         return $table
-            // Feedback1 Wave B (B1) — persist & defer filters so they survive
-            // navigation/refresh.
+            // Feedback1 Wave B (B1) / A7 — persist & defer filters so they
+            // survive navigation/refresh. deferFilters() renders an explicit
+            // "Apply" button in the filter panel, satisfying A7. The filter
+            // panel remains visible regardless of the result count (Filament 5
+            // default: the panel is not hidden when results are empty).
             ->deferFilters()
             ->persistFiltersInSession()
+            // A8 / no-whole-row-link — do NOT set ->recordUrl() here so that
+            // the entire row is NOT a hyperlink. Only the "Title" (code) cell
+            // carries a ->url() pointing to the view page (see column below).
             ->columns([
+                // A3 — "Code" → "Title" in the table header.
+                // A8 — Only this cell is the hyperlink to the view page.
+                // A5 — sortable.
                 Tables\Columns\TextColumn::make('code')
-                    ->searchable(),
-                // Feedback1 C1.3 — Notary Accession Number, searchable.
+                    ->label('Title')
+                    ->searchable()
+                    ->sortable()
+                    ->url(fn (Accession $record): string => AccessionResource::getUrl('view', ['record' => $record])),
+                // A3 — "Notary Accession Number" → "Accession Number".
+                // Feedback1 C1.3 — searchable + sortable.
                 Tables\Columns\TextColumn::make('accession_number')
-                    ->label('Notary Accession Number')
+                    ->label('Accession Number')
                     ->searchable()
                     ->sortable()
                     ->placeholder('—'),
+                // A3 — label is already "Accession Date" (capitalised); A5 — sortable.
                 Tables\Columns\TextColumn::make('accession_date')
+                    ->label('Accession Date')
                     ->date()
                     ->sortable(),
+                // A5 — sortable on the related column.
                 Tables\Columns\TextColumn::make('authority.surname')
-                    ->numeric()
+                    ->label('Authority')
                     ->sortable(),
+                // A3 — explicit "Batch Number" label; A5 — sortable.
                 Tables\Columns\TextColumn::make('batch.batch_number')
+                    ->label('Batch Number')
                     ->numeric()
                     ->sortable(),
+                // A5 — sortable on repository name.
                 Tables\Columns\TextColumn::make('repository.name')
-                    ->numeric()
+                    ->label('Repository')
                     ->sortable(),
+                // A9 — Inputter column (record creator via audit trail).
+                // Toggleable, default visible, not sortable (cross-table sort).
+                CreatorColumn::make(),
                 Tables\Columns\TextColumn::make('created_at')
                     ->dateTime()
                     ->sortable()
@@ -246,8 +274,8 @@ class AccessionResource extends Resource
                     ->toggleable(isToggledHiddenByDefault: true),
             ])
             ->filters([
-                // Feedback1 Wave B (B1) — dropdown-driven filters (mechanism #1)
-                // next to the free-text search on `code` (mechanism #2).
+                // A7 / Wave B (B1) — dropdown-driven filters. The panel stays
+                // visible when the result set is empty (Filament 5 default).
                 // Server-side searchable relationship selects (no preload):
                 // production carries 800+ authorities / 600+ batches.
                 SelectFilter::make('authority')
@@ -266,9 +294,9 @@ class AccessionResource extends Resource
                     ->searchable()
                     ->preload(),
                 // Feedback1 C1.3 — quickly isolate accessions that do / do not
-                // carry a Notary Accession Number.
+                // carry an Accession Number.
                 TernaryFilter::make('has_accession_number')
-                    ->label('Has Notary Accession Number')
+                    ->label('Has Accession Number')
                     ->placeholder('All accessions')
                     ->trueLabel('Has a number')
                     ->falseLabel('No number')
@@ -290,6 +318,29 @@ class AccessionResource extends Resource
                 BulkActionGroup::make([
                     DeleteBulkAction::make(),
                 ]),
+            ]);
+    }
+
+    /**
+     * Eager-load the audit trail (for CreatorColumn) and related models to
+     * avoid N+1 on the list page.
+     *
+     * Active-repository scoping is handled automatically by the RepositoryScope
+     * global scope attached to Accession via BelongsToRepository.  The scope
+     * reads from App\Support\ActiveRepository (session-backed topbar switcher)
+     * and narrows the query to the selected repository when one is active.
+     */
+    public static function getEloquentQuery(): Builder
+    {
+        return parent::getEloquentQuery()
+            ->with([
+                'authority',
+                'batch',
+                'repository',
+                // CreatorColumn resolves the first `created` audit entry.
+                // Eager-loading here keeps it O(1) per page instead of one
+                // query per row.
+                'audits' => fn ($q) => $q->where('event', 'created')->oldest('id')->with('user'),
             ]);
     }
 

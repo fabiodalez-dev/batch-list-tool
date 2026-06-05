@@ -67,6 +67,7 @@ class BoxTypeResource extends Resource
                     ->columns(['default' => 1, 'md' => 2])
                     ->schema([
                         Forms\Components\TextInput::make('code')
+                            ->label('Identifier')
                             ->required()
                             ->maxLength(32)
                             ->unique(ignoreRecord: true)
@@ -104,6 +105,7 @@ class BoxTypeResource extends Resource
         return $table
             ->columns([
                 Tables\Columns\TextColumn::make('code')
+                    ->label('Identifier')
                     ->searchable()
                     ->sortable(),
                 Tables\Columns\TextColumn::make('label')

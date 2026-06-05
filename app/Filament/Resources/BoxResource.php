@@ -6,6 +6,7 @@ use App\Filament\Actions\Boxes\DestroyBoxAction;
 use App\Filament\Actions\Boxes\MoveBoxToLocationAction;
 use App\Filament\Concerns\AppliesFieldPermissions;
 use App\Filament\Resources\BoxResource\Pages;
+use App\Filament\Support\CreatorColumn;
 use App\Filament\Support\SearchableSelects;
 use App\Models\Batch;
 use App\Models\Box;
@@ -27,6 +28,7 @@ use Filament\Schemas\Components\Section;
 use Filament\Schemas\Components\Utilities\Get;
 use Filament\Schemas\Schema;
 use Filament\Tables;
+use Filament\Tables\Enums\FiltersLayout;
 use Filament\Tables\Filters\QueryBuilder;
 use Filament\Tables\Filters\QueryBuilder\Constraints\RelationshipConstraint;
 use Filament\Tables\Filters\QueryBuilder\Constraints\RelationshipConstraint\Operators\IsRelatedToOperator;
@@ -223,14 +225,27 @@ class BoxResource extends Resource
                 Section::make('Barcode & status')
                     ->columns($twoCols)
                     ->schema([
+                        // A10 — Barcode is required and globally unique across all boxes
+                        // (never null; a duplicate triggers a friendly validation message).
                         $g(Forms\Components\TextInput::make('barcode')
                             ->label('Box barcode')
-                            ->helperText(fn (Get $get): string => $isInSitu($get)
-                                ? 'Optional for IN_SITU / NRA boxes.'
-                                : 'Barcode label on this box. Required for RAS boxes. Distinct from any per-document barcodes inside it.')
-                            // C2.1 — Barcode is required for RAS boxes only.
-                            ->required($isRas)
-                            ->maxLength(64)),
+                            ->helperText('Barcode label affixed to this box. Must be globally unique. Distinct from any per-document barcodes inside it.')
+                            ->required()
+                            ->maxLength(64)
+                            ->rule(static function (?Box $record): \Closure {
+                                return static function (string $attribute, $value, \Closure $fail) use ($record): void {
+                                    if ($value === null || trim((string) $value) === '') {
+                                        return; // required() handles the empty case
+                                    }
+                                    $exists = Box::withoutGlobalScopes()
+                                        ->where('barcode', trim((string) $value))
+                                        ->when($record?->getKey(), fn ($q, $id) => $q->whereKeyNot($id))
+                                        ->exists();
+                                    if ($exists) {
+                                        $fail('This barcode is already assigned to another box. Box barcodes must be globally unique.');
+                                    }
+                                };
+                            })),
                         // RFQ Contract App.2-i — the yellow security seal that
                         // closes the box belongs to the BOX; every change is
                         // logged to box_seal_number_history (see Seal history).
@@ -665,11 +680,16 @@ class BoxResource extends Resource
         $gc = fn (mixed $col, ?string $fieldOverride = null): mixed => self::gateColumn($col, self::FIELD_PERMISSIONS_KEY, $fieldOverride);
 
         return $table
+            // A6 — allow drag-and-drop column reorder by the operator.
+            ->reorderableColumns()
             // Feedback1 Wave B (B1) — persist & defer filters so they survive
             // navigation/refresh and so the cross-module landings (Batch → Boxes)
             // present a stable, query-string-driven filter state.
             ->deferFilters()
             ->persistFiltersInSession()
+            // A7 — keep the filter panel visible even when the result set is
+            // empty, so the operator can still adjust/clear their criteria.
+            ->filtersLayout(FiltersLayout::AboveContentCollapsible)
             // Feedback1 Wave B (B4) — clicking a box row navigates to the
             // Documents dashboard showing that box's contents. Documents'
             // `current_box_id` SelectFilter is `->multiple()`, so the URL shape
@@ -679,23 +699,37 @@ class BoxResource extends Resource
                 'filters' => ['current_box_id' => ['values' => [$record->getKey()]]],
             ]))
             ->columns([
-                $gc(Tables\Columns\TextColumn::make('box_type')),
-                $gc(Tables\Columns\TextColumn::make('box_number')
-                    ->searchable()),
+                // A6 — Column order per spec: Batch / Box / Barcode / Barcode Status /
+                // Disinfestation Date / Box Type / Destroyed / Parent Box Id / Is Legacy.
+                // All columns are toggleable so operators can hide what they don't need.
                 $gc(Tables\Columns\TextColumn::make('batch.batch_number')
+                    ->label('Batch')
                     ->numeric()
-                    ->sortable(), 'batch_id'),
-                $gc(Tables\Columns\TextColumn::make('parent_box_id')
-                    ->numeric()
-                    ->sortable()),
+                    ->sortable()
+                    ->toggleable(), 'batch_id'),
+                $gc(Tables\Columns\TextColumn::make('box_number')
+                    ->label('Box')
+                    ->searchable()
+                    ->sortable()
+                    ->toggleable()),
                 $gc(Tables\Columns\TextColumn::make('barcode')
-                    ->searchable()),
-                $gc(Tables\Columns\TextColumn::make('barcode_status')),
+                    ->label('Barcode')
+                    ->searchable()
+                    ->sortable()
+                    ->toggleable()),
+                $gc(Tables\Columns\TextColumn::make('barcode_status')
+                    ->label('Barcode Status')
+                    ->sortable()
+                    ->toggleable()),
                 $gc(Tables\Columns\TextColumn::make('disinfestation_date')
+                    ->label('Disinfestation Date')
                     ->date()
-                    ->sortable()),
-                $gc(Tables\Columns\IconColumn::make('is_legacy')
-                    ->boolean()),
+                    ->sortable()
+                    ->toggleable()),
+                $gc(Tables\Columns\TextColumn::make('box_type')
+                    ->label('Box Type')
+                    ->sortable()
+                    ->toggleable()),
                 // RFQ App.2 §vii — "destroyed" badge. Shown as a red
                 // chip on the row so operators can spot artefacts that
                 // physically no longer exist without opening the record.
@@ -709,6 +743,18 @@ class BoxResource extends Resource
                     ->placeholder('')
                     ->sortable()
                     ->toggleable(),
+                $gc(Tables\Columns\TextColumn::make('parent_box_id')
+                    ->label('Parent Box Id')
+                    ->numeric()
+                    ->sortable()
+                    ->toggleable()),
+                $gc(Tables\Columns\IconColumn::make('is_legacy')
+                    ->label('Is Legacy')
+                    ->boolean()
+                    ->sortable()
+                    ->toggleable()),
+                // A9 — Inputter column (who created this box record).
+                CreatorColumn::make(),
                 Tables\Columns\TextColumn::make('created_at')
                     ->dateTime()
                     ->sortable()
@@ -886,10 +932,16 @@ class BoxResource extends Resource
     }
 
     /**
-     * Eager-load customFieldValues.definition to avoid N+1 in table columns.
+     * Eager-load customFieldValues.definition and audits to avoid N+1 in
+     * table columns (custom fields + A9 CreatorColumn).
      */
     public static function getEloquentQuery(): Builder
     {
-        return parent::getEloquentQuery()->with(['customFieldValues.definition', 'batch']);
+        return parent::getEloquentQuery()->with([
+            'customFieldValues.definition',
+            'batch',
+            // A9 — CreatorColumn resolves the inputter via the first audit row.
+            'audits' => static fn ($q) => $q->where('event', 'created')->oldest('id')->with('user'),
+        ]);
     }
 }

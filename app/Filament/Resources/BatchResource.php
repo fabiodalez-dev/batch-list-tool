@@ -4,6 +4,7 @@ namespace App\Filament\Resources;
 
 use App\Filament\Concerns\AppliesFieldPermissions;
 use App\Filament\Resources\BatchResource\Pages;
+use App\Filament\Support\CreatorColumn;
 use App\Filament\Support\SearchableSelects;
 use App\Models\Batch;
 use App\Models\Lookup\BatchType;
@@ -38,6 +39,10 @@ class BatchResource extends Resource
 
     protected static ?string $model = Batch::class;
 
+    // A3 — "New batch" → "New Batch": set the model label explicitly to
+    // title-case so Filament's CreateAction renders "New Batch".
+    protected static ?string $modelLabel = 'Batch';
+
     protected static string|\BackedEnum|null $navigationIcon = 'heroicon-o-squares-2x2';
 
     protected static string|\UnitEnum|null $navigationGroup = 'Archive';
@@ -61,9 +66,55 @@ class BatchResource extends Resource
                     ->columns($twoCols)
                     ->schema([
                         $g(Forms\Components\TextInput::make('batch_number')
+                            ->label('Batch Number')
                             ->required()
                             ->numeric()
                             ->minValue(1)
+                            // A2 — suggest the next sequential batch number as the
+                            // default, skipping forbidden numbers 34 and 36.
+                            // On edit the record's own value is used (no default).
+                            ->default(static function (): int {
+                                $max = Batch::max('batch_number') ?? 0;
+                                $next = $max + 1;
+                                // Skip over every forbidden number.
+                                while (in_array($next, Batch::FORBIDDEN_NUMBERS, true)) {
+                                    $next++;
+                                }
+
+                                return $next;
+                            })
+                            // A2 — catch duplicate batch_number within the same
+                            // repository and show a friendly validation message
+                            // instead of letting a SQL unique violation bubble to a
+                            // 500 error page.
+                            //
+                            // We use a closure validator (not Rule::unique) because
+                            // Rule::unique does not expose a per-instance message API
+                            // in this Laravel version.  The closure calls $fail() with
+                            // exactly the text the spec requires.
+                            ->rule(function (?Batch $record, Get $get): \Closure {
+                                return function (string $attribute, mixed $value, \Closure $fail) use ($record, $get): void {
+                                    if ($value === null || $value === '') {
+                                        return;
+                                    }
+
+                                    $repositoryId = $get('repository_id')
+                                        ?? $record?->repository_id
+                                        ?? auth()->user()?->default_repository_id;
+
+                                    $query = Batch::query()
+                                        ->where('batch_number', (int) $value)
+                                        ->where('repository_id', $repositoryId);
+
+                                    if ($record !== null && $record->exists) {
+                                        $query->whereKeyNot($record->getKey());
+                                    }
+
+                                    if ($query->exists()) {
+                                        $fail('Batch number already exists.');
+                                    }
+                                };
+                            })
                             // RFQ rule #1: batches 34 and 36 are forbidden (unused,
                             // never to be used); batch 33 is reserved for old MAV
                             // boxes and remains a valid number.
@@ -121,8 +172,10 @@ class BatchResource extends Resource
                             // the operator picks a different repository (GROUP A fix).
                             ->live()
                             ->default(fn () => auth()->user()?->default_repository_id)),
+                        // A10 (spec) — is_active is non-mandatory (default true);
+                        // removing ->required() so the asterisk is gone.
                         $g(Forms\Components\Toggle::make('is_active')
-                            ->required()),
+                            ->default(true)),
                     ]),
 
                 // Custom fields (EAV, per-repository).
@@ -274,26 +327,33 @@ class BatchResource extends Resource
             // their application until the operator hits "Apply".
             ->deferFilters()
             ->persistFiltersInSession()
-            // Feedback1 Wave B (B3) — clicking a batch row navigates to the
-            // Boxes dashboard pre-filtered to that batch. The Boxes table's
-            // `batch` SelectFilter is `->multiple()`, so the URL shape uses
-            // `values` (an array). View / Edit stay reachable via the row
-            // actions column below.
-            ->recordUrl(fn (Batch $record): string => BoxResource::getUrl('index', [
-                'filters' => ['batch' => ['values' => [$record->getKey()]]],
-            ]))
+            // A8 — only the Batch Number cell is the hyperlink to the batch
+            // view; the whole-row recordUrl is removed so other cells are plain
+            // text.  View / Edit remain reachable via the row-actions column.
             ->columns([
                 $gc(Tables\Columns\TextColumn::make('batch_number')
+                    ->label('Batch Number')
                     ->numeric()
-                    ->sortable()),
+                    ->sortable()
+                    // A8 — hyperlink only this cell, not the whole row.
+                    ->url(fn (?Batch $record): ?string => $record !== null
+                        ? static::getUrl('view', ['record' => $record])
+                        : null)
+                    ->color('primary')),
                 $gc(Tables\Columns\TextColumn::make('description')
-                    ->searchable()),
-                $gc(Tables\Columns\TextColumn::make('type')),
+                    ->searchable()
+                    ->sortable()),
+                $gc(Tables\Columns\TextColumn::make('type')
+                    ->sortable()),
                 $gc(Tables\Columns\TextColumn::make('repository.name')
-                    ->numeric()
+                    ->label('Repository')
                     ->sortable(), 'repository_id'),
                 $gc(Tables\Columns\IconColumn::make('is_active')
-                    ->boolean()),
+                    ->label('Active')
+                    ->boolean()
+                    ->sortable()),
+                // A9 — inputter column (who created the record).
+                CreatorColumn::make(),
                 Tables\Columns\TextColumn::make('created_at')
                     ->dateTime()
                     ->sortable()
@@ -368,10 +428,18 @@ class BatchResource extends Resource
     }
 
     /**
-     * Eager-load customFieldValues.definition to avoid N+1 in the table columns.
+     * Eager-load customFieldValues.definition and the first audit entry (for
+     * the CreatorColumn / Inputter column) to avoid N+1 in the table.
+     *
+     * The audits sub-load is filtered to event='created' and ordered by id asc
+     * so only the relevant row is fetched per batch record.
      */
     public static function getEloquentQuery(): Builder
     {
-        return parent::getEloquentQuery()->with(['customFieldValues.definition']);
+        return parent::getEloquentQuery()->with([
+            'customFieldValues.definition',
+            // A9 — creator resolution: first 'created' audit with its user.
+            'audits' => fn ($q) => $q->where('event', 'created')->oldest('id')->with('user'),
+        ]);
     }
 }
