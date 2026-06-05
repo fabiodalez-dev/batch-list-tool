@@ -34,6 +34,12 @@ return new class extends Migration
 
     public function down(): void
     {
-        Schema::dropIfExists('notifications');
+        // Intentional no-op: `notifications` is a shared Laravel core table
+        // used by multiple framework components (mail, broadcasting, etc.).
+        // This migration only creates the table when it was absent; dropping
+        // it on rollback could silently destroy notifications that belong to
+        // other parts of the framework and are unrelated to this migration.
+        // If you genuinely need to remove this table, do so in a dedicated
+        // migration that is scoped to the deployment context.
     }
 };

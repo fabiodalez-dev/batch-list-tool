@@ -82,28 +82,33 @@ it('returns null when the record has no audit entry', function () {
     // Disable auditing globally for this test so no audit row is written.
     Audit::$auditingGloballyDisabled = true;
 
-    // Use super_admin so the multi-tenant guard is bypassed (admin roles
-    // skip the repository membership check in BelongsToRepository).
-    $sa = User::factory()->create(['name' => 'Super Tester']);
-    $sa->assignRole('super_admin');
-    $this->actingAs($sa);
+    // Wrap in try/finally so the global flag is always restored even if an
+    // assertion or factory call throws — preventing state bleed into other tests.
+    try {
+        // Use super_admin so the multi-tenant guard is bypassed (admin roles
+        // skip the repository membership check in BelongsToRepository).
+        $sa = User::factory()->create(['name' => 'Super Tester']);
+        $sa->assignRole('super_admin');
+        $this->actingAs($sa);
 
-    $repo = Repository::factory()->create();
-    $batch = Batch::factory()->create([
-        'repository_id' => $repo->id,
-        'batch_number' => 2001,
-    ]);
+        $repo = Repository::factory()->create();
+        $batch = Batch::factory()->create([
+            'repository_id' => $repo->id,
+            'batch_number' => 2001,
+        ]);
 
-    Audit::$auditingGloballyDisabled = false;
+        // Sanity check: no audits exist.
+        expect($batch->audits()->count())->toBe(0);
 
-    // Sanity check: no audits exist.
-    expect($batch->audits()->count())->toBe(0);
+        $col = CreatorColumn::make();
+        $closure = $col->getGetStateUsingCallback();
+        $state = $closure($batch);
 
-    $col = CreatorColumn::make();
-    $closure = $col->getGetStateUsingCallback();
-    $state = $closure($batch);
-
-    expect($state)->toBeNull();
+        expect($state)->toBeNull();
+    } finally {
+        // Always restore — even when an exception propagates.
+        Audit::$auditingGloballyDisabled = false;
+    }
 });
 
 // ---------------------------------------------------------------------------

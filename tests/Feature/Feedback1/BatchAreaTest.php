@@ -339,14 +339,19 @@ it('A8: description and type columns have no URL callback (plain text cells)', f
 
     foreach (['description', 'type'] as $name) {
         $col = $table->getColumn($name);
-        if ($col !== null) {
-            $reflection = new ReflectionProperty($col, 'url');
-            $urlValue = $reflection->getValue($col);
 
-            expect($urlValue)->toBeNull(
-                "Column '{$name}' must NOT have a URL (A8: only batch_number is a link)",
-            );
-        }
+        // Assert the column actually exists so a missing column does not
+        // silently make the URL assertion vacuously true (A8 guard).
+        expect($col)->not->toBeNull(
+            "Column '{$name}' must exist in BatchResource table (A8 check requires it)",
+        );
+
+        $reflection = new ReflectionProperty($col, 'url');
+        $urlValue = $reflection->getValue($col);
+
+        expect($urlValue)->toBeNull(
+            "Column '{$name}' must NOT have a URL (A8: only batch_number is a link)",
+        );
     }
 });
 

@@ -107,7 +107,7 @@ A1. **Import never runs (BUG).** `QUEUE_CONNECTION=database` + no worker/cron on
       processed/total/failed + a link to the failed-rows download).
     Document the cron in `docs/operations/`.
 A2. Batch "already exists" → friendly validation message "Batch number already
-    exists." (catch the unique violation in the form, not a 500 page).
+    exists." (catch the unique violation in the form, not a 500 error page).
     Also: suggest the next sequential batch number on the New Batch form.
 A3. Label/casing fixes: "New batch"→"New Batch"; "Box"→"Box"/"Current Box"→"Box";
     "Code"→"Identifier" (Series, Box Types, Current Box Types, Barcode Statuses);

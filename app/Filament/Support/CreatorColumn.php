@@ -87,19 +87,24 @@ final class CreatorColumn
                     return null;
                 }
 
-                // Resolve the user by user_id (same pattern as RecentActivityWidget).
-                // We use getAttribute() because the audit user_id column is a morph
-                // key with a configurable prefix and is not declared in the Audit
-                // model's PHPDoc — accessing it via getAttribute() avoids the
-                // property.notFound PHPStan error.
-                /** @var int|string|null $userId */
-                $userId = $audit->getAttribute('user_id');
-
-                if ($userId === null) {
-                    return null;
+                // Resolve the creator user — prefer the already-loaded `user`
+                // relation on the audit (eager-loaded by the resource as
+                // `audits.user`) to avoid an N+1 query per row.
+                //
+                // getRelation('user') returns mixed per Eloquent's PHPDoc; we
+                // use a @var annotation to narrow the type so PHPStan accepts
+                // the ->name access.  The audit model declares `@property mixed
+                // $user` so we cannot use the magic property directly.
+                if ($audit->relationLoaded('user')) {
+                    /** @var User|null $user */
+                    $user = $audit->getRelation('user');
+                } else {
+                    // Lazy fallback for contexts where the relation was not
+                    // pre-loaded (e.g. single-record view).  One query, not N.
+                    /** @var int|string|null $userId */
+                    $userId = $audit->getAttribute('user_id');
+                    $user = $userId !== null ? User::query()->find($userId) : null;
                 }
-
-                $user = User::query()->find($userId);
 
                 return $user?->name;
             })
