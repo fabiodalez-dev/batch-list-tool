@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace App\Filament\Pages;
 
 use App\Filament\Concerns\ExplainsPage;
+use App\Filament\Imports\AccessionRowImporter;
 use App\Filament\Imports\AuthorityImporter;
 use App\Filament\Imports\BatchImporter;
 use App\Filament\Imports\BoxImporter;
@@ -100,6 +101,7 @@ class ImportWizard extends Page
         'batches' => BatchImporter::class,
         'boxes' => BoxImporter::class,
         'documents' => DocumentImporter::class,
+        'accessions' => AccessionRowImporter::class,
     ];
 
     /**
@@ -115,6 +117,7 @@ class ImportWizard extends Page
         'batches' => 'batch',
         'boxes' => 'box',
         'documents' => 'document',
+        'accessions' => 'accession',
     ];
 
     /**
@@ -215,8 +218,19 @@ class ImportWizard extends Page
 
         // ── Box ───────────────────────────────────────────────────────
         'box type' => ['box_type', 'type'],
+        'box status' => ['box_type', 'type'],   // NAf Feedback 1 column name
         'ras box' => ['box_number'],
         'in situ box' => ['box_number'],
+
+        // ── Accession (bottom-up sheet) ───────────────────────────────
+        'accession number' => ['accession_number', 'accession'],
+        'accession title' => ['accession_title'],
+        'accession type' => ['accession_type', 'type'],
+        // 'box no' already covered in Document section above → ['box_id', 'box_number']
+        'box barcode' => ['box_barcode', 'barcode'],
+        'volume no' => ['volume_label'],         // NAf Feedback 1 column name
+        'note' => ['notes'],                     // NAf Feedback 1 column name (singular)
+        'part number' => ['part_number'],
     ];
 
     /**
@@ -949,6 +963,7 @@ class ImportWizard extends Page
                 Radio::make('import_type')
                     ->label('Type of records')
                     ->options([
+                        'accessions' => 'New Accession (bottom-up: one row = one Document, auto-creates Authority / Accession / Batch / Box)',
                         'series' => 'Series (record types: R / REG / RWL / O)',
                         'authorities' => 'Authorities (notaries — 808 in production sample)',
                         'locations' => 'Locations (physical/logical hierarchy)',
@@ -957,6 +972,7 @@ class ImportWizard extends Page
                         'documents' => 'Documents (the main entity — 3,113 rows in sample)',
                     ])
                     ->descriptions([
+                        'accessions' => 'Primary path for new accessions and mass batch-list import. One row per document; every ancestor is resolved or created automatically. Depends on: Series (must pre-exist).',
                         'series' => 'Depends on: nothing — import this first.',
                         'authorities' => 'Depends on: nothing.',
                         'locations' => 'Depends on: at least one Repository. Parents must be imported before their children (re-run after fixing order if parent not found).',

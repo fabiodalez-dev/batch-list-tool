@@ -25,6 +25,12 @@ parameters:
 			path: app/Console/Commands/LinkCreatorTextToAuthorities.php
 
 		-
+			message: '#^Method App\\Filament\\Imports\\AccessionRowImporter\:\:resolveRecord\(\) should return App\\Models\\Document\|null but returns Illuminate\\Database\\Eloquent\\Model\.$#'
+			identifier: return.type
+			count: 1
+			path: app/Filament/Imports/AccessionRowImporter.php
+
+		-
 			message: '#^Method App\\Filament\\Imports\\DocumentImporter\:\:resolveRecord\(\) should return App\\Models\\Document\|null but returns Illuminate\\Database\\Eloquent\\Model\.$#'
 			identifier: return.type
 			count: 1

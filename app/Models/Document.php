@@ -121,7 +121,7 @@ class Document extends Model implements AuditableContract, HasMedia, Sortable
         'sort_order',
         // Normalised columns
         'identifier', 'document_type', 'series_id', 'accession_id',
-        'current_box_id', 'location_id', 'batch_id', 'repository_id', 'volume_label',
+        'current_box_id', 'location_id', 'batch_id', 'repository_id', 'volume_label', 'part_number',
         'dates_start', 'dates_end', 'dates_year_start', 'dates_year_end',
         'disinfestation_date', 'is_in_disinfestation', 'extra', 'notes',
         // Legacy POC columns (parity with raw-PHP schema)

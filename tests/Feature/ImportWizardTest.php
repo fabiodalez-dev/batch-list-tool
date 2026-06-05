@@ -91,7 +91,8 @@ test('IMPORTERS map covers every advertised wizard option', function () {
     // 'locations' added in PR #85 (LocationImporter) — keep this list in
     // sync with ImportWizard::IMPORTERS / TEMPLATE_KEYS so a future drop
     // or rename of an entity surfaces as a hard test failure.
-    $expected = ['series', 'authorities', 'locations', 'batches', 'boxes', 'documents'];
+    // 'accessions' added in Wave C (AccessionRowImporter) — bottom-up cascade importer.
+    $expected = ['series', 'authorities', 'locations', 'batches', 'boxes', 'documents', 'accessions'];
 
     expect(array_keys(ImportWizard::IMPORTERS))
         ->toEqualCanonicalizing($expected)
