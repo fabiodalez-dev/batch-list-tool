@@ -500,10 +500,10 @@ final class SearchableSelects
      |========================================================================*/
 
     /**
-     * Build a Select bound to an Accession FK column.
+     * Build a Select bound to an Accession FK column (single FK, e.g. documents.accession_id).
      *
      * Label format: the accession `code` is already unique and short — we
-     * keep it but append the linked batch number when available.
+     * keep it but append the first linked batch number when available.
      */
     public static function accession(string $name = 'accession_id'): Select
     {
@@ -517,13 +517,46 @@ final class SearchableSelects
     }
 
     /**
+     * Build a multi-Select bound to the BelongsToMany Accession relation on Batch.
+     * Used by BatchResource's "Accessions" section.
+     */
+    public static function accessionsMulti(string $name = 'accessions'): Select
+    {
+        return Select::make($name)
+            ->multiple()
+            ->relationship('accessions', 'code')
+            ->searchable(['code'])
+            ->preload(false)
+            ->getOptionLabelFromRecordUsing(fn (Accession $r): string => self::accessionLabel($r))
+            ->getSearchResultsUsing(fn (string $search): array => self::accessionSearchResults($search))
+            ->getOptionLabelsUsing(fn (array $values): array => self::accessionOptionLabels($values));
+    }
+
+    /**
+     * Build a multi-Select bound to the BelongsToMany Batch relation on Accession.
+     * Used by AccessionResource's "Batches" section.
+     */
+    public static function batchesMulti(string $name = 'batches'): Select
+    {
+        return Select::make($name)
+            ->multiple()
+            ->relationship('batches', 'batch_number')
+            ->searchable(['batch_number', 'description'])
+            ->preload(false)
+            ->getOptionLabelFromRecordUsing(fn (Batch $r): string => self::batchLabel($r))
+            ->getSearchResultsUsing(fn (string $search): array => self::batchSearchResults($search))
+            ->getOptionLabelsUsing(fn (array $values): array => self::batchOptionLabels($values));
+    }
+
+    /**
      * @return array<int|string, string>
      */
     public static function accessionSearchResults(string $search): array
     {
         $search = trim($search);
 
-        $query = Accession::query()->with('batch');
+        // Wave B — Accession no longer has a single batch; use batches() N:N.
+        $query = Accession::query()->with('batches');
 
         if ($search === '') {
             $query->orderBy('code');
@@ -531,7 +564,7 @@ final class SearchableSelects
             $needle = '%' . $search . '%';
             $query->where(function ($q) use ($needle) {
                 $q->where('code', 'like', $needle)
-                    ->orWhereHas('batch', fn ($b) => $b->where('batch_number', 'like', $needle));
+                    ->orWhereHas('batches', fn ($b) => $b->where('batch_number', 'like', $needle));
             })->orderBy('code');
         }
 
@@ -547,9 +580,15 @@ final class SearchableSelects
 
     public static function accessionLabel(Accession $r): string
     {
-        /** @var Batch|null $batch */
-        $batch = $r->batch;
-        $batchNumber = $batch instanceof Batch ? $batch->batch_number : null;
+        // Wave B — accession now links to multiple batches via N:N.
+        // Use the first batch number (lowest batch_number) as the label suffix.
+        $batches = $r->relationLoaded('batches')
+            ? $r->batches
+            : $r->batches()->orderBy('batch_number')->get();
+
+        /** @var Batch|null $first */
+        $first = $batches->first();
+        $batchNumber = $first instanceof Batch ? $first->batch_number : null;
 
         return $batchNumber !== null
             ? "{$r->code} — batch {$batchNumber}"
@@ -828,7 +867,8 @@ final class SearchableSelects
             return null;
         }
 
-        $record = Accession::withTrashed()->with('batch')->find($value);
+        // Wave B — Accession no longer has a single batch; eager-load batches().
+        $record = Accession::withTrashed()->with('batches')->find($value);
 
         if ($record === null) {
             return null;
@@ -841,6 +881,54 @@ final class SearchableSelects
         }
 
         return $label;
+    }
+
+    /**
+     * @param array<int, int|string> $values
+     * @return array<int|string, string>
+     */
+    private static function accessionOptionLabels(array $values): array
+    {
+        if ($values === []) {
+            return [];
+        }
+
+        $rows = Accession::withTrashed()->with('batches')->whereIn('id', $values)->get();
+        $out = [];
+        foreach ($rows as $r) {
+            /** @var Accession $r */
+            $label = self::accessionLabel($r);
+            if ($r->trashed()) {
+                $label .= ' (deleted)';
+            }
+            $out[$r->id] = $label;
+        }
+
+        return $out;
+    }
+
+    /**
+     * @param array<int, int|string> $values
+     * @return array<int|string, string>
+     */
+    private static function batchOptionLabels(array $values): array
+    {
+        if ($values === []) {
+            return [];
+        }
+
+        $rows = Batch::withTrashed()->whereIn('id', $values)->get();
+        $out = [];
+        foreach ($rows as $r) {
+            /** @var Batch $r */
+            $label = self::batchLabel($r);
+            if ($r->trashed()) {
+                $label .= ' (deleted)';
+            }
+            $out[$r->id] = $label;
+        }
+
+        return $out;
     }
 
     private static function locationOptionLabel(mixed $value): ?string

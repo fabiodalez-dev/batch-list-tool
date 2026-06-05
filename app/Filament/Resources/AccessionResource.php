@@ -83,9 +83,14 @@ class AccessionResource extends Resource
                         // Authority dropdown: 808 rows in production → server-side
                         // search ("Abela" → top 50 matches by surname/identifier).
                         SearchableSelects::authority('authority_id', 'authority'),
-                        // Batch dropdown: showing `Batch <N> — <type>` so operators
-                        // can distinguish RAS_BATCH/NOTARY_ACCESSION at a glance.
-                        SearchableSelects::batch('batch_id', 'batch'),
+                        // Wave B (B4) — multi-select for the N:N Batch relation.
+                        // One accession may span several batches; Batch 50 can collect
+                        // wills from many accessions. No guard forbids sharing a batch
+                        // between accessions (the "different accessions on same batch"
+                        // restriction is explicitly REMOVED per spec B4).
+                        SearchableSelects::batchesMulti('batches')
+                            ->label('Batches')
+                            ->columnSpanFull(),
                         // Repository dropdown: scoped to the user's assigned tenants.
                         // Same tenant-scoping closure as before; only the search/label
                         // wiring is new.
@@ -162,14 +167,18 @@ class AccessionResource extends Resource
                                 : null)
                             ->openUrlInNewTab(false)
                             ->placeholder('—'),
-                        TextEntry::make('batch.batch_number')
-                            ->label('Batch')
+                        // Wave B (B4) — accession may span many batches (N:N).
+                        // Render as comma-separated badge list from the pivot.
+                        TextEntry::make('batches_list')
+                            ->label('Batches')
                             ->badge()
                             ->color('gray')
-                            ->url(fn (?Accession $record): ?string => $record?->batch_id
-                                ? route('filament.admin.resources.batches.view', ['record' => $record->batch_id])
-                                : null)
-                            ->openUrlInNewTab(false)
+                            ->state(fn (?Accession $record): string => $record?->batches->isEmpty() ?? true
+                                ? '—'
+                                : $record->batches
+                                    ->sortBy('batch_number')
+                                    ->map(fn ($b) => (string) $b->batch_number)
+                                    ->join(', '))
                             ->placeholder('—'),
                         TextEntry::make('repository.code')
                             ->label('Repository')
@@ -248,11 +257,18 @@ class AccessionResource extends Resource
                 Tables\Columns\TextColumn::make('authority.surname')
                     ->label('Authority')
                     ->sortable(),
-                // A3 — explicit "Batch Number" label; A5 — sortable.
-                Tables\Columns\TextColumn::make('batch.batch_number')
-                    ->label('Batch Number')
-                    ->numeric()
-                    ->sortable(),
+                // Wave B (B4) — accession may be linked to multiple batches (N:N).
+                // The list is rendered as comma-separated batch numbers. Not sortable
+                // (no single column to order by across the N:N) but togglable.
+                Tables\Columns\TextColumn::make('batches_list')
+                    ->label('Batch Numbers')
+                    ->state(fn (Accession $record): string => $record->batches->isEmpty()
+                        ? '—'
+                        : $record->batches
+                            ->sortBy('batch_number')
+                            ->map(fn ($b) => (string) $b->batch_number)
+                            ->join(', '))
+                    ->toggleable(),
                 // A5 — sortable on repository name.
                 Tables\Columns\TextColumn::make('repository.name')
                     ->label('Repository')
@@ -283,9 +299,10 @@ class AccessionResource extends Resource
                     ->relationship('authority', 'surname')
                     ->searchable()
                     ->multiple(),
-                SelectFilter::make('batch')
+                // Wave B (B4) — filter by any of the batches linked via the pivot.
+                SelectFilter::make('batches')
                     ->label('Batch')
-                    ->relationship('batch', 'batch_number')
+                    ->relationship('batches', 'batch_number')
                     ->searchable()
                     ->multiple(),
                 SelectFilter::make('repository')
@@ -335,7 +352,9 @@ class AccessionResource extends Resource
         return parent::getEloquentQuery()
             ->with([
                 'authority',
-                'batch',
+                // Wave B — accession now links to many batches; eager-load the
+                // pivot so the batches_list computed column is O(1) per page.
+                'batches',
                 'repository',
                 // CreatorColumn resolves the first `created` audit entry.
                 // Eager-loading here keeps it O(1) per page instead of one

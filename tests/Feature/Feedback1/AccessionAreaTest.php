@@ -124,9 +124,11 @@ it('table column accession_date is labelled Accession Date', function () {
 });
 
 /**
- * A3.4 — "batch.batch_number" column is labelled "Batch Number".
+ * B4 — "batches_list" column is labelled "Batch Numbers" (N:N replaces single batch).
+ * The old "batch.batch_number" column is gone; the new column shows comma-separated
+ * batch numbers from the pivot.
  */
-it('table column batch.batch_number is labelled Batch Number', function () {
+it('table column batches_list is labelled Batch Numbers', function () {
     $this->actingAs(aa_superAdmin());
 
     $table = AccessionResource::table(
@@ -137,7 +139,7 @@ it('table column batch.batch_number is labelled Batch Number', function () {
 
     $cols = collect($table->getColumns());
 
-    expect($cols->first(fn ($c) => $c->getName() === 'batch.batch_number')?->getLabel())->toBe('Batch Number');
+    expect($cols->first(fn ($c) => $c->getName() === 'batches_list')?->getLabel())->toBe('Batch Numbers');
 });
 
 /**

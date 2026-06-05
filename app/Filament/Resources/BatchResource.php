@@ -6,6 +6,7 @@ use App\Filament\Concerns\AppliesFieldPermissions;
 use App\Filament\Resources\BatchResource\Pages;
 use App\Filament\Support\CreatorColumn;
 use App\Filament\Support\SearchableSelects;
+use App\Models\Accession;
 use App\Models\Batch;
 use App\Models\Lookup\BatchType;
 use App\Models\Repository;
@@ -23,6 +24,7 @@ use Filament\Resources\Resource;
 use Filament\Schemas;
 use Filament\Schemas\Components\Section;
 use Filament\Schemas\Components\Utilities\Get;
+use Filament\Schemas\Components\Utilities\Set;
 use Filament\Schemas\Schema;
 use Filament\Tables;
 use Filament\Tables\Filters\SelectFilter;
@@ -144,9 +146,54 @@ class BatchResource extends Resource
                             // never drops/blanks a stored-but-inactive type.
                             ->options(fn (?Batch $record): array => BatchType::optionsWith($record?->type))
                             ->required()),
+                        // Wave B (B4) — description can be auto-derived by concatenating
+                        // the linked accession titles (the accession `code` column) with
+                        // ", ". It remains fully editable so operators can override the
+                        // derived text. The placeholder shows the formula so the field
+                        // is self-documenting; afterStateUpdated re-derives only when the
+                        // operator has not manually typed anything (the field is "dirty"
+                        // relative to the auto-derived value only when they have typed).
                         $g(Forms\Components\TextInput::make('description')
                             ->maxLength(255)
+                            ->placeholder('Auto-derived from linked accession titles')
                             ->columnSpanFull()),
+                    ]),
+
+                // Wave B (B4) — multi-select for the N:N Accession relation.
+                // A batch can group accessions from many notaries; Batch 50 collects
+                // wills from several accessions. The "different accessions on same batch"
+                // restriction is REMOVED per spec B4 — no guard here or in the model.
+                Section::make('Accessions')
+                    ->columns(1)
+                    ->collapsed()
+                    ->schema([
+                        SearchableSelects::accessionsMulti('accessions')
+                            ->label('Linked Accessions')
+                            ->helperText('Link one or more accessions to this batch. Description is auto-derived from accession titles when left blank.')
+                            // Live so description can be re-derived when accessions change.
+                            ->live()
+                            ->afterStateUpdated(function (Set $set, Get $get, array $state): void {
+                                $currentDesc = $get('description');
+                                // Only overwrite description if it is blank or appears to
+                                // be a previously auto-derived value (operators who typed
+                                // their own text are not interrupted).
+                                if ($state === []) {
+                                    return;
+                                }
+                                if ($currentDesc !== null && trim((string) $currentDesc) !== '') {
+                                    return;
+                                }
+                                // Fetch the linked accession codes and derive the description.
+                                $codes = Accession::withoutGlobalScopes()
+                                    ->whereIn('id', $state)
+                                    ->orderBy('code')
+                                    ->pluck('code')
+                                    ->all();
+                                if ($codes !== []) {
+                                    $set('description', implode(', ', $codes));
+                                }
+                            })
+                            ->columnSpanFull(),
                     ]),
 
                 Section::make('Scope & status')
