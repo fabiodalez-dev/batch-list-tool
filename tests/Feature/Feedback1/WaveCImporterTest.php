@@ -611,6 +611,187 @@ it('C2-BoxBatch: a barcode that belongs to a different batch is a row error', fu
     expect(Document::withoutGlobalScope(RepositoryScope::class)->where('identifier', 'DOC-BOXBATCH-B')->exists())->toBeFalse();
 });
 
+// ── F1-RepoColumn — FINDING 1: row Repository column overrides default repo ──
+
+it('F1-RepoColumn: row targeting repo B creates Document in repo B, not the user default repo A; re-import is idempotent in repo B', function (): void {
+    $repoA = wc_repo('REPO_A');
+    $repoB = wc_repo('REPO_B');
+
+    // User's default repo is A.
+    $u = wc_sa($repoA->id);
+    $this->actingAs($u);
+    wc_series();
+
+    // Row explicitly targets repo B via the Repository column.
+    wc_run([
+        'identifier' => 'DOC-F1-REPO-1',
+        'accession_number' => 'ACC-F1-REPO',
+        'batch_number' => 57,
+        'box_number' => '1',
+        'document_type' => 'Original',
+        'series' => 'REG',
+        'repository' => $repoB->code,
+    ], $u->id);
+
+    // Document MUST live in repo B.
+    $docInB = Document::withoutGlobalScope(RepositoryScope::class)
+        ->where('identifier', 'DOC-F1-REPO-1')
+        ->where('repository_id', $repoB->id)
+        ->first();
+    expect($docInB)->not->toBeNull();
+
+    // Document must NOT exist in repo A.
+    $docInA = Document::withoutGlobalScope(RepositoryScope::class)
+        ->where('identifier', 'DOC-F1-REPO-1')
+        ->where('repository_id', $repoA->id)
+        ->first();
+    expect($docInA)->toBeNull();
+
+    // Accession also lands in repo B.
+    $acc = Accession::withoutGlobalScope(RepositoryScope::class)
+        ->where('accession_number', 'ACC-F1-REPO')
+        ->first();
+    expect($acc)->not->toBeNull();
+    expect($acc->repository_id)->toBe($repoB->id);
+
+    // Re-import the same row (same identifier + repo B) → idempotent: still
+    // exactly one Document with that identifier in repo B.
+    wc_run([
+        'identifier' => 'DOC-F1-REPO-1',
+        'accession_number' => 'ACC-F1-REPO',
+        'batch_number' => 57,
+        'box_number' => '1',
+        'document_type' => 'Original',
+        'series' => 'REG',
+        'repository' => $repoB->code,
+    ], $u->id);
+
+    $count = Document::withoutGlobalScope(RepositoryScope::class)
+        ->where('identifier', 'DOC-F1-REPO-1')
+        ->where('repository_id', $repoB->id)
+        ->count();
+    expect($count)->toBe(1);
+});
+
+// ── F2-BarcodeBoxMismatch — FINDING 2: barcode matches box but Box No differs ──
+
+it('F2-BarcodeBoxMismatch: barcode found but Box No differs → row error, nothing persisted', function (): void {
+    $repo = wc_repo('F2A');
+    $u = wc_sa($repo->id);
+    $this->actingAs($u);
+    wc_series();
+
+    // Row 1: create a box with barcode 'BARCODE-F2-001' and box_number 'BOX-10'.
+    wc_run([
+        'identifier' => 'DOC-F2-BARCODE-A',
+        'accession_number' => 'ACC-F2-BARCODE',
+        'batch_number' => 58,
+        'box_number' => 'BOX-10',
+        'box_barcode' => 'BARCODE-F2-001',
+        'document_type' => 'Original',
+        'series' => 'REG',
+    ], $u->id);
+
+    // Row 2: same barcode but a DIFFERENT box_number → must be a row error.
+    expect(fn () => wc_run([
+        'identifier' => 'DOC-F2-BARCODE-B',
+        'accession_number' => 'ACC-F2-BARCODE',
+        'batch_number' => 58,
+        'box_number' => 'BOX-99',          // different from 'BOX-10'
+        'box_barcode' => 'BARCODE-F2-001',  // same barcode as row 1
+        'document_type' => 'Original',
+        'series' => 'REG',
+    ], $u->id))->toThrow(ValidationException::class);
+
+    // Second document must NOT have been saved.
+    expect(
+        Document::withoutGlobalScope(RepositoryScope::class)
+            ->where('identifier', 'DOC-F2-BARCODE-B')
+            ->exists()
+    )->toBeFalse();
+});
+
+// ── F2-BoxBarcodeConflict — FINDING 2: (batch,box_number) found, barcode differs ──
+
+it('F2-BoxBarcodeConflict: existing box found by (batch,box_number) has a different barcode → row error', function (): void {
+    $repo = wc_repo('F2B');
+    $u = wc_sa($repo->id);
+    $this->actingAs($u);
+    wc_series();
+
+    // Row 1: create a box in batch 59, box_number 'B-5', barcode 'BARCODE-F2-ORIG'.
+    wc_run([
+        'identifier' => 'DOC-F2-CONFLICT-A',
+        'accession_number' => 'ACC-F2-CONFLICT',
+        'batch_number' => 59,
+        'box_number' => 'B-5',
+        'box_barcode' => 'BARCODE-F2-ORIG',
+        'document_type' => 'Original',
+        'series' => 'REG',
+    ], $u->id);
+
+    // Row 2: same (batch 59, box_number 'B-5') but a DIFFERENT barcode → row error.
+    expect(fn () => wc_run([
+        'identifier' => 'DOC-F2-CONFLICT-B',
+        'accession_number' => 'ACC-F2-CONFLICT',
+        'batch_number' => 59,
+        'box_number' => 'B-5',
+        'box_barcode' => 'BARCODE-F2-DIFF',  // different barcode
+        'document_type' => 'Original',
+        'series' => 'REG',
+    ], $u->id))->toThrow(ValidationException::class);
+
+    // Second document must NOT have been saved.
+    expect(
+        Document::withoutGlobalScope(RepositoryScope::class)
+            ->where('identifier', 'DOC-F2-CONFLICT-B')
+            ->exists()
+    )->toBeFalse();
+});
+
+// ── F2-HappyPath — consistent barcode + box_number round-trip ────────────────
+
+it('F2-HappyPath: consistent barcode and box_number on two rows resolve to the same box without error', function (): void {
+    $repo = wc_repo('F2C');
+    $u = wc_sa($repo->id);
+    $this->actingAs($u);
+    wc_series();
+
+    // Row 1: create box in batch 60, box_number 'C-7', barcode 'BARCODE-F2-HAPPY'.
+    wc_run([
+        'identifier' => 'DOC-F2-HAPPY-1',
+        'accession_number' => 'ACC-F2-HAPPY',
+        'batch_number' => 60,
+        'box_number' => 'C-7',
+        'box_barcode' => 'BARCODE-F2-HAPPY',
+        'document_type' => 'Original',
+        'series' => 'REG',
+    ], $u->id);
+
+    // Row 2: same barcode AND same box_number → should succeed and reuse the box.
+    wc_run([
+        'identifier' => 'DOC-F2-HAPPY-2',
+        'accession_number' => 'ACC-F2-HAPPY',
+        'batch_number' => 60,
+        'box_number' => 'C-7',
+        'box_barcode' => 'BARCODE-F2-HAPPY',
+        'document_type' => 'Original',
+        'series' => 'REG',
+    ], $u->id);
+
+    // Both documents saved, pointing at the same (single) box.
+    $doc1 = Document::withoutGlobalScope(RepositoryScope::class)->where('identifier', 'DOC-F2-HAPPY-1')->first();
+    $doc2 = Document::withoutGlobalScope(RepositoryScope::class)->where('identifier', 'DOC-F2-HAPPY-2')->first();
+    expect($doc1)->not->toBeNull();
+    expect($doc2)->not->toBeNull();
+    expect($doc1->current_box_id)->toBe($doc2->current_box_id);
+
+    $boxCount = Box::withoutGlobalScope(ThroughBatchRepositoryScope::class)
+        ->where('barcode', 'BARCODE-F2-HAPPY')
+        ->count();
+    expect($boxCount)->toBe(1);
+});
+
 // ── Template — TemplateGenerator returns accession template ──────────────
 
 it('Template: TemplateGenerator returns the accession template with all required headers', function (): void {

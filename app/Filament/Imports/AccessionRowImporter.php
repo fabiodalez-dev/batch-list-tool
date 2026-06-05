@@ -131,6 +131,27 @@ class AccessionRowImporter extends Importer
      */
     protected bool $rowSavepointOpen = false;
 
+    /**
+     * Repository id resolved once per row from the 'Repository' column (or
+     * the user's default). Set in resolveRecord() so resolveAccessionBatchBox()
+     * can reuse the same value without a second DB round-trip (FINDING 1).
+     *
+     * Null means "no repository resolved" — either genuinely none available,
+     * or an unrecognised code was supplied. The latter is distinguished by
+     * $rowHasRepositoryColumn being true (column present + non-blank) while
+     * this stays null, which tells resolveAccessionBatchBox() to throw a row
+     * error instead of silently falling back.
+     */
+    protected ?int $rowResolvedRepositoryId = null;
+
+    /**
+     * Whether the 'Repository' column was present in the row with a non-blank
+     * value. Combined with $rowResolvedRepositoryId === null, it tells
+     * resolveAccessionBatchBox() that an unrecognised code was supplied and a
+     * row error must be thrown (vs. simply having no Repository column).
+     */
+    protected bool $rowHasRepositoryColumn = false;
+
     // ── Shared stash for custom fields (mirrors DocumentImporter) ──────────
 
     /**
@@ -151,16 +172,25 @@ class AccessionRowImporter extends Importer
     /**
      * Idempotent matching: by (identifier, repository_id) if an identifier
      * column is provided; otherwise always insert a new Document row.
+     *
+     * FINDING 1 FIX: The row's repository is resolved HERE (early), before
+     * fillRecord() runs, so the Document lookup uses the CORRECT tenant.
+     * resolveRowRepositoryId() reads $this->data['repository'] directly
+     * (remapData() has already run; fillRecordUsing closures have NOT). The
+     * result is stored in $this->rowResolvedRepositoryId and reused by
+     * resolveAccessionBatchBox() — single source of truth, no duplicate query.
      */
     public function resolveRecord(): ?Document
     {
         $identifier = $this->data['identifier'] ?? null;
+
+        // Resolve the row's repository early so the Document lookup is
+        // tenant-correct. Result stored in instance property for the cascade.
+        $repoId = $this->resolveRowRepositoryId();
+
         if ($identifier === null || trim((string) $identifier) === '') {
             return new Document;
         }
-
-        $user = auth()->user();
-        $repoId = $user?->default_repository_id;
 
         $q = Document::query()
             ->withoutGlobalScope(RepositoryScope::class)
@@ -277,6 +307,42 @@ class AccessionRowImporter extends Importer
     }
 
     /**
+     * Resolve the repository_id for this row once, early (FINDING 1).
+     *
+     * Reads `$this->data['repository']` (populated by remapData() which runs
+     * BEFORE resolveRecord()) and calls EntityResolver::resolveRepository()
+     * when a code is present. Falls back to the authenticated user's
+     * default_repository_id when the column is absent or blank.
+     *
+     * Side-effects (set once per row, reused by resolveAccessionBatchBox()):
+     *   - $this->rowResolvedRepositoryId — the resolved id, or null
+     *   - $this->rowHasRepositoryColumn  — true when a non-blank code was given
+     *     (so the cascade knows to throw on an unrecognised code)
+     *
+     * Returns the resolved id (null when neither column nor user default exists).
+     */
+    protected function resolveRowRepositoryId(): ?int
+    {
+        $repositoryCode = $this->data['repository'] ?? null;
+        if ($repositoryCode !== null && trim((string) $repositoryCode) !== '') {
+            $this->rowHasRepositoryColumn = true;
+            $res = EntityResolver::resolveRepository(trim((string) $repositoryCode));
+            if ($res !== null) {
+                $this->rowResolvedRepositoryId = (int) $res['repository_id'];
+            } else {
+                // Unknown code — sentinel -1 so the cascade can throw a proper
+                // row-level ValidationException with the right message.
+                $this->rowResolvedRepositoryId = null;
+            }
+        } else {
+            $this->rowHasRepositoryColumn = false;
+            $this->rowResolvedRepositoryId = auth()->user()?->default_repository_id;
+        }
+
+        return $this->rowResolvedRepositoryId;
+    }
+
+    /**
      * DECISION 3 — Resolve/create each authority identified in the
      * "Authority Identifier" column. Optional name/surname columns validate
      * (not auto-match) the resolved record. Stash the ids for afterSave().
@@ -369,6 +435,14 @@ class AccessionRowImporter extends Importer
     /**
      * DECISIONS 2 + 10 — Cascade: Accession → Batch (N:N) → Box.
      * Any fatal ref-code error is thrown as a ValidationException (row error).
+     *
+     * FINDING 1 FIX: Repository is no longer resolved here from the stash.
+     * resolveRecord() has already called resolveRowRepositoryId() and the
+     * result is available in $this->rowResolvedRepositoryId. We use that
+     * directly, so the cascade is always tenant-aligned with the Document
+     * lookup above. If the Repository column had an unrecognised code,
+     * $this->rowHasRepositoryColumn is true and $this->rowResolvedRepositoryId
+     * is null — we throw a row error here (same message as before).
      */
     protected function resolveAccessionBatchBox(Document $record): void
     {
@@ -378,6 +452,8 @@ class AccessionRowImporter extends Importer
         $accessionTitle = static::$rowAccessionStash[$key]['accession_title'] ?? null;
         $batchNumber = static::$rowAccessionStash[$key]['batch_number'] ?? null;
         $batchType = static::$rowAccessionStash[$key]['batch_type'] ?? null;
+        // repository_code still stashed by the column closure — used only for
+        // the error message when the code was unrecognised.
         $repositoryCode = static::$rowAccessionStash[$key]['repository_code'] ?? null;
         $boxNumber = static::$rowAccessionStash[$key]['box_number'] ?? null;
         $boxBarcode = static::$rowAccessionStash[$key]['box_barcode'] ?? null;
@@ -386,23 +462,20 @@ class AccessionRowImporter extends Importer
         // Reset stash slot — afterSave only needs the accession id.
         unset(static::$rowAccessionStash[$key]);
 
-        // ─── Repository ───────────────────────────────────────────────────
-        $repoId = null;
-        if ($repositoryCode !== null) {
-            $res = EntityResolver::resolveRepository($repositoryCode);
-            if ($res === null) {
-                throw ValidationException::withMessages([
-                    'repository' => __(
-                        "Repository ':code' not found. Check the Repository column.",
-                        ['code' => $repositoryCode]
-                    ),
-                ]);
-            }
-            $repoId = $res['repository_id'];
+        // ─── Repository (FINDING 1) ───────────────────────────────────────
+        // Use the value already resolved in resolveRecord() — single source of
+        // truth for the row's repository across the entire cascade.
+        if ($this->rowHasRepositoryColumn && $this->rowResolvedRepositoryId === null) {
+            // An explicit, non-blank Repository code was supplied but could not
+            // be matched — throw the same row-level error as before.
+            throw ValidationException::withMessages([
+                'repository' => __(
+                    "Repository ':code' not found. Check the Repository column.",
+                    ['code' => $repositoryCode ?? '']
+                ),
+            ]);
         }
-        if ($repoId === null) {
-            $repoId = auth()->user()?->default_repository_id;
-        }
+        $repoId = $this->rowResolvedRepositoryId;
         if ($repoId !== null) {
             $record->repository_id = $repoId;
         }
@@ -496,8 +569,24 @@ class AccessionRowImporter extends Importer
                     ->where('barcode', $boxBarcode)
                     ->first(['id', 'batch_id', 'box_number']);
                 if ($existingByBarcode !== null) {
-                    // Box exists by barcode — use it (it may be in a different batch, which
-                    // would be a mismatch; catch that below with the batch consistency check).
+                    // FINDING 2 FIX — Barcode found: assert box_number consistency.
+                    // A barcode uniquely identifies a physical box; the row's 'Box No'
+                    // must match the box we found, otherwise the row's data is
+                    // internally inconsistent (wrong box number for this barcode).
+                    if ((string) $existingByBarcode->box_number !== (string) $boxNumber) {
+                        throw ValidationException::withMessages([
+                            'box_number' => __(
+                                "Barcode ':barcode' belongs to Box ':existing_box' but the row specifies Box No ':row_box'. Check the Box No column.",
+                                [
+                                    'barcode' => $boxBarcode,
+                                    'existing_box' => $existingByBarcode->box_number,
+                                    'row_box' => $boxNumber,
+                                ]
+                            ),
+                        ]);
+                    }
+                    // Box exists by barcode — use it (it may be in a different
+                    // batch; the batch consistency check below will catch that).
                     $boxRes = ['box_id' => (int) $existingByBarcode->id, 'batch_id' => (int) $existingByBarcode->batch_id];
                 } else {
                     // Barcode not taken — create-or-find by (batch_id, box_number).
@@ -508,12 +597,31 @@ class AccessionRowImporter extends Importer
                         create: true,
                         boxType: $boxType,
                     );
-                    // Stamp the barcode on the freshly created box.
+                    // FINDING 2 FIX — (batch, box_number) found an existing box:
+                    // assert its barcode matches the row's barcode (when provided).
+                    // A mismatch means the operator gave a barcode that is either
+                    // unregistered or belongs to a different physical box.
                     if ($boxRes !== null) {
                         $box = Box::withoutGlobalScope(ThroughBatchRepositoryScope::class)->find($boxRes['box_id']);
-                        if ($box !== null && $box->barcode === null) {
-                            $box->barcode = $boxBarcode;
-                            $box->save();
+                        if ($box !== null) {
+                            if ($box->barcode !== null && $box->barcode !== $boxBarcode) {
+                                throw ValidationException::withMessages([
+                                    'box_barcode' => __(
+                                        "Box ':box' in Batch :batch already has barcode ':existing_barcode'; the row provides ':row_barcode'. Check the Box Barcode column.",
+                                        [
+                                            'box' => $boxNumber,
+                                            'batch' => $batchNumber,
+                                            'existing_barcode' => $box->barcode,
+                                            'row_barcode' => $boxBarcode,
+                                        ]
+                                    ),
+                                ]);
+                            }
+                            // Stamp the barcode on the freshly created (or barcode-less) box.
+                            if ($box->barcode === null) {
+                                $box->barcode = $boxBarcode;
+                                $box->save();
+                            }
                         }
                     }
                 }
