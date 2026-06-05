@@ -6,6 +6,7 @@ use App\Models\Concerns\BelongsToRepository;
 use Illuminate\Database\Eloquent\Factories\HasFactory;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
+use Illuminate\Database\Eloquent\Relations\BelongsToMany;
 use Illuminate\Database\Eloquent\Relations\HasMany;
 use Illuminate\Database\Eloquent\SoftDeletes;
 use OwenIt\Auditing\Auditable;
@@ -27,7 +28,7 @@ class Accession extends Model implements AuditableContract
      * @see BelongsToRepository
      */
     protected $fillable = [
-        'code', 'accession_number', 'accession_date', 'authority_id', 'batch_id', 'repository_id', 'notes',
+        'code', 'accession_number', 'accession_date', 'authority_id', 'repository_id', 'notes',
     ];
 
     protected $casts = [
@@ -39,9 +40,9 @@ class Accession extends Model implements AuditableContract
         return $this->belongsTo(Authority::class);
     }
 
-    public function batch(): BelongsTo
+    public function batches(): BelongsToMany
     {
-        return $this->belongsTo(Batch::class);
+        return $this->belongsToMany(Batch::class, 'accession_batch')->withTimestamps();
     }
 
     public function repository(): BelongsTo

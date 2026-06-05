@@ -7,6 +7,7 @@ use App\Models\Concerns\HasCustomFields;
 use Illuminate\Database\Eloquent\Factories\HasFactory;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
+use Illuminate\Database\Eloquent\Relations\BelongsToMany;
 use Illuminate\Database\Eloquent\Relations\HasMany;
 use Illuminate\Database\Eloquent\SoftDeletes;
 use OwenIt\Auditing\Auditable;
@@ -71,9 +72,9 @@ class Batch extends Model implements AuditableContract
         return $this->hasMany(Document::class);
     }
 
-    public function accessions(): HasMany
+    public function accessions(): BelongsToMany
     {
-        return $this->hasMany(Accession::class);
+        return $this->belongsToMany(Accession::class, 'accession_batch')->withTimestamps();
     }
 
     public function isForbidden(): bool
