@@ -77,7 +77,7 @@ class DocumentResource extends Resource
         'barcode_in',
         'document_type',
         'practice',
-        'volume_label',
+        'volume_number',
         'dates',
         'notes',
         'deeds',
@@ -163,7 +163,8 @@ class DocumentResource extends Resource
                             // the operator picks a different repository (GROUP A fix).
                             ->live()
                             ->default(fn () => auth()->user()?->default_repository_id)),
-                        $g(Forms\Components\TextInput::make('volume_label')->label('Volume label')->maxLength(64)),
+                        $g(Forms\Components\TextInput::make('volume_number')->label('Volume No')->maxLength(64)),
+                        $g(Forms\Components\TextInput::make('part_number')->label('Part No')->maxLength(64)->nullable()),
                         $g(Forms\Components\Select::make('practice')
                             ->label('Practice')
                             ->searchable()
@@ -292,20 +293,10 @@ class DocumentResource extends Resource
                                 ->all())
                             ->default('in_box')
                             ->native(false)),
-                        // U1 — document barcode visible at the top level of the
-                        // form (not buried in the legacy-barcodes collapsed section).
-                        // Custody status is still authoritative from the box.
-                        $g(Forms\Components\TextInput::make('barcode')
-                            ->label('Document barcode (individual label)')
-                            ->maxLength(255)
-                            ->helperText('Optional barcode for this specific document. Changes are tracked in the Barcode history tab. Custody status is authoritative from the box.')
-                            ->columnSpanFull()),
-                        $g(Forms\Components\TextInput::make('nra_location')->maxLength(500)
-                            ->helperText('Legacy free-text. New records should use the Location Select above.')
-                            ->columnSpanFull()),
-                        $g(Forms\Components\TextInput::make('museum_location')->maxLength(500)
-                            ->helperText('Legacy free-text. New records should use the Location Select above.')
-                            ->columnSpanFull()),
+                        // Wave D5 — barcode, nra_location and museum_location removed from
+                        // the form (NAf feedback: "can be removed"). The columns remain in the
+                        // DB and in $fillable for import compatibility. dates_precise does not
+                        // exist as a column anywhere (no-op note per Wave D spec).
                     ]),
 
                 Section::make('Disinfestation')
@@ -592,7 +583,7 @@ class DocumentResource extends Resource
                             ->openUrlInNewTab(false)
                             ->placeholder('—'),
                         TextEntry::make('practice')->placeholder('—'),
-                        TextEntry::make('volume_label')->label('Volume')->placeholder('—'),
+                        TextEntry::make('volume_number')->label('Volume No')->placeholder('—'),
                         TextEntry::make('dates')->label('Dates (free text)')->placeholder('—'),
                         TextEntry::make('year_range_display')
                             ->label('Year range')
@@ -970,7 +961,8 @@ class DocumentResource extends Resource
                 $gc(Tables\Columns\TextColumn::make('batch.batch_number')->label('Batch')->sortable()->alignCenter()->toggleable(), 'batch_id'),
                 $gc(Tables\Columns\TextColumn::make('currentBox.box_number')->label('Box')->toggleable(), 'current_box_id'),
                 $gc(Tables\Columns\TextColumn::make('practice')->toggleable()),
-                $gc(Tables\Columns\TextColumn::make('volume_label')->label('Vol.')->toggleable()),
+                $gc(Tables\Columns\TextColumn::make('volume_number')->label('Vol.')->toggleable()),
+                $gc(Tables\Columns\TextColumn::make('part_number')->label('Part No')->toggleable(isToggledHiddenByDefault: true)),
                 $gc(Tables\Columns\TextColumn::make('dates')->label('Dates')->toggleable()->limit(30)),
                 $gc(Tables\Columns\TextColumn::make('dates_year_start')->label('From')->numeric(thousandsSeparator: '')->sortable()->alignEnd()),
                 $gc(Tables\Columns\TextColumn::make('dates_year_end')->label('To')->numeric(thousandsSeparator: '')->sortable()->alignEnd()),
@@ -1077,17 +1069,17 @@ class DocumentResource extends Resource
                 self::fullTextFilter('deeds', 'Search in Deeds'),
                 self::fullTextFilter('museum_reference', 'Search in Museum Reference'),
 
-                // volume_label is special — also searches the JSON path extra->volume; kept inline.
-                Filter::make('volume_label')
+                // volume_number is special — also searches the JSON path extra->volume; kept inline.
+                Filter::make('volume_number')
                     ->form([
-                        Forms\Components\TextInput::make('value')->label('Search in Volume'),
+                        Forms\Components\TextInput::make('value')->label('Search in Volume No'),
                     ])
                     ->query(
                         fn (Builder $q, array $data) => $q->when(
                             $data['value'] ?? null,
                             fn ($q, $v) => $q->where(function ($q) use ($v) {
                                 $needle = '%' . trim($v) . '%';
-                                $q->where('volume_label', 'like', $needle)
+                                $q->where('volume_number', 'like', $needle)
                                     ->orWhere('extra->volume', 'like', $needle);
                             })
                         )
@@ -1370,7 +1362,7 @@ class DocumentResource extends Resource
             'catalogue_identifier',
             'document_type',
             'practice',
-            'volume_label',
+            'volume_number',
             'dates',
             'notes',
             'barcode_in',

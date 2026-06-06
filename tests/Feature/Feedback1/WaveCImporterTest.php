@@ -293,7 +293,7 @@ it('C1-Doc.1: document is created with correct series_id, accession_id, batch_id
         'box_number' => '10',
         'document_type' => 'Original',
         'series' => 'O',
-        'volume_label' => 'Vol 3',
+        'volume_number' => 'Vol 3',
     ], $u->id);
 
     $doc = Document::withoutGlobalScope(RepositoryScope::class)->where('identifier', 'DOC-WC-FULL-1')->first();
@@ -304,7 +304,7 @@ it('C1-Doc.1: document is created with correct series_id, accession_id, batch_id
     expect($doc->accession_id)->not->toBeNull();
     expect($doc->custody_status)->toBe('in_box');
     expect($doc->catalogue_identifier)->toBeNull();
-    expect($doc->volume_label)->toBe('Vol 3');
+    expect($doc->volume_number)->toBe('Vol 3');
 });
 
 // ── C2-Forbidden — forbidden batch number ────────────────────────────────

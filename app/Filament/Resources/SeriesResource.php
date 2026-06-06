@@ -4,6 +4,7 @@ namespace App\Filament\Resources;
 
 use App\Filament\Concerns\AppliesFieldPermissions;
 use App\Filament\Resources\SeriesResource\Pages;
+use App\Models\Repository;
 use App\Models\Series;
 use Filament\Actions\BulkActionGroup;
 use Filament\Actions\DeleteBulkAction;
@@ -107,6 +108,40 @@ class SeriesResource extends Resource
                             ->required()),
                     ]),
 
+                // Wave D1 — Repository scope + Document types
+                Section::make('Repository & document types')
+                    ->columns($twoCols)
+                    ->schema([
+                        $g(Forms\Components\Select::make('repository_id')
+                            ->label('Repository')
+                            ->options(function () {
+                                $user = auth()->user();
+                                $query = Repository::query();
+                                if ($user !== null
+                                    && method_exists($user, 'hasAnyRole')
+                                    && ! $user->hasAnyRole(['super_admin', 'admin'])
+                                ) {
+                                    $ids = method_exists($user, 'repositories')
+                                        ? $user->repositories()->pluck('repositories.id')->all()
+                                        : [];
+                                    $query->whereIn('id', $ids);
+                                }
+
+                                return $query->orderBy('code')->pluck('name', 'id')->all();
+                            })
+                            ->searchable()
+                            ->nullable()
+                            ->helperText('Leave empty for a GLOBAL series (visible to every repository).')
+                            ->default(fn () => auth()->user()?->default_repository_id)),
+                        $g(Forms\Components\Select::make('documentTypes')
+                            ->label('Document types')
+                            ->relationship('documentTypes', 'name')
+                            ->multiple()
+                            ->preload()
+                            ->searchable()
+                            ->columnSpanFull()),
+                    ]),
+
                 Section::make('Description')
                     ->columns(1)
                     ->collapsed()
@@ -205,6 +240,12 @@ class SeriesResource extends Resource
             ->deferFilters()
             ->persistFiltersInSession()
             ->columns([
+                $gc(Tables\Columns\TextColumn::make('repository.code')
+                    ->label('Repo')
+                    ->badge()
+                    ->color('gray')
+                    ->placeholder('GLOBAL')
+                    ->toggleable()),
                 $gc(Tables\Columns\TextColumn::make('code')
                     ->label('Identifier')
                     ->searchable()
@@ -212,6 +253,11 @@ class SeriesResource extends Resource
                 $gc(Tables\Columns\TextColumn::make('title')
                     ->searchable()
                     ->sortable()),
+                Tables\Columns\TextColumn::make('document_types_count')
+                    ->label('Doc. types')
+                    ->counts('documentTypes')
+                    ->alignCenter()
+                    ->toggleable(isToggledHiddenByDefault: true),
                 // Feedback1 C1.4 — full multi-level hierarchy path
                 // (e.g. "R › REG › RWL"), recursive over ancestors. Sorted off
                 // by default to keep the default grid compact; toggle on to see

@@ -177,9 +177,9 @@ class ImportWizard extends Page
         'box' => ['box_id', 'box_number'],
         'document type' => ['document_type', 'type'],
         'doc type' => ['document_type'],
-        'volume' => ['volume_label', 'volume'],
-        'volume label' => ['volume_label'],
-        'volume number' => ['volume_label'],
+        'volume' => ['volume_number', 'volume'],
+        'volume label' => ['volume_number'],
+        'volume number' => ['volume_number'],
         'date of creation' => ['dates'],
         'creation date' => ['dates'],
         'date range' => ['dates'],
@@ -228,7 +228,7 @@ class ImportWizard extends Page
         'accession type' => ['accession_type', 'type'],
         // 'box no' already covered in Document section above → ['box_id', 'box_number']
         'box barcode' => ['box_barcode', 'barcode'],
-        'volume no' => ['volume_label'],         // NAf Feedback 1 column name
+        'volume no' => ['volume_number'],         // NAf Feedback 1 column name
         'note' => ['notes'],                     // NAf Feedback 1 column name (singular)
         'part number' => ['part_number'],
     ];

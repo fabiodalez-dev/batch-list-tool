@@ -166,17 +166,17 @@ it('§3.1.8 #10: admin is NOT hidden from Document.extra (admin-only field, but 
 });
 
 it('§3.1.8 #11: implicit-allow — field NOT in config defaults to all 4 roles allowed', function () {
-    // `volume_label` is not listed explicitly under document; it falls
+    // `volume_number` is not listed explicitly under document; it falls
     // back to the `_default` block which grants read+write to all
     // operational roles. This is the forward-compat guarantee.
     foreach (['super_admin', 'admin', 'editor', 'viewer'] as $role) {
         $u = fp_user($role);
-        expect(FieldPermissions::canRead('document', 'volume_label', $u))
-            ->toBeTrue("{$role} should be able to read volume_label via _default");
+        expect(FieldPermissions::canRead('document', 'volume_number', $u))
+            ->toBeTrue("{$role} should be able to read volume_number via _default");
         // viewer is read-only by _default.write
         $expectedWrite = in_array($role, ['super_admin', 'admin', 'editor'], true);
-        expect(FieldPermissions::canWrite('document', 'volume_label', $u))
-            ->toBe($expectedWrite, "{$role} write on volume_label should be " . ($expectedWrite ? 'true' : 'false'));
+        expect(FieldPermissions::canWrite('document', 'volume_number', $u))
+            ->toBe($expectedWrite, "{$role} write on volume_number should be " . ($expectedWrite ? 'true' : 'false'));
     }
 });
 

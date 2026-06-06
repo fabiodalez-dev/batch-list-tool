@@ -21,7 +21,7 @@ class DocumentFactory extends Factory
             'document_type' => 'Register',
             'series_id' => Series::factory(),
             'repository_id' => Repository::factory(),
-            'volume_label' => null,
+            'volume_number' => null,
             'notes' => fake()->optional()->sentence(),
         ];
     }

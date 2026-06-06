@@ -496,9 +496,9 @@ class DocumentImporter extends Importer
                 ->guess(['Practice', 'practice'])
                 ->rules(['nullable', 'string', 'max:100']),
 
-            ImportColumn::make('volume_label')
+            ImportColumn::make('volume_number')
                 ->label('Volume')
-                ->guess(['Volume', 'volume', 'Volume label', 'volume_label'])
+                ->guess(['Volume', 'volume', 'Volume No', 'Volume Number', 'Volume label', 'volume_label', 'volume_number'])
                 ->rules(['nullable', 'string', 'max:64']),
 
             // ── Dates ───────────────────────────────────────────────────

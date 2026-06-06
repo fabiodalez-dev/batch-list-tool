@@ -69,6 +69,7 @@ final class ExportSelectedAction
             'current_box' => 'Current box',
             'disinfestation_date' => 'Disinfestation date',
             'notes' => 'Notes',
+            'part_number' => 'Part Number',
         ];
 
         // Filter columns through FieldPermissions for the current user (RFQ §3.1.4).
@@ -99,6 +100,7 @@ final class ExportSelectedAction
                     'current_box' => self::sanitize($box?->box_number),
                     'disinfestation_date' => $doc->disinfestation_date ? $doc->disinfestation_date->format('Y-m-d') : '',
                     'notes' => self::sanitize($doc->notes),
+                    'part_number' => self::sanitize($doc->part_number),
                 ];
 
                 fputcsv($out, array_intersect_key($allCells, $columns));

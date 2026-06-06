@@ -194,12 +194,12 @@ describe('FULLTEXT search', function () {
     });
 
     it('searchFullText composes with where() chains correctly', function () {
-        $d1 = makeFtDocument(['notes' => 'register of contracts', 'volume_label' => 'A']);
-        $d2 = makeFtDocument(['notes' => 'register of contracts', 'volume_label' => 'B']);
+        $d1 = makeFtDocument(['notes' => 'register of contracts', 'volume_number' => 'A']);
+        $d2 = makeFtDocument(['notes' => 'register of contracts', 'volume_number' => 'B']);
         makeFtDocument(['notes' => 'inventory of land']);
 
         $results = Document::query()
-            ->where('volume_label', 'A')
+            ->where('volume_number', 'A')
             ->searchFullText('register', ['notes'])
             ->get();
 

@@ -6,6 +6,7 @@ use Illuminate\Database\Eloquent\Collection as EloquentCollection;
 use Illuminate\Database\Eloquent\Factories\HasFactory;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
+use Illuminate\Database\Eloquent\Relations\BelongsToMany;
 use Illuminate\Database\Eloquent\Relations\HasMany;
 use Illuminate\Database\Eloquent\SoftDeletes;
 use OwenIt\Auditing\Auditable;
@@ -30,7 +31,7 @@ class Series extends Model implements AuditableContract, Sortable
 
     protected $table = 'series';
 
-    protected $fillable = ['sort_order', 'code', 'title', 'description', 'is_wills_series', 'is_active', 'parent_id'];
+    protected $fillable = ['sort_order', 'code', 'title', 'description', 'is_wills_series', 'is_active', 'parent_id', 'repository_id'];
 
     protected $casts = [
         'is_wills_series' => 'boolean',
@@ -40,6 +41,25 @@ class Series extends Model implements AuditableContract, Sortable
     public function documents(): HasMany
     {
         return $this->hasMany(Document::class);
+    }
+
+    /**
+     * Feedback1 Wave D1 — Series belongs to an optional Repository.
+     * NULL means the series is global (shared across repositories).
+     */
+    public function repository(): BelongsTo
+    {
+        return $this->belongsTo(Repository::class);
+    }
+
+    /**
+     * Feedback1 Wave D1 — N:N relation to DocumentType via the
+     * document_type_series pivot table.
+     */
+    public function documentTypes(): BelongsToMany
+    {
+        return $this->belongsToMany(DocumentType::class, 'document_type_series')
+            ->withTimestamps();
     }
 
     /**

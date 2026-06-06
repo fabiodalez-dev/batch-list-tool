@@ -111,7 +111,7 @@ it('D11-Synonyms: guessColumnMap resolves NAf Feedback 1 column name variants fo
         'identifier',      // → identifier
         'Document Type',
         'Series',
-        'Volume No',       // → volume_label
+        'Volume No',       // → volume_number
         'Part Number',
         'Practice',
         'Dates',
@@ -136,6 +136,6 @@ it('D11-Synonyms: guessColumnMap resolves NAf Feedback 1 column name variants fo
     // NAf Feedback 1 renamed columns must also auto-resolve.
     expect($map['box_type'])->toBe('Box Status');        // 'Box Status' → box_type
     expect($map['identifier'])->toBe('identifier');      // lowercase 'identifier' → identifier
-    expect($map['volume_label'])->toBe('Volume No');     // 'Volume No' → volume_label
+    expect($map['volume_number'])->toBe('Volume No');     // 'Volume No' → volume_number
     expect($map['notes'])->toBe('Note');                 // singular 'Note' → notes
 });
