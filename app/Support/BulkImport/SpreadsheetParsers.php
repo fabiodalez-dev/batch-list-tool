@@ -23,8 +23,13 @@ use PhpOffice\PhpSpreadsheet\Shared\Date as ExcelDate;
 final class SpreadsheetParsers
 {
     /**
-     * Parse "1607-1629" / "1607–1629" / "Jun 1997 - Nov 1998" / "1607" into
-     * a (start, end) integer-year pair. Returns `[null, null]` on failure.
+     * Parse a free-text date string into a (start, end) integer-year pair.
+     * Returns `[null, null]` on failure.
+     *
+     * Delegates to {@see DateRangeNormalizer::extractYearRange()} which
+     * handles a rich set of formats (ranges, circa, decades, centuries, etc.)
+     * beyond the original simple YYYY / YYYY-YYYY patterns. All existing callers
+     * transparently receive the richer behaviour.
      *
      * Used for {@see Authority}::practice_dates_start/end and
      * {@see Document}::dates_year_start/end.
@@ -36,16 +41,10 @@ final class SpreadsheetParsers
         if ($value === null || trim($value) === '') {
             return [null, null];
         }
-        // Handle hyphen-minus, en-dash (–), em-dash (—). The POC spreadsheet
-        // mixes them inconsistently so we accept any of the three.
-        if (preg_match('/(\d{4})\s*[-–—]\s*(\d{4})/u', $value, $m)) {
-            return [(int) $m[1], (int) $m[2]];
-        }
-        if (preg_match('/(\d{4})/', $value, $m)) {
-            return [(int) $m[1], (int) $m[1]];
-        }
 
-        return [null, null];
+        $result = DateRangeNormalizer::extractYearRange($value);
+
+        return [$result['year_start'], $result['year_end']];
     }
 
     /**
@@ -70,7 +69,44 @@ final class SpreadsheetParsers
                 return null;
             }
         }
-        $ts = strtotime((string) $value);
+
+        $str = trim((string) $value);
+
+        // Numeric day/month/year with /, . or - separators. PHP's strtotime()
+        // reads "/" as the US month-first order, which silently DROPS European
+        // dates such as "31/05/2023" (the format in the NRA sheets). Parse
+        // these explicitly, preferring the day-first order used in Malta/Europe
+        // and only using month-first when the first part cannot be a day.
+        if (preg_match('#^(\d{1,4})[/.\-](\d{1,2})[/.\-](\d{1,4})$#', $str, $m)) {
+            $a = (int) $m[1];
+            $b = (int) $m[2];
+            $c = (int) $m[3];
+            $year = 0;
+            $month = 0;
+            $day = 0;
+            if (strlen($m[1]) === 4) {            // YYYY-MM-DD (any separator)
+                $year = $a;
+                $month = $b;
+                $day = $c;
+            } elseif (strlen($m[3]) === 4) {      // DD-MM-YYYY / MM-DD-YYYY
+                $year = $c;
+                if ($a > 12) {                    // first part must be the day
+                    $day = $a;
+                    $month = $b;
+                } elseif ($b > 12) {              // second part can't be a month
+                    $month = $a;
+                    $day = $b;
+                } else {                          // ambiguous → European day-first
+                    $day = $a;
+                    $month = $b;
+                }
+            }
+            if ($year > 0 && checkdate($month, $day, $year)) {
+                return sprintf('%04d-%02d-%02d', $year, $month, $day);
+            }
+        }
+
+        $ts = strtotime($str);
 
         return $ts !== false ? date('Y-m-d', $ts) : null;
     }

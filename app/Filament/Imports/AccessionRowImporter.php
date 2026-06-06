@@ -919,6 +919,17 @@ class AccessionRowImporter extends Importer
                 ->guess(['Deeds', 'deeds'])
                 ->rules(['nullable', 'string']),
 
+            // Wave F — DECISION F2: new document fields.
+            ImportColumn::make('number_of_acts')
+                ->label('No of Acts')
+                ->guess(['No of Acts', 'No. of Acts', 'Number of Acts', 'Acts', 'no_of_acts'])
+                ->rules(['nullable', 'string', 'max:64']),
+
+            ImportColumn::make('pages_folios')
+                ->label('Pages/Folios')
+                ->guess(['Pages/Folios', 'Pages / Folios', 'Pages', 'Folios', 'pages_folios'])
+                ->rules(['nullable', 'string', 'max:128']),
+
             // Template column header is 'Note' (singular, NAf Feedback 1 convention).
             ImportColumn::make('notes')
                 ->label('Notes')

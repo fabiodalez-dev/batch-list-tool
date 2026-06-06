@@ -181,6 +181,8 @@ class DocumentResource extends Resource
                             ->helperText('Free-text dates as in POC, e.g. "1607-1629" or "Jun 1997 - Nov 1998"')
                             ->columnSpanFull()),
                         $g(Forms\Components\TextInput::make('deeds')->maxLength(2000)->columnSpanFull()),
+                        $g(Forms\Components\TextInput::make('number_of_acts')->label('No of Acts')->maxLength(64)),
+                        $g(Forms\Components\TextInput::make('pages_folios')->label('Pages/Folios')->maxLength(128)),
                     ]),
 
                 // Feedback1 Wave C2.5 — editable history of PREVIOUS document
@@ -584,6 +586,8 @@ class DocumentResource extends Resource
                             ->placeholder('—'),
                         TextEntry::make('practice')->placeholder('—'),
                         TextEntry::make('volume_number')->label('Volume No')->placeholder('—'),
+                        TextEntry::make('number_of_acts')->label('No of Acts')->placeholder('—'),
+                        TextEntry::make('pages_folios')->label('Pages/Folios')->placeholder('—'),
                         TextEntry::make('dates')->label('Dates (free text)')->placeholder('—'),
                         TextEntry::make('year_range_display')
                             ->label('Year range')
@@ -966,6 +970,8 @@ class DocumentResource extends Resource
                 $gc(Tables\Columns\TextColumn::make('dates')->label('Dates')->toggleable()->limit(30)),
                 $gc(Tables\Columns\TextColumn::make('dates_year_start')->label('From')->numeric(thousandsSeparator: '')->sortable()->alignEnd()),
                 $gc(Tables\Columns\TextColumn::make('dates_year_end')->label('To')->numeric(thousandsSeparator: '')->sortable()->alignEnd()),
+                $gc(Tables\Columns\TextColumn::make('number_of_acts')->label('No of Acts')->toggleable(isToggledHiddenByDefault: true)),
+                $gc(Tables\Columns\TextColumn::make('pages_folios')->label('Pages/Folios')->toggleable(isToggledHiddenByDefault: true)),
                 $gc(Tables\Columns\TextColumn::make('barcode_in')->label('Barcode (IN)')->toggleable(isToggledHiddenByDefault: true)),
                 $gc(Tables\Columns\TextColumn::make('catalogue_identifier')->label('Catalogue ID')->toggleable(isToggledHiddenByDefault: true)),
                 $gc(Tables\Columns\TextColumn::make('repository.code')->label('Repo')->badge()->color('gray')->toggleable(), 'repository_id'),
