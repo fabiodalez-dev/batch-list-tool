@@ -90,14 +90,19 @@ final class DateRangeNormalizer
         }
 
         // ── 4. Ordinal century "18th century" / "18th c." ─────────────────
-        // Accepts "1st" through "21st" (and the ND / RD / TH suffix variants).
+        // Accepts "1st" through "21st" only; out-of-range ordinals (e.g. "0th",
+        // "99th") fall through rather than producing a nonsensical span.
         if (preg_match('/\b(\d{1,2})(?:st|nd|rd|th)\s+c(?:entury|\.)?/iu', $s, $m)) {
-            return self::centurySpan((int) $m[1]);
+            $ord = (int) $m[1];
+            if ($ord >= 1 && $ord <= 21) {
+                return self::centurySpan($ord);
+            }
         }
 
         // ── 5. Roman-numeral century "sec. XVIII" / bare "XVIII" ──────────
         // Only matches Roman numerals that look like centuries (I–XXI).
-        if (preg_match('/(?:sec(?:olo)?\.?\s+)?(?<rom>[IVXLC]{2,})\b/u', $s, $m)) {
+        // Case-insensitive so "sec. xviii" / "xvii" are recognised too.
+        if (preg_match('/(?:sec(?:olo)?\.?\s+)?(?<rom>[IVXLC]{2,})\b/iu', $s, $m)) {
             $ord = self::fromRoman(strtoupper($m['rom']));
             if ($ord !== null && $ord >= 1 && $ord <= 21) {
                 return self::centurySpan($ord);

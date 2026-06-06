@@ -201,12 +201,16 @@ it('F2-Export.3: ListDocuments export source includes number_of_acts and pages_f
     expect($source)->toContain("'Pages/Folios'");
 });
 
-it('F2-Export.4: ExportSelectedAction $allColumns has at least 11 entries', function (): void {
+it('F2-Export.4: ExportSelectedAction $allColumns has exactly the expected entries', function (): void {
     $source = file_get_contents(
         app_path('Filament/Actions/Documents/ExportSelectedAction.php')
     );
 
-    preg_match_all("/'\w+'\s*=>\s*'[^']+'/", $source, $matches);
+    // Scope the count to the $allColumns map only, so an unrelated key=>value
+    // elsewhere in the file can never mask a regression in the export columns.
+    expect(preg_match('/\$allColumns\s*=\s*\[(.*?)\];/s', (string) $source, $block))->toBe(1);
+
+    preg_match_all("/'[^']+'\s*=>\s*'[^']+'/", $block[1], $matches);
     // Original 8 + part_number + number_of_acts + pages_folios = 11.
-    expect(count($matches[0]))->toBeGreaterThanOrEqual(11);
+    expect(count($matches[0]))->toBe(11);
 });

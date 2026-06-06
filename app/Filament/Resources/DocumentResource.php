@@ -586,6 +586,8 @@ class DocumentResource extends Resource
                             ->placeholder('—'),
                         TextEntry::make('practice')->placeholder('—'),
                         TextEntry::make('volume_number')->label('Volume No')->placeholder('—'),
+                        TextEntry::make('number_of_acts')->label('No of Acts')->placeholder('—'),
+                        TextEntry::make('pages_folios')->label('Pages/Folios')->placeholder('—'),
                         TextEntry::make('dates')->label('Dates (free text)')->placeholder('—'),
                         TextEntry::make('year_range_display')
                             ->label('Year range')

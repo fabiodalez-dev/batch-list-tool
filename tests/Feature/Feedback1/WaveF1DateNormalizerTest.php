@@ -216,6 +216,20 @@ it('F1-Real.4: month-name ranges from the real Dates column keep the years', fun
         ->toBe(['year_start' => 1705, 'year_end' => 1706]);
 });
 
+it('F1-Real.5: Roman-numeral centuries are recognised case-insensitively', function (): void {
+    expect(DateRangeNormalizer::extractYearRange('sec. xviii'))
+        ->toBe(['year_start' => 1700, 'year_end' => 1799]);
+    expect(DateRangeNormalizer::extractYearRange('XVII'))
+        ->toBe(['year_start' => 1600, 'year_end' => 1699]);
+});
+
+it('F1-Real.6: out-of-range ordinal centuries do not produce a nonsensical span', function (): void {
+    expect(DateRangeNormalizer::extractYearRange('0th century'))
+        ->toBe(['year_start' => null, 'year_end' => null]);
+    expect(DateRangeNormalizer::extractYearRange('99th century'))
+        ->toBe(['year_start' => null, 'year_end' => null]);
+});
+
 it('F1-Compat.1: SpreadsheetParsers::parseYearRange returns tuple shape delegating to normalizer', function (): void {
     [$start, $end] = SpreadsheetParsers::parseYearRange('1745–1768');
     expect($start)->toBe(1745);
