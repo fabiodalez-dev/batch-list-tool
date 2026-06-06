@@ -7,6 +7,7 @@ namespace App\Support\BulkImport;
 use App\Models\Authority;
 use App\Models\Batch;
 use App\Models\Box;
+use App\Models\DocumentType;
 use App\Models\Repository;
 use App\Models\Scopes\RepositoryScope;
 use App\Models\Series;
@@ -416,6 +417,49 @@ final class EntityResolver
                 })
                 ->value('id');
             self::$memo[$key] = $id !== null ? ['repository_id' => (int) $id] : null;
+        }
+
+        return self::$memo[$key];
+    }
+
+    /**
+     * Resolve a DocumentType by (1) exact `identifier` match (case-insensitive),
+     * then (2) exact `name` match (case-insensitive). Returns `['document_type_id' => int]`
+     * on a unique match or `null` otherwise.
+     *
+     * This is additive — documents.document_type stays free-text, so this
+     * resolver is for future import enrichment only and does NOT modify
+     * existing importers.
+     *
+     * @return array{document_type_id:int}|null
+     */
+    public static function resolveDocumentType(?string $identifierOrName): ?array
+    {
+        $text = self::normaliseString($identifierOrName);
+        if ($text === null) {
+            return null;
+        }
+
+        // Strategy 1 — exact identifier match (identifier is unique when non-null).
+        $key = "document_type:identifier:{$text}";
+        if (! array_key_exists($key, self::$memo)) {
+            $id = DocumentType::query()
+                ->whereRaw('LOWER(identifier) = ?', [mb_strtolower($text)])
+                ->value('id');
+            self::$memo[$key] = $id !== null ? ['document_type_id' => (int) $id] : null;
+        }
+        if (self::$memo[$key] !== null) {
+            return self::$memo[$key];
+        }
+
+        // Strategy 2 — exact name match (case-insensitive). Name is unique per
+        // the DB constraint, so the first hit is deterministic.
+        $key = "document_type:name:{$text}";
+        if (! array_key_exists($key, self::$memo)) {
+            $id = DocumentType::query()
+                ->whereRaw('LOWER(name) = ?', [mb_strtolower($text)])
+                ->value('id');
+            self::$memo[$key] = $id !== null ? ['document_type_id' => (int) $id] : null;
         }
 
         return self::$memo[$key];

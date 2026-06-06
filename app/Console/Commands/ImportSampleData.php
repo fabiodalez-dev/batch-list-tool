@@ -270,7 +270,7 @@ class ImportSampleData extends Command
                     'current_box_id' => $box?->id,
                     'batch_id' => $batch?->id,
                     'repository_id' => $repo->id,
-                    'volume_label' => $volume ?: null,
+                    'volume_number' => $volume ?: null,
                     'dates_year_start' => $yearStart,
                     'dates_year_end' => $yearEnd,
                     'disinfestation_date' => $disinfestDate,

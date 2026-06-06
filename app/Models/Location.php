@@ -63,6 +63,19 @@ class Location extends Model implements AuditableContract
     ];
 
     /**
+     * Feedback1 Wave D3 — The three canonical location types exposed by the
+     * simplified form. TYPES still contains all legacy values for existing-data
+     * compatibility; only CANONICAL_TYPES is offered in the create/edit form.
+     *
+     * @var array<string, string>
+     */
+    public const CANONICAL_TYPES = [
+        'room' => 'Room',
+        'museum' => 'Museum',
+        'repository' => 'Repository',
+    ];
+
+    /**
      * Cap on tree depth. Hierarchies deeper than this are rejected by the
      * model boot hook and treated as a configuration error (a 6-level path
      * already covers repository / room / sub-room / shelf-section / shelf /
@@ -294,6 +307,51 @@ class Location extends Model implements AuditableContract
      */
     protected static function booted(): void
     {
+        /**
+         * Wave D3 — Auto-generate a unique `code` on creation when blank.
+         * Pattern: <type_prefix>-<repo_id>-<incrementing_counter>
+         * e.g. "ROOM-3-7", "MUSEUM-1-2". Uniqueness is scoped to repository_id.
+         * Running before saving() so the path/depth recomputation sees the
+         * correct in-memory state.
+         */
+        static::creating(function (Location $location): void {
+            if ($location->code !== null && $location->code !== '') {
+                return; // Code was supplied explicitly — do not overwrite.
+            }
+
+            $prefix = strtoupper(substr((string) ($location->type ?? 'LOC'), 0, 4));
+            $repoSuffix = $location->repository_id !== null ? (string) $location->repository_id : '0';
+
+            // Count existing locations of the same type+repo to derive a candidate
+            // counter. We loop (max 100) to skip any already-taken codes.
+            $attempt = 0;
+            $counter = self::query()
+                ->withoutGlobalScopes()
+                ->when(
+                    $location->repository_id !== null,
+                    fn ($q) => $q->where('repository_id', $location->repository_id),
+                    fn ($q) => $q->whereNull('repository_id'),
+                )
+                ->count() + 1;
+
+            do {
+                $candidate = "{$prefix}-{$repoSuffix}-{$counter}";
+                $exists = self::query()
+                    ->withoutGlobalScopes()
+                    ->where('code', $candidate)
+                    ->when(
+                        $location->repository_id !== null,
+                        fn ($q) => $q->where('repository_id', $location->repository_id),
+                        fn ($q) => $q->whereNull('repository_id'),
+                    )
+                    ->exists();
+                $counter++;
+                $attempt++;
+            } while ($exists && $attempt < 100);
+
+            $location->code = $candidate;
+        });
+
         static::saving(function (Location $location): void {
             self::recomputePath($location);
         });

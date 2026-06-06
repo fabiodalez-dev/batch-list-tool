@@ -39,6 +39,14 @@ class DocumentTypeResource extends Resource
                     ->required()
                     ->maxLength(100)
                     ->unique(ignoreRecord: true),
+                // Wave D2 — optional machine-readable identifier (distinct from the
+                // human-readable name). Unique where non-NULL; NULL for legacy entries.
+                Forms\Components\TextInput::make('identifier')
+                    ->label('Identifier')
+                    ->maxLength(64)
+                    ->unique(ignoreRecord: true)
+                    ->nullable()
+                    ->helperText('Optional short code, e.g. "REG" or "ORIG". Must be unique if set.'),
                 Forms\Components\Textarea::make('description')
                     ->maxLength(500)
                     ->rows(3),
@@ -51,6 +59,12 @@ class DocumentTypeResource extends Resource
     {
         return $table
             ->columns([
+                Tables\Columns\TextColumn::make('identifier')
+                    ->label('Identifier')
+                    ->searchable()
+                    ->sortable()
+                    ->placeholder('—')
+                    ->toggleable(),
                 Tables\Columns\TextColumn::make('name')->searchable()->sortable(),
                 Tables\Columns\TextColumn::make('description')->limit(60)->toggleable(),
                 Tables\Columns\IconColumn::make('is_active')->boolean()->sortable(),

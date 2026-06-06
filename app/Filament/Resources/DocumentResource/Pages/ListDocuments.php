@@ -52,6 +52,7 @@ class ListDocuments extends ListRecords
             'current_box' => 'Current box',
             'disinfestation_date' => 'Disinfestation date',
             'notes' => 'Notes',
+            'part_number' => 'Part Number',
         ]);
 
         // Append active custom-field columns after the fixed ones.
@@ -110,6 +111,7 @@ class ListDocuments extends ListRecords
                         // Date in canonical Y-m-d form — never starts with a CSV-dangerous char.
                         'disinfestation_date' => $doc->disinfestation_date ? $doc->disinfestation_date->format('Y-m-d') : '',
                         'notes' => $this->sanitizeCsvCell($doc->notes),
+                        'part_number' => $this->sanitizeCsvCell($doc->part_number),
                     ];
 
                     // Append custom-field values. Use the already-eager-loaded

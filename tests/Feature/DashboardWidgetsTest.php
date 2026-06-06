@@ -525,11 +525,11 @@ test('Export CSV contains the expected column order in the header row', function
         ->toContain('Disinfestation date')
         ->toContain('Notes');
 
-    // Column order assertion
+    // Column order assertion — Wave D4 added Part Number as the 9th column.
     $headers = str_getcsv($firstLine);
     expect($headers)->toBe([
         'Identifier', 'Type', 'Creator(s)', 'Series', 'Batch',
-        'Current box', 'Disinfestation date', 'Notes',
+        'Current box', 'Disinfestation date', 'Notes', 'Part Number',
     ]);
 });
 

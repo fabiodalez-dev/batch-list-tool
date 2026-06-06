@@ -101,7 +101,7 @@ it('finds a document by a PAST volume number even though its current volume diff
 
     $hit = dhs_makeDoc($repo->id, $series->id, [
         'identifier' => 'VOL-DOC-A',
-        'volume_label' => 'VOL-CURRENT-99',
+        'volume_number' => 'VOL-CURRENT-99',
     ]);
     $miss = dhs_makeDoc($repo->id, $series->id, ['identifier' => 'VOL-DOC-B']);
 

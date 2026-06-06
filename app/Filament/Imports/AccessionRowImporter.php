@@ -891,9 +891,9 @@ class AccessionRowImporter extends Importer
                     $record->series_id = $res['series_id'];
                 }),
 
-            // DECISION 7: volume_label column header renamed to "Volume Number".
+            // Wave D4: volume_label renamed to volume_number in the DB.
             // Template column header is 'Volume No' (NAf Feedback 1 convention).
-            ImportColumn::make('volume_label')
+            ImportColumn::make('volume_number')
                 ->label('Volume Number')
                 ->guess(['Volume No', 'Volume Number', 'Volume', 'volume_number', 'Volume Label', 'volume_label'])
                 ->rules(['nullable', 'string', 'max:64']),

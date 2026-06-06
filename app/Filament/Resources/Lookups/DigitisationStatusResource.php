@@ -47,13 +47,13 @@ class DigitisationStatusResource extends Resource
         return static::canAccess();
     }
 
+    /**
+     * Wave D5 — Fully hidden from nav for all authenticated users (NAf feedback:
+     * "can be removed"). Returning true for guests preserves CLI/Shield discovery.
+     */
     public static function shouldRegisterNavigation(): bool
     {
-        if (auth()->guest()) {
-            return true;
-        }
-
-        return static::canAccess();
+        return auth()->guest();
     }
 
     // ── Form ──────────────────────────────────────────────────────────────────

@@ -34,6 +34,17 @@ class VolumeResource extends Resource
 
     protected static ?string $recordTitleAttribute = 'volume_number';
 
+    /**
+     * Wave D5 — Hide from navigation for all authenticated users.
+     * Still discoverable via CLI (shield:generate, artisan) and Shield policy
+     * generation because `canAccess()` / `canViewAny()` are not overridden.
+     * Returning true for guests ensures CLI context (no auth) works normally.
+     */
+    public static function shouldRegisterNavigation(): bool
+    {
+        return auth()->guest();
+    }
+
     public static function form(Schema $schema): Schema
     {
         // Layout rule (user mandate): root columns(1) → full-width Sections;

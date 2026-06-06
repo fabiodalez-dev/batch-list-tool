@@ -5,7 +5,6 @@ declare(strict_types=1);
 namespace App\Filament\Resources;
 
 use App\Filament\Resources\LocationResource\Pages;
-use App\Filament\Support\SearchableSelects;
 use App\Models\Location;
 use App\Models\Repository;
 use Filament\Actions\BulkActionGroup;
@@ -24,7 +23,6 @@ use Filament\Tables\Filters\SelectFilter;
 use Filament\Tables\Filters\TernaryFilter;
 use Filament\Tables\Filters\TrashedFilter;
 use Filament\Tables\Table;
-use Illuminate\Database\Eloquent\Builder;
 
 /**
  * RFQ §3.1.9 — admin UI for configurable Location hierarchies.
@@ -59,6 +57,12 @@ class LocationResource extends Resource
         // Layout rule (user mandate): root columns(1) → full-width Sections;
         // atomic-field Sections use ['default' => 1, 'md' => 2]; non-atomic
         // children (helperText-heavy inputs, Textarea) → columnSpanFull.
+        //
+        // Wave D3 — Simplified form:
+        //   • parent_id removed (new locations always root-level, parent_id=null)
+        //   • type limited to the 3 canonical values (room/museum/repository)
+        //   • repository_id placed first, required
+        //   • code is auto-generated when blank; shown read-only with helper text
         $twoCols = ['default' => 1, 'md' => 2];
 
         return $schema
@@ -67,59 +71,7 @@ class LocationResource extends Resource
                 Section::make('Identification')
                     ->columns($twoCols)
                     ->schema([
-                        Forms\Components\TextInput::make('name')
-                            ->required()
-                            ->maxLength(100),
-                        Forms\Components\Select::make('type')
-                            ->options(collect(Location::TYPES)
-                                ->mapWithKeys(fn (string $t) => [$t => self::typeLabel($t)])
-                                ->all())
-                            ->required()
-                            ->native(false)
-                            ->helperText('Drives the icon/badge in the table and the type filters on Box/Document.'),
-                        // Locations can grow large in big archives; server-side
-                        // autocomplete keeps the picker usable. Breadcrumb
-                        // label distinguishes "Room 3 under Repo A" from
-                        // "Room 3 under Repo B".
-                        SearchableSelects::location(
-                            'parent_id',
-                            null,
-                            'parent',
-                        )
-                            ->label('Parent location')
-                            ->nullable()
-                            ->helperText('Leave empty for a root node. Cycles are rejected; max depth is '
-                                . Location::MAX_DEPTH . '.')
-                            ->columnSpanFull(),
-                        Forms\Components\TextInput::make('code')
-                            ->maxLength(32)
-                            ->helperText('Optional short code. Must be unique within the same repository.')
-                            ->columnSpanFull()
-                            ->rule(function (?Location $record) {
-                                return function (string $attribute, $value, \Closure $fail) use ($record) {
-                                    if ($value === null || $value === '') {
-                                        return;
-                                    }
-                                    $repoId = request()->input('data.repository_id') ?? optional($record)->repository_id;
-                                    $q = Location::query()
-                                        ->withoutGlobalScopes()
-                                        ->where('code', $value);
-                                    $repoId === null
-                                        ? $q->whereNull('repository_id')
-                                        : $q->where('repository_id', $repoId);
-                                    if ($record !== null) {
-                                        $q->whereKeyNot($record->getKey());
-                                    }
-                                    if ($q->exists()) {
-                                        $fail("The code '{$value}' is already used in this repository scope.");
-                                    }
-                                };
-                            }),
-                    ]),
-
-                Section::make('Scope & status')
-                    ->columns($twoCols)
-                    ->schema([
+                        // Repository comes first — it determines the code auto-gen scope.
                         Forms\Components\Select::make('repository_id')
                             ->label('Repository')
                             ->options(function () {
@@ -138,17 +90,56 @@ class LocationResource extends Resource
                                 return $query->orderBy('code')->pluck('name', 'id')->all();
                             })
                             ->searchable()
-                            ->nullable()
-                            ->helperText('Leave empty for a GLOBAL location (visible to every repository).')
-                            ->default(fn () => auth()->user()?->default_repository_id)
-                            ->columnSpanFull(),
+                            ->required()
+                            ->helperText('Select the repository this location belongs to.')
+                            ->default(fn () => auth()->user()?->default_repository_id),
+                        Forms\Components\Select::make('type')
+                            ->label('Type')
+                            // Wave D3: only the 3 canonical types offered in the form.
+                            ->options(Location::CANONICAL_TYPES)
+                            ->required()
+                            ->native(false),
+                        Forms\Components\TextInput::make('name')
+                            ->required()
+                            ->maxLength(100),
+                        // Wave D3: code is auto-generated on create when blank.
+                        Forms\Components\TextInput::make('code')
+                            ->label('Identifier')
+                            ->maxLength(32)
+                            ->helperText('Auto-generated if left blank. Must be unique within the repository.')
+                            ->columnSpanFull()
+                            ->rule(function (?Location $record) {
+                                return function (string $attribute, $value, \Closure $fail) use ($record) {
+                                    if ($value === null || $value === '') {
+                                        return; // Will be auto-generated on save.
+                                    }
+                                    $repoId = request()->input('data.repository_id') ?? optional($record)->repository_id;
+                                    $q = Location::query()
+                                        ->withoutGlobalScopes()
+                                        ->where('code', $value);
+                                    $repoId === null
+                                        ? $q->whereNull('repository_id')
+                                        : $q->where('repository_id', $repoId);
+                                    if ($record !== null) {
+                                        $q->whereKeyNot($record->getKey());
+                                    }
+                                    if ($q->exists()) {
+                                        $fail("The identifier '{$value}' is already used in this repository.");
+                                    }
+                                };
+                            }),
+                    ]),
+
+                Section::make('Status')
+                    ->columns($twoCols)
+                    ->schema([
                         Forms\Components\Toggle::make('is_active')
                             ->default(true)
                             ->required(),
                         Forms\Components\TextInput::make('sort_order')
                             ->numeric()
                             ->minValue(0)
-                            ->helperText('Sibling display order under the same parent.')
+                            ->helperText('Display order among peer locations.')
                             ->columnSpanFull(),
                     ]),
 
@@ -269,21 +260,13 @@ class LocationResource extends Resource
 
     public static function table(Table $table): Table
     {
+        // Wave D3 — removed depth + breadcrumb columns; added code (Identifier) column.
         return $table
-            ->defaultSort('path')
+            ->defaultSort('name')
             ->columns([
-                Tables\Columns\TextColumn::make('breadcrumb')
-                    ->label('Path')
-                    ->state(fn (Location $r) => $r->breadcrumb())
-                    ->searchable(query: function (Builder $q, string $search): Builder {
-                        $needle = '%' . trim($search) . '%';
-
-                        return $q->where(function (Builder $q) use ($needle) {
-                            $q->where('name', 'like', $needle)
-                                ->orWhere('code', 'like', $needle);
-                        });
-                    })
-                    ->wrap(),
+                Tables\Columns\TextColumn::make('name')
+                    ->searchable()
+                    ->sortable(),
                 Tables\Columns\TextColumn::make('type')
                     ->badge()
                     ->formatStateUsing(fn (string $state) => self::typeLabel($state))
@@ -294,10 +277,11 @@ class LocationResource extends Resource
                     ->badge()
                     ->color('gray')
                     ->placeholder('GLOBAL'),
-                Tables\Columns\TextColumn::make('depth')
-                    ->numeric()
-                    ->alignCenter()
-                    ->sortable(),
+                Tables\Columns\TextColumn::make('code')
+                    ->label('Identifier')
+                    ->searchable()
+                    ->copyable()
+                    ->placeholder('—'),
                 Tables\Columns\TextColumn::make('boxes_count')
                     ->label('Boxes')
                     ->counts('boxes')
@@ -331,15 +315,6 @@ class LocationResource extends Resource
                     ->placeholder('Any')
                     ->trueLabel('Active')
                     ->falseLabel('Inactive'),
-                TernaryFilter::make('orphan')
-                    ->label('Root nodes only')
-                    ->placeholder('Any')
-                    ->trueLabel('Yes (no parent)')
-                    ->falseLabel('No (has parent)')
-                    ->queries(
-                        true: fn (Builder $q) => $q->whereNull('parent_id'),
-                        false: fn (Builder $q) => $q->whereNotNull('parent_id'),
-                    ),
                 TrashedFilter::make(),
             ])
             ->actions([
@@ -351,7 +326,7 @@ class LocationResource extends Resource
                             Notification::make()
                                 ->danger()
                                 ->title('Cannot delete location')
-                                ->body('Location "' . $record->breadcrumb() . '" still has children or is referenced by Boxes/Documents. Re-assign them first.')
+                                ->body('Location "' . $record->name . '" still has children or is referenced by Boxes/Documents. Re-assign them first.')
                                 ->send();
                             $action->cancel();
                         }
