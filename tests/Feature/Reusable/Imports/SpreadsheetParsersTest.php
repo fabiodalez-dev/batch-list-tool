@@ -42,6 +42,29 @@ it('SpreadsheetParsers: parseDate(null) returns null', function () {
     expect(SpreadsheetParsers::parseDate(null))->toBeNull();
 });
 
+it('SpreadsheetParsers: parseDate reads European day-first slash dates (real disinfestation data)', function () {
+    // strtotime() would read "/" as US month-first and drop these.
+    expect(SpreadsheetParsers::parseDate('31/05/2023'))->toBe('2023-05-31');
+    expect(SpreadsheetParsers::parseDate('24/01/2024'))->toBe('2024-01-24');
+    expect(SpreadsheetParsers::parseDate('18/08/2023'))->toBe('2023-08-18');
+});
+
+it('SpreadsheetParsers: parseDate prefers day-first when ambiguous, but accepts US month-first', function () {
+    expect(SpreadsheetParsers::parseDate('1/5/2023'))->toBe('2023-05-01');   // 1 May, European
+    expect(SpreadsheetParsers::parseDate('05/31/2023'))->toBe('2023-05-31'); // 2nd part > 12 → US
+});
+
+it('SpreadsheetParsers: parseDate accepts ISO, dot and dash separators and Excel serials', function () {
+    expect(SpreadsheetParsers::parseDate('2023-05-31'))->toBe('2023-05-31');
+    expect(SpreadsheetParsers::parseDate('31.05.2023'))->toBe('2023-05-31');
+    expect(SpreadsheetParsers::parseDate('31-05-2023'))->toBe('2023-05-31');
+    expect(SpreadsheetParsers::parseDate('44927'))->toBe('2023-01-01');
+});
+
+it('SpreadsheetParsers: parseDate rejects an impossible date', function () {
+    expect(SpreadsheetParsers::parseDate('32/13/2023'))->toBeNull();
+});
+
 it('SpreadsheetParsers: parseInt("42") returns 42', function () {
     expect(SpreadsheetParsers::parseInt('42'))->toBe(42);
 });

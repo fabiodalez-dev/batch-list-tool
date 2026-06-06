@@ -69,7 +69,44 @@ final class SpreadsheetParsers
                 return null;
             }
         }
-        $ts = strtotime((string) $value);
+
+        $str = trim((string) $value);
+
+        // Numeric day/month/year with /, . or - separators. PHP's strtotime()
+        // reads "/" as the US month-first order, which silently DROPS European
+        // dates such as "31/05/2023" (the format in the NRA sheets). Parse
+        // these explicitly, preferring the day-first order used in Malta/Europe
+        // and only using month-first when the first part cannot be a day.
+        if (preg_match('#^(\d{1,4})[/.\-](\d{1,2})[/.\-](\d{1,4})$#', $str, $m)) {
+            $a = (int) $m[1];
+            $b = (int) $m[2];
+            $c = (int) $m[3];
+            $year = 0;
+            $month = 0;
+            $day = 0;
+            if (strlen($m[1]) === 4) {            // YYYY-MM-DD (any separator)
+                $year = $a;
+                $month = $b;
+                $day = $c;
+            } elseif (strlen($m[3]) === 4) {      // DD-MM-YYYY / MM-DD-YYYY
+                $year = $c;
+                if ($a > 12) {                    // first part must be the day
+                    $day = $a;
+                    $month = $b;
+                } elseif ($b > 12) {              // second part can't be a month
+                    $month = $a;
+                    $day = $b;
+                } else {                          // ambiguous → European day-first
+                    $day = $a;
+                    $month = $b;
+                }
+            }
+            if ($year > 0 && checkdate($month, $day, $year)) {
+                return sprintf('%04d-%02d-%02d', $year, $month, $day);
+            }
+        }
+
+        $ts = strtotime($str);
 
         return $ts !== false ? date('Y-m-d', $ts) : null;
     }
