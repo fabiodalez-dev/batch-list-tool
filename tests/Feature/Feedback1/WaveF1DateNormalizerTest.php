@@ -183,6 +183,39 @@ it('F1-Edge.7: multi-year list returns min and max', function (): void {
     expect($r['year_end'])->toBe(1768);
 });
 
+it('F1-Real.1: Excel serial date number is converted to its year (real sample data)', function (): void {
+    // Date-formatted cells in the NRA spreadsheets arrive as 5-digit serials.
+    $r = DateRangeNormalizer::extractYearRange('33239.0');
+    expect($r['year_start'])->toBe(1991);
+    expect($r['year_end'])->toBe(1991);
+
+    $r2 = DateRangeNormalizer::extractYearRange('44927');
+    expect($r2['year_start'])->toBe(2023);
+    expect($r2['year_end'])->toBe(2023);
+});
+
+it('F1-Real.2: a 4-digit value stays a year and is never read as an Excel serial', function (): void {
+    $r = DateRangeNormalizer::extractYearRange('1990');
+    expect($r['year_start'])->toBe(1990);
+    expect($r['year_end'])->toBe(1990);
+});
+
+it('F1-Real.3: multi-range list with gaps spans the overall min..max', function (): void {
+    // Real Authorities sample: "1934-1936; 1938-1942; 1947".
+    $r = DateRangeNormalizer::extractYearRange('1934-1936; 1938-1942; 1947');
+    expect($r['year_start'])->toBe(1934);
+    expect($r['year_end'])->toBe(1947);
+});
+
+it('F1-Real.4: month-name ranges from the real Dates column keep the years', function (): void {
+    expect(DateRangeNormalizer::extractYearRange('Apr - Jun 1963'))
+        ->toBe(['year_start' => 1963, 'year_end' => 1963]);
+    expect(DateRangeNormalizer::extractYearRange('Jan 1965 - Dec 1966'))
+        ->toBe(['year_start' => 1965, 'year_end' => 1966]);
+    expect(DateRangeNormalizer::extractYearRange('Sep 1705 - Feb 1706'))
+        ->toBe(['year_start' => 1705, 'year_end' => 1706]);
+});
+
 it('F1-Compat.1: SpreadsheetParsers::parseYearRange returns tuple shape delegating to normalizer', function (): void {
     [$start, $end] = SpreadsheetParsers::parseYearRange('1745–1768');
     expect($start)->toBe(1745);

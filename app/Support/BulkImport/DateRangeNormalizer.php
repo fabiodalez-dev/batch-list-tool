@@ -4,6 +4,8 @@ declare(strict_types=1);
 
 namespace App\Support\BulkImport;
 
+use PhpOffice\PhpSpreadsheet\Shared\Date as ExcelDate;
+
 /**
  * Rich free-text → year-range extractor.
  *
@@ -24,12 +26,15 @@ namespace App\Support\BulkImport;
  *   "17th c."                      → 1600 / 1699
  *   "sec. XVIII" / "XVIII"         → 1700 / 1799  (Roman-numeral century)
  *   "1745, 1750, 1768"             → 1745 / 1768  (multi-year: min / max)
+ *   "1934-1936; 1938-1942; 1947"   → 1934 / 1947  (multi-range: min / max)
+ *   "33239" / "44927.0"            → 1991 / 2023  (Excel serial date number)
  *   "n.d." / "s.d." / "undated"    → null / null
  *   ""  / non-date text            → null / null
  *   reversed "1768-1745"           → 1745 / 1768  (normalised so start ≤ end)
  *
- * General fallback: scan all 4-digit years (1000–2099); if ≥ 2 found use
- * min & max; if exactly 1 found use it for both start and end.
+ * Main strategy: after the special cases above, scan all 4-digit years
+ * (1000–2099); if ≥ 2 found use min & max; if exactly 1 found use it for both
+ * start and end; if none, return null / null.
  */
 final class DateRangeNormalizer
 {
@@ -48,6 +53,24 @@ final class DateRangeNormalizer
         // ── 1. Explicit "undated" sentinels ────────────────────────────────
         if (preg_match('/^\s*(?:n\.?\s*d\.?|s\.?\s*d\.?|undated|sine\s+die)\s*$/iu', $s)) {
             return $none;
+        }
+
+        // ── 1b. Excel serial date ─────────────────────────────────────────
+        // A date-formatted cell read with setReadDataOnly arrives as a bare
+        // serial number (e.g. "33239" or "44927.0"). Only 5-digit serials are
+        // treated this way — 10000 ≈ 1927, 60000 ≈ 2064 — so plain 4-digit
+        // years (handled below) are never mistaken for a serial.
+        if (preg_match('/^(\d{5})(?:\.0+)?$/', $s, $m)) {
+            $serial = (int) $m[1];
+            if ($serial >= 10000 && $serial <= 60000) {
+                try {
+                    $year = (int) ExcelDate::excelToDateTimeObject((float) $serial)->format('Y');
+
+                    return self::pair($year, $year);
+                } catch (\Throwable) {
+                    // Not a usable serial — fall through to the generic scan.
+                }
+            }
         }
 
         // ── 2. Circa prefix/suffix ("c. 1700", "circa 1700", "1700 ca") ──
@@ -81,27 +104,12 @@ final class DateRangeNormalizer
             }
         }
 
-        // ── 6. Year ranges with separator: YYYY[-–—/to]YYYY ──────────────
-        // Also handles optional month/day text around the years:
-        //   "Apr 1745 - Sep 1768", "1745 to 1768", "1745/1768"
-        if (preg_match(
-            '/(\d{4})\s*(?:[-–—\/]|to)\s*(\d{4})/iu',
-            $s,
-            $m,
-        )) {
-            return self::pair((int) $m[1], (int) $m[2]);
-        }
-
-        // ── 7. Month-Year range: "Apr 1745 – Sep 1768" ───────────────────
-        // Month names (abbreviated or full, any locale-safe subset of English)
-        // before/after the year; the range separator is captured above, so if
-        // we reach here with a pattern like "Apr 1745 - Sep 1768" it already
-        // matched in step 6 via the YYYY…YYYY extractor. This step is a safety
-        // net for any remaining "Month YYYY" single-side patterns — falls
-        // through to the generic year scan below.
-
-        // ── 8. Generic year scan (fallback) ───────────────────────────────
-        // Collect all 4-digit years in range [1000, 2099].
+        // ── 6. Generic year scan (the main strategy) ──────────────────────
+        // Collect every 4-digit year in range [1000, 2099] and take min..max.
+        // This correctly handles single years, dash/en-dash/"to"/slash ranges,
+        // month-name ranges ("Apr 1745 - Sep 1768" → months ignored, years
+        // kept), reversed ranges (normalised to start ≤ end), and multi-range
+        // lists ("1934-1936; 1938-1942; 1947" → 1934 / 1947).
         preg_match_all('/\b(\d{4})\b/', $s, $all);
         $years = array_values(array_unique(array_filter(
             array_map('intval', $all[1]),
