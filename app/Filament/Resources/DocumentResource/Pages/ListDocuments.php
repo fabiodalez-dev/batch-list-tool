@@ -53,6 +53,8 @@ class ListDocuments extends ListRecords
             'disinfestation_date' => 'Disinfestation date',
             'notes' => 'Notes',
             'part_number' => 'Part Number',
+            'number_of_acts' => 'No of Acts',
+            'pages_folios' => 'Pages/Folios',
         ]);
 
         // Append active custom-field columns after the fixed ones.
@@ -112,6 +114,8 @@ class ListDocuments extends ListRecords
                         'disinfestation_date' => $doc->disinfestation_date ? $doc->disinfestation_date->format('Y-m-d') : '',
                         'notes' => $this->sanitizeCsvCell($doc->notes),
                         'part_number' => $this->sanitizeCsvCell($doc->part_number),
+                        'number_of_acts' => $this->sanitizeCsvCell($doc->number_of_acts),
+                        'pages_folios' => $this->sanitizeCsvCell($doc->pages_folios),
                     ];
 
                     // Append custom-field values. Use the already-eager-loaded

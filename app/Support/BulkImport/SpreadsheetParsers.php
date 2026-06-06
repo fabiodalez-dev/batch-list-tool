@@ -23,8 +23,13 @@ use PhpOffice\PhpSpreadsheet\Shared\Date as ExcelDate;
 final class SpreadsheetParsers
 {
     /**
-     * Parse "1607-1629" / "1607–1629" / "Jun 1997 - Nov 1998" / "1607" into
-     * a (start, end) integer-year pair. Returns `[null, null]` on failure.
+     * Parse a free-text date string into a (start, end) integer-year pair.
+     * Returns `[null, null]` on failure.
+     *
+     * Delegates to {@see DateRangeNormalizer::extractYearRange()} which
+     * handles a rich set of formats (ranges, circa, decades, centuries, etc.)
+     * beyond the original simple YYYY / YYYY-YYYY patterns. All existing callers
+     * transparently receive the richer behaviour.
      *
      * Used for {@see Authority}::practice_dates_start/end and
      * {@see Document}::dates_year_start/end.
@@ -36,16 +41,10 @@ final class SpreadsheetParsers
         if ($value === null || trim($value) === '') {
             return [null, null];
         }
-        // Handle hyphen-minus, en-dash (–), em-dash (—). The POC spreadsheet
-        // mixes them inconsistently so we accept any of the three.
-        if (preg_match('/(\d{4})\s*[-–—]\s*(\d{4})/u', $value, $m)) {
-            return [(int) $m[1], (int) $m[2]];
-        }
-        if (preg_match('/(\d{4})/', $value, $m)) {
-            return [(int) $m[1], (int) $m[1]];
-        }
 
-        return [null, null];
+        $result = DateRangeNormalizer::extractYearRange($value);
+
+        return [$result['year_start'], $result['year_end']];
     }
 
     /**

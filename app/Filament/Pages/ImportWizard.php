@@ -231,6 +231,14 @@ class ImportWizard extends Page
         'volume no' => ['volume_number'],         // NAf Feedback 1 column name
         'note' => ['notes'],                     // NAf Feedback 1 column name (singular)
         'part number' => ['part_number'],
+        // Wave F — DECISION F2: new document fields.
+        'no of acts' => ['number_of_acts'],
+        'no. of acts' => ['number_of_acts'],
+        'number of acts' => ['number_of_acts'],
+        'acts' => ['number_of_acts'],
+        'pages/folios' => ['pages_folios'],
+        'pages / folios' => ['pages_folios'],
+        'folios' => ['pages_folios'],
     ];
 
     /**

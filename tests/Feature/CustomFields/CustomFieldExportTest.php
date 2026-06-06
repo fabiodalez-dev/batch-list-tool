@@ -179,7 +179,8 @@ test('no custom field columns in export when no definitions exist', function ():
     expect($header)->toContain('Identifier');
     expect($header)->toContain('Notes');
 
-    // Should be exactly 9 fixed columns (per the fixed column map in exportToCsv).
+    // Should be exactly 11 fixed columns (per the fixed column map in exportToCsv).
     // Wave D4 — part_number added as the 9th column.
-    expect(count($header))->toBe(9);
+    // Wave F — number_of_acts (10th) and pages_folios (11th) added.
+    expect(count($header))->toBe(11);
 });
