@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace App\Filament\Imports;
 
 use App\Filament\Imports\Concerns\SkipsExistingRows;
+use App\Models\Batch;
 use App\Models\Box;
 use App\Models\CustomFieldDefinition;
 use App\Models\Scopes\ThroughBatchRepositoryScope;
@@ -282,6 +283,45 @@ class BoxImporter extends Importer
                 ->label('Notes')
                 ->guess(['Notes', 'notes', 'Note'])
                 ->rules(['nullable', 'string']),
+
+            // F05 (feedback review) — Seal Number and Location columns added
+            // per client request ("The following fields should also be part
+            // of the importation process: Seal Number, Location").
+            ImportColumn::make('seal_number')
+                ->label('Seal Number')
+                ->guess(['Seal Number', 'seal_number', 'Seal No', 'Seal no'])
+                ->rules(['nullable', 'string', 'max:64']),
+
+            ImportColumn::make('location')
+                ->label('Location (code / identifier)')
+                ->guess(['Location', 'location', 'Location Code', 'Location Identifier'])
+                ->fillRecordUsing(function (Box $record, ?string $state): void {
+                    if ($state === null || trim($state) === '') {
+                        return;
+                    }
+                    // Tenancy: location codes are unique per repository, so
+                    // the lookup must be scoped to the row's effective
+                    // repository — the batch's repository when already
+                    // resolved (the batch_number column fills before this
+                    // one), else the importing user's default.
+                    $repoId = null;
+                    if ($record->batch_id !== null) {
+                        $raw = Batch::query()
+                            ->withoutGlobalScopes()
+                            ->whereKey($record->batch_id)
+                            ->value('repository_id');
+                        $repoId = $raw !== null ? (int) $raw : null;
+                    }
+                    $repoId ??= auth()->user()?->default_repository_id;
+
+                    $res = EntityResolver::resolveLocation(trim($state), $repoId);
+                    if ($res === null) {
+                        throw ValidationException::withMessages([
+                            'location' => "Unknown location code: '{$state}'. Ensure the location exists in this repository before importing.",
+                        ]);
+                    }
+                    $record->location_id = $res['location_id'];
+                }),
         ];
     }
 

@@ -23,10 +23,11 @@ uses(RefreshDatabase::class);
 
 // ── C3-Headers — exact column order ──────────────────────────────────────────
 
-it('C3-Headers: synthesiseAccessionHeaders returns the exact 20 columns in cascade order', function (): void {
+it('C3-Headers: synthesiseAccessionHeaders returns the exact 22 columns in cascade order', function (): void {
     $headers = TemplateGenerator::headersFor('accession');
 
-    // Exact ordered contract (NAf Feedback 1 / DECISION 11):
+    // Exact ordered contract (NAf Feedback 1 / DECISION 11 / F2):
+    // F2 added 'No of Acts' and 'Pages/Folios' after 'Deeds' (now 22 static columns).
     $expected = [
         'Authority Identifier',
         'Authority Name',
@@ -47,15 +48,17 @@ it('C3-Headers: synthesiseAccessionHeaders returns the exact 20 columns in casca
         'Practice',
         'Dates',
         'Deeds',
+        'No of Acts',       // F2: added after Deeds
+        'Pages/Folios',     // F2: added after No of Acts
         'Note',             // singular per NAf convention
     ];
 
-    // The first 20 elements (static headers) must match exactly.
+    // The first 22 elements (static headers) must match exactly.
     $staticHeaders = array_slice($headers, 0, count($expected));
     expect($staticHeaders)->toBe($expected);
 
-    // Total count must be at least 20 (custom fields appended after).
-    expect(count($headers))->toBeGreaterThanOrEqual(20);
+    // Total count must be at least 22 (custom fields appended after).
+    expect(count($headers))->toBeGreaterThanOrEqual(22);
 });
 
 // ── C3-SheetTitle — sheet title ───────────────────────────────────────────────

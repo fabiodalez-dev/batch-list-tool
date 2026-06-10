@@ -58,6 +58,8 @@ class DocumentTypeResource extends Resource
     public static function table(Table $table): Table
     {
         return $table
+            // Feedback1 Wave A (A6) — drag-and-drop column reordering.
+            ->reorderableColumns()
             ->columns([
                 Tables\Columns\TextColumn::make('identifier')
                     ->label('Identifier')

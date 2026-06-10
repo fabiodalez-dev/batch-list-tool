@@ -147,6 +147,20 @@ class DocumentImporter extends Importer
     protected bool $rowSavepointOpen = false;
 
     /**
+     * BUG-05: Repository id resolved once per import from the authenticated
+     * user's default_repository_id. Set in resolveRecord() and reused by the
+     * batch_number fillRecordUsing closure so batch resolution is always
+     * tenant-scoped to the correct repository.
+     *
+     * Stored in a static array keyed by spl_object_id($record) so that the
+     * static getStaticColumns() closures (which cannot capture $this) can
+     * still access the per-row resolved value. Cleared in afterSave/afterFill.
+     *
+     * @var array<int, int|null>
+     */
+    protected static array $rowRepositoryStash = [];
+
+    /**
      * @return array<ImportColumn>
      */
     public static function getColumns(): array
@@ -160,16 +174,25 @@ class DocumentImporter extends Importer
     /**
      * Idempotent matching by (identifier, repository_id) — repository
      * tenancy is inferred from the BelongsToRepository hook on save.
+     *
+     * BUG-05: Resolves and caches the acting user's repository id once per
+     * row so the batch_number closure can pass a tenant-scoped id to
+     * EntityResolver::resolveBatch() instead of leaving it null.
      */
     public function resolveRecord(): ?Document
     {
         $identifier = $this->data['identifier'] ?? null;
-        if ($identifier === null || trim((string) $identifier) === '') {
-            return new Document;
-        }
 
         $user = auth()->user();
         $repoId = $user?->default_repository_id;
+
+        if ($identifier === null || trim((string) $identifier) === '') {
+            $record = new Document;
+            // BUG-05: stash repo id so the static batch_number closure can use it.
+            self::$rowRepositoryStash[spl_object_id($record)] = $repoId !== null ? (int) $repoId : null;
+
+            return $record;
+        }
 
         $q = Document::query()
             ->withoutGlobalScope(RepositoryScope::class)
@@ -179,6 +202,9 @@ class DocumentImporter extends Importer
         }
 
         $record = $q->first() ?? new Document;
+        // BUG-05: stash repo id so the static batch_number closure can use it.
+        self::$rowRepositoryStash[spl_object_id($record)] = $repoId !== null ? (int) $repoId : null;
+
         $this->skipIfDuplicate($record);
 
         return $record;
@@ -475,10 +501,19 @@ class DocumentImporter extends Importer
     {
         return [
             // ── Identification ──────────────────────────────────────────
+            // F-004: 'Identifier' is intentionally NOT in the guess list here.
+            // In the legacy Batch_List_Sample.xlsx the column named 'Identifier'
+            // (col 33) holds the Authority R-code, not the document's own working
+            // identifier. Adding 'Identifier' to this column's guess list would
+            // cause every legacy import to auto-map the authority's R-code to the
+            // Document.identifier field and leave the authority_identifier column
+            // unmapped — all documents silently unlinked from their authorities.
+            // The document's own identifier should be mapped from 'Catalogue
+            // Identifier' or 'Document Identifier' columns in the source sheet.
             ImportColumn::make('identifier')
                 ->label('Document identifier (R-code or composite)')
                 ->requiredMappingForNewRecordsOnly()
-                ->guess(['Identifier', 'identifier', 'Document Identifier', 'Doc ID'])
+                ->guess(['identifier', 'Document Identifier', 'Doc ID'])
                 ->rules(['required', 'string', 'max:64']),
 
             ImportColumn::make('catalogue_identifier')
@@ -499,6 +534,21 @@ class DocumentImporter extends Importer
             ImportColumn::make('volume_number')
                 ->label('Volume')
                 ->guess(['Volume', 'volume', 'Volume No', 'Volume Number', 'Volume label', 'volume_label', 'volume_number'])
+                // F-005: normalise Excel float artefacts ('2.0' → '2') while
+                // keeping every other value verbatim — including '180A/181',
+                // '18+20', leading-zero volumes ('007') and genuine decimals
+                // ('2.5'), which a blanket (int) cast would corrupt.
+                ->castStateUsing(function (mixed $state): ?string {
+                    if ($state === null || trim((string) $state) === '') {
+                        return null;
+                    }
+                    $str = trim((string) $state);
+                    if (preg_match('/^(\d+)\.0+$/', $str, $m)) {
+                        return $m[1];
+                    }
+
+                    return $str;
+                })
                 ->rules(['nullable', 'string', 'max:64']),
 
             // ── Dates ───────────────────────────────────────────────────
@@ -560,11 +610,12 @@ class DocumentImporter extends Importer
             // Empty / whitespace-only pieces are skipped silently.
             ImportColumn::make('authority_identifier')
                 ->label('Authority identifier (R-code, optionally ";"-separated)')
-                // NB: the legacy sample column header is just "Identifier",
-                // which collides with the Document's own identifier column.
-                // We disambiguate at the operator level: they're shown both
-                // dropdowns and pick which spreadsheet column feeds which.
-                ->guess(['Authority identifier', 'Authority code', 'Creator code'])
+                // F-004: 'Identifier' is the column header in legacy Batch_List_Sample.xlsx
+                // for the Authority R-code (col 33). Now that the Document.identifier
+                // column no longer claims this guess, mapping it here gives operators
+                // the correct auto-mapping: 'Identifier' → authority_identifier.
+                // 'Creator code' covers other legacy naming conventions.
+                ->guess(['Identifier', 'Authority identifier', 'Authority code', 'Creator code'])
                 ->fillRecordUsing(function (Document $record, ?string $state): void {
                     if ($state === null || trim($state) === '') {
                         return;
@@ -709,7 +760,10 @@ class DocumentImporter extends Importer
                     // Task 8 (B5) — dedup-OR-CREATE: a document referencing a
                     // batch that does not yet exist stands the batch up in the
                     // same run (forbidden numbers are still rejected below).
-                    $res = EntityResolver::resolveBatch($n, create: true);
+                    // BUG-05: read the per-row repository id from the static stash
+                    // (set in resolveRecord()) so the lookup is tenant-scoped.
+                    $repoIdForBatch = self::$rowRepositoryStash[spl_object_id($record)] ?? null;
+                    $res = EntityResolver::resolveBatch($n, $repoIdForBatch, create: true);
                     if ($res === null) {
                         return; // unknown batch — leave FK null
                     }
@@ -735,12 +789,16 @@ class DocumentImporter extends Importer
                     if ($state === null || trim($state) === '') {
                         return;
                     }
+                    // BUG-06: normalise Excel float artefacts ('1.0' → '1').
+                    $raw = trim($state);
+                    $normalized = SpreadsheetParsers::parseInt($raw);
+                    $boxNum = $normalized !== null ? (string) $normalized : $raw;
                     // Resolution is deferred to afterFill: we must know the
                     // document's batch (resolved by a separate column) before
                     // we create-or-match the box inside it, and we must
                     // cross-check batch/box consistency (B5) before save.
-                    self::$rowBoxNumberStash[spl_object_id($record)] = trim($state);
-                    $record->ras_box_1 = trim($state);
+                    self::$rowBoxNumberStash[spl_object_id($record)] = $boxNum;
+                    $record->ras_box_1 = $boxNum;
                 }),
 
             // Box resolution by barcode — names a SPECIFIC existing physical
@@ -862,6 +920,9 @@ class DocumentImporter extends Importer
             // bad value is stored verbatim and cast on read, never on write.)
             $record->setCustomFieldData($customData, false);  // false = merge/import semantics
         }
+
+        // BUG-05: clean up the repository stash for this row.
+        unset(self::$rowRepositoryStash[$key]);
 
         $ids = self::$rowAuthorityStash[$key] ?? [];
         // Drain the stash for this row so a future row reusing the same
@@ -1002,6 +1063,10 @@ class DocumentImporter extends Importer
         }
 
         if ($box->isDirty()) {
+            // Import pipeline — legacy rows may lack a location; bypass the
+            // PERM_OUT location guard (RFQ §3.1.7-A) for this programmatic
+            // write while still allowing the Task-7 mirror observer to fire.
+            $box->skipPermOutGuard = true;
             $box->save(); // triggers the Task-7 mirror onto the document(s)
         }
     }

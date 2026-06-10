@@ -13,6 +13,7 @@ use App\Models\Box;
 use App\Models\Document;
 use App\Models\Scopes\RepositoryScope;
 use App\Models\Scopes\ThroughBatchRepositoryScope;
+use App\Models\Series;
 use App\Support\BulkImport\EntityResolver;
 use App\Support\BulkImport\SpreadsheetParsers;
 use App\Support\BulkImport\TemplateGenerator;
@@ -114,13 +115,16 @@ class AccessionRowImporter extends Importer
     protected static array $rowAccessionStash = [];
 
     /**
-     * Row-local sequence counter per (accessionNumber, boxNumber) pair.
+     * Row-local sequence counter per (importId, accessionNumber, boxNumber).
      * Used for auto-generating document identifiers (DECISION 4).
-     * Key = "{accessionNumber}|{boxNo}", value = integer sequence.
+     *
+     * Key = "{importId}|{accessionNumber}|{boxNo}", value = integer sequence.
+     * Namespacing by importId (BUG-08) ensures that a second import running in
+     * the same worker process restarts the sequence at 1 instead of continuing
+     * where the previous import left off.
      *
      * The counter is NOT flushed between rows (intentionally — it must
-     * increment across rows in the same import run). Flushed only in
-     * EntityResolver::flushMemo() called at test setup.
+     * increment across rows within the SAME import run).
      *
      * @var array<string, int>
      */
@@ -158,6 +162,19 @@ class AccessionRowImporter extends Importer
      * @var array<int, array<string, string|null>>
      */
     protected static array $rowCustomFieldStash = [];
+
+    /**
+     * Reset the per-import sequence counter. Test-only helper, called
+     * explicitly by tests that exercise the sequence. Deliberately NOT wired
+     * into EntityResolver::flushMemo(): flushMemo() runs mid-import in
+     * production (after creating a missing Authority) and resetting the
+     * sequence there would generate duplicate document identifiers. The
+     * importId namespacing already isolates consecutive imports.
+     */
+    public static function resetBoxRowSeq(): void
+    {
+        self::$boxRowSeq = [];
+    }
 
     // ── Column definition ─────────────────────────────────────────────────
 
@@ -211,18 +228,36 @@ class AccessionRowImporter extends Importer
      * FKs to the Document record. Any unresolvable ref code is a row error.
      *
      * This is the heart of DECISION 2 (bottom-up).
+     *
+     * BUG-01 FIX: The cascade (resolveAuthorities + resolveAccessionBatchBox)
+     * contains DB writes (Authority::create, Accession::create, Batch::create,
+     * Box::create) that execute BEFORE beforeSave() opens its per-row savepoint.
+     * Filament's ImportCsv chunk-level transaction swallows per-row failures
+     * without rolling back — meaning that if this method throws mid-cascade (e.g.
+     * forbidden batch) the already-written ancestors would commit as orphans.
+     *
+     * We wrap the entire cascade in a nested DB::transaction so a throw from
+     * anywhere inside rolls back all cascade writes atomically, before
+     * beforeSave() ever runs. A re-thrown ValidationException is then caught by
+     * ImportCsv's per-row handler as a clean "row failed" signal with nothing
+     * persisted.
      */
     public function afterFill(): void
     {
         /** @var Document $record */
         $record = $this->record;
-        $key = spl_object_id($record);
 
-        // 1. Authorities (multi, DECISION 3)
-        $this->resolveAuthorities($record);
+        // Open a savepoint around ALL cascade writes (Authority/Accession/Batch/Box).
+        // If the cascade throws (ValidationException for row errors, or any other
+        // Throwable), the DB::transaction() rolls back before Filament's chunk
+        // handler sees the exception — no orphan entities are ever committed.
+        DB::transaction(function () use ($record): void {
+            // 1. Authorities (multi, DECISION 3)
+            $this->resolveAuthorities($record);
 
-        // 2. Accession → 3. Batch (N:N) → 4. Box
-        $this->resolveAccessionBatchBox($record);
+            // 2. Accession → 3. Batch (N:N) → 4. Box
+            $this->resolveAccessionBatchBox($record);
+        });
 
         // 5. Auto-generate document identifier if not supplied (DECISION 4)
         $this->ensureDocumentIdentifier($record);
@@ -360,7 +395,19 @@ class AccessionRowImporter extends Importer
         unset(static::$rowAuthorityStash[$key]);
 
         if (trim($rawIdentifiers) === '') {
-            // No Authority Identifier column supplied — soft-miss, no error.
+            // BUG-02 / F-003: if a name/surname WAS provided but no identifier,
+            // throw a row-level error. Names alone are ambiguous — the identifier
+            // is the source of truth (DECISION 3). A silent miss would import the
+            // document with zero authority links and no operator feedback.
+            if (trim($rawNames) !== '' || trim($rawSurnames) !== '') {
+                throw ValidationException::withMessages([
+                    'authority_identifier' => __(
+                        'Authority Identifier is required when a Notary/Authority name is given — names alone are ambiguous. '
+                        . 'Please add the R-code (e.g. R12) in the Authority Identifier column.'
+                    ),
+                ]);
+            }
+
             return;
         }
 
@@ -536,6 +583,28 @@ class AccessionRowImporter extends Importer
             }
             $batchId = $res['batch_id'];
 
+            // RFQ-App1-R1-WILLS: enforce the wills-only invariant at the row
+            // level BEFORE any cascade writes for this batch. Batch 50 is reserved
+            // exclusively for wills documents. We check the document's series_id
+            // which was already set by the series fillRecordUsing closure during
+            // fillRecord() (before afterFill runs). This gives operators a clean
+            // row-level error message instead of a generic DomainException.
+            if ($batchNumberInt === Batch::WILLS_BATCH) {
+                $seriesId = $record->series_id;
+                $series = $seriesId !== null
+                    ? Series::find($seriesId)
+                    : null;
+                if ($series === null || ! $series->is_wills_series) {
+                    throw ValidationException::withMessages([
+                        'batch_number' => __(
+                            'Batch :n is reserved for wills documents (RFQ App.1 #2). '
+                            . 'Assign a wills series (is_wills_series = true) to this document before placing it in Batch :n.',
+                            ['n' => $batchNumberInt]
+                        ),
+                    ]);
+                }
+            }
+
             // Update batch type if provided and the batch is freshly created.
             if ($batchType !== null) {
                 $batch = Batch::withoutGlobalScope(RepositoryScope::class)->find($batchId);
@@ -688,7 +757,10 @@ class AccessionRowImporter extends Importer
         $boxNo = $record->ras_box_1 ?? null;
 
         if ($accessionNumber !== null || $boxNo !== null) {
-            $seqKey = ($accessionNumber ?? '') . '|' . ($boxNo ?? '');
+            // BUG-08: prefix the key with the import id to isolate sequence
+            // counters across import runs in the same worker process.
+            $importId = (string) $this->import->getKey();
+            $seqKey = $importId . '|' . ($accessionNumber ?? '') . '|' . ($boxNo ?? '');
             static::$boxRowSeq[$seqKey] = (static::$boxRowSeq[$seqKey] ?? 0) + 1;
             $seq = static::$boxRowSeq[$seqKey];
             $record->identifier = sprintf('%s-%s-%d', $accessionNumber ?? 'ACC', $boxNo ?? 'BOX', $seq);
@@ -750,9 +822,12 @@ class AccessionRowImporter extends Importer
                     static::$rowAuthorityStash[$key]['identifiers'] = $state ?? '';
                 }),
 
+            // BUG-02 / F-003: add 'Notary' and 'Notary Name' to the guess list so
+            // the client's sam_abela.csv sheet (header 'Notary') auto-maps here.
+            // 'Date Range' is also added to the dates column guess (see below).
             ImportColumn::make('authority_name')
                 ->label('Authority Name')
-                ->guess(['Authority Name', 'authority_name', 'Given Name', 'Creator Name'])
+                ->guess(['Authority Name', 'authority_name', 'Given Name', 'Creator Name', 'Notary Name', 'Notary'])
                 ->fillRecordUsing(function (Document $record, ?string $state): void {
                     $key = spl_object_id($record);
                     static::$rowAuthorityStash[$key]['names'] = $state ?? '';
@@ -830,7 +905,15 @@ class AccessionRowImporter extends Importer
                 ->fillRecordUsing(function (Document $record, ?string $state): void {
                     if ($state !== null && trim($state) !== '') {
                         $key = spl_object_id($record);
-                        static::$rowAccessionStash[$key]['box_number'] = trim($state);
+                        // BUG-06 / F-002: normalise float artefacts from xlsx cells
+                        // ('1.0' → '1') so the dedup lookup matches existing boxes
+                        // stored with integer strings. Non-numeric values (e.g. '180A')
+                        // are kept verbatim — SpreadsheetParsers::parseInt returns null
+                        // for those and we fall through to the original trimmed value.
+                        $normalized = SpreadsheetParsers::parseInt(trim($state));
+                        static::$rowAccessionStash[$key]['box_number'] = $normalized !== null
+                            ? (string) $normalized
+                            : trim($state);
                     }
                 }),
 
@@ -896,6 +979,21 @@ class AccessionRowImporter extends Importer
             ImportColumn::make('volume_number')
                 ->label('Volume Number')
                 ->guess(['Volume No', 'Volume Number', 'Volume', 'volume_number', 'Volume Label', 'volume_label'])
+                // F-005: normalise Excel float artefacts ('2.0' → '2') while
+                // keeping every other value verbatim — including '180A/181',
+                // '18+20', leading-zero volumes ('007') and genuine decimals
+                // ('2.5'), which a blanket (int) cast would corrupt.
+                ->castStateUsing(function (mixed $state): ?string {
+                    if ($state === null || trim((string) $state) === '') {
+                        return null;
+                    }
+                    $str = trim((string) $state);
+                    if (preg_match('/^(\d+)\.0+$/', $str, $m)) {
+                        return $m[1];
+                    }
+
+                    return $str;
+                })
                 ->rules(['nullable', 'string', 'max:64']),
 
             // DECISION 5: new part_number field.
@@ -911,7 +1009,8 @@ class AccessionRowImporter extends Importer
 
             ImportColumn::make('dates')
                 ->label('Dates (free-text)')
-                ->guess(['Dates', 'dates', 'Date range'])
+                // F-003: add 'Date Range' (exact casing from sam_abela.csv) to guess list.
+                ->guess(['Dates', 'dates', 'Date range', 'Date Range'])
                 ->rules(['nullable', 'string', 'max:191']),
 
             ImportColumn::make('deeds')

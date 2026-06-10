@@ -49,6 +49,13 @@ class Box extends Model implements AuditableContract, Sortable
         'sort_when_creating' => true,
     ];
 
+    /**
+     * Set to true on a model instance to bypass the PERM_OUT location guard.
+     * Used by the import pipeline where legacy data may not carry location info.
+     * Does NOT bypass any other guards (disinfestation_date, parent_box, etc.).
+     */
+    public bool $skipPermOutGuard = false;
+
     protected $fillable = [
         'sort_order',
         'box_type', 'box_number', 'batch_id', 'parent_box_id',
@@ -457,6 +464,38 @@ class Box extends Model implements AuditableContract, Sortable
             if ($box->barcode_status === 'PERM_OUT' && ! $box->canBePermOut()) {
                 throw ValidationException::withMessages([
                     'barcode_status' => 'A box cannot be PERM OUT without a disinfestation date (RFQ A1.2, box level).',
+                ]);
+            }
+        });
+
+        // RFQ-3.1.7-A (review finding) — PERM OUT means the box has been
+        // permanently transferred to NRA. Per Appendix 2 §iv, a PERM_OUT box
+        // MUST have an NRA location associated with it: "PERM OUT: Taken out
+        // of their storage facility and thus should be at NRA and NRA Location
+        // should have a NRA location associated with it." This guard fires ONLY
+        // when barcode_status is being transitioned to PERM_OUT so:
+        //   - Legacy rows already at PERM_OUT but missing a location can be
+        //     re-saved as long as the status is not being touched (isDirty guard).
+        //   - The disinfestation_date check above remains the primary domain
+        //     constraint; this adds the linked-location dimension on top.
+        static::saving(function (self $box): void {
+            // Only block transitioning an *existing* box to PERM_OUT without a
+            // location. New records created directly at PERM_OUT (e.g. legacy
+            // data import) are not blocked here — the disinfestation_date guard
+            // above already applies to creates, and location is enforced at the
+            // UI level on the form for new records.
+            if (! $box->exists) {
+                return;
+            }
+            if ($box->skipPermOutGuard) {
+                return;
+            }
+            if (! $box->isDirty('barcode_status')) {
+                return;
+            }
+            if ($box->barcode_status === 'PERM_OUT' && $box->location_id === null) {
+                throw ValidationException::withMessages([
+                    'location_id' => 'A box cannot be set to PERM OUT without a location (RFQ §3.1.7 / Appendix 2 §iv).',
                 ]);
             }
         });

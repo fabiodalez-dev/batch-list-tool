@@ -4,6 +4,7 @@ namespace App\Filament\Resources;
 
 use App\Filament\Concerns\AppliesFieldPermissions;
 use App\Filament\Resources\SeriesResource\Pages;
+use App\Filament\Support\CreatorColumn;
 use App\Models\Repository;
 use App\Models\Series;
 use Filament\Actions\BulkActionGroup;
@@ -239,6 +240,9 @@ class SeriesResource extends Resource
             // navigation/refresh (client complaint: "filters seem to reset").
             ->deferFilters()
             ->persistFiltersInSession()
+            // Feedback1 Wave A (A6) — drag-and-drop column reordering, mirroring
+            // DocumentResource and BoxResource (spec: all main resource lists).
+            ->reorderableColumns()
             ->columns([
                 $gc(Tables\Columns\TextColumn::make('repository.code')
                     ->label('Repo')
@@ -288,6 +292,8 @@ class SeriesResource extends Resource
                     ->dateTime()
                     ->sortable()
                     ->toggleable(isToggledHiddenByDefault: true),
+                // A9 — inputter column (who created the record).
+                CreatorColumn::make(),
             ])
             ->filters([
                 // Feedback1 Wave B (B1) — dropdown-driven filters (mechanism #1)
@@ -342,6 +348,18 @@ class SeriesResource extends Resource
                     DeleteBulkAction::make(),
                 ]),
             ]);
+    }
+
+    /**
+     * Eager-load the first 'created' audit with its user so CreatorColumn
+     * can render the inputter name without N+1 queries.
+     */
+    public static function getEloquentQuery(): Builder
+    {
+        return parent::getEloquentQuery()->with([
+            // A9 — creator resolution: first 'created' audit with its user.
+            'audits' => fn ($q) => $q->where('event', 'created')->oldest('id')->with('user'),
+        ]);
     }
 
     public static function getRelations(): array

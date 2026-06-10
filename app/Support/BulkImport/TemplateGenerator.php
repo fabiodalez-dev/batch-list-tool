@@ -106,7 +106,7 @@ final class TemplateGenerator
      * can detect a stale template at re-upload time and warn the operator.
      * Bump on any change to the header contract.
      */
-    public const GENERATOR_VERSION = '1.0.0';
+    public const GENERATOR_VERSION = '1.1.0';
 
     /**
      * Supported template entities. Headers come from the in-repo constants
@@ -276,6 +276,9 @@ final class TemplateGenerator
             'disinfestation_date',
             'is_legacy',
             'notes',
+            // F05 — Seal Number and Location added per client request.
+            'Seal Number',       // optional physical seal id on the box
+            'Location',          // location code / identifier (e.g. "SHELF-A3")
         ];
     }
 
@@ -317,6 +320,8 @@ final class TemplateGenerator
      *   'identifier'   → document identifier (lowercase per NAf convention)
      *   'Volume No'    → volume_label / volume_number field
      *   'Note'         → notes field (singular per NAf convention)
+     *   'No of Acts'   → number_of_acts field (F2)
+     *   'Pages/Folios' → pages_folios field (F2)
      *
      * CONTRACT: if AccessionRowImporter static columns change, update BOTH
      * this method AND the importer, then bump GENERATOR_VERSION.
@@ -350,6 +355,9 @@ final class TemplateGenerator
             'Practice',               // optional
             'Dates',                  // optional; free-text range
             'Deeds',                  // optional
+            // F2: two new document fields added after 'Deeds' (DECISION F2).
+            'No of Acts',             // optional; number/count of acts
+            'Pages/Folios',           // optional; page or folio count
             'Note',                   // optional
         ];
     }

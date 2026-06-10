@@ -5,11 +5,13 @@ declare(strict_types=1);
 use App\Models\Batch;
 use App\Models\Box;
 use App\Models\Document;
+use App\Models\Location;
 use App\Models\Repository;
 use App\Models\Scopes\RepositoryScope;
 use App\Models\Series;
 use App\Support\BulkImport\EntityResolver;
 use Illuminate\Foundation\Testing\RefreshDatabase;
+use Illuminate\Validation\ValidationException;
 
 /**
  * RFQ Appendix 1 — Validation Rules. The five rules:
@@ -125,4 +127,79 @@ it('§ App.1 #5: Box::canBePermOut() returns false without disinfestation_date',
 it('§ App.1 #5: Box::canBePermOut() returns true with disinfestation_date', function () {
     $box = new Box(['box_type' => 'RAS', 'disinfestation_date' => '2026-05-01']);
     expect($box->canBePermOut())->toBeTrue();
+});
+
+/* ─────── RFQ-App1-R2-DOC — Document-level PERM_OUT requires disinfestation_date ──── */
+
+it('§ App.1 R2-DOC: Document cannot be set PERM_OUT without a disinfestation_date', function () {
+    $repo = app1_makeRepo();
+    $batch = app1_makeBatch($repo->id, 41);
+    $series = Series::create([
+        'code' => 'APP1R2-' . substr(uniqid(), -4),
+        'title' => 'Test Series',
+        'is_active' => true,
+        'is_wills_series' => false,
+    ]);
+
+    expect(fn () => Document::withoutGlobalScope(RepositoryScope::class)->create([
+        'identifier' => 'DOC-APP1R2-' . substr(uniqid(), -6),
+        'batch_id' => $batch->id,
+        'series_id' => $series->id,
+        'barcode_status' => 'PERM_OUT',
+        'disinfestation_date' => null,
+        'repository_id' => $repo->id,
+    ]))->toThrow(ValidationException::class);
+});
+
+it('§ App.1 R2-DOC: Document can be set PERM_OUT when disinfestation_date is present', function () {
+    $repo = app1_makeRepo();
+    $batch = app1_makeBatch($repo->id, 42);
+    $series = Series::create([
+        'code' => 'APP1R2B-' . substr(uniqid(), -4),
+        'title' => 'Test Series 2',
+        'is_active' => true,
+        'is_wills_series' => false,
+    ]);
+
+    $doc = Document::withoutGlobalScope(RepositoryScope::class)->create([
+        'identifier' => 'DOC-APP1R2OK-' . substr(uniqid(), -6),
+        'batch_id' => $batch->id,
+        'series_id' => $series->id,
+        'barcode_status' => 'PERM_OUT',
+        'disinfestation_date' => '2026-05-01',
+        'repository_id' => $repo->id,
+    ]);
+
+    expect($doc->barcode_status)->toBe('PERM_OUT')
+        ->and($doc->disinfestation_date)->not->toBeNull();
+});
+
+/* ─────── RFQ-App1-R3-EXPLICIT-NULL — provenance_unknown flag allows null parent ─── */
+
+it('§ App.1 R3 explicit-NULL: IN_SITU box with provenance_unknown=true is accepted without parent', function () {
+    $repo = app1_makeRepo();
+    $batch = app1_makeBatch($repo->id, 43);
+
+    // With provenance_unknown=true, no parent_box_id is required (RFQ App.1 #3 exception).
+    $location = Location::withoutGlobalScopes()->create([
+        'name' => 'TestLoc-' . substr(uniqid(), -6),
+        'type' => 'room',
+        'repository_id' => $repo->id,
+        'is_active' => true,
+    ]);
+
+    $box = Box::withoutGlobalScopes()->create([
+        'box_type' => 'IN_SITU',
+        'box_number' => 'PROV-UNK-' . substr(uniqid(), -6),
+        'batch_id' => $batch->id,
+        'barcode' => 'PROVUNK' . strtoupper(substr(uniqid(), -6)),
+        'barcode_status' => 'IN',
+        'is_legacy' => false,
+        'parent_box_id' => null,
+        'provenance_unknown' => true,
+        'location_id' => $location->id,
+    ]);
+
+    expect($box->provenance_unknown)->toBeTrue()
+        ->and($box->parent_box_id)->toBeNull();
 });

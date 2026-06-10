@@ -321,6 +321,8 @@ test('Box template uses synthesised headers that map 1:1 with BoxImporter column
         'disinfestation_date',
         'is_legacy',
         'notes',
+        'Seal Number',
+        'Location',
     ]);
 
     // Cross-check: at least the canonical BoxImporter columns must each
@@ -330,8 +332,14 @@ test('Box template uses synthesised headers that map 1:1 with BoxImporter column
         static fn ($c) => $c->getName(),
         BoxImporter::getColumns(),
     );
+    // Header-to-importer-column aliases (where template header differs from importer name).
+    $aliases = [
+        'parent_box_number' => 'parent_barcode',
+        'Seal Number' => 'seal_number',
+        'Location' => 'location',
+    ];
     foreach ($generated as $header) {
-        $aliased = $header === 'parent_box_number' ? 'parent_barcode' : $header;
+        $aliased = $aliases[$header] ?? $header;
         expect($importerColumnNames)->toContain($aliased);
     }
 });

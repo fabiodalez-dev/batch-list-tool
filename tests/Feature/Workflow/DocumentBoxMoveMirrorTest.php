@@ -9,6 +9,7 @@ use App\Models\BoxBarcodeHistory;
 use App\Models\Document;
 use App\Models\DocumentBarcodeHistory;
 use App\Models\DocumentType;
+use App\Models\Location;
 use App\Models\Repository;
 use App\Models\Series;
 use App\Models\User;
@@ -116,7 +117,14 @@ it('re-mirrors a document moved into a PERM_OUT box (reflects PERM_OUT + backfil
         'barcode_status' => 'IN',
         'disinfestation_date' => null,
     ]);
-    $boxIn2->update(['barcode_status' => 'PERM_OUT', 'disinfestation_date' => '2026-02-20']);
+    // RFQ-3.1.7-A: PERM_OUT requires a location on existing boxes.
+    $loc2 = Location::withoutGlobalScopes()->create([
+        'name' => 'NRA-PERM-LOC-2',
+        'type' => 'room',
+        'repository_id' => $repo2->id,
+        'is_active' => true,
+    ]);
+    $boxIn2->update(['barcode_status' => 'PERM_OUT', 'disinfestation_date' => '2026-02-20', 'location_id' => $loc2->id]);
 
     $after = Document::find($doc2->id);
     expect($after->barcode_status)->toBe('PERM_OUT')
@@ -128,7 +136,14 @@ it('clears the disinfestation_date when a document moves out of a PERM_OUT box i
 
     [$repo, $batchPerm, $boxPerm, $series] = dbmm_ctx('IN');
     // Reconfigure the first box as PERM_OUT with a date.
-    $boxPerm->update(['barcode_status' => 'PERM_OUT', 'disinfestation_date' => '2026-02-20']);
+    // RFQ-3.1.7-A: PERM_OUT requires a location on existing boxes.
+    $locPerm = Location::withoutGlobalScopes()->create([
+        'name' => 'NRA-PERM-LOC-CLR',
+        'type' => 'room',
+        'repository_id' => $repo->id,
+        'is_active' => true,
+    ]);
+    $boxPerm->update(['barcode_status' => 'PERM_OUT', 'disinfestation_date' => '2026-02-20', 'location_id' => $locPerm->id]);
 
     $batchIn = Batch::factory()->create(['repository_id' => $repo->id]);
     $boxIn = Box::factory()->create([

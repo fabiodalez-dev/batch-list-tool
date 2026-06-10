@@ -377,6 +377,9 @@ class BatchResource extends Resource
             // their application until the operator hits "Apply".
             ->deferFilters()
             ->persistFiltersInSession()
+            // Feedback1 Wave A (A6) — drag-and-drop column reordering, mirroring
+            // DocumentResource and BoxResource (spec: all main resource lists).
+            ->reorderableColumns()
             // A8 — only the Batch Number cell is the hyperlink to the batch
             // view; the whole-row recordUrl is removed so other cells are plain
             // text.  View / Edit remain reachable via the row-actions column.
