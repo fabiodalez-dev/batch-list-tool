@@ -282,6 +282,30 @@ class BoxImporter extends Importer
                 ->label('Notes')
                 ->guess(['Notes', 'notes', 'Note'])
                 ->rules(['nullable', 'string']),
+
+            // F05 (feedback review) — Seal Number and Location columns added
+            // per client request ("The following fields should also be part
+            // of the importation process: Seal Number, Location").
+            ImportColumn::make('seal_number')
+                ->label('Seal Number')
+                ->guess(['Seal Number', 'seal_number', 'Seal No', 'Seal no'])
+                ->rules(['nullable', 'string', 'max:64']),
+
+            ImportColumn::make('location')
+                ->label('Location (code / identifier)')
+                ->guess(['Location', 'location', 'Location Code', 'Location Identifier'])
+                ->fillRecordUsing(function (Box $record, ?string $state): void {
+                    if ($state === null || trim($state) === '') {
+                        return;
+                    }
+                    $res = EntityResolver::resolveLocation(trim($state));
+                    if ($res === null) {
+                        throw ValidationException::withMessages([
+                            'location' => "Unknown location code: '{$state}'. Ensure the location exists in the system before importing.",
+                        ]);
+                    }
+                    $record->location_id = $res['location_id'];
+                }),
         ];
     }
 

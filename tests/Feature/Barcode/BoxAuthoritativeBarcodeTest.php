@@ -8,6 +8,7 @@ use App\Models\Batch;
 use App\Models\Box;
 use App\Models\BoxBarcodeHistory;
 use App\Models\Document;
+use App\Models\Location;
 use App\Models\Repository;
 use App\Models\Series;
 use App\Models\User;
@@ -120,7 +121,14 @@ test('setting a box to PERM_OUT with a disinfestation_date is allowed and mirror
     $box = bab_box(['barcode_status' => 'IN', 'disinfestation_date' => now()->subDay()]);
     $doc = bab_docInBox($box, ['disinfestation_date' => now()->subDay()]);
 
-    $box->update(['barcode_status' => 'PERM_OUT']);
+    // RFQ-3.1.7-A: PERM_OUT requires a location on existing boxes.
+    $loc5 = Location::withoutGlobalScopes()->create([
+        'name' => 'NRA-BAB-5',
+        'type' => 'room',
+        'repository_id' => $box->batch->repository_id,
+        'is_active' => true,
+    ]);
+    $box->update(['barcode_status' => 'PERM_OUT', 'location_id' => $loc5->id]);
 
     expect($box->fresh()->barcode_status)->toBe('PERM_OUT');
     expect($doc->fresh()->barcode_status)->toBe('PERM_OUT');
@@ -137,9 +145,17 @@ test('MarkDisinfested on a PERM_OUT box keeps PERM_OUT at the box level (B2 inva
     $box = bab_box(['barcode_status' => 'IN']);
     $doc = bab_docInBox($box, ['barcode_status' => 'IN']);
 
+    // RFQ-3.1.7-A: PERM_OUT requires a location on existing boxes.
+    $loc6 = Location::withoutGlobalScopes()->create([
+        'name' => 'NRA-BAB-6',
+        'type' => 'room',
+        'repository_id' => $box->batch->repository_id,
+        'is_active' => true,
+    ]);
     $box->update([
         'barcode_status' => 'PERM_OUT',
         'disinfestation_date' => now()->subDay(),
+        'location_id' => $loc6->id,
     ]);
 
     $closure = (function () {

@@ -1944,6 +1944,36 @@ class ImportWizard extends Page
                 }
                 $fresh->touch('completed_at');
                 event(new ImportCompleted($fresh, $cleanColumnMap, $options));
+
+                // BUG-03: mirror the Filament ImportAction finally() block —
+                // send a database notification so the operator gets a bell-icon
+                // signal when the import finishes, even if they navigated away
+                // from the wizard page after clicking Dispatch.
+                $importUser = $fresh->user;
+                if ($importUser !== null) {
+                    $fresh->columnMap($cleanColumnMap);
+                    $fresh->options($options);
+                    $failedRowsCount = $fresh->getFailedRowsCount();
+
+                    $notification = Notification::make()
+                        ->title($fresh->importer::getCompletedNotificationTitle($fresh))
+                        ->body($fresh->importer::getCompletedNotificationBody($fresh))
+                        ->when(
+                            ! $failedRowsCount,
+                            fn (Notification $n) => $n->success(),
+                        )
+                        ->when(
+                            $failedRowsCount && ($failedRowsCount < $fresh->total_rows),
+                            fn (Notification $n) => $n->warning(),
+                        )
+                        ->when(
+                            $failedRowsCount === $fresh->total_rows,
+                            fn (Notification $n) => $n->danger(),
+                        );
+
+                    $notification = $fresh->importer::modifyCompletedNotification($notification, $fresh);
+                    $notification->sendToDatabase($importUser, isEventDispatched: true);
+                }
             })
             ->dispatch();
 

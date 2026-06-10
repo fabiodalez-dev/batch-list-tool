@@ -80,9 +80,11 @@ class AccessionResource extends Resource
                 Section::make('Provenance & scope')
                     ->columns($twoCols)
                     ->schema([
-                        // Authority dropdown: 808 rows in production → server-side
-                        // search ("Abela" → top 50 matches by surname/identifier).
-                        SearchableSelects::authority('authority_id', 'authority'),
+                        // F04 (feedback review) — Authority removed from the
+                        // Accession form per client request: "The Authority should
+                        // be included with the Document." The authority_id DB
+                        // column is kept for backward-compatibility but is no
+                        // longer exposed in the create/edit form.
                         // Wave B (B4) — multi-select for the N:N Batch relation.
                         // One accession may span several batches; Batch 50 can collect
                         // wills from many accessions. No guard forbids sharing a batch
@@ -229,6 +231,9 @@ class AccessionResource extends Resource
             // default: the panel is not hidden when results are empty).
             ->deferFilters()
             ->persistFiltersInSession()
+            // Feedback1 Wave A (A6) — drag-and-drop column reordering, mirroring
+            // DocumentResource and BoxResource (spec: all main resource lists).
+            ->reorderableColumns()
             // A8 / no-whole-row-link — do NOT set ->recordUrl() here so that
             // the entire row is NOT a hyperlink. Only the "Title" (code) cell
             // carries a ->url() pointing to the view page (see column below).

@@ -6,6 +6,7 @@ use App\Filament\Actions\Documents\MarkPermOutAction;
 use App\Models\Batch;
 use App\Models\Box;
 use App\Models\Document;
+use App\Models\Location;
 use App\Models\Repository;
 use App\Models\User;
 use Illuminate\Database\Eloquent\Collection as EloquentCollection;
@@ -54,7 +55,14 @@ function permout_runWithOrder(string $sort): Box
     $repoId = $user->default_repository_id;
 
     $batch = Batch::factory()->create(['repository_id' => $repoId]);
-    $box = Box::factory()->create(['batch_id' => $batch->id, 'barcode_status' => 'IN']);
+    // RFQ-3.1.7-A: PERM_OUT requires a location; pre-create one so the guard passes.
+    $loc = Location::withoutGlobalScopes()->create([
+        'name' => 'NRA-PERMDETS-' . uniqid(),
+        'type' => 'room',
+        'repository_id' => $repoId,
+        'is_active' => true,
+    ]);
+    $box = Box::factory()->create(['batch_id' => $batch->id, 'barcode_status' => 'IN', 'location_id' => $loc->id]);
 
     $early = Document::factory()->create([
         'repository_id' => $repoId,

@@ -4,6 +4,7 @@ namespace App\Filament\Resources;
 
 use App\Filament\Concerns\AppliesFieldPermissions;
 use App\Filament\Resources\AuthorityResource\Pages;
+use App\Filament\Support\CreatorColumn;
 use App\Models\Authority;
 use Filament\Actions\BulkActionGroup;
 use Filament\Actions\DeleteAction;
@@ -273,6 +274,9 @@ class AuthorityResource extends Resource
             ->persistFiltersInSession()
             // Feedback1 — creators sorted by Identifier by default.
             ->defaultSort('identifier')
+            // Feedback1 Wave A (A6) — drag-and-drop column reordering, mirroring
+            // DocumentResource and BoxResource (spec: all main resource lists).
+            ->reorderableColumns()
             // Feedback1 — expose first/last page links in the paginator so
             // users can jump to the ends of large creator lists.
             ->extremePaginationLinks()
@@ -320,6 +324,8 @@ class AuthorityResource extends Resource
                     ->dateTime()
                     ->sortable()
                     ->toggleable(isToggledHiddenByDefault: true),
+                // A9 — inputter column (who created the record).
+                CreatorColumn::make(),
             ])
             ->filters([
                 // Feedback1 Wave B (B1) — rich filter mechanism (#1) on top of
@@ -490,6 +496,18 @@ class AuthorityResource extends Resource
         }
 
         return $options;
+    }
+
+    /**
+     * Eager-load the first 'created' audit with its user so CreatorColumn
+     * can render the inputter name without N+1 queries.
+     */
+    public static function getEloquentQuery(): Builder
+    {
+        return parent::getEloquentQuery()->with([
+            // A9 — creator resolution: first 'created' audit with its user.
+            'audits' => fn ($q) => $q->where('event', 'created')->oldest('id')->with('user'),
+        ]);
     }
 
     public static function getRelations(): array

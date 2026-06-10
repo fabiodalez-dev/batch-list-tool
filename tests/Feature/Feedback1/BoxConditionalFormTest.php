@@ -120,7 +120,14 @@ it('archives the barcode to history when a RAS box transitions to PERM OUT', fun
 
     expect($box->barcodeHistory()->count())->toBe(0);
 
-    $box->update(['barcode_status' => 'PERM_OUT']);
+    // RFQ-3.1.7-A: PERM_OUT requires a location on existing boxes.
+    $loc = Location::withoutGlobalScopes()->create([
+        'name' => 'NRA-HIST-LOC',
+        'type' => 'room',
+        'repository_id' => $box->batch->repository_id,
+        'is_active' => true,
+    ]);
+    $box->update(['barcode_status' => 'PERM_OUT', 'location_id' => $loc->id]);
 
     // The existing barcode-history observer logs the IN → PERM_OUT transition.
     $history = $box->barcodeHistory()->get();

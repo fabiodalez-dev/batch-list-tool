@@ -136,11 +136,10 @@ class LocationResource extends Resource
                         Forms\Components\Toggle::make('is_active')
                             ->default(true)
                             ->required(),
-                        Forms\Components\TextInput::make('sort_order')
-                            ->numeric()
-                            ->minValue(0)
-                            ->helperText('Display order among peer locations.')
-                            ->columnSpanFull(),
+                        // F08 (review finding) — sort_order hidden from the
+                        // simple UI per decision D8: "sort_order kept internally
+                        // but hidden from the simple UI." DB column and model
+                        // field remain intact for programmatic use.
                     ]),
 
                 Section::make('Notes')
@@ -176,23 +175,15 @@ class LocationResource extends Resource
                                 ? self::typeLabel($state)
                                 : '—')
                             ->placeholder('—'),
+                        // D3/D8 — relabel 'Code' → 'Identifier' in the infolist
+                        // to match the form input and table column labels.
                         TextEntry::make('code')
-                            ->label('Code')
+                            ->label('Identifier')
                             ->copyable()
                             ->placeholder('—'),
-                        TextEntry::make('breadcrumb')
-                            ->label('Path')
-                            ->state(fn (?Location $record): string => $record?->breadcrumb() ?? '—')
-                            ->placeholder('—')
-                            ->columnSpanFull(),
-                        TextEntry::make('parent.name')
-                            ->label('Parent')
-                            ->url(fn (?Location $record): ?string => $record?->parent_id
-                                ? route('filament.admin.resources.locations.view', ['record' => $record->parent_id])
-                                : null)
-                            ->openUrlInNewTab(false)
-                            ->placeholder('—')
-                            ->columnSpanFull(),
+                        // F04/F07 (review findings) — breadcrumb (Path) and
+                        // parent entries removed per decision D8: "remove
+                        // breadcrumb/parent/depth from UI".
                     ]),
 
                 Section::make('Scope & status')
@@ -207,17 +198,12 @@ class LocationResource extends Resource
                                 : null)
                             ->openUrlInNewTab(false)
                             ->placeholder('GLOBAL'),
-                        TextEntry::make('depth')
-                            ->label('Depth')
-                            ->badge()
-                            ->color('gray')
-                            ->placeholder('—'),
+                        // F4/F08 (review findings) — depth and sort_order
+                        // removed from infolist per decision D8: "Remove depth;
+                        // sort_order kept internally but hidden from the simple UI."
                         IconEntry::make('is_active')
                             ->label('Active')
                             ->boolean(),
-                        TextEntry::make('sort_order')
-                            ->label('Sort order')
-                            ->placeholder('—'),
                     ]),
 
                 Section::make('Counts')
@@ -263,6 +249,8 @@ class LocationResource extends Resource
         // Wave D3 — removed depth + breadcrumb columns; added code (Identifier) column.
         return $table
             ->defaultSort('name')
+            // Feedback1 Wave A (A6) — drag-and-drop column reordering.
+            ->reorderableColumns()
             ->columns([
                 Tables\Columns\TextColumn::make('name')
                     ->searchable()

@@ -7,6 +7,7 @@ use App\Filament\Actions\Documents\MarkDisinfestedAction;
 use App\Filament\Actions\Documents\MoveToBoxAction;
 use App\Filament\Concerns\AppliesFieldPermissions;
 use App\Filament\Resources\DocumentResource\Pages;
+use App\Filament\Support\CreatorColumn;
 use App\Filament\Support\SearchableSelects;
 use App\Models\CustomFieldDefinition;
 use App\Models\Document;
@@ -978,6 +979,8 @@ class DocumentResource extends Resource
                 $gc(Tables\Columns\TextColumn::make('disinfestation_date')->label('Disinfested')->date()->sortable()->toggleable(isToggledHiddenByDefault: true)),
                 $gc(Tables\Columns\IconColumn::make('torre')->boolean()->toggleable(isToggledHiddenByDefault: true)),
                 $gc(Tables\Columns\TextColumn::make('updated_at')->dateTime()->sortable()->toggleable(isToggledHiddenByDefault: true)),
+                // A9 — inputter column (who created the record).
+                CreatorColumn::make(),
                 // Custom fields (EAV) — one TextColumn per active definition for
                 // the current user's default repository (document entity type).
                 // All hidden by default; operator can reveal via the column picker.
@@ -1299,6 +1302,8 @@ class DocumentResource extends Resource
                 // Custom-field EAV: eager-load definition to avoid N+1 in
                 // table columns and infolist rendering.
                 'customFieldValues.definition',
+                // A9 — creator resolution: first 'created' audit with its user.
+                'audits' => fn ($q) => $q->where('event', 'created')->oldest('id')->with('user'),
             ]);
     }
 

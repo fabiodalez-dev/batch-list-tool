@@ -4,10 +4,13 @@ declare(strict_types=1);
 
 namespace App\Support\BulkImport;
 
+use App\Filament\Imports\AccessionRowImporter;
 use App\Models\Authority;
 use App\Models\Batch;
 use App\Models\Box;
 use App\Models\DocumentType;
+use App\Models\Location;
+use App\Models\Practice;
 use App\Models\Repository;
 use App\Models\Scopes\RepositoryScope;
 use App\Models\Series;
@@ -164,7 +167,7 @@ final class EntityResolver
         if (! array_key_exists($key, self::$memo)) {
             $rows = Authority::query()
                 ->where('surname', 'like', '%' . $surname . '%')
-                ->orderByRaw('CHAR_LENGTH(surname) ASC')
+                ->orderByRaw('LENGTH(surname) ASC')
                 ->limit(2)
                 ->pluck('id')
                 ->all();
@@ -347,7 +350,16 @@ final class EntityResolver
         if ($barcode !== null) {
             $key = "box:barcode:{$barcode}";
             if (! array_key_exists($key, self::$memo)) {
+                // BUG-09: barcodes are globally unique physical labels — they
+                // must be resolved without any repository/tenant scope, consistent
+                // with AccessionRowImporter's own withoutGlobalScope barcode check.
+                // The caller is responsible for validating cross-repo correctness
+                // after resolution (e.g. DocumentImporter::resolveCurrentBox does
+                // a batch-id consistency check). Using the global scope here would
+                // return null for a box that exists in another tenant scope,
+                // causing silent null assignment on the document (data loss).
                 $row = Box::query()
+                    ->withoutGlobalScopes()
                     ->where('barcode', $barcode)
                     ->first(['id', 'batch_id']);
                 self::$memo[$key] = $row !== null
@@ -466,6 +478,85 @@ final class EntityResolver
     }
 
     /**
+     * Resolve a Practice by (1) exact `identifier` match (case-insensitive),
+     * then (2) exact `name` match (case-insensitive). Mirrors resolveDocumentType().
+     *
+     * D4 (Feedback1 Wave D) — the optional `identifier` field on Practice is the
+     * primary import key; falls back to name for legacy data.
+     *
+     * Returns `['practice_id' => int]` on a unique match or `null` otherwise.
+     *
+     * @return array{practice_id:int}|null
+     */
+    public static function resolvePractice(?string $identifierOrName): ?array
+    {
+        $text = self::normaliseString($identifierOrName);
+        if ($text === null) {
+            return null;
+        }
+
+        // Strategy 1 — exact identifier match (unique when non-null).
+        $key = "practice:identifier:{$text}";
+        if (! array_key_exists($key, self::$memo)) {
+            $id = Practice::query()
+                ->whereRaw('LOWER(identifier) = ?', [mb_strtolower($text)])
+                ->value('id');
+            self::$memo[$key] = $id !== null ? ['practice_id' => (int) $id] : null;
+        }
+        if (self::$memo[$key] !== null) {
+            return self::$memo[$key];
+        }
+
+        // Strategy 2 — exact name match (case-insensitive).
+        $key = "practice:name:{$text}";
+        if (! array_key_exists($key, self::$memo)) {
+            $id = Practice::query()
+                ->whereRaw('LOWER(name) = ?', [mb_strtolower($text)])
+                ->value('id');
+            self::$memo[$key] = $id !== null ? ['practice_id' => (int) $id] : null;
+        }
+
+        return self::$memo[$key];
+    }
+
+    /**
+     * Resolve a Location by its `code` (case-insensitive) within the given
+     * repository (or globally when $repositoryId is null). The auto-generated
+     * `code` field is the import key for locations, exactly as described in
+     * decisions D3/D8 (code = 'Identifier').
+     *
+     * Returns `['location_id' => int]` on a unique match, `null` otherwise.
+     * The caller is expected to throw a ValidationException if the code is
+     * supplied but not found (unknown code is always an operator error).
+     *
+     * @return array{location_id:int}|null
+     */
+    public static function resolveLocation(?string $code, ?int $repositoryId = null): ?array
+    {
+        $text = self::normaliseString($code);
+        if ($text === null) {
+            return null;
+        }
+
+        $key = "location:code:{$text}:" . ($repositoryId ?? '*');
+        if (! array_key_exists($key, self::$memo)) {
+            $q = Location::query()
+                ->withoutGlobalScopes()
+                ->whereRaw('LOWER(code) = ?', [mb_strtolower($text)]);
+            if ($repositoryId !== null) {
+                $q->where(function ($inner) use ($repositoryId): void {
+                    $inner->where('repository_id', $repositoryId)
+                        ->orWhereNull('repository_id');
+                });
+            }
+            $id = $q->value('id');
+            self::$memo[$key] = $id !== null ? ['location_id' => (int) $id] : null;
+        }
+
+        return self::$memo[$key];
+    }
+
+    /**
      * Flush the per-request memoisation cache. Tests call this between
      * scenarios to make sure stub data doesn't bleed across cases; the
      * production path never needs to call it (a fresh PHP process means a
@@ -474,6 +565,12 @@ final class EntityResolver
     public static function flushMemo(): void
     {
         self::$memo = [];
+        // BUG-08 test cleanup: reset the AccessionRowImporter sequence counter
+        // so successive test scenarios each restart the document-identifier
+        // sequence at 1. This call is safe because AccessionRowImporter does NOT
+        // use EntityResolver in its class body — it only calls EntityResolver
+        // at runtime, so there is no circular-dependency issue.
+        AccessionRowImporter::resetBoxRowSeq();
     }
 
     /**

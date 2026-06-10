@@ -5,6 +5,7 @@ declare(strict_types=1);
 use App\Models\Batch;
 use App\Models\Box;
 use App\Models\Document;
+use App\Models\Location;
 use App\Models\Repository;
 use App\Models\Series;
 use App\Models\User;
@@ -35,8 +36,16 @@ it('propagates the box disinfestation_date onto mirrored PERM_OUT documents', fu
         'disinfestation_date' => null,
     ]);
 
+    // RFQ-3.1.7-A: PERM_OUT requires a location on existing boxes.
+    $loc1 = Location::withoutGlobalScopes()->create([
+        'name' => 'NRA-MIRROR-LOC1',
+        'type' => 'room',
+        'repository_id' => $repo->id,
+        'is_active' => true,
+    ]);
     $box->disinfestation_date = '2026-01-15';
     $box->barcode_status = 'PERM_OUT';
+    $box->location_id = $loc1->id;
     $box->save();
 
     $fresh = Document::find($doc->id);
@@ -58,8 +67,16 @@ it('does not overwrite a documents own disinfestation_date on PERM_OUT mirror', 
         'disinfestation_date' => '2025-12-01',
     ]);
 
+    // RFQ-3.1.7-A: PERM_OUT requires a location on existing boxes.
+    $loc2 = Location::withoutGlobalScopes()->create([
+        'name' => 'NRA-MIRROR-LOC2',
+        'type' => 'room',
+        'repository_id' => $repo->id,
+        'is_active' => true,
+    ]);
     $box->disinfestation_date = '2026-01-15';
     $box->barcode_status = 'PERM_OUT';
+    $box->location_id = $loc2->id;
     $box->save();
 
     // Gap-fill only — the document's own genuine date must survive.
