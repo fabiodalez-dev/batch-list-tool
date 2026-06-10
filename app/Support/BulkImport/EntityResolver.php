@@ -4,7 +4,6 @@ declare(strict_types=1);
 
 namespace App\Support\BulkImport;
 
-use App\Filament\Imports\AccessionRowImporter;
 use App\Models\Authority;
 use App\Models\Batch;
 use App\Models\Box;
@@ -520,13 +519,20 @@ final class EntityResolver
     }
 
     /**
-     * Resolve a Location by its `code` (case-insensitive) within the given
-     * repository (or globally when $repositoryId is null). The auto-generated
+     * Resolve a Location by its `code` (case-insensitive). The auto-generated
      * `code` field is the import key for locations, exactly as described in
      * decisions D3/D8 (code = 'Identifier').
      *
-     * Returns `['location_id' => int]` on a unique match, `null` otherwise.
-     * The caller is expected to throw a ValidationException if the code is
+     * Tenancy contract: location codes are unique per repository, not
+     * globally, so resolution is always scoped —
+     *  - with a $repositoryId: match that repository's locations first, then
+     *    global ones (repository_id NULL); never another tenant's.
+     *  - without a $repositoryId: match GLOBAL locations only. Guessing
+     *    across tenants would be non-deterministic and could silently link a
+     *    box to another repository's location.
+     *
+     * Returns `['location_id' => int]` on a match, `null` otherwise. The
+     * caller is expected to throw a ValidationException if the code is
      * supplied but not found (unknown code is always an operator error).
      *
      * @return array{location_id:int}|null
@@ -544,10 +550,15 @@ final class EntityResolver
                 ->withoutGlobalScopes()
                 ->whereRaw('LOWER(code) = ?', [mb_strtolower($text)]);
             if ($repositoryId !== null) {
+                // Own repository first, global fallback second — deterministic.
                 $q->where(function ($inner) use ($repositoryId): void {
                     $inner->where('repository_id', $repositoryId)
                         ->orWhereNull('repository_id');
-                });
+                })->orderByRaw(
+                    'CASE WHEN repository_id IS NULL THEN 1 ELSE 0 END'
+                );
+            } else {
+                $q->whereNull('repository_id');
             }
             $id = $q->value('id');
             self::$memo[$key] = $id !== null ? ['location_id' => (int) $id] : null;
@@ -557,20 +568,21 @@ final class EntityResolver
     }
 
     /**
-     * Flush the per-request memoisation cache. Tests call this between
-     * scenarios to make sure stub data doesn't bleed across cases; the
-     * production path never needs to call it (a fresh PHP process means a
-     * fresh class).
+     * Flush the per-request memoisation cache.
+     *
+     * Tests call this between scenarios to make sure stub data doesn't bleed
+     * across cases — but it is ALSO called mid-import in production (e.g.
+     * AccessionRowImporter invalidates the memo after creating a missing
+     * Authority), so it must never carry side effects beyond clearing the
+     * cache. In particular it must NOT reset AccessionRowImporter::$boxRowSeq:
+     * doing so mid-import would restart the auto-identifier sequence and
+     * produce duplicate document identifiers. The sequence counter is already
+     * namespaced per import id, so cross-import isolation needs no reset;
+     * tests that exercise the sequence call resetBoxRowSeq() explicitly.
      */
     public static function flushMemo(): void
     {
         self::$memo = [];
-        // BUG-08 test cleanup: reset the AccessionRowImporter sequence counter
-        // so successive test scenarios each restart the document-identifier
-        // sequence at 1. This call is safe because AccessionRowImporter does NOT
-        // use EntityResolver in its class body — it only calls EntityResolver
-        // at runtime, so there is no circular-dependency issue.
-        AccessionRowImporter::resetBoxRowSeq();
     }
 
     /**

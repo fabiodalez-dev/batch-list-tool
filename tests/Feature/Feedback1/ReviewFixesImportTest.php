@@ -533,7 +533,8 @@ it('BUG-08: two consecutive imports each start the document-identifier sequence 
     rfi_series();
 
     // ── Import 1 ──────────────────────────────────────────────────────────
-    EntityResolver::flushMemo(); // resets $boxRowSeq via resetBoxRowSeq()
+    EntityResolver::flushMemo();
+    AccessionRowImporter::resetBoxRowSeq();
 
     $imp1 = Import::query()->create([
         'completed_at' => null,

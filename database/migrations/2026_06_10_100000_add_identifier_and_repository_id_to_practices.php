@@ -54,7 +54,11 @@ return new class extends Migration
                     $table->dropForeign('practice_repo_fk');
                 } catch (Throwable) {
                 }
-                $table->dropIndex('practice_repo_idx');
+
+                try {
+                    $table->dropIndex('practice_repo_idx');
+                } catch (Throwable) {
+                }
                 $table->dropColumn('repository_id');
             });
         }

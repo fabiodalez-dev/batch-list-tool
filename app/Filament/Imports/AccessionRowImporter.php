@@ -164,9 +164,12 @@ class AccessionRowImporter extends Importer
     protected static array $rowCustomFieldStash = [];
 
     /**
-     * Reset the per-import sequence counter. Called by EntityResolver::flushMemo()
-     * at test setup so successive test scenarios each start at sequence 1.
-     * In production this is never needed because a fresh PHP process resets statics.
+     * Reset the per-import sequence counter. Test-only helper, called
+     * explicitly by tests that exercise the sequence. Deliberately NOT wired
+     * into EntityResolver::flushMemo(): flushMemo() runs mid-import in
+     * production (after creating a missing Authority) and resetting the
+     * sequence there would generate duplicate document identifiers. The
+     * importId namespacing already isolates consecutive imports.
      */
     public static function resetBoxRowSeq(): void
     {
@@ -977,17 +980,16 @@ class AccessionRowImporter extends Importer
                 ->label('Volume Number')
                 ->guess(['Volume No', 'Volume Number', 'Volume', 'volume_number', 'Volume Label', 'volume_label'])
                 // F-005: normalise Excel float artefacts ('2.0' → '2') while
-                // keeping genuinely non-numeric values ('180A/181', '18+20') verbatim.
+                // keeping every other value verbatim — including '180A/181',
+                // '18+20', leading-zero volumes ('007') and genuine decimals
+                // ('2.5'), which a blanket (int) cast would corrupt.
                 ->castStateUsing(function (mixed $state): ?string {
                     if ($state === null || trim((string) $state) === '') {
                         return null;
                     }
                     $str = trim((string) $state);
-                    // Only coerce when the value IS purely numeric (is_numeric
-                    // matches integers AND floats like '1.0', '2.0', etc.),
-                    // giving us '1.0' → '1' while '180A/181' passes through.
-                    if (is_numeric($str)) {
-                        return (string) (int) $str;
+                    if (preg_match('/^(\d+)\.0+$/', $str, $m)) {
+                        return $m[1];
                     }
 
                     return $str;

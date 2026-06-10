@@ -535,14 +535,16 @@ class DocumentImporter extends Importer
                 ->label('Volume')
                 ->guess(['Volume', 'volume', 'Volume No', 'Volume Number', 'Volume label', 'volume_label', 'volume_number'])
                 // F-005: normalise Excel float artefacts ('2.0' → '2') while
-                // keeping genuinely non-numeric values ('180A/181', '18+20') verbatim.
+                // keeping every other value verbatim — including '180A/181',
+                // '18+20', leading-zero volumes ('007') and genuine decimals
+                // ('2.5'), which a blanket (int) cast would corrupt.
                 ->castStateUsing(function (mixed $state): ?string {
                     if ($state === null || trim((string) $state) === '') {
                         return null;
                     }
                     $str = trim((string) $state);
-                    if (is_numeric($str)) {
-                        return (string) (int) $str;
+                    if (preg_match('/^(\d+)\.0+$/', $str, $m)) {
+                        return $m[1];
                     }
 
                     return $str;
