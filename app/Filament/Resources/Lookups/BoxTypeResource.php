@@ -78,7 +78,8 @@ class BoxTypeResource extends Resource
                         Forms\Components\TextInput::make('sort_order')
                             ->numeric()
                             ->default(0)
-                            ->minValue(0),
+                            ->minValue(0)
+                            ->helperText('Controls display order in dropdowns (lower numbers first).'),
                         Forms\Components\Toggle::make('is_active')
                             ->default(true),
                         Forms\Components\Toggle::make('is_legacy')

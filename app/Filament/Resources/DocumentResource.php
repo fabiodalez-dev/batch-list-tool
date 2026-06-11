@@ -316,7 +316,14 @@ class DocumentResource extends Resource
                         $g(Forms\Components\DatePicker::make('disinfestation_date_3')->label('Legacy disinfestation #3')),
                     ]),
 
-                Section::make('Dates (precise)')
+                // Feedback1 gaps (misc) — formerly "Dates (precise)", which confused
+                // operators ("what is this?"). These ARE the Wave-F normalised date
+                // fields (dates_year_start/end, dates_start/end) — do NOT remove them;
+                // renamed + described + collapsed so they stay available without
+                // getting in the way.
+                Section::make('Normalised date range')
+                    ->description('Auto-derived from the Dates field for filtering and reporting. Edit only to correct the normalisation.')
+                    ->collapsed()
                     ->columnSpanFull()
                     ->columns(2)
                     ->schema([

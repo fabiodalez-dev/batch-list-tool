@@ -11,12 +11,15 @@ use Illuminate\Database\Eloquent\Relations\HasMany;
 use Illuminate\Database\Eloquent\SoftDeletes;
 use OwenIt\Auditing\Auditable;
 use OwenIt\Auditing\Contracts\Auditable as AuditableContract;
+use Spatie\MediaLibrary\HasMedia;
+use Spatie\MediaLibrary\InteractsWithMedia;
 
-class Accession extends Model implements AuditableContract
+class Accession extends Model implements AuditableContract, HasMedia
 {
     use Auditable;
     use BelongsToRepository;
     use HasFactory;
+    use InteractsWithMedia;
     use SoftDeletes;
 
     /**
@@ -53,5 +56,23 @@ class Accession extends Model implements AuditableContract
     public function documents(): HasMany
     {
         return $this->hasMany(Document::class);
+    }
+
+    /**
+     * Feedback1 — client request: "Can we have attachments (pdfs) – multiple
+     * – Digriet/Conservation Report/Emails" on accessions.
+     *
+     * Mirrors the Document `attachments` media collection exactly (same
+     * accepted mime list). image/tif AND image/tiff: RFC 3302 lists both as
+     * valid; some Windows tools + iOS Files app emit image/tif. Accept both
+     * so a legitimate scan isn't silently rejected at upload time.
+     */
+    public function registerMediaCollections(): void
+    {
+        $this->addMediaCollection('attachments')
+            ->acceptsMimeTypes([
+                'application/pdf',
+                'image/jpeg', 'image/png', 'image/tiff', 'image/tif',
+            ]);
     }
 }

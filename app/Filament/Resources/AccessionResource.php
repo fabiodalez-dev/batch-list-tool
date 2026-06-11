@@ -12,15 +12,18 @@ use Filament\Actions\DeleteBulkAction;
 use Filament\Actions\EditAction;
 use Filament\Actions\ViewAction;
 use Filament\Forms;
+use Filament\Forms\Components\SpatieMediaLibraryFileUpload;
 use Filament\Infolists\Components\TextEntry;
 use Filament\Resources\Resource;
 use Filament\Schemas\Components\Section;
 use Filament\Schemas\Schema;
 use Filament\Tables;
+use Filament\Tables\Enums\FiltersLayout;
 use Filament\Tables\Filters\SelectFilter;
 use Filament\Tables\Filters\TernaryFilter;
 use Filament\Tables\Table;
 use Illuminate\Database\Eloquent\Builder;
+use Illuminate\Support\HtmlString;
 
 class AccessionResource extends Resource
 {
@@ -110,6 +113,26 @@ class AccessionResource extends Resource
                             ->default(fn () => auth()->user()?->default_repository_id)
                             ->disabled(fn () => ! auth()->user()?->hasAnyRole(['super_admin', 'admin']))
                             ->dehydrated()
+                            ->columnSpanFull(),
+                    ]),
+
+                // Feedback1 — client: "Can we have attachments (pdfs) – multiple
+                // – Digriet/Conservation Report/Emails". Mirrors the Document
+                // attachments upload (same collection name, mime list, limits;
+                // local default media disk — no CDN/S3).
+                Section::make('Attachments')
+                    ->columnSpanFull()
+                    ->description('Digriet, Conservation Report, Emails (PDF, JPG, PNG, TIFF). Files are stored in the spatie/medialibrary `attachments` collection on this accession.')
+                    ->schema([
+                        SpatieMediaLibraryFileUpload::make('attachments')
+                            ->collection('attachments')
+                            ->multiple()
+                            ->acceptedFileTypes(['application/pdf', 'image/jpeg', 'image/png', 'image/tiff', 'image/tif'])
+                            ->maxSize(20 * 1024)
+                            ->downloadable()
+                            ->openable()
+                            ->reorderable()
+                            ->preserveFilenames()
                             ->columnSpanFull(),
                     ]),
 
@@ -209,6 +232,34 @@ class AccessionResource extends Resource
                             ->columnSpanFull(),
                     ]),
 
+                // Feedback1 — list uploaded attachments (Digriet / Conservation
+                // Report / Emails) with a download link per file. Served from
+                // the local default media disk (no CDN).
+                Section::make('Attachments')
+                    ->columns(1)
+                    ->schema([
+                        TextEntry::make('attachments_list')
+                            ->hiddenLabel()
+                            ->html()
+                            ->state(function (?Accession $record): ?HtmlString {
+                                $media = $record?->getMedia('attachments');
+
+                                if ($media === null || $media->isEmpty()) {
+                                    return null;
+                                }
+
+                                return new HtmlString(
+                                    $media
+                                        ->map(fn ($m): string => '<a href="' . e($m->getUrl()) . '" target="_blank" rel="noopener" class="underline">'
+                                            . e($m->file_name)
+                                            . '</a> <span class="text-gray-500">(' . e($m->human_readable_size) . ')</span>')
+                                        ->implode('<br>')
+                                );
+                            })
+                            ->placeholder('No attachments.')
+                            ->columnSpanFull(),
+                    ]),
+
                 Section::make('Audit info')
                     ->columns($twoCols)
                     ->collapsed()
@@ -231,6 +282,9 @@ class AccessionResource extends Resource
             // default: the panel is not hidden when results are empty).
             ->deferFilters()
             ->persistFiltersInSession()
+            // Feedback1 — filters always visible above the table content
+            // (collapsible), mirroring BoxResource.
+            ->filtersLayout(FiltersLayout::AboveContentCollapsible)
             // Feedback1 Wave A (A6) — drag-and-drop column reordering, mirroring
             // DocumentResource and BoxResource (spec: all main resource lists).
             ->reorderableColumns()

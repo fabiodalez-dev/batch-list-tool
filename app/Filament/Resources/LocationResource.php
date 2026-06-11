@@ -5,7 +5,9 @@ declare(strict_types=1);
 namespace App\Filament\Resources;
 
 use App\Filament\Resources\LocationResource\Pages;
+use App\Filament\Support\CreatorColumn;
 use App\Models\Location;
+use App\Models\LocationType;
 use App\Models\Repository;
 use Filament\Actions\BulkActionGroup;
 use Filament\Actions\DeleteAction;
@@ -23,6 +25,8 @@ use Filament\Tables\Filters\SelectFilter;
 use Filament\Tables\Filters\TernaryFilter;
 use Filament\Tables\Filters\TrashedFilter;
 use Filament\Tables\Table;
+use Illuminate\Database\Eloquent\Builder;
+use Illuminate\Support\Facades\Schema as SchemaFacade;
 
 /**
  * RFQ §3.1.9 — admin UI for configurable Location hierarchies.
@@ -95,8 +99,14 @@ class LocationResource extends Resource
                             ->default(fn () => auth()->user()?->default_repository_id),
                         Forms\Components\Select::make('type')
                             ->label('Type')
-                            // Wave D3: only the 3 canonical types offered in the form.
-                            ->options(Location::CANONICAL_TYPES)
+                            // Feedback1 gaps — options come from the editable
+                            // location_types lookup (active rows, ordered by
+                            // sort_order); stored value stays the lowercase code
+                            // so existing rows ('room', …) remain compatible.
+                            // C4 trap — merge the record's CURRENT value back in
+                            // so an inactive/legacy type stays selectable on edit
+                            // (mirrors BatchResource / BoxResource).
+                            ->options(fn (?Location $record): array => self::typeOptionsWith($record?->type))
                             ->required()
                             ->native(false),
                         Forms\Components\TextInput::make('name')
@@ -283,6 +293,8 @@ class LocationResource extends Resource
                 Tables\Columns\IconColumn::make('is_active')
                     ->boolean()
                     ->sortable(),
+                // A9 — inputter column (who created the record).
+                CreatorColumn::make(),
                 Tables\Columns\TextColumn::make('updated_at')
                     ->dateTime()
                     ->sortable()
@@ -345,6 +357,72 @@ class LocationResource extends Resource
             'view' => Pages\ViewLocation::route('/{record}'),
             'edit' => Pages\EditLocation::route('/{record}/edit'),
         ];
+    }
+
+    /**
+     * Eager-load the first audit entry (for the CreatorColumn / Inputter
+     * column) to avoid N+1 in the table. Mirrors BatchResource: the audits
+     * sub-load is filtered to event='created' and ordered by id asc so only
+     * the relevant row is fetched per location record.
+     */
+    public static function getEloquentQuery(): Builder
+    {
+        return parent::getEloquentQuery()->with([
+            // A9 — creator resolution: first 'created' audit with its user.
+            'audits' => fn ($q) => $q->where('event', 'created')->oldest('id')->with('user'),
+        ]);
+    }
+
+    /**
+     * Feedback1 gaps — the `type` Select options, sourced from the editable
+     * location_types lookup (active rows, ordered by sort_order). Falls back
+     * to {@see Location::CANONICAL_TYPES} when the table is missing or empty
+     * (fresh SQLite test DBs, partially-migrated environments) so the form
+     * never renders an empty Select.
+     *
+     * @return array<string, string> code => label
+     */
+    public static function typeOptions(): array
+    {
+        if (! SchemaFacade::hasTable('location_types')) {
+            return Location::CANONICAL_TYPES;
+        }
+
+        $options = LocationType::query()
+            ->where('is_active', true)
+            ->orderBy('sort_order')
+            ->orderBy('label')
+            ->pluck('label', 'code')
+            ->all();
+
+        return $options !== [] ? $options : Location::CANONICAL_TYPES;
+    }
+
+    /**
+     * Like {@see typeOptions()} but merges the record's CURRENT type back into
+     * the option set (CodeRabbit C4 / {@see LocationType::optionsWith()}): an
+     * inactive lookup row or a pre-lookup legacy code ('shelf', …) must stay
+     * selectable on edit, otherwise the Select blanks the stored value and
+     * Filament's in-options validation rejects the save. Keeps the same
+     * hasTable / empty-table fallbacks as typeOptions().
+     *
+     * @return array<string, string> code => label
+     */
+    public static function typeOptionsWith(?string $current): array
+    {
+        $options = self::typeOptions();
+
+        if ($current === null || $current === '' || array_key_exists($current, $options)) {
+            return $options;
+        }
+
+        $label = SchemaFacade::hasTable('location_types')
+            ? LocationType::query()->where('code', $current)->value('label')
+            : null;
+
+        $options[$current] = $label !== null ? $label . ' (inactive)' : self::typeLabel($current);
+
+        return $options;
     }
 
     /**
