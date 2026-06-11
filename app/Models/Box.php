@@ -532,6 +532,17 @@ class Box extends Model implements AuditableContract, Sortable
                     "Box type {$box->box_type} requires its parent to be a RAS box (RFQ App.1 #3)."
                 );
             }
+
+            // F030 defence-in-depth: cross-tenant parent guard. Both sides must
+            // resolve non-null for the check to fire — legacy data with a null
+            // batch on either side is silently allowed (expand, never restrict).
+            $parentRepoId = $parent->batch()->withoutGlobalScopes()->value('repository_id');
+            $boxRepoId = $box->batch()->withoutGlobalScopes()->value('repository_id');
+            if ($parentRepoId !== null && $boxRepoId !== null && (int) $parentRepoId !== (int) $boxRepoId) {
+                throw new \DomainException(
+                    "Box type {$box->box_type}: the parent RAS box belongs to a different repository (F030)."
+                );
+            }
         });
 
         // Feedback1 Wave C2.2 — RAS status transition rule.

@@ -789,10 +789,16 @@ class DocumentImporter extends Importer
                     if ($state === null || trim($state) === '') {
                         return;
                     }
-                    // BUG-06: normalise Excel float artefacts ('1.0' → '1').
+                    // BUG-06: normalise only Excel float artefacts ('1.0' → '1',
+                    // '2.00' → '2'). Every other value is kept verbatim — including
+                    // alphanumeric ('180A'), composite ('18+20', '181/182'),
+                    // leading-zero ('007') and decimal ('2.5') box refs. (parseInt
+                    // would truncate these to their leading digit run and collapse
+                    // distinct boxes during dedup, also polluting the legacy
+                    // ras_box_1 column below; use the same strict regex as
+                    // volume_number above.)
                     $raw = trim($state);
-                    $normalized = SpreadsheetParsers::parseInt($raw);
-                    $boxNum = $normalized !== null ? (string) $normalized : $raw;
+                    $boxNum = preg_match('/^(\d+)\.0+$/', $raw, $m) ? $m[1] : $raw;
                     // Resolution is deferred to afterFill: we must know the
                     // document's batch (resolved by a separate column) before
                     // we create-or-match the box inside it, and we must

@@ -595,11 +595,17 @@ class AccessionRowImporter extends Importer
                     ? Series::find($seriesId)
                     : null;
                 if ($series === null || ! $series->is_wills_series) {
+                    $seriesLabel = $series !== null
+                        ? ($series->code ?? $series->title ?? (string) $seriesId)
+                        : __('(no series assigned)');
+
                     throw ValidationException::withMessages([
                         'batch_number' => __(
                             'Batch :n is reserved for wills documents (RFQ App.1 #2). '
-                            . 'Assign a wills series (is_wills_series = true) to this document before placing it in Batch :n.',
-                            ['n' => $batchNumberInt]
+                            . 'The series ":series" is not a wills series — the series assigned '
+                            . 'to this document must be a Wills series (e.g. RWL) before placing '
+                            . 'it in Batch :n.',
+                            ['n' => $batchNumberInt, 'series' => $seriesLabel]
                         ),
                     ]);
                 }
@@ -905,15 +911,18 @@ class AccessionRowImporter extends Importer
                 ->fillRecordUsing(function (Document $record, ?string $state): void {
                     if ($state !== null && trim($state) !== '') {
                         $key = spl_object_id($record);
-                        // BUG-06 / F-002: normalise float artefacts from xlsx cells
-                        // ('1.0' → '1') so the dedup lookup matches existing boxes
-                        // stored with integer strings. Non-numeric values (e.g. '180A')
-                        // are kept verbatim — SpreadsheetParsers::parseInt returns null
-                        // for those and we fall through to the original trimmed value.
-                        $normalized = SpreadsheetParsers::parseInt(trim($state));
-                        static::$rowAccessionStash[$key]['box_number'] = $normalized !== null
-                            ? (string) $normalized
-                            : trim($state);
+                        // BUG-06 / F-002: normalise only Excel float artefacts from
+                        // xlsx cells ('1.0' → '1', '2.00' → '2') so the dedup lookup
+                        // matches existing boxes stored with integer strings. Every
+                        // other value is kept verbatim — including alphanumeric box
+                        // refs ('180A'), composite refs ('18+20', '181/182'),
+                        // leading-zero refs ('007') and genuine decimals ('2.5').
+                        // (parseInt would truncate these to their leading digit run
+                        // and collapse distinct boxes during firstOrCreate dedup, so
+                        // we use the same strict regex as volume_number below.)
+                        $str = trim($state);
+                        static::$rowAccessionStash[$key]['box_number'] =
+                            preg_match('/^(\d+)\.0+$/', $str, $m) ? $m[1] : $str;
                     }
                 }),
 
