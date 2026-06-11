@@ -146,6 +146,20 @@ class BoxImporter extends Importer
             ]);
         }
 
+        // #5b — A new box marked PERM_OUT must also carry a Location: a box that
+        // has permanently left storage has to record where it now lives. The
+        // model guard skips this for new records (and for the documented legacy
+        // mirror), so enforce it at the row level for fresh imports only.
+        if (! $record->exists && $record->barcode_status === 'PERM_OUT' && $record->location_id === null) {
+            // Drain the stash before throwing — afterSave() never runs for a
+            // row rejected here.
+            unset(self::$rowCustomFieldStash[spl_object_id($record)]);
+
+            throw ValidationException::withMessages([
+                'location' => __('A box marked PERM OUT must have a location. Add a Location column (a valid location code for this repository) for this row.'),
+            ]);
+        }
+
         if (in_array($record->box_type, ['IN_SITU', 'NRA'], true) && $record->parent_box_id === null) {
             // Drain the stash on this failure path too.
             unset(self::$rowCustomFieldStash[spl_object_id($record)]);

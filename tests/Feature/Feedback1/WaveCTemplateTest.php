@@ -10,9 +10,10 @@ use Illuminate\Foundation\Testing\RefreshDatabase;
 /**
  * Wave C — Template + Wizard wiring (C3, C4, DECISION 11).
  *
- * C3-Headers     — synthesiseAccessionHeaders() returns the exact 20 columns
+ * C3-Headers     — synthesiseAccessionHeaders() returns the exact 22 columns
  *                  in the correct NAf Feedback 1 order (cascade: Authority →
- *                  Accession metadata → Batch → Box → Document fields).
+ *                  Accession metadata → Batch → Box → Document fields). F2 added
+ *                  the 'No of Acts' and 'Pages/Folios' columns.
  * C3-SheetTitle  — sheetTitleFor('accession') returns 'Accession Import'.
  * C4-WizardMap   — ImportWizard::IMPORTERS and TEMPLATE_KEYS are wired.
  * C4-PrimaryPath — 'accessions' is the first key in IMPORTERS (primary path).

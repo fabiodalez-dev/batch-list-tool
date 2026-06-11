@@ -295,9 +295,13 @@ class BoxResource extends Resource
                             // C2.1 — Location is mandatory for IN_SITU / NRA
                             // boxes (they live at a configured NRA location);
                             // optional for RAS boxes (which live in a batch).
-                            ->required($isInSitu)
-                            ->helperText(fn (Get $get): string => $isInSitu($get)
-                                ? 'Required for IN_SITU / NRA boxes. Repository / room / shelf / showcase / temp-holding hierarchy.'
+                            // Also mandatory for any box marked PERM OUT: a box
+                            // that has permanently left storage must record where
+                            // it now lives (this widens the rule to RAS boxes set
+                            // to PERM_OUT, which would otherwise pass blank).
+                            ->required(fn (Get $get): bool => $isInSitu($get) || $get('barcode_status') === 'PERM_OUT')
+                            ->helperText(fn (Get $get): string => ($isInSitu($get) || $get('barcode_status') === 'PERM_OUT')
+                                ? 'Required for IN_SITU / NRA boxes and for any box marked PERM OUT. Repository / room / shelf / showcase / temp-holding hierarchy.'
                                 : 'Repository / room / shelf / showcase / temp-holding hierarchy.')
                             ->columnSpanFull()
                             ->rule(function (Get $get) use ($isInSitu) {
@@ -307,6 +311,9 @@ class BoxResource extends Resource
                                     // Filament Required validator.
                                     if ($isInSitu($get) && empty($value)) {
                                         $fail('IN_SITU / NRA boxes must reference a Location (RFQ Feedback1 C2.1).');
+                                    }
+                                    if ($get('barcode_status') === 'PERM_OUT' && empty($value)) {
+                                        $fail('A box marked PERM OUT must have a location.');
                                     }
                                 };
                             })),
