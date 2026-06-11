@@ -94,13 +94,17 @@ class ImportStatus extends Page
                 $failedDownloadUrl = null;
                 if ($import->completed_at !== null && $failedCount > 0) {
                     try {
+                        // absolute: false — the vendor controller validates with
+                        // hasValidSignature(absolute: false), so the signature must
+                        // be computed over the RELATIVE url (an absolute-signed link
+                        // fails validation with a 403). Mirrors ImportAction + ImportWizard.
                         $failedDownloadUrl = URL::signedRoute(
                             'filament.imports.failed-rows.download',
                             [
                                 'authGuard' => 'web',
                                 'import' => $import->getKey(),
                             ],
-                            absolute: true,
+                            absolute: false,
                         );
                     } catch (\Throwable) {
                         // Route not registered (e.g. in unit tests) — silently skip.
