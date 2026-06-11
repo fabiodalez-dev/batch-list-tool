@@ -165,9 +165,18 @@ class BoxResource extends Resource
                                     }
                                 };
                             })),
+                        // Feedback1 gaps (misc) — client asked "what is the purpose of
+                        // Is legacy?": it only matters for legacy box types (MAV / STVC,
+                        // flagged is_legacy on the box_types lookup), so hide it for
+                        // everything else instead of showing a mandatory toggle on every
+                        // box. The DB column defaults to false, so hidden = false. Kept
+                        // visible on edit when the record is already flagged legacy so
+                        // historical rows still render the value.
                         $g(Forms\Components\Toggle::make('is_legacy')
-                            ->helperText('Flags legacy data; required true when box_type is MAV or STVC.')
-                            ->required()),
+                            ->helperText('Marks data migrated from the legacy spreadsheet; must be on for legacy box types (MAV / STVC).')
+                            ->default(false)
+                            ->visible(fn (Get $get, ?Box $record): bool => in_array($get('box_type'), self::legacyBoxTypeCodes(), true)
+                                || (bool) $record?->is_legacy)),
                     ]),
 
                 Section::make('Provenance (RAS parent)')
@@ -888,6 +897,21 @@ class BoxResource extends Resource
             ->url(fn (Box $record): string => DocumentResource::getUrl('create', [
                 'current_box_id' => $record->getKey(),
             ]));
+    }
+
+    /**
+     * Feedback1 gaps (misc) — codes of legacy box types, driven by the
+     * `box_types` lookup `is_legacy` flag, with {@see Box::LEGACY_TYPES} as a
+     * fallback when the lookup table is empty / not yet seeded. Used to decide
+     * when the `is_legacy` Toggle is relevant in the form.
+     *
+     * @return list<string>
+     */
+    public static function legacyBoxTypeCodes(): array
+    {
+        $codes = BoxType::query()->where('is_legacy', true)->pluck('code')->all();
+
+        return $codes !== [] ? array_values($codes) : Box::LEGACY_TYPES;
     }
 
     /**

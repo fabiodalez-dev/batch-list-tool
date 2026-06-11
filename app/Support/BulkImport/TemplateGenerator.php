@@ -106,7 +106,7 @@ final class TemplateGenerator
      * can detect a stale template at re-upload time and warn the operator.
      * Bump on any change to the header contract.
      */
-    public const GENERATOR_VERSION = '1.1.0';
+    public const GENERATOR_VERSION = '1.2.0';
 
     /**
      * Supported template entities. Headers come from the in-repo constants
@@ -316,12 +316,13 @@ final class TemplateGenerator
      * (before Batch Number) because they are accession-level attributes.
      *
      * Column name contract (must stay in sync with AccessionRowImporter guesses):
-     *   'Box Status'   → box_type field (RAS | IN_SITU | NRA)
-     *   'identifier'   → document identifier (lowercase per NAf convention)
-     *   'Volume No'    → volume_label / volume_number field
-     *   'Note'         → notes field (singular per NAf convention)
-     *   'No of Acts'   → number_of_acts field (F2)
-     *   'Pages/Folios' → pages_folios field (F2)
+     *   'Box Status'         → box_type field (RAS | IN_SITU | NRA)
+     *   'Current Box Type'   → current_box_type field (FB1-GAP-2, lookup-validated)
+     *   'identifier'         → document identifier (lowercase per NAf convention)
+     *   'Volume No'          → volume_label / volume_number field
+     *   'Note'               → notes field (singular per NAf convention)
+     *   'No of Acts'         → number_of_acts field (F2)
+     *   'Pages/Folios'       → pages_folios field (F2)
      *
      * CONTRACT: if AccessionRowImporter static columns change, update BOTH
      * this method AND the importer, then bump GENERATOR_VERSION.
@@ -346,6 +347,7 @@ final class TemplateGenerator
             'Box No',                 // required; unique within batch
             'Box Barcode',            // required for RAS; globally unique
             'Box Status',             // optional; RAS | IN_SITU | NRA (default: RAS)
+            'Current Box Type',       // optional; current_box_types lookup ref code (FB1-GAP-2)
             // Document (DECISIONS 4, 5, 7, 10)
             'identifier',             // optional; auto-generated when blank (DECISION 4)
             'Document Type',          // required

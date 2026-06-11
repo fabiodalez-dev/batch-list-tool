@@ -27,6 +27,7 @@ use Filament\Schemas\Components\Utilities\Get;
 use Filament\Schemas\Components\Utilities\Set;
 use Filament\Schemas\Schema;
 use Filament\Tables;
+use Filament\Tables\Enums\FiltersLayout;
 use Filament\Tables\Filters\SelectFilter;
 use Filament\Tables\Filters\TernaryFilter;
 use Filament\Tables\Table;
@@ -141,6 +142,9 @@ class BatchResource extends Resource
                         // tests are unaffected; the Select simply surfaces the
                         // editable controlled vocabulary in the UI.
                         $g(Forms\Components\Select::make('type')
+                            // Feedback1 gaps — client renamed "Batch Type" to
+                            // "Accession Type" (Lookups nav already renamed).
+                            ->label('Accession Type')
                             // C4 — include the record's CURRENT value even if it
                             // has since been deactivated, so editing other fields
                             // never drops/blanks a stored-but-inactive type.
@@ -276,7 +280,7 @@ class BatchResource extends Resource
                             ->copyable()
                             ->placeholder('—'),
                         TextEntry::make('type')
-                            ->label('Type')
+                            ->label('Accession Type')
                             ->badge()
                             ->color('gray')
                             ->placeholder('—'),
@@ -393,18 +397,27 @@ class BatchResource extends Resource
                         ? static::getUrl('view', ['record' => $record])
                         : null)
                     ->color('primary')),
+                // Feedback1 gaps — all main columns are toggleable so operators
+                // can remove preset columns; batch_number (the key/hyperlink
+                // column) intentionally stays fixed.
                 $gc(Tables\Columns\TextColumn::make('description')
                     ->searchable()
-                    ->sortable()),
+                    ->sortable()
+                    ->toggleable()),
                 $gc(Tables\Columns\TextColumn::make('type')
-                    ->sortable()),
+                    // Feedback1 gaps — client renamed "Batch Type" to "Accession Type".
+                    ->label('Accession Type')
+                    ->sortable()
+                    ->toggleable()),
                 $gc(Tables\Columns\TextColumn::make('repository.name')
                     ->label('Repository')
-                    ->sortable(), 'repository_id'),
+                    ->sortable()
+                    ->toggleable(), 'repository_id'),
                 $gc(Tables\Columns\IconColumn::make('is_active')
                     ->label('Active')
                     ->boolean()
-                    ->sortable()),
+                    ->sortable()
+                    ->toggleable()),
                 // A9 — inputter column (who created the record).
                 CreatorColumn::make(),
                 Tables\Columns\TextColumn::make('created_at')
@@ -443,6 +456,10 @@ class BatchResource extends Resource
                     ->trueLabel('Active only')
                     ->falseLabel('Inactive only'),
             ])
+            // Feedback1 gaps — keep filters visible above the table content so
+            // an empty (null) result set never hides the active filters
+            // (mirrors BoxResource).
+            ->filtersLayout(FiltersLayout::AboveContentCollapsible)
             ->actions([
                 ViewAction::make(),
                 EditAction::make(),

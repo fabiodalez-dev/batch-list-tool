@@ -11,6 +11,8 @@ use App\Models\Authority;
 use App\Models\Batch;
 use App\Models\Box;
 use App\Models\Document;
+use App\Models\Lookup\BatchType;
+use App\Models\Lookup\CurrentBoxType;
 use App\Models\Scopes\RepositoryScope;
 use App\Models\Scopes\ThroughBatchRepositoryScope;
 use App\Models\Series;
@@ -65,17 +67,22 @@ use Illuminate\Validation\ValidationException;
  *   Accession Number       — required; the accession's unique code/number
  *   Accession Title        — optional; human-readable title for the accession
  *   Batch Number           — required; integer batch number (not 34 or 36)
- *   Accession Type         — optional; type code for the batch (NOTARY_ACCESSION etc.)
+ *   Accession Type         — optional; type code for the batch — must be an
+ *                            ACTIVE code in the batch_types ("Accession Types")
+ *                            lookup, otherwise the row fails (FB1-GAP-3)
  *   Repository             — optional; repository code (defaults to user's default repo)
  *   Box No                 — required; box number (unique within batch)
  *   Box Barcode            — required for RAS boxes; globally unique
  *   Box Type               — optional; defaults to RAS
+ *   Current Box Type       — optional; physical box type ref code, validated
+ *                            against the current_box_types lookup (FB1-GAP-2)
  *   Identifier             — optional; document working identifier
  *   Document Type          — required; document type ref code
  *   Series                 — required; series code or "CODE: Title"
  *   Volume Number          — optional; volume label/number (DECISION 7: renamed)
  *   Part Number            — optional; part number within volume (DECISION 5)
- *   Practice               — optional; practice ref code
+ *   Practice               — optional; practice ref code — must already exist
+ *                            (Practices page), otherwise the row fails (FB1-GAP-1)
  *   Dates                  — optional; free-text date range
  *   Deeds                  — optional; number/description of deeds
  *   Notes                  — optional; free-text notes
@@ -257,6 +264,12 @@ class AccessionRowImporter extends Importer
 
             // 2. Accession → 3. Batch (N:N) → 4. Box
             $this->resolveAccessionBatchBox($record);
+
+            // 4b. FB1-GAP-1 — Practice must already exist (client: "If not an
+            // option - error to create it first"). Validated AFTER the cascade
+            // so a bad Repository code surfaces its own error first; a throw
+            // here still rolls back every cascade write above.
+            $this->validatePracticeExists($record);
         });
 
         // 5. Auto-generate document identifier if not supplied (DECISION 4)
@@ -614,12 +627,31 @@ class AccessionRowImporter extends Importer
 
             // Update batch type if provided and the batch is freshly created.
             if ($batchType !== null) {
+                // FB1-GAP-3 (client feedback) — "Error if type is not in Batch
+                // Type (renamed Accession Type)". The stashed value is already
+                // uppercased; the seeded batch_types codes are uppercase too
+                // (MAIN_COLLECTION / NOTARY_ACCESSION) but the lookup is
+                // operator-editable, so compare case-insensitively and adopt
+                // the lookup's canonical code casing. Only ACTIVE entries count.
+                $canonicalType = BatchType::query()
+                    ->where('is_active', true)
+                    ->whereRaw('UPPER(code) = ?', [strtoupper($batchType)])
+                    ->value('code');
+                if ($canonicalType === null) {
+                    throw ValidationException::withMessages([
+                        'accession_type' => __(
+                            "Accession Type ':value' is not in the Accession Types lookup.",
+                            ['value' => $batchType]
+                        ),
+                    ]);
+                }
+
                 $batch = Batch::withoutGlobalScope(RepositoryScope::class)->find($batchId);
-                if ($batch !== null && $batch->type !== $batchType) {
+                if ($batch !== null && $batch->type !== $canonicalType) {
                     // Only overwrite if it still has the auto-derived type.
                     $derivedType = $batchNumberInt >= 30 ? 'NOTARY_ACCESSION' : 'MAIN_COLLECTION';
                     if ($batch->type === $derivedType) {
-                        $batch->update(['type' => $batchType]);
+                        $batch->update(['type' => $canonicalType]);
                     }
                 }
             }
@@ -631,7 +663,18 @@ class AccessionRowImporter extends Importer
             if ($accessionId !== null) {
                 $accession = Accession::withoutGlobalScope(RepositoryScope::class)->find($accessionId);
                 if ($accession !== null) {
+                    // Snapshot the derived description BEFORE attaching so the
+                    // refresh below can tell an operator-edited description
+                    // (preserved) apart from a previously auto-derived one
+                    // (refreshed) — same guard pattern as batch.type above.
+                    $preAttachDerived = $this->deriveBatchDescription($batchId);
+
                     $accession->batches()->syncWithoutDetaching([$batchId]);
+
+                    // FB1-GAP-4 (client feedback) — batch description is the
+                    // ", "-joined titles of ALL linked accessions; recompute
+                    // now that this accession is attached.
+                    $this->refreshBatchDescription($batchId, $preAttachDerived);
                 }
             }
         }
@@ -738,6 +781,97 @@ class AccessionRowImporter extends Importer
             $record->current_box_id = $boxRes['box_id'];
             $record->ras_box_1 = $boxNumber;
         }
+    }
+
+    /**
+     * FB1-GAP-1 (client feedback) — "Practice updated by Practice. If not an
+     * option - error to create it first." The `practice` column stays a plain
+     * string on the document (no FK), but a non-empty value MUST match an
+     * existing Practice. Resolution is repository-scoped via
+     * {@see EntityResolver::resolvePractice()} (own repository first, global
+     * fallback) using the row's repository id resolved in resolveRecord() —
+     * the same id the rest of the cascade uses. By identifier, then by name.
+     */
+    protected function validatePracticeExists(Document $record): void
+    {
+        $practice = $record->practice;
+        if ($practice === null || trim((string) $practice) === '') {
+            return;
+        }
+
+        $res = EntityResolver::resolvePractice(trim((string) $practice), $this->rowResolvedRepositoryId);
+        if ($res === null) {
+            throw ValidationException::withMessages([
+                'practice' => __(
+                    "Practice ':value' does not exist — create it first (Practices page), then re-import.",
+                    ['value' => trim((string) $practice)]
+                ),
+            ]);
+        }
+    }
+
+    /**
+     * FB1-GAP-4 (client feedback) — "Description - Accession Title…
+     * concatenated together with a ,". Recompute batch.description as the
+     * ', '-separated list of ALL linked accession titles (the Accession
+     * `code` field), ordered by code — exactly the formula BatchResource
+     * uses for its form auto-derivation, INCLUDING its preserve-manual-edits
+     * half: a non-blank description that no longer matches the previously
+     * derived value ($preAttachDerived, snapshotted by the caller before the
+     * pivot attach) was typed by an operator and is left untouched. Only
+     * writes when the derived value differs from the stored one, and saves
+     * NORMALLY (not quietly) so the change lands in the audit trail.
+     */
+    protected function refreshBatchDescription(int $batchId, ?string $preAttachDerived = null): void
+    {
+        $batch = Batch::withoutGlobalScope(RepositoryScope::class)->find($batchId);
+        if ($batch === null) {
+            return;
+        }
+
+        // Preserve operator-edited descriptions (mirrors BatchResource's
+        // "operators who typed their own text are not interrupted" guard
+        // and the batch.type guard in resolveAccessionBatchBox()).
+        $stored = $batch->description;
+        if ($stored !== null && trim((string) $stored) !== '' && $stored !== $preAttachDerived) {
+            return;
+        }
+
+        $derived = $this->deriveBatchDescription($batchId);
+        if ($derived === null) {
+            return;
+        }
+
+        if ($batch->description !== $derived) {
+            $batch->update(['description' => $derived]);
+        }
+    }
+
+    /**
+     * Derived batch description: the ', '-joined codes of ALL accessions
+     * linked to the batch, ordered by code. Returns null when the batch does
+     * not exist or has no linked accessions.
+     */
+    protected function deriveBatchDescription(int $batchId): ?string
+    {
+        $batch = Batch::withoutGlobalScope(RepositoryScope::class)->find($batchId);
+        if ($batch === null) {
+            return null;
+        }
+
+        $codes = $batch->accessions()
+            ->withoutGlobalScope(RepositoryScope::class)
+            ->orderBy('accessions.code')
+            ->pluck('accessions.code')
+            ->all();
+        if ($codes === []) {
+            return null;
+        }
+
+        // batches.description is a 255-char string column (same cap as the
+        // BatchResource form's maxLength) — clamp so a long accession list
+        // can never fail the row at the DB layer.
+        return mb_substr(implode(', ', $codes), 0, 255);
     }
 
     /**
@@ -949,6 +1083,35 @@ class AccessionRowImporter extends Importer
                             default => $t,
                         };
                     }
+                }),
+
+            // FB1-GAP-2 (client feedback) — physical type of the document's
+            // current box, validated against the current_box_types lookup the
+            // same way the Document model gates the field on save (canonical
+            // const casing + ACTIVE lookup row), so a bad code fails the row
+            // cleanly here instead of crashing in the model `saving` hook.
+            ImportColumn::make('current_box_type')
+                ->label('Current Box Type')
+                ->guess(['Current Box Type', 'current_box_type'])
+                ->fillRecordUsing(function (Document $record, ?string $state): void {
+                    if ($state === null || trim($state) === '') {
+                        return;
+                    }
+                    $value = trim($state);
+                    $normalized = Document::canonicalEnumValue($value, Document::CURRENT_BOX_TYPES);
+                    $isActive = $normalized !== null && CurrentBoxType::query()
+                        ->where('code', $normalized)
+                        ->where('is_active', true)
+                        ->exists();
+                    if (! $isActive) {
+                        throw ValidationException::withMessages([
+                            'current_box_type' => __(
+                                "Current Box Type ':value' is not an active code in the Current Box Types lookup.",
+                                ['value' => $value]
+                            ),
+                        ]);
+                    }
+                    $record->current_box_type = $normalized;
                 }),
 
             // ── Document fields ─────────────────────────────────────────

@@ -10,10 +10,11 @@ use Illuminate\Foundation\Testing\RefreshDatabase;
 /**
  * Wave C — Template + Wizard wiring (C3, C4, DECISION 11).
  *
- * C3-Headers     — synthesiseAccessionHeaders() returns the exact 22 columns
+ * C3-Headers     — synthesiseAccessionHeaders() returns the exact 23 columns
  *                  in the correct NAf Feedback 1 order (cascade: Authority →
  *                  Accession metadata → Batch → Box → Document fields). F2 added
- *                  the 'No of Acts' and 'Pages/Folios' columns.
+ *                  the 'No of Acts' and 'Pages/Folios' columns; FB1-GAP-2 added
+ *                  the 'Current Box Type' column after 'Box Status'.
  * C3-SheetTitle  — sheetTitleFor('accession') returns 'Accession Import'.
  * C4-WizardMap   — ImportWizard::IMPORTERS and TEMPLATE_KEYS are wired.
  * C4-PrimaryPath — 'accessions' is the first key in IMPORTERS (primary path).
@@ -24,11 +25,12 @@ uses(RefreshDatabase::class);
 
 // ── C3-Headers — exact column order ──────────────────────────────────────────
 
-it('C3-Headers: synthesiseAccessionHeaders returns the exact 22 columns in cascade order', function (): void {
+it('C3-Headers: synthesiseAccessionHeaders returns the exact 23 columns in cascade order', function (): void {
     $headers = TemplateGenerator::headersFor('accession');
 
-    // Exact ordered contract (NAf Feedback 1 / DECISION 11 / F2):
-    // F2 added 'No of Acts' and 'Pages/Folios' after 'Deeds' (now 22 static columns).
+    // Exact ordered contract (NAf Feedback 1 / DECISION 11 / F2 / FB1-GAP-2):
+    // F2 added 'No of Acts' and 'Pages/Folios' after 'Deeds'; FB1-GAP-2 added
+    // 'Current Box Type' after 'Box Status' (now 23 static columns).
     $expected = [
         'Authority Identifier',
         'Authority Name',
@@ -41,6 +43,7 @@ it('C3-Headers: synthesiseAccessionHeaders returns the exact 22 columns in casca
         'Box No',
         'Box Barcode',
         'Box Status',       // renamed from 'Box Type'
+        'Current Box Type', // FB1-GAP-2: current_box_types lookup ref code
         'identifier',       // lowercase per NAf convention
         'Document Type',
         'Series',
@@ -54,12 +57,12 @@ it('C3-Headers: synthesiseAccessionHeaders returns the exact 22 columns in casca
         'Note',             // singular per NAf convention
     ];
 
-    // The first 22 elements (static headers) must match exactly.
+    // The first 23 elements (static headers) must match exactly.
     $staticHeaders = array_slice($headers, 0, count($expected));
     expect($staticHeaders)->toBe($expected);
 
-    // Total count must be at least 22 (custom fields appended after).
-    expect(count($headers))->toBeGreaterThanOrEqual(22);
+    // Total count must be at least 23 (custom fields appended after).
+    expect(count($headers))->toBeGreaterThanOrEqual(23);
 });
 
 // ── C3-SheetTitle — sheet title ───────────────────────────────────────────────

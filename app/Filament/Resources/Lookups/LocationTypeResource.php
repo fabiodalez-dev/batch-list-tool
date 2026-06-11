@@ -4,8 +4,8 @@ declare(strict_types=1);
 
 namespace App\Filament\Resources\Lookups;
 
-use App\Filament\Resources\Lookups\CurrentBoxTypeResource\Pages;
-use App\Models\Lookup\CurrentBoxType;
+use App\Filament\Resources\Lookups\LocationTypeResource\Pages;
+use App\Models\LocationType;
 use Filament\Actions\Action;
 use Filament\Actions\BulkActionGroup;
 use Filament\Actions\DeleteBulkAction;
@@ -18,21 +18,22 @@ use Filament\Tables;
 use Filament\Tables\Table;
 
 /**
- * RFQ §3.1.11 — Administrator CRUD for the current-box-type controlled vocabulary.
- * `counts_as` controls disinfestation cycle weighting (e.g. Big Brown Box = 2).
- * Supports add / rename / reorder / deactivate; gated to admin & super_admin.
+ * Feedback1 gaps — administrator CRUD for the Location-type controlled
+ * vocabulary (Room / Museum / Repository out of the box). Mirrors
+ * {@see BoxTypeResource}: add / rename / reorder / deactivate, gated to
+ * admin & super_admin.
  */
-class CurrentBoxTypeResource extends Resource
+class LocationTypeResource extends Resource
 {
-    protected static ?string $model = CurrentBoxType::class;
+    protected static ?string $model = LocationType::class;
 
-    protected static string|\BackedEnum|null $navigationIcon = 'heroicon-o-inbox-stack';
+    protected static string|\BackedEnum|null $navigationIcon = 'heroicon-o-map-pin';
 
     protected static string|\UnitEnum|null $navigationGroup = 'Lookups';
 
-    protected static ?int $navigationSort = 50;
+    protected static ?int $navigationSort = 70;
 
-    protected static ?string $navigationLabel = 'Current Box Types';
+    protected static ?string $navigationLabel = 'Location Types';
 
     protected static ?string $recordTitleAttribute = 'label';
 
@@ -83,21 +84,6 @@ class CurrentBoxTypeResource extends Resource
                             ->helperText('Controls display order in dropdowns (lower numbers first).'),
                         Forms\Components\Toggle::make('is_active')
                             ->default(true),
-                        Forms\Components\TextInput::make('counts_as')
-                            ->numeric()
-                            ->default(1)
-                            ->minValue(1)
-                            ->helperText('Disinfestation weighting (1 = standard; Big Brown Box = 2).'),
-                    ]),
-                Section::make('Metadata')
-                    ->collapsed()
-                    ->schema([
-                        Forms\Components\Textarea::make('metadata')
-                            ->rows(3)
-                            ->helperText('Optional JSON metadata.')
-                            ->rules(['nullable', 'json'])
-                            ->rules(['nullable', 'json']) // C10 — reject malformed JSON so the array cast never breaks on read
-                            ->columnSpanFull(),
                     ]),
             ]);
     }
@@ -117,9 +103,6 @@ class CurrentBoxTypeResource extends Resource
                     ->sortable(),
                 Tables\Columns\TextColumn::make('sort_order')
                     ->sortable(),
-                Tables\Columns\TextColumn::make('counts_as')
-                    ->label('Counts as')
-                    ->sortable(),
                 Tables\Columns\IconColumn::make('is_active')
                     ->boolean()
                     ->sortable(),
@@ -135,14 +118,14 @@ class CurrentBoxTypeResource extends Resource
             ])
             ->actions([
                 Action::make('toggle_active')
-                    ->label(fn (CurrentBoxType $record) => $record->is_active ? 'Deactivate' : 'Activate')
-                    ->icon(fn (CurrentBoxType $record) => $record->is_active ? 'heroicon-o-x-circle' : 'heroicon-o-check-circle')
-                    ->color(fn (CurrentBoxType $record) => $record->is_active ? 'warning' : 'success')
+                    ->label(fn (LocationType $record) => $record->is_active ? 'Deactivate' : 'Activate')
+                    ->icon(fn (LocationType $record) => $record->is_active ? 'heroicon-o-x-circle' : 'heroicon-o-check-circle')
+                    ->color(fn (LocationType $record) => $record->is_active ? 'warning' : 'success')
                     ->requiresConfirmation()
-                    ->modalDescription(fn (CurrentBoxType $record) => $record->is_active
+                    ->modalDescription(fn (LocationType $record) => $record->is_active
                         ? 'Deactivating this value hides it from new records app-wide. Existing records that already use it are unaffected.'
                         : 'Re-activating this value makes it available again for new records.')
-                    ->action(fn (CurrentBoxType $record) => $record->update(['is_active' => ! $record->is_active])),
+                    ->action(fn (LocationType $record) => $record->update(['is_active' => ! $record->is_active])),
                 EditAction::make(),
             ])
             ->bulkActions([
@@ -162,9 +145,9 @@ class CurrentBoxTypeResource extends Resource
     public static function getPages(): array
     {
         return [
-            'index' => Pages\ListCurrentBoxTypes::route('/'),
-            'create' => Pages\CreateCurrentBoxType::route('/create'),
-            'edit' => Pages\EditCurrentBoxType::route('/{record}/edit'),
+            'index' => Pages\ListLocationTypes::route('/'),
+            'create' => Pages\CreateLocationType::route('/create'),
+            'edit' => Pages\EditLocationType::route('/{record}/edit'),
         ];
     }
 }
