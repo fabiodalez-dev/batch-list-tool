@@ -51,6 +51,20 @@ class BoxImporter extends Importer
     protected static array $rowCustomFieldStash = [];
 
     /**
+     * F023: Per-row stash for the importing user's effective repository id.
+     * Set in {@see resolveRecord()} on both return paths (barcode-hit existing
+     * box AND new Box) so the batch_number closure can pass a tenant-scoped id
+     * to EntityResolver::resolveBatch() instead of leaving it null.
+     *
+     * Mirrors DocumentImporter::$rowRepositoryStash (BUG-05 fix). Keyed by
+     * spl_object_id($record) so the static column closures can access the
+     * per-row value. Drained in afterSave() and on every afterFill() throw path.
+     *
+     * @var array<int, int|null>
+     */
+    protected static array $rowRepositoryStash = [];
+
+    /**
      * @return array<ImportColumn>
      */
     public static function getColumns(): array
@@ -70,6 +84,9 @@ class BoxImporter extends Importer
         $record = $this->record;
         $key = spl_object_id($record);
 
+        // F023: drain the repository stash for this row.
+        unset(self::$rowRepositoryStash[$key]);
+
         $customData = self::$rowCustomFieldStash[$key] ?? null;
         unset(self::$rowCustomFieldStash[$key]);
 
@@ -88,9 +105,15 @@ class BoxImporter extends Importer
      * detection. A (batch_id, box_number) fallback is NOT implemented — see the
      * note in the body: batch_id is resolved later in the column fill closures,
      * not here, so barcode-less rows always insert a new Box.
+     *
+     * F023: Resolves and stashes the acting user's repository id once per row
+     * so the batch_number and parent_barcode closures can use a tenant-scoped id.
      */
     public function resolveRecord(): ?Box
     {
+        $user = auth()->user();
+        $repoId = $user?->default_repository_id !== null ? (int) $user->default_repository_id : null;
+
         $barcode = $this->data['barcode'] ?? null;
         if ($barcode !== null && trim((string) $barcode) !== '') {
             $existing = Box::query()
@@ -102,6 +125,9 @@ class BoxImporter extends Importer
                 // ONE case we can detect an existing box: a barcode hit.
                 $this->skipIfDuplicate($existing);
 
+                // F023: stash repo id so the static closures can use it.
+                self::$rowRepositoryStash[spl_object_id($existing)] = $repoId;
+
                 return $existing;
             }
         }
@@ -111,7 +137,11 @@ class BoxImporter extends Importer
         // a (batch_id + box_number) lookup is not possible here because
         // batch_id is resolved later, in the column fill closures, not in
         // resolveRecord(). Such rows always insert a new Box.
-        return new Box;
+        $record = new Box;
+        // F023: stash repo id so the static closures can use it.
+        self::$rowRepositoryStash[spl_object_id($record)] = $repoId;
+
+        return $record;
     }
 
     /**
@@ -134,10 +164,13 @@ class BoxImporter extends Importer
         }
 
         if ($record->barcode_status === 'PERM_OUT' && $record->disinfestation_date === null) {
-            // Drain the stash before throwing so the static map does not grow
+            // Drain the stashes before throwing so the static maps do not grow
             // unboundedly when many rows fail — afterSave() never runs for a
             // row rejected here.
-            unset(self::$rowCustomFieldStash[spl_object_id($record)]);
+            unset(
+                self::$rowRepositoryStash[spl_object_id($record)],
+                self::$rowCustomFieldStash[spl_object_id($record)],
+            );
 
             // We refuse the row with a validation exception — this is what
             // surfaces in the per-row failed export.
@@ -151,9 +184,12 @@ class BoxImporter extends Importer
         // model guard skips this for new records (and for the documented legacy
         // mirror), so enforce it at the row level for fresh imports only.
         if (! $record->exists && $record->barcode_status === 'PERM_OUT' && $record->location_id === null) {
-            // Drain the stash before throwing — afterSave() never runs for a
+            // Drain the stashes before throwing — afterSave() never runs for a
             // row rejected here.
-            unset(self::$rowCustomFieldStash[spl_object_id($record)]);
+            unset(
+                self::$rowRepositoryStash[spl_object_id($record)],
+                self::$rowCustomFieldStash[spl_object_id($record)],
+            );
 
             throw ValidationException::withMessages([
                 'location' => __('A box marked PERM OUT must have a location. Add a Location column (a valid location code for this repository) for this row.'),
@@ -161,8 +197,11 @@ class BoxImporter extends Importer
         }
 
         if (in_array($record->box_type, ['IN_SITU', 'NRA'], true) && $record->parent_box_id === null) {
-            // Drain the stash on this failure path too.
-            unset(self::$rowCustomFieldStash[spl_object_id($record)]);
+            // Drain the stashes on this failure path too.
+            unset(
+                self::$rowRepositoryStash[spl_object_id($record)],
+                self::$rowCustomFieldStash[spl_object_id($record)],
+            );
 
             // RFQ #3 — IN_SITU / NRA boxes MUST reference a parent RAS box.
             // Reject the row instead of inserting an orphan.
@@ -228,7 +267,20 @@ class BoxImporter extends Importer
                     if ($n === null) {
                         return;
                     }
-                    $res = EntityResolver::resolveBatch($n);
+                    // F023: FORBIDDEN_NUMBERS short-circuit fires BEFORE tenant
+                    // scoping — a forbidden batch is never a valid target regardless
+                    // of which repository is importing.
+                    if (in_array($n, Batch::FORBIDDEN_NUMBERS, true)) {
+                        // Leave batch_id null — let the NOT NULL constraint surface
+                        // as a failed-row error (same as the original path).
+                        return;
+                    }
+                    // F023: read the per-row repository id from the static stash
+                    // (set in resolveRecord()) so the batch lookup is tenant-scoped
+                    // and a same-numbered batch in another repository is never picked.
+                    // BoxImporter must NOT auto-create batches (create:false).
+                    $repoId = self::$rowRepositoryStash[spl_object_id($record)] ?? null;
+                    $res = EntityResolver::resolveBatch($n, $repoId);
                     if ($res === null || isset($res['forbidden'])) {
                         // We don't throw here — `rules()` on a separate
                         // column would, but Box requires the batch FK to
@@ -247,15 +299,60 @@ class BoxImporter extends Importer
                     if ($state === null || trim($state) === '') {
                         return;
                     }
+                    // Barcodes are globally unique — resolveBox() is intentionally
+                    // unscoped (see BUG-09 fix). Its docblock delegates cross-tenant
+                    // validation to the caller (this closure).
                     $res = EntityResolver::resolveBox(trim($state));
-                    if ($res !== null) {
-                        $record->parent_box_id = $res['box_id'];
+                    if ($res === null) {
+                        // Unknown barcode — leave parent_box_id null; afterFill()
+                        // will reject IN_SITU/NRA rows with no parent.
+                        return;
                     }
+
+                    // F030: validate that the parent box belongs to the same
+                    // repository as the row being imported. A parent RAS box from
+                    // another tenant must never be linked (cross-tenant contamination).
+                    // resolveBox() echoes back batch_id so we avoid a second query.
+                    $parentRepoId = Batch::query()
+                        ->withoutGlobalScopes()
+                        ->whereKey($res['batch_id'])
+                        ->value('repository_id');
+                    $parentRepoId = $parentRepoId !== null ? (int) $parentRepoId : null;
+
+                    // Derive the row's effective repository: use the batch already
+                    // resolved onto the record (batch_number fills before this column
+                    // in the column order), falling back to the stash from resolveRecord().
+                    $rowRepoId = null;
+                    if ($record->batch_id !== null) {
+                        $raw = Batch::query()
+                            ->withoutGlobalScopes()
+                            ->whereKey($record->batch_id)
+                            ->value('repository_id');
+                        $rowRepoId = $raw !== null ? (int) $raw : null;
+                    }
+                    $rowRepoId ??= self::$rowRepositoryStash[spl_object_id($record)] ?? null;
+
+                    // Cross-tenant: both sides resolved non-null and they differ.
+                    if ($parentRepoId !== null && $rowRepoId !== null && $parentRepoId !== $rowRepoId) {
+                        unset(
+                            self::$rowRepositoryStash[spl_object_id($record)],
+                            self::$rowCustomFieldStash[spl_object_id($record)],
+                        );
+
+                        throw ValidationException::withMessages([
+                            'parent_barcode' => __(
+                                'The parent box (barcode :barcode) belongs to a different repository and cannot be linked to this box.',
+                                ['barcode' => trim($state)],
+                            ),
+                        ]);
+                    }
+
+                    $record->parent_box_id = $res['box_id'];
                     // The parent's TYPE is validated centrally in Box::saving
                     // (RFQ App.1 #3: the parent must be a RAS box). A barcode
-                    // that resolves to a non-RAS box — or no box at all — is
-                    // rejected there on save and surfaces in the failed-rows
-                    // export, so we deliberately do not duplicate that check.
+                    // that resolves to a non-RAS box is rejected there on save
+                    // and surfaces in the failed-rows export, so we do not
+                    // duplicate that check here.
                 }),
 
             ImportColumn::make('barcode')
