@@ -558,7 +558,7 @@ it('BUG-08: two consecutive imports each start the document-identifier sequence 
     $seq1 = (int) substr((string) $doc1->identifier, strrpos((string) $doc1->identifier, '-') + 1);
 
     // ── Import 2 — separate import id, sequence must restart ──────────────
-    EntityResolver::flushMemo(); // resets $boxRowSeq
+    EntityResolver::flushMemo(); // new importId → $boxRowSeq namespace isolated automatically (see AccessionRowImporter::$boxRowSeq docblock)
 
     $imp2 = Import::query()->create([
         'completed_at' => null,

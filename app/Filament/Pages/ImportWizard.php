@@ -22,6 +22,7 @@ use Filament\Actions\Imports\ImportColumn;
 use Filament\Actions\Imports\Importer;
 use Filament\Actions\Imports\Jobs\ImportCsv;
 use Filament\Actions\Imports\Models\Import;
+use Filament\Facades\Filament;
 use Filament\Forms\Components\Checkbox;
 use Filament\Forms\Components\FileUpload;
 use Filament\Forms\Components\Placeholder;
@@ -43,8 +44,10 @@ use Illuminate\Bus\PendingBatch;
 use Illuminate\Contracts\Validation\ValidationRule;
 use Illuminate\Support\Facades\Bus;
 use Illuminate\Support\Facades\Storage;
+use Illuminate\Support\Facades\URL as UrlFacade;
 use Illuminate\Support\Facades\Validator;
 use Illuminate\Support\HtmlString;
+use Illuminate\Support\Number;
 use League\Csv\Reader;
 use Livewire\Attributes\Locked;
 use Livewire\Attributes\Url;
@@ -440,6 +443,17 @@ class ImportWizard extends Page
             [$headers, $rows] = $this->readCsvForImport($csvPath);
         } catch (\Throwable $e) {
             $this->notifyDanger('Could not parse the file rows: ' . $e->getMessage());
+
+            return;
+        }
+
+        // Guard against a header-only / fully-empty file. Dispatching with
+        // zero rows wastes a queue batch and makes the finally() severity
+        // chain mislabel the result (0 failed === 0 total → danger branch).
+        if ($rows === []) {
+            $this->notifyDanger(
+                'The file contains no data rows — check that it has at least one row beyond the header.'
+            );
 
             return;
         }
@@ -1969,6 +1983,18 @@ class ImportWizard extends Page
                         ->when(
                             $failedRowsCount === $fresh->total_rows,
                             fn (Notification $n) => $n->danger(),
+                        )
+                        ->when(
+                            $failedRowsCount,
+                            fn (Notification $n) => $n->actions([
+                                FilamentAction::make('downloadFailedRowsCsv')
+                                    ->label(trans_choice('filament-actions::import.notifications.completed.actions.download_failed_rows_csv.label', $failedRowsCount, [
+                                        'count' => Number::format($failedRowsCount),
+                                    ]))
+                                    ->color('danger')
+                                    ->url(UrlFacade::signedRoute('filament.imports.failed-rows.download', ['authGuard' => Filament::getAuthGuard(), 'import' => $fresh], absolute: false), shouldOpenInNewTab: true)
+                                    ->markAsRead(),
+                            ]),
                         );
 
                     $notification = $fresh->importer::modifyCompletedNotification($notification, $fresh);

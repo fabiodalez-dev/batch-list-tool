@@ -431,4 +431,49 @@ it('F09.3: EntityResolver::resolvePractice resolves by identifier then by name',
 
     // Unknown value → null
     expect(EntityResolver::resolvePractice('DOES-NOT-EXIST'))->toBeNull();
+
+    // ── Tenancy scoping (F026) ──────────────────────────────────────────────
+    // A practice scoped to repository B must NOT be resolvable from an import
+    // running in repository A's context (nor unscoped); it is only resolvable
+    // when its own repository is supplied. A global (NULL repo) practice stays
+    // resolvable from any scope. (`practices.identifier` and `practices.name`
+    // are globally UNIQUE in the schema, so cross-tenant collisions on the same
+    // token can't actually exist — the leak the fix closes is the *guess across
+    // tenants* of an existing tenant-scoped row.)
+    EntityResolver::flushMemo();
+
+    $repoA = rfu_repo('PRACA');
+    $repoB = rfu_repo('PRACB');
+
+    $pa = Practice::create(['name' => 'Practice A', 'identifier' => 'PRAC-A', 'repository_id' => $repoA->id, 'is_active' => true]);
+    $pb = Practice::create(['name' => 'Practice B', 'identifier' => 'PRAC-B', 'repository_id' => $repoB->id, 'is_active' => true]);
+    $pg = Practice::create(['name' => 'Practice Global', 'identifier' => 'GLOB-X', 'repository_id' => null, 'is_active' => true]);
+
+    // repoA's own practice resolves under repoA's scope.
+    $resA = EntityResolver::resolvePractice('PRAC-A', $repoA->id);
+    expect($resA)->toHaveKey('practice_id')
+        ->and($resA['practice_id'])->toBe($pa->id);
+
+    // repoB's own practice resolves under repoB's scope.
+    EntityResolver::flushMemo();
+    $resB = EntityResolver::resolvePractice('PRAC-B', $repoB->id);
+    expect($resB)->toHaveKey('practice_id')
+        ->and($resB['practice_id'])->toBe($pb->id);
+
+    // Cross-tenant: repoB's practice is NEVER resolved from repoA's scope …
+    EntityResolver::flushMemo();
+    expect(EntityResolver::resolvePractice('PRAC-B', $repoA->id))->toBeNull();
+    // … nor from an unscoped (global-only) call.
+    EntityResolver::flushMemo();
+    expect(EntityResolver::resolvePractice('PRAC-B'))->toBeNull();
+
+    // Resolution by name is scoped identically (Strategy 2).
+    EntityResolver::flushMemo();
+    expect(EntityResolver::resolvePractice('Practice B', $repoA->id))->toBeNull();
+
+    // The global practice is resolvable from both repository scopes.
+    EntityResolver::flushMemo();
+    expect(EntityResolver::resolvePractice('GLOB-X', $repoA->id)['practice_id'])->toBe($pg->id);
+    EntityResolver::flushMemo();
+    expect(EntityResolver::resolvePractice('GLOB-X', $repoB->id)['practice_id'])->toBe($pg->id);
 });

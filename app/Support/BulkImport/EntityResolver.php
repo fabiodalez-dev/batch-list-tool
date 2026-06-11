@@ -483,11 +483,20 @@ final class EntityResolver
      * D4 (Feedback1 Wave D) — the optional `identifier` field on Practice is the
      * primary import key; falls back to name for legacy data.
      *
+     * Tenancy contract: practices carry an optional `repository_id`, so resolution
+     * is always scoped to avoid linking a row in one tenant's import to a Practice
+     * belonging to another tenant —
+     *  - with a $repositoryId: match that repository's practices first, then
+     *    global ones (repository_id NULL); never another tenant's.
+     *  - without a $repositoryId: match GLOBAL practices only. Guessing across
+     *    tenants would be non-deterministic and could silently link a document
+     *    to another repository's practice.
+     *
      * Returns `['practice_id' => int]` on a unique match or `null` otherwise.
      *
      * @return array{practice_id:int}|null
      */
-    public static function resolvePractice(?string $identifierOrName): ?array
+    public static function resolvePractice(?string $identifierOrName, ?int $repositoryId = null): ?array
     {
         $text = self::normaliseString($identifierOrName);
         if ($text === null) {
@@ -495,11 +504,23 @@ final class EntityResolver
         }
 
         // Strategy 1 — exact identifier match (unique when non-null).
-        $key = "practice:identifier:{$text}";
+        $key = "practice:identifier:{$text}:" . ($repositoryId ?? '*');
         if (! array_key_exists($key, self::$memo)) {
-            $id = Practice::query()
-                ->whereRaw('LOWER(identifier) = ?', [mb_strtolower($text)])
-                ->value('id');
+            $q = Practice::query()
+                ->withoutGlobalScopes()
+                ->whereRaw('LOWER(identifier) = ?', [mb_strtolower($text)]);
+            if ($repositoryId !== null) {
+                // Own repository first, global fallback second — deterministic.
+                $q->where(function ($inner) use ($repositoryId): void {
+                    $inner->where('repository_id', $repositoryId)
+                        ->orWhereNull('repository_id');
+                })->orderByRaw(
+                    'CASE WHEN repository_id IS NULL THEN 1 ELSE 0 END'
+                );
+            } else {
+                $q->whereNull('repository_id');
+            }
+            $id = $q->value('id');
             self::$memo[$key] = $id !== null ? ['practice_id' => (int) $id] : null;
         }
         if (self::$memo[$key] !== null) {
@@ -507,11 +528,23 @@ final class EntityResolver
         }
 
         // Strategy 2 — exact name match (case-insensitive).
-        $key = "practice:name:{$text}";
+        $key = "practice:name:{$text}:" . ($repositoryId ?? '*');
         if (! array_key_exists($key, self::$memo)) {
-            $id = Practice::query()
-                ->whereRaw('LOWER(name) = ?', [mb_strtolower($text)])
-                ->value('id');
+            $q = Practice::query()
+                ->withoutGlobalScopes()
+                ->whereRaw('LOWER(name) = ?', [mb_strtolower($text)]);
+            if ($repositoryId !== null) {
+                // Own repository first, global fallback second — deterministic.
+                $q->where(function ($inner) use ($repositoryId): void {
+                    $inner->where('repository_id', $repositoryId)
+                        ->orWhereNull('repository_id');
+                })->orderByRaw(
+                    'CASE WHEN repository_id IS NULL THEN 1 ELSE 0 END'
+                );
+            } else {
+                $q->whereNull('repository_id');
+            }
+            $id = $q->value('id');
             self::$memo[$key] = $id !== null ? ['practice_id' => (int) $id] : null;
         }
 

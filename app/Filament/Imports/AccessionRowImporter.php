@@ -402,8 +402,9 @@ class AccessionRowImporter extends Importer
             if (trim($rawNames) !== '' || trim($rawSurnames) !== '') {
                 throw ValidationException::withMessages([
                     'authority_identifier' => __(
-                        'Authority Identifier is required when a Notary/Authority name is given — names alone are ambiguous. '
-                        . 'Please add the R-code (e.g. R12) in the Authority Identifier column.'
+                        'Authority Identifier is required when a Notary/Authority name is given — names alone are ambiguous (name: ":name", surname: ":surname"). '
+                        . 'Please add the R-code (e.g. R12) in the Authority Identifier column.',
+                        ['name' => trim($rawNames), 'surname' => trim($rawSurnames)]
                     ),
                 ]);
             }

@@ -8,6 +8,7 @@ use App\Filament\Imports\Concerns\SkipsExistingRows;
 use App\Models\Batch;
 use App\Models\Box;
 use App\Models\CustomFieldDefinition;
+use App\Models\Repository;
 use App\Models\Scopes\ThroughBatchRepositoryScope;
 use App\Support\BulkImport\EntityResolver;
 use App\Support\BulkImport\SpreadsheetParsers;
@@ -427,8 +428,12 @@ class BoxImporter extends Importer
 
                     $res = EntityResolver::resolveLocation(trim($state), $repoId);
                     if ($res === null) {
+                        $repoCode = $repoId !== null
+                            ? (Repository::query()->withoutGlobalScopes()->whereKey($repoId)->value('code') ?? (string) $repoId)
+                            : 'unknown';
+
                         throw ValidationException::withMessages([
-                            'location' => "Unknown location code: '{$state}'. Ensure the location exists in this repository before importing.",
+                            'location' => "Unknown location code: '{$state}'. Ensure the location exists in repository '{$repoCode}' before importing.",
                         ]);
                     }
                     $record->location_id = $res['location_id'];
