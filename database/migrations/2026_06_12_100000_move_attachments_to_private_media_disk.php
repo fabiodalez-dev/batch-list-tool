@@ -64,10 +64,17 @@ return new class extends Migration
                 && ! $target->exists($relativePath)) {
                 $stream = $source->readStream($relativePath);
                 if ($stream !== null) {
-                    $target->writeStream($relativePath, $stream);
-                    if (is_resource($stream)) {
-                        fclose($stream);
+                    // finally guarantees the handle is closed even when
+                    // writeStream() throws — with many files, leaked handles
+                    // would exhaust the process file-descriptor limit.
+                    try {
+                        $target->writeStream($relativePath, $stream);
+                    } finally {
+                        if (is_resource($stream)) {
+                            fclose($stream);
+                        }
                     }
+
                     // Best-effort cleanup of the now-public copy.
                     $source->delete($relativePath);
                 }
