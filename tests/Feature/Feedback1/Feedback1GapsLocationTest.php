@@ -2,6 +2,7 @@
 
 declare(strict_types=1);
 
+use App\Filament\Imports\LocationImporter;
 use App\Filament\Resources\LocationResource;
 use App\Filament\Support\CreatorColumn;
 use App\Models\Location;
@@ -25,6 +26,9 @@ uses(RefreshDatabase::class);
 
 beforeEach(function (): void {
     bl_seedShieldPermissions();
+    // F007 — typeLabel() memoises the lookup map per request; flush it so
+    // LocationType rows created in one case don't bleed into the next.
+    LocationResource::flushTypeLabelMemo();
 });
 
 // ---------------------------------------------------------------------------
@@ -231,4 +235,87 @@ it('LOC-Legacy.2: pre-lookup legacy types (e.g. shelf) remain storable', functio
     $location = f1loc_location(['type' => 'shelf']);
 
     expect($location->fresh()->type)->toBe('shelf');
+});
+
+// ===========================================================================
+// 6. F007 — typeLabel() honours the editable lookup label
+// ===========================================================================
+
+it('LOC-Label.1: typeLabel() returns the admin-configured lookup label for a custom code', function (): void {
+    LocationType::create([
+        'code' => 'cold_store',
+        'label' => 'Cold Storage',
+        'sort_order' => 99,
+        'is_active' => true,
+    ]);
+    LocationResource::flushTypeLabelMemo();
+
+    expect(LocationResource::typeLabel('cold_store'))->toBe('Cold Storage');
+});
+
+it('LOC-Label.2: typeLabel() returns the lookup label for a canonical code (room => Room)', function (): void {
+    expect(LocationResource::typeLabel('room'))->toBe('Room');
+});
+
+it('LOC-Label.3: typeLabel() falls back to the hardcoded match for an unknown code', function (): void {
+    // No lookup row for 'shelf' (not seeded), so the match() arm provides it.
+    expect(LocationResource::typeLabel('shelf'))->toBe('Shelf');
+});
+
+// ===========================================================================
+// 7. F006 — the table type SelectFilter is lookup-driven
+// ===========================================================================
+
+it('LOC-Filter.1: SelectFilter options include a lookup-added code (via typeOptions)', function (): void {
+    LocationType::create([
+        'code' => 'vault',
+        'label' => 'Vault',
+        'sort_order' => 99,
+        'is_active' => true,
+    ]);
+
+    // The filter sources its options from self::typeOptions() (same closure),
+    // so asserting on typeOptions() proves the operator-added code is filterable.
+    expect(LocationResource::typeOptions())
+        ->toHaveKey('vault')
+        ->and(LocationResource::typeOptions()['vault'])->toBe('Vault');
+});
+
+// ===========================================================================
+// 8. F038 — LocationImporter accepts lookup-added type codes
+// ===========================================================================
+
+it('LOC-Import.1: the type column accepts a lookup-added code', function (): void {
+    LocationType::create([
+        'code' => 'vault',
+        'label' => 'Vault',
+        'sort_order' => 99,
+        'is_active' => true,
+    ]);
+
+    $col = collect(LocationImporter::getColumns())
+        ->first(fn ($c) => $c->getName() === 'type');
+
+    // Cast keeps the lookup-added code instead of nulling it.
+    expect($col->castState('vault'))->toBe('vault');
+
+    // The in: rule lists the lookup code so validation passes.
+    $inRule = collect($col->getDataValidationRules())
+        ->first(fn ($r) => is_string($r) && str_starts_with($r, 'in:'));
+    expect($inRule)->toContain('vault');
+});
+
+it('LOC-Import.2: the type column still accepts canonical codes and aliases', function (): void {
+    $col = collect(LocationImporter::getColumns())
+        ->first(fn ($c) => $c->getName() === 'type');
+
+    // Canonical const code.
+    expect($col->castState('room'))->toBe('room')
+        // Alias map runs before the membership check.
+        ->and($col->castState('display case'))->toBe('showcase');
+
+    $inRule = collect($col->getDataValidationRules())
+        ->first(fn ($r) => is_string($r) && str_starts_with($r, 'in:'));
+    expect($inRule)->toContain('room')
+        ->and($inRule)->toContain('showcase');
 });

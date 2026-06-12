@@ -4,6 +4,7 @@ namespace App\Models;
 
 use App\Models\Concerns\BelongsToRepository;
 use App\Models\Concerns\HasCustomFields;
+use App\Models\Pivots\AccessionBatch;
 use Illuminate\Database\Eloquent\Factories\HasFactory;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
@@ -74,7 +75,11 @@ class Batch extends Model implements AuditableContract
 
     public function accessions(): BelongsToMany
     {
-        return $this->belongsToMany(Accession::class, 'accession_batch')->withTimestamps();
+        // F041 — ->using() wires the AccessionBatch pivot model so its
+        // same-repository creating() guard fires on every attach/sync.
+        return $this->belongsToMany(Accession::class, 'accession_batch')
+            ->using(AccessionBatch::class)
+            ->withTimestamps();
     }
 
     public function isForbidden(): bool

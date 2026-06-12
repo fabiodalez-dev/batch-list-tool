@@ -126,7 +126,7 @@ it('Accession registers an attachments media collection accepting PDFs', functio
  * retrievable via getMedia(); multiple files are supported.
  */
 it('attaches multiple fake PDFs to the attachments collection', function () {
-    Storage::fake('public');
+    Storage::fake('media');
 
     $this->actingAs(fga_superAdmin());
     $repo = fga_repo();
@@ -153,7 +153,7 @@ it('attaches multiple fake PDFs to the attachments collection', function () {
  * (mirrors Document: the accepted list is an allow-list, not advisory).
  */
 it('rejects a disallowed mime type on the attachments collection', function () {
-    Storage::fake('public');
+    Storage::fake('media');
 
     $this->actingAs(fga_superAdmin());
     $repo = fga_repo();
@@ -166,6 +166,81 @@ it('rejects a disallowed mime type on the attachments collection', function () {
         ->addMedia(UploadedFile::fake()->createWithContent('malware.exe', "MZ\x90\x00" . str_repeat("\x00", 60)))
         ->toMediaCollection('attachments');
 })->throws(FileUnacceptableForCollection::class);
+
+// ===========================================================================
+// 1 — Attachments: private disk + authenticated download (F032)
+// ===========================================================================
+
+/**
+ * 1.4a — Attachments are stored on the PRIVATE `media` disk, not the public
+ * `/storage` disk: spatie media rows for the collection record disk='media'.
+ */
+it('stores attachments on the private media disk', function () {
+    Storage::fake('media');
+
+    $this->actingAs(fga_superAdmin());
+    $repo = fga_repo();
+    $accession = fga_accession($repo->id);
+
+    $accession
+        ->addMedia(fga_fakePdf('digriet.pdf'))
+        ->toMediaCollection('attachments');
+
+    $media = $accession->refresh()->getMedia('attachments')->first();
+
+    expect($media->disk)->toBe('media');
+    Storage::disk('media')->assertExists($media->id . '/digriet.pdf');
+});
+
+/**
+ * 1.4b — An UNAUTHENTICATED GET to the attachments.download route is rejected
+ * (redirect to login / 401 / 403) — the file is never world-readable.
+ */
+it('rejects an unauthenticated attachment download', function () {
+    Storage::fake('media');
+
+    // Seed a media row as a privileged actor, then drop auth for the request.
+    $this->actingAs(fga_superAdmin());
+    $repo = fga_repo();
+    $accession = fga_accession($repo->id);
+    $media = $accession
+        ->addMedia(fga_fakePdf('secret.pdf'))
+        ->toMediaCollection('attachments');
+
+    auth()->logout();
+
+    $response = $this->get(route('attachments.download', $media));
+
+    // The route is behind `auth`: a guest is never served the file. Depending
+    // on the auth-redirect target it is a login redirect (302) or an auth
+    // rejection (401/403); the only forbidden outcome is a 200 that streams the
+    // private PDF. Assert the file is NOT served.
+    expect($response->getStatusCode())->not->toBe(200);
+    expect($response->headers->get('content-type'))->not->toContain('application/pdf');
+})->group('f032');
+
+/**
+ * 1.4c — An AUTHENTICATED, authorized user downloads the attachment: 200 with
+ * the stored PDF content-type.
+ */
+it('lets an authorized user download an attachment', function () {
+    Storage::fake('media');
+
+    $user = fga_superAdmin();
+    $this->actingAs($user);
+    $repo = fga_repo();
+    $accession = fga_accession($repo->id);
+    $media = $accession
+        ->addMedia(fga_fakePdf('report.pdf'))
+        ->toMediaCollection('attachments');
+
+    $response = $this->get(route('attachments.download', $media));
+
+    expect($response->getStatusCode())->toBe(200);
+
+    $contentType = $response->headers->get('content-type');
+    expect($contentType)->toContain('application/pdf');
+})->group('f032');
 
 // ===========================================================================
 // 1 — Attachments: form + infolist wiring

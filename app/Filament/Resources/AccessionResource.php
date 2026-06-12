@@ -233,8 +233,10 @@ class AccessionResource extends Resource
                     ]),
 
                 // Feedback1 — list uploaded attachments (Digriet / Conservation
-                // Report / Emails) with a download link per file. Served from
-                // the local default media disk (no CDN).
+                // Report / Emails) with a download link per file. F032 — files
+                // live on the private `media` disk (no public /storage URL); the
+                // link goes through the authenticated, policy-checked
+                // `attachments.download` route, never $m->getUrl().
                 Section::make('Attachments')
                     ->columns(1)
                     ->schema([
@@ -250,7 +252,7 @@ class AccessionResource extends Resource
 
                                 return new HtmlString(
                                     $media
-                                        ->map(fn ($m): string => '<a href="' . e($m->getUrl()) . '" target="_blank" rel="noopener" class="underline">'
+                                        ->map(fn ($m): string => '<a href="' . e(route('attachments.download', $m)) . '" target="_blank" rel="noopener" class="underline">'
                                             . e($m->file_name)
                                             . '</a> <span class="text-gray-500">(' . e($m->human_readable_size) . ')</span>')
                                         ->implode('<br>')

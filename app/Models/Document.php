@@ -362,7 +362,11 @@ class Document extends Model implements AuditableContract, HasMedia, Sortable
         // image/tif AND image/tiff: RFC 3302 lists both as valid; some
         // Windows tools + iOS Files app emit image/tif. Accept both so a
         // legitimate scan isn't silently rejected at upload time.
+        // F032 — store on the private `media` disk (no public /storage URL).
+        // Files are reachable only through the authenticated, policy-checked
+        // `attachments.download` route — never world-readable.
         $this->addMediaCollection('attachments')
+            ->useDisk('media')
             ->acceptsMimeTypes([
                 'application/pdf',
                 'image/jpeg', 'image/png', 'image/tiff', 'image/tif',

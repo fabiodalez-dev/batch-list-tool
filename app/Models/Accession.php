@@ -3,6 +3,7 @@
 namespace App\Models;
 
 use App\Models\Concerns\BelongsToRepository;
+use App\Models\Pivots\AccessionBatch;
 use Illuminate\Database\Eloquent\Factories\HasFactory;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
@@ -45,7 +46,11 @@ class Accession extends Model implements AuditableContract, HasMedia
 
     public function batches(): BelongsToMany
     {
-        return $this->belongsToMany(Batch::class, 'accession_batch')->withTimestamps();
+        // F041 — ->using() wires the AccessionBatch pivot model so its
+        // same-repository creating() guard fires on every attach/sync.
+        return $this->belongsToMany(Batch::class, 'accession_batch')
+            ->using(AccessionBatch::class)
+            ->withTimestamps();
     }
 
     public function repository(): BelongsTo
@@ -69,7 +74,11 @@ class Accession extends Model implements AuditableContract, HasMedia
      */
     public function registerMediaCollections(): void
     {
+        // F032 — store on the private `media` disk (no public /storage URL).
+        // Files are reachable only through the authenticated, policy-checked
+        // `attachments.download` route — never world-readable.
         $this->addMediaCollection('attachments')
+            ->useDisk('media')
             ->acceptsMimeTypes([
                 'application/pdf',
                 'image/jpeg', 'image/png', 'image/tiff', 'image/tif',
