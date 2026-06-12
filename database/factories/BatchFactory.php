@@ -14,7 +14,13 @@ class BatchFactory extends Factory
     public function definition(): array
     {
         return [
-            'batch_number' => $this->faker->unique()->numberBetween(1, 9999),
+            // Exclude reserved numbers: 34/36 are forbidden (DB CHECK) and 50
+            // is wills-only — a random hit on 50 makes any test that attaches
+            // a non-wills document trip the wills-batch invariant (flaky CI,
+            // observed on PR #139's pull_request run).
+            'batch_number' => $this->faker->unique()->randomElement(
+                array_values(array_diff(range(1, 9999), [...Batch::FORBIDDEN_NUMBERS, Batch::WILLS_BATCH]))
+            ),
             'description' => $this->faker->sentence(),
             'type' => 'MAIN_COLLECTION',
             'is_active' => true,
