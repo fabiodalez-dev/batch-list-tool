@@ -6,10 +6,12 @@ namespace App\Filament\Imports;
 
 use App\Filament\Imports\Concerns\SkipsExistingRows;
 use App\Models\Location;
+use App\Models\LocationType;
 use App\Models\Repository;
 use Filament\Actions\Imports\ImportColumn;
 use Filament\Actions\Imports\Importer;
 use Filament\Actions\Imports\Models\Import;
+use Illuminate\Support\Facades\Schema;
 use Illuminate\Validation\ValidationException;
 
 /**
@@ -59,7 +61,7 @@ class LocationImporter extends Importer
                 ->rules(['required', 'string', 'max:191']),
 
             ImportColumn::make('type')
-                ->label('Type (' . implode('|', Location::TYPES) . ')')
+                ->label('Type (' . implode('|', self::acceptedTypeCodes()) . ')')
                 ->requiredMappingForNewRecordsOnly()
                 ->guess(['Type', 'type', 'Location type', 'Kind'])
                 ->castStateUsing(function (?string $state): ?string {
@@ -81,9 +83,12 @@ class LocationImporter extends Importer
                     ];
                     $candidate = $aliases[$candidate] ?? $candidate;
 
-                    return in_array($candidate, Location::TYPES, true) ? $candidate : null;
+                    // Feedback1 gaps (F038) — accept any active location_types
+                    // lookup code (plus the hardcoded const for legacy/offline
+                    // fallback), mirroring the form Select's lookup source.
+                    return in_array($candidate, self::acceptedTypeCodes(), true) ? $candidate : null;
                 })
-                ->rules(['required', 'string', 'in:' . implode(',', Location::TYPES)]),
+                ->rules(['required', 'string', 'in:' . implode(',', self::acceptedTypeCodes())]),
 
             ImportColumn::make('parent_name')
                 ->label('Parent location name (blank for root)')
@@ -231,5 +236,31 @@ class LocationImporter extends Importer
         }
 
         return $body;
+    }
+
+    /**
+     * Feedback1 gaps (F038) — the set of Location type codes the importer
+     * accepts. Sourced from the editable location_types lookup (active rows)
+     * UNION the hardcoded {@see Location::TYPES} const, so:
+     *   • admin-added types ('vault') import instead of being nulled/rejected;
+     *   • legacy/inactive stored codes ('shelf') still re-import (UNION, not
+     *     replace);
+     *   • fresh SQLite test DBs without the lookup table fall back to the const
+     *     (hasTable guard) and the in: list is never empty.
+     *
+     * @return array<int, string>
+     */
+    private static function acceptedTypeCodes(): array
+    {
+        if (! Schema::hasTable('location_types')) {
+            return Location::TYPES;
+        }
+
+        $lookupCodes = LocationType::query()
+            ->where('is_active', true)
+            ->pluck('code')
+            ->all();
+
+        return array_values(array_unique([...$lookupCodes, ...Location::TYPES]));
     }
 }

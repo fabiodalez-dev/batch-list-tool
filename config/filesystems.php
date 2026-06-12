@@ -47,6 +47,21 @@ return [
             'report' => false,
         ],
 
+        // F032 — private disk for spatie/medialibrary attachments
+        // (Accession / Document "Digriet / Conservation Report / Emails" PDFs).
+        // No public `url`, visibility private, rooted OUTSIDE the web docroot
+        // (storage/app/private/media). Files are never world-readable: the
+        // only way out is the authenticated `attachments.download` route which
+        // policy-checks the owning model. MEDIA_DISK is pinned to this disk so
+        // the spatie vendor default (env('MEDIA_DISK','public')) resolves here.
+        'media' => [
+            'driver' => 'local',
+            'root' => storage_path('app/private/media'),
+            'visibility' => 'private',
+            'throw' => false,
+            'report' => false,
+        ],
+
         's3' => [
             'driver' => 's3',
             'key' => env('AWS_ACCESS_KEY_ID'),

@@ -1,6 +1,7 @@
 <?php
 
 use App\Http\Controllers\ActiveRepositoryController;
+use App\Http\Controllers\AttachmentDownloadController;
 use App\Http\Controllers\BackupDownloadController;
 use App\Models\User;
 use Illuminate\Support\Facades\Auth;
@@ -93,3 +94,21 @@ Route::post('/admin/active-repository', [ActiveRepositoryController::class, 'upd
 Route::get('/admin/backups/download', BackupDownloadController::class)
     ->middleware(['web', 'auth'])
     ->name('backups.download');
+
+/*
+|--------------------------------------------------------------------------
+| Attachment download — authenticated, policy-checked (F032)
+|--------------------------------------------------------------------------
+|
+| GET /admin/attachments/{media}
+|
+| Streams a single spatie/medialibrary attachment from the private `media`
+| disk. The file is never world-readable (no public /storage URL); this route
+| is the only egress. The controller resolves the owning model (Accession /
+| Document) and authorizes the user with the owner's `view` policy — which,
+| via RepositoryScope, also blocks cross-tenant access. Behind the panel's
+| web + auth middleware so an authenticated session is required.
+*/
+Route::get('/admin/attachments/{media}', AttachmentDownloadController::class)
+    ->middleware(['web', 'auth'])
+    ->name('attachments.download');

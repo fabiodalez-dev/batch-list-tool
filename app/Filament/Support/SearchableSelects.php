@@ -14,6 +14,8 @@ use App\Models\Repository;
 use App\Models\Series;
 use App\Models\User;
 use Filament\Forms\Components\Select;
+use Filament\Schemas\Components\Utilities\Get;
+use Illuminate\Database\Eloquent\Model;
 
 /**
  * Factory helpers that build Filament `Select` components configured for
@@ -336,11 +338,17 @@ final class SearchableSelects
     /**
      * @return array<int|string, string>
      */
-    public static function batchSearchResults(string $search): array
+    public static function batchSearchResults(string $search, ?int $repositoryId = null): array
     {
         $search = trim($search);
 
         $query = Batch::query();
+
+        // F041 — when a repository is in context, only same-repo batches are
+        // attachable (the pivot guard would reject cross-repo rows anyway).
+        if ($repositoryId !== null) {
+            $query->where('repository_id', $repositoryId);
+        }
 
         if ($search === '') {
             $query->orderBy('batch_number');
@@ -528,7 +536,13 @@ final class SearchableSelects
             ->searchable(['code'])
             ->preload(false)
             ->getOptionLabelFromRecordUsing(fn (Accession $r): string => self::accessionLabel($r))
-            ->getSearchResultsUsing(fn (string $search): array => self::accessionSearchResults($search))
+            // F041 — scope the autocomplete to the editing record's repository
+            // (on edit) or the form's currently-selected repository_id (on
+            // create) so admins never see foreign-repo accessions to attach.
+            // null (no record, no selection) → unscoped, mirroring prior behaviour.
+            ->getSearchResultsUsing(function (string $search, Get $get, ?Model $record): array {
+                return self::accessionSearchResults($search, self::resolveRepositoryId($get, $record));
+            })
             ->getOptionLabelsUsing(fn (array $values): array => self::accessionOptionLabels($values));
     }
 
@@ -544,14 +558,20 @@ final class SearchableSelects
             ->searchable(['batch_number', 'description'])
             ->preload(false)
             ->getOptionLabelFromRecordUsing(fn (Batch $r): string => self::batchLabel($r))
-            ->getSearchResultsUsing(fn (string $search): array => self::batchSearchResults($search))
+            // F041 — scope the autocomplete to the editing record's repository
+            // (on edit) or the form's currently-selected repository_id (on
+            // create) so admins never see foreign-repo batches to attach.
+            // null (no record, no selection) → unscoped, mirroring prior behaviour.
+            ->getSearchResultsUsing(function (string $search, Get $get, ?Model $record): array {
+                return self::batchSearchResults($search, self::resolveRepositoryId($get, $record));
+            })
             ->getOptionLabelsUsing(fn (array $values): array => self::batchOptionLabels($values));
     }
 
     /**
      * @return array<int|string, string>
      */
-    public static function accessionSearchResults(string $search): array
+    public static function accessionSearchResults(string $search, ?int $repositoryId = null): array
     {
         $search = trim($search);
 
@@ -559,6 +579,12 @@ final class SearchableSelects
         // Order by batch_number so ->first() deterministically returns the lowest
         // batch number for the label suffix (matching the stated label rule).
         $query = Accession::query()->with(['batches' => fn ($q) => $q->orderBy('batch_number')]);
+
+        // F041 — when a repository is in context, only same-repo accessions are
+        // attachable (the pivot guard would reject cross-repo rows anyway).
+        if ($repositoryId !== null) {
+            $query->where('repository_id', $repositoryId);
+        }
 
         if ($search === '') {
             $query->orderBy('code');
@@ -709,6 +735,28 @@ final class SearchableSelects
         $email = $r->email !== null && $r->email !== '' ? " ({$r->email})" : '';
 
         return "{$r->name}{$email}";
+    }
+
+    /**
+     * F041 — resolve the repository_id to scope the multi-select autocomplete:
+     * prefer the form's current `repository_id` value (covers create, where the
+     * record has no id yet, and live edits), falling back to the editing
+     * record's stored repository_id. Returns null when neither is available
+     * (e.g. relation-manager contexts) → the search runs unscoped.
+     */
+    private static function resolveRepositoryId(Get $get, ?Model $record): ?int
+    {
+        $fromForm = $get('repository_id');
+        if ($fromForm !== null && $fromForm !== '') {
+            return (int) $fromForm;
+        }
+
+        $fromRecord = $record?->getAttribute('repository_id');
+        if ($fromRecord !== null && $fromRecord !== '') {
+            return (int) $fromRecord;
+        }
+
+        return null;
     }
 
     private static function documentOptionLabel(mixed $value): ?string

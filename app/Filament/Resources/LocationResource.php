@@ -56,6 +56,16 @@ class LocationResource extends Resource
 
     protected static ?string $recordTitleAttribute = 'name';
 
+    /**
+     * Per-request memoised code => label map from the editable location_types
+     * lookup. Resolved once and reused across every typeLabel() call so the
+     * table badge (called per row) does not trigger N+1 queries. Reset between
+     * tests via {@see flushTypeLabelMemo()} (mirrors EntityResolver::flushMemo).
+     *
+     * @var array<string, string>|null
+     */
+    private static ?array $typeLabelMemo = null;
+
     public static function form(Schema $schema): Schema
     {
         // Layout rule (user mandate): root columns(1) → full-width Sections;
@@ -302,9 +312,11 @@ class LocationResource extends Resource
             ])
             ->filters([
                 SelectFilter::make('type')
-                    ->options(collect(Location::TYPES)
-                        ->mapWithKeys(fn (string $t) => [$t => self::typeLabel($t)])
-                        ->all())
+                    // Feedback1 gaps (F006) — options come from the editable
+                    // location_types lookup (same source as the form Select)
+                    // so operator-added types are filterable. Closure keeps it
+                    // lazy (no DB query at class-resolution time).
+                    ->options(fn (): array => self::typeOptions())
                     ->multiple(),
                 SelectFilter::make('repository_id')
                     ->label('Repository')
@@ -426,12 +438,38 @@ class LocationResource extends Resource
     }
 
     /**
-     * Human-readable label for a Location::TYPES value.
-     * Centralised so the form Select, the table badge and the filter all
-     * stay in sync.
+     * Flush the per-request typeLabel memo. Tests call this between scenarios
+     * so lookup rows created in one case don't bleed into the next.
+     */
+    public static function flushTypeLabelMemo(): void
+    {
+        self::$typeLabelMemo = null;
+    }
+
+    /**
+     * Human-readable label for a Location type code.
+     * Centralised so the form Select, the table badge, the infolist badge and
+     * the filter all stay in sync.
+     *
+     * Feedback1 gaps (F007) — consults the editable location_types lookup first
+     * (per-request memoised map, guarded by hasTable for fresh SQLite/test DBs)
+     * so an admin-configured label ('Cold Storage' for code 'cold_store') is
+     * what every UI surface renders. Falls through to the hardcoded match()
+     * for canonical codes and when the lookup has no row / no table.
      */
     public static function typeLabel(string $type): string
     {
+        if (self::$typeLabelMemo === null) {
+            self::$typeLabelMemo = SchemaFacade::hasTable('location_types')
+                ? LocationType::query()->pluck('label', 'code')->all()
+                : [];
+        }
+
+        $label = self::$typeLabelMemo[$type] ?? null;
+        if ($label !== null && $label !== '') {
+            return $label;
+        }
+
         return match ($type) {
             'repository' => 'Repository',
             'room' => 'Room',

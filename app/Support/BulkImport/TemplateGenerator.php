@@ -283,7 +283,8 @@ final class TemplateGenerator
     }
 
     /**
-     * Location template — driven by LocationImporter columns + Location::TYPES.
+     * Location template — driven by LocationImporter columns; the `type`
+     * column accepts any active Location Type code (configured in the lookup).
      * Operators describe their tree top-down: roots first (parent_name blank),
      * then children. Re-runs are safe; missing-parent rows fail but the next
      * run picks them up once the parent exists.
@@ -294,7 +295,7 @@ final class TemplateGenerator
     {
         return [
             'name',
-            'type',             // repository | room | work_area | shelf | museum | showcase | conservation | temp_holding | other
+            'type',             // any active Location Type code (configured in the Location Types lookup)
             'parent_name',      // blank for root rows
             'repository_code',  // e.g. NRA
             'code',

@@ -12,6 +12,7 @@ use App\Filament\Resources\BatchResource\Pages\EditBatch;
 use App\Filament\Support\SearchableSelects;
 use App\Models\Accession;
 use App\Models\Batch;
+use App\Models\Pivots\AccessionBatch;
 use App\Models\Repository;
 use App\Models\Scopes\RepositoryScope;
 use App\Models\User;
@@ -575,28 +576,58 @@ it('accession sees only its own batches via the pivot', function (): void {
 });
 
 /**
- * Scope.2 — Batch 50 can be linked to accessions from multiple repositories
- *            (the pivot itself has no repository_id FK), but scoped queries
- *            on each repository's accessions see only their own side.
+ * Scope.2 — F041: the pivot now enforces spec B5 ("both sides same repo").
+ *            Attaching a foreign-repo accession to a batch throws a
+ *            DomainException; same-repo attaches succeed; the guard is
+ *            null-tolerant (it only fires when BOTH sides resolve a non-null,
+ *            differing repository_id — expand-never-restrict).
  */
-it('Batch 50 pivot rows are visible from both accessions regardless of repo', function (): void {
+it('cross-repo pivot attach throws; same-repo attach succeeds; guard is null-tolerant', function (): void {
     $repoA = wbnn_repo();
     $repoB = wbnn_repo();
 
     // Use repoA's Batch 50 (distinct batch_number per test thanks to RefreshDatabase).
     $batch50 = wbnn_batch($repoA->id, 50);
-    $accA = wbnn_accession($repoA->id);
-    $accB = wbnn_accession($repoB->id);
+    $accA = wbnn_accession($repoA->id);   // same repo as batch50
+    $accA2 = wbnn_accession($repoA->id);  // same repo as batch50
+    $accB = wbnn_accession($repoB->id);   // foreign repo
 
-    $batch50->accessions()->attach([$accA->id, $accB->id]);
+    // Same-repo attach is allowed — Batch 50 collects many same-repo accessions.
+    $batch50->accessions()->attach([$accA->id, $accA2->id]);
+    expect($batch50->accessions()->where('accessions.id', $accA->id)->exists())->toBeTrue();
+    expect($batch50->accessions()->where('accessions.id', $accA2->id)->exists())->toBeTrue();
 
-    // Both accessions are visible from the batch's pivot (no repo filter on the pivot).
-    expect($batch50->accessions()->count())->toBe(2);
+    // Cross-repo attach is now rejected by the AccessionBatch pivot guard (B5).
+    expect(fn () => $batch50->accessions()->attach($accB->id))
+        ->toThrow(DomainException::class);
 
-    // Each accession sees only the batch it was attached to.
-    expect($accA->batches()->where('batches.id', $batch50->id)->exists())->toBeTrue();
-    expect($accB->batches()->where('batches.id', $batch50->id)->exists())->toBeTrue();
-});
+    // The rejected row was never written.
+    expect($batch50->accessions()->where('accessions.id', $accB->id)->exists())->toBeFalse();
+
+    // Null-tolerance: the guard's mismatch branch is gated on BOTH sides being
+    // non-null. When one side resolves to null (legacy / unresolved repo) the
+    // guard short-circuits and does NOT throw, mirroring F030's
+    // expand-never-restrict contract. We fire the pivot's `creating` event
+    // directly with a batch_id that resolves to no repository (no such batch)
+    // and assert no DomainException is raised by the guard. (A real FK-backed
+    // insert can't carry a null repository because the schema is NOT NULL, so
+    // we exercise the guard branch in isolation.)
+    $pivot = new AccessionBatch;
+    $pivot->accession_id = $accB->id;   // repoB (non-null)
+    $pivot->batch_id = PHP_INT_MAX;     // no such batch → repo resolves null
+
+    // Fire the registered `creating` model event for this pivot and assert the
+    // guard does not veto it (returns no `false`, raises no DomainException).
+    $threwDomain = false;
+
+    try {
+        AccessionBatch::getEventDispatcher()
+            ->dispatch('eloquent.creating: ' . AccessionBatch::class, $pivot);
+    } catch (DomainException) {
+        $threwDomain = true;
+    }
+    expect($threwDomain)->toBeFalse();
+})->group('f041');
 
 /**
  * Scope.3 — AccessionResource list page filter 'batches' only surfaces
@@ -620,25 +651,31 @@ it('AccessionResource list batches filter respects the pivot', function (): void
 });
 
 /**
- * Scope.4 — An accession with batches from two different repositories is
- *            physically possible at the DB level (the pivot has no repo FK),
- *            but the batches relation returns ALL linked batches when queried
- *            without tenant scoping.
+ * Scope.4 — F041: attaching batches from two different repositories to one
+ *            accession is now rejected by the AccessionBatch pivot guard.
+ *            The same-repo batch attaches; the foreign-repo batch throws and
+ *            its row is never written; same-repo linked batches still query
+ *            back correctly.
  */
-it('pivot relation returns all linked batches regardless of repo when queried directly', function (): void {
+it('cross-repo batch attach on an accession throws and writes no row', function (): void {
     $repoA = wbnn_repo();
     $repoB = wbnn_repo();
     $acc = wbnn_accession($repoA->id);
-    $batchA = wbnn_batch($repoA->id);
-    $batchB = wbnn_batch($repoB->id);
+    $batchA = wbnn_batch($repoA->id);   // same repo
+    $batchA2 = wbnn_batch($repoA->id);  // same repo
+    $batchB = wbnn_batch($repoB->id);   // foreign repo
 
-    // Attach to batches from two different repositories.
-    $acc->batches()->attach([$batchA->id, $batchB->id]);
-
-    // Direct pivot query (no global scope) returns both rows.
+    // Same-repo batches attach fine.
+    $acc->batches()->attach([$batchA->id, $batchA2->id]);
     expect($acc->batches()->count())->toBe(2);
 
+    // Foreign-repo batch attach is rejected by the B5 guard.
+    expect(fn () => $acc->batches()->attach($batchB->id))
+        ->toThrow(DomainException::class);
+
+    // The rejected batch was not linked; the same-repo links remain intact.
     $ids = $acc->batches()->pluck('batches.id')->sort()->values()->all();
     expect($ids)->toContain($batchA->id);
-    expect($ids)->toContain($batchB->id);
+    expect($ids)->toContain($batchA2->id);
+    expect($ids)->not->toContain($batchB->id);
 });
