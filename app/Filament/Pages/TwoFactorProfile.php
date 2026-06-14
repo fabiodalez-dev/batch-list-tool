@@ -125,7 +125,7 @@ class TwoFactorProfile extends Page
             ->modalHeading('Enable two-factor authentication')
             ->modalDescription('This will generate a secret you can scan with an authenticator app (1Password, Authy, Google Authenticator, etc).')
             ->action(function (): void {
-                app(EnableTwoFactorAuthentication::class)($this->user());
+                resolve(EnableTwoFactorAuthentication::class)($this->user());
 
                 // Reveal recovery codes for this request only.
                 $this->user()->refresh();
@@ -148,11 +148,11 @@ class TwoFactorProfile extends Page
                 && ! $this->user()->two_factor_confirmed_at)
             ->action(function (): void {
                 try {
-                    app(ConfirmTwoFactorAuthentication::class)(
+                    resolve(ConfirmTwoFactorAuthentication::class)(
                         $this->user(),
                         trim($this->confirmCode),
                     );
-                } catch (ValidationException $e) {
+                } catch (ValidationException) {
                     Notification::make()
                         ->title('The code you entered is not valid. Please try again.')
                         ->danger()
@@ -182,7 +182,7 @@ class TwoFactorProfile extends Page
             ->modalHeading('Regenerate recovery codes')
             ->modalDescription('Your old recovery codes will stop working immediately. Save the new codes somewhere safe before leaving this page.')
             ->action(function (): void {
-                app(GenerateNewRecoveryCodes::class)($this->user());
+                resolve(GenerateNewRecoveryCodes::class)($this->user());
 
                 $this->user()->refresh();
                 $this->showRecoveryCodes = $this->user()->recoveryCodes();
@@ -220,7 +220,7 @@ class TwoFactorProfile extends Page
                     return;
                 }
 
-                app(DisableTwoFactorAuthentication::class)($this->user());
+                resolve(DisableTwoFactorAuthentication::class)($this->user());
 
                 $this->showRecoveryCodes = null;
                 $this->confirmCode = '';

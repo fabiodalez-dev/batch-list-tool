@@ -80,7 +80,7 @@ class LinkCreatorTextToAuthorities extends Command
                             continue;
                         }
 
-                        $tokens = array_filter(array_map('trim', preg_split('/[;,]+/', $text)));
+                        $tokens = array_filter(array_map(trim(...), preg_split('/[;,]+/', $text)));
                         $primary = true;
                         $matchLog = [];
 
@@ -116,7 +116,7 @@ class LinkCreatorTextToAuthorities extends Command
                         }
 
                         // Persist log so operators can review fuzzy + ambiguous attributions
-                        if (! $isDryRun && ! empty($matchLog)) {
+                        if (! $isDryRun && $matchLog !== []) {
                             $extra = $doc->extra ?? [];
                             $extra['creator_match_log'] = $matchLog;
                             $doc->extra = $extra;
@@ -160,7 +160,7 @@ class LinkCreatorTextToAuthorities extends Command
             $this->warn('   filter the Document list by extra.creator_match_log containing "ambiguous" to find them');
         }
         $this->info(' Unresolved creator names: ' . count($unresolved));
-        if (! empty($unresolved)) {
+        if ($unresolved !== []) {
             arsort($unresolved);
             $top = array_slice($unresolved, 0, 5, true);
             foreach ($top as $name => $cnt) {

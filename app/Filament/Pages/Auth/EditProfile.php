@@ -68,7 +68,7 @@ class EditProfile extends \Filament\Auth\Pages\EditProfile
 
             $allowed = $user->repositories()->pluck('repositories.id')->all();
 
-            if (! in_array((int) $chosenId, array_map('intval', $allowed), strict: true)) {
+            if (! in_array((int) $chosenId, array_map(intval(...), $allowed), strict: true)) {
                 throw ValidationException::withMessages([
                     'data.default_repository_id' => __('You may only select a repository you are assigned to.'),
                 ]);

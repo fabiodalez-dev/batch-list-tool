@@ -131,7 +131,7 @@ class ActiveRepository
      */
     public static function allowedRepositoryIdsFor(?Authenticatable $user): ?array
     {
-        if ($user === null) {
+        if (! $user instanceof Authenticatable) {
             return null; // CLI / queue / unauthenticated → no narrowing constraint
         }
 

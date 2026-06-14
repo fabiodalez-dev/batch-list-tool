@@ -452,7 +452,6 @@ test('StatsOverviewWidget reports open flag counts (total + critical)', function
 
     $widget = new StatsOverviewWidget;
     $reflectMethod = new ReflectionMethod($widget, 'getStats');
-    $reflectMethod->setAccessible(true);
     /** @var array<int, Stat> $stats */
     $stats = $reflectMethod->invoke($widget);
 

@@ -29,7 +29,7 @@ class SeriesResource extends Resource
     use AppliesFieldPermissions;
 
     /** RFQ §3.1.8 — see config/field_permissions.php */
-    private const FIELD_PERMISSIONS_KEY = 'series';
+    private const string FIELD_PERMISSIONS_KEY = 'series';
 
     protected static ?string $model = Series::class;
 
@@ -82,7 +82,7 @@ class SeriesResource extends Resource
                             ->preload()
                             ->options(function (?Series $record): array {
                                 $query = Series::query()->orderBy('code');
-                                if ($record !== null && $record->exists) {
+                                if ($record instanceof Series && $record->exists) {
                                     $query->whereNotIn('id', $record->disallowedParentIds());
                                 }
 
@@ -92,16 +92,14 @@ class SeriesResource extends Resource
                                     ])
                                     ->all();
                             })
-                            ->rule(static function (?Series $record): \Closure {
-                                return static function (string $attribute, mixed $value, \Closure $fail) use ($record): void {
-                                    if ($value === null || $value === '' || $record === null || ! $record->exists) {
-                                        return;
-                                    }
-                                    // Reject self or any descendant as parent.
-                                    if (in_array((int) $value, $record->disallowedParentIds(), true)) {
-                                        $fail('A series cannot be its own ancestor (cycle).');
-                                    }
-                                };
+                            ->rule(static fn (?Series $record): \Closure => static function (string $attribute, mixed $value, \Closure $fail) use ($record): void {
+                                if ($value === null || $value === '' || ! $record instanceof Series || ! $record->exists) {
+                                    return;
+                                }
+                                // Reject self or any descendant as parent.
+                                if (in_array((int) $value, $record->disallowedParentIds(), true)) {
+                                    $fail('A series cannot be its own ancestor (cycle).');
+                                }
                             })),
                         $g(Forms\Components\Toggle::make('is_wills_series')
                             ->required()),

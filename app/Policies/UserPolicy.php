@@ -32,11 +32,8 @@ class UserPolicy
         if (! $u->can('update_user')) {
             return false;
         }
-        if ($m->hasRole('super_admin') && ! $u->hasRole('super_admin')) {
-            return false;
-        }
 
-        return true;
+        return ! ($m->hasRole('super_admin') && ! $u->hasRole('super_admin'));
     }
 
     public function delete(User $u, User $m): bool
@@ -47,11 +44,8 @@ class UserPolicy
         if ($u->is($m)) {
             return false; // no self-delete
         }
-        if ($m->hasRole('super_admin') && ! $u->hasRole('super_admin')) {
-            return false;
-        }
 
-        return true;
+        return ! ($m->hasRole('super_admin') && ! $u->hasRole('super_admin'));
     }
 
     public function deleteAny(AuthUser $u): bool
@@ -72,11 +66,7 @@ class UserPolicy
 
         // Anti-escalation: a non-super_admin cannot force-delete a super_admin
         // (mirrors the update/delete guards).
-        if ($m->hasRole('super_admin') && ! $u->hasRole('super_admin')) {
-            return false;
-        }
-
-        return true;
+        return ! ($m->hasRole('super_admin') && ! $u->hasRole('super_admin'));
     }
 
     public function forceDeleteAny(AuthUser $u): bool

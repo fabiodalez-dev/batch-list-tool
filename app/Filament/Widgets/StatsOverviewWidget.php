@@ -187,7 +187,7 @@ class StatsOverviewWidget extends BaseStatsOverviewWidget
         }
 
         $allowed = $this->allowedRepositoryIds($user);
-        if (empty($allowed)) {
+        if ($allowed === []) {
             return 0;
         }
 

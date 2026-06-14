@@ -124,7 +124,7 @@ class RecordBackupRun
      */
     private function throwableMessage(?\Throwable $throwable): string
     {
-        if ($throwable === null) {
+        if (! $throwable instanceof \Throwable) {
             return 'Backup failed (no exception detail available).';
         }
 

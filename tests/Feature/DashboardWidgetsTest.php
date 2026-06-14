@@ -170,8 +170,7 @@ test('Documents stat returns expected count', function () {
     $this->actingAs(adminUser());
 
     $widget = new StatsOverviewWidget;
-    $reflection = (new ReflectionClass($widget))->getMethod('computeStats');
-    $reflection->setAccessible(true);
+    $reflection = new ReflectionClass($widget)->getMethod('computeStats');
     $stats = $reflection->invoke($widget);
 
     expect($stats['documents_total'])->toBeGreaterThanOrEqual(3);
@@ -211,8 +210,7 @@ test('Pending disinfestation stat counts only NULL disinfestation_date and non-P
     $this->actingAs(editorUserIn($repo));
 
     $widget = new StatsOverviewWidget;
-    $m = (new ReflectionClass($widget))->getMethod('computeStats');
-    $m->setAccessible(true);
+    $m = new ReflectionClass($widget)->getMethod('computeStats');
     $stats = $m->invoke($widget);
 
     expect($stats['pending_disinfestation'])->toBe(2);
@@ -234,8 +232,7 @@ test('Pending disinfestation stat respects multi-tenant scope', function () {
     $this->actingAs(editorUserIn($repoA));
 
     $widget = new StatsOverviewWidget;
-    $m = (new ReflectionClass($widget))->getMethod('computeStats');
-    $m->setAccessible(true);
+    $m = new ReflectionClass($widget)->getMethod('computeStats');
     $stats = $m->invoke($widget);
 
     // Editor in repoA must only see repoA's pending count.
@@ -252,8 +249,7 @@ test('Stat color is warning when pending > 0 and success when zero', function ()
     $this->actingAs(editorUserIn($repo));
 
     $widget = new StatsOverviewWidget;
-    $m = (new ReflectionClass($widget))->getMethod('getStats');
-    $m->setAccessible(true);
+    $m = new ReflectionClass($widget)->getMethod('getStats');
 
     Cache::flush();
     $stats = $m->invoke($widget);
@@ -262,8 +258,7 @@ test('Stat color is warning when pending > 0 and success when zero', function ()
     $pendingCard = collect($stats)->first(fn ($s) => str_contains(strtolower((string) $s->getLabel()), 'pending'));
     expect($pendingCard)->not->toBeNull();
 
-    $colorProp = (new ReflectionClass($pendingCard))->getProperty('color');
-    $colorProp->setAccessible(true);
+    $colorProp = new ReflectionClass($pendingCard)->getProperty('color');
     expect($colorProp->getValue($pendingCard))->toBe('warning');
 
     // Case 2: clear them — color must flip to success
@@ -293,8 +288,7 @@ test('DocumentsPerSeriesChart returns data keyed by series code', function () {
     $this->actingAs(adminUser());
 
     $widget = new DocumentsPerSeriesChart;
-    $m = (new ReflectionClass($widget))->getMethod('getData');
-    $m->setAccessible(true);
+    $m = new ReflectionClass($widget)->getMethod('getData');
     $data = $m->invoke($widget);
 
     expect($data)->toHaveKeys(['datasets', 'labels']);
@@ -328,15 +322,15 @@ test('DocumentsPerBatchChart top-15 ordering (descending by count)', function ()
 
     $widget = new DocumentsPerBatchChart;
     $widget->filter = 'all';
-    $m = (new ReflectionClass($widget))->getMethod('getData');
-    $m->setAccessible(true);
+    $m = new ReflectionClass($widget)->getMethod('getData');
     $data = $m->invoke($widget);
 
     // ≤ 15 entries
     expect(count($data['labels']))->toBeLessThanOrEqual(15);
     // First entry has the highest count
     $values = $data['datasets'][0]['data'];
-    for ($i = 1; $i < count($values); $i++) {
+    $counter = count($values);
+    for ($i = 1; $i < $counter; $i++) {
         expect($values[$i])->toBeLessThanOrEqual($values[$i - 1]);
     }
 });
@@ -364,8 +358,7 @@ test('DocumentsPerBatchChart filter "wills" returns only batch 50', function () 
 
     $widget = new DocumentsPerBatchChart;
     $widget->filter = 'wills';
-    $m = (new ReflectionClass($widget))->getMethod('getData');
-    $m->setAccessible(true);
+    $m = new ReflectionClass($widget)->getMethod('getData');
     $data = $m->invoke($widget);
 
     expect($data['labels'])->toBe(['Batch 50']);
@@ -454,8 +447,7 @@ test('Recent activity respects multi-tenant scope (editor cannot see audits for 
     $this->actingAs(editorUserIn($repoA));
 
     $widget = new RecentActivityWidget;
-    $m = (new ReflectionClass($widget))->getMethod('scopedAuditQuery');
-    $m->setAccessible(true);
+    $m = new ReflectionClass($widget)->getMethod('scopedAuditQuery');
     /** @var Builder $q */
     $q = $m->invoke($widget);
 
@@ -526,7 +518,7 @@ test('Export CSV contains the expected column order in the header row', function
         ->toContain('Notes');
 
     // Column order assertion — Wave F added No of Acts + Pages/Folios as cols 10 and 11.
-    $headers = str_getcsv($firstLine);
+    $headers = str_getcsv($firstLine, escape: '\\');
     expect($headers)->toBe([
         'Identifier', 'Type', 'Creator(s)', 'Series', 'Batch',
         'Current box', 'Disinfestation date', 'Notes', 'Part Number',
@@ -556,7 +548,7 @@ test('Export CSV row count matches filtered query (no filter = all visible rows)
     $fh = fopen('php://memory', 'r+');
     fwrite($fh, $body);
     rewind($fh);
-    while (($r = fgetcsv($fh)) !== false) {
+    while (($r = fgetcsv($fh, escape: '\\')) !== false) {
         $rows++;
     }
     fclose($fh);
@@ -587,7 +579,7 @@ test('Export CSV respects active filters (filter by document_type returns matchi
     $fh = fopen('php://memory', 'r+');
     fwrite($fh, $body);
     rewind($fh);
-    while (($r = fgetcsv($fh)) !== false) {
+    while (($r = fgetcsv($fh, escape: '\\')) !== false) {
         $rows[] = $r;
     }
     fclose($fh);
@@ -745,7 +737,7 @@ test('it sanitizes CSV formula injection in document fields', function () {
     $fh = fopen('php://memory', 'r+');
     fwrite($fh, $body);
     rewind($fh);
-    while (($r = fgetcsv($fh)) !== false) {
+    while (($r = fgetcsv($fh, escape: '\\')) !== false) {
         $rows[] = $r;
     }
     fclose($fh);

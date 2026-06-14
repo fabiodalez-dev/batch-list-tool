@@ -61,7 +61,7 @@ it('D3-Types.2: LocationResource form type Select uses CANONICAL_TYPES only', fu
 });
 
 it('D3-Types.3: all three canonical type labels are non-empty strings', function (): void {
-    foreach (Location::CANONICAL_TYPES as $type => $label) {
+    foreach (Location::CANONICAL_TYPES as $label) {
         expect($label)->toBeString()->not->toBeEmpty();
     }
 });

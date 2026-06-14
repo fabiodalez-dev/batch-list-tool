@@ -22,7 +22,7 @@ class ActiveRepositoryController extends Controller
     {
         $raw = $request->input('repository_id');
 
-        $id = ($raw === null || $raw === '' || $raw === 'all')
+        $id = (in_array($raw, [null, '', 'all'], true))
             ? null
             : (int) $raw;
 
@@ -33,6 +33,6 @@ class ActiveRepositoryController extends Controller
         // and with no safe previous URL it would 302 to "/". Pinning the
         // fallback to the panel keeps the post-switch redirect predictable and
         // same-origin regardless of the incoming Referer (review F8).
-        return redirect()->back(fallback: url('/admin'));
+        return back(fallback: url('/admin'));
     }
 }

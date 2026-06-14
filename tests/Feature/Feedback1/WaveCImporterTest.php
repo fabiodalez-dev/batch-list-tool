@@ -46,7 +46,7 @@ uses(RefreshDatabase::class);
 function wc_repo(string $prefix = 'WC'): Repository
 {
     return Repository::factory()->create([
-        'code' => $prefix . '_' . strtoupper(substr((string) uniqid(), -6)),
+        'code' => $prefix . '_' . strtoupper(substr(uniqid(), -6)),
     ]);
 }
 

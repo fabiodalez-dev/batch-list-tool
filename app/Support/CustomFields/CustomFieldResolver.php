@@ -57,7 +57,7 @@ final class CustomFieldResolver
 
         try {
             /** @var ActiveRepository|null $resolved */
-            $resolved = app(ActiveRepository::class);
+            $resolved = resolve(ActiveRepository::class);
             $ar = $resolved;
         } catch (\Throwable) {
             // Container cannot resolve ActiveRepository (e.g. CLI test

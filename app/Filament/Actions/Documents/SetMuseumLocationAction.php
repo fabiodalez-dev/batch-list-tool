@@ -26,7 +26,7 @@ use Illuminate\Database\Eloquent\Collection as EloquentCollection;
  */
 final class SetMuseumLocationAction
 {
-    private const MUSEUM_LOCATION_TYPES = ['museum', 'showcase'];
+    private const array MUSEUM_LOCATION_TYPES = ['museum', 'showcase'];
 
     public static function make(string $name = 'setMuseumLocation'): Action
     {
@@ -125,12 +125,8 @@ final class SetMuseumLocationAction
         $result = ActionSupport::performBulk(
             $records,
             function (Document $doc) use ($location, $reference, $notes): void {
-                if ($location->repository_id !== null
-                    && (int) $location->repository_id !== (int) $doc->repository_id) {
-                    throw new \DomainException(
-                        'museum location belongs to a different repository'
-                    );
-                }
+                throw_if($location->repository_id !== null
+                    && (int) $location->repository_id !== (int) $doc->repository_id, \DomainException::class, 'museum location belongs to a different repository');
 
                 $doc->location_id = $location->getKey();
                 $doc->museum_reference = $reference;

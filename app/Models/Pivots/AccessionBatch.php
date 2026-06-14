@@ -41,14 +41,10 @@ class AccessionBatch extends Pivot
 
             // Both sides must resolve non-null for the guard to fire — a null
             // repository on either side is tolerated (legacy data).
-            if ($accessionRepoId !== null
+            throw_if($accessionRepoId !== null
                 && $batchRepoId !== null
-                && (int) $accessionRepoId !== (int) $batchRepoId) {
-                throw new \DomainException(
-                    'Accession and Batch belong to different repositories; a pivot row '
-                    . 'must keep both sides in the same repository (spec B5, F041).'
-                );
-            }
+                && (int) $accessionRepoId !== (int) $batchRepoId, \DomainException::class, 'Accession and Batch belong to different repositories; a pivot row '
+            . 'must keep both sides in the same repository (spec B5, F041).');
         });
     }
 }

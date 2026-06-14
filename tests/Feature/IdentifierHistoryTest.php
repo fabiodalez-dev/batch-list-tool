@@ -201,7 +201,6 @@ test('RelationManager class loads and exposes the configured relationship', func
 
     $rm = new ReflectionClass(IdentifierHistoryRelationManager::class);
     $relProp = $rm->getProperty('relationship');
-    $relProp->setAccessible(true);
     // It's a static string property on the class.
     expect($relProp->getValue())->toBe('identifierHistory');
 });
@@ -333,7 +332,6 @@ test('null -> null transition is skipped by the observer', function () {
     // Simulate the observer directly with both values null.
     $observer = new DocumentObserver;
     $skipReflection = new ReflectionMethod(DocumentObserver::class, 'shouldSkip');
-    $skipReflection->setAccessible(true);
 
     expect($skipReflection->invoke($observer, null, null))->toBeTrue();
     expect($skipReflection->invoke($observer, '  ', "\t"))->toBeTrue();

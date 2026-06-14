@@ -332,7 +332,6 @@ test('RelationManager class loads and exposes the configured relationship', func
 
     $rm = new ReflectionClass(BarcodeHistoryRelationManager::class);
     $relProp = $rm->getProperty('relationship');
-    $relProp->setAccessible(true);
     expect($relProp->getValue())->toBe('barcodeHistory');
 });
 

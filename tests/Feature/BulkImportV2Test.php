@@ -458,7 +458,6 @@ test('DocumentImporter requires disinfestation_date when status is PERM_OUT', fu
         // ImportColumns to flow values; here we want to assert the rule logic.
         $reflection = new ReflectionClass($importer);
         $recordProp = $reflection->getProperty('record');
-        $recordProp->setAccessible(true);
         $doc = new Document([
             'identifier' => 'DOC-PERMOUT-1',
             'series_id' => Series::first()->id,

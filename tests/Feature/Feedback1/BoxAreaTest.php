@@ -162,7 +162,6 @@ it('A6: table has reorderableColumns enabled on the BoxResource table', function
     // reorderableColumns() means Filament wires up the column manager.
     // We assert it does not throw and the table is correctly configured
     // by checking the table instance on the component.
-    /** @var Table $table */
     $table = BoxResource::table(
         Table::make($livewire->instance())
     );
@@ -176,7 +175,6 @@ it('A6: column names appear in the requested order: Batch, Box, Barcode, Barcode
 
     $livewire = Livewire::test(ListBoxes::class)->instance();
 
-    /** @var Table $table */
     $table = BoxResource::table(
         Table::make($livewire)
     );
@@ -210,7 +208,6 @@ it('A6: every core column is toggleable', function (): void {
 
     $livewire = Livewire::test(ListBoxes::class)->instance();
 
-    /** @var Table $table */
     $table = BoxResource::table(
         Table::make($livewire)
     );
@@ -238,7 +235,6 @@ it('A7: box table uses AboveContentCollapsible filters layout so filters are alw
 
     $livewire = Livewire::test(ListBoxes::class)->instance();
 
-    /** @var Table $table */
     $table = BoxResource::table(
         Table::make($livewire)
     );
@@ -256,7 +252,6 @@ it('A9: CreatorColumn (Inputter) is present in the box table columns', function 
 
     $livewire = Livewire::test(ListBoxes::class)->instance();
 
-    /** @var Table $table */
     $table = BoxResource::table(
         Table::make($livewire)
     );
@@ -278,7 +273,6 @@ it('per-column sorting: batch.batch_number, barcode_status, disinfestation_date 
 
     $livewire = Livewire::test(ListBoxes::class)->instance();
 
-    /** @var Table $table */
     $table = BoxResource::table(
         Table::make($livewire)
     );

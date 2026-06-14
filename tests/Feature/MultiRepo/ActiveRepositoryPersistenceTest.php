@@ -41,13 +41,13 @@ function arp_runMiddleware(User $user): ?int
     // Ensure the session key is absent — simulates a brand-new session.
     Session::forget(ActiveRepository::SESSION_KEY);
 
-    $middleware = app(ApplyUserPreferences::class);
+    $middleware = resolve(ApplyUserPreferences::class);
     $middleware->handle(
         Request::create('/admin'),
         fn ($req) => new Response,
     );
 
-    return app(ActiveRepository::class)->id();
+    return resolve(ActiveRepository::class)->id();
 }
 
 // ─── test 1: user with an explicit prior choice ───────────────────────────────
@@ -129,12 +129,12 @@ it('does not overwrite an in-session choice on subsequent requests through the m
     // Pre-populate the session with B (simulates a mid-session switch).
     Session::put(ActiveRepository::SESSION_KEY, $repoB->id);
 
-    $middleware = app(ApplyUserPreferences::class);
+    $middleware = resolve(ApplyUserPreferences::class);
     $middleware->handle(
         Request::create('/admin'),
         fn ($req) => new Response,
     );
 
     // The in-session value (B) must survive — column (A) must NOT overwrite it.
-    expect(app(ActiveRepository::class)->id())->toBe($repoB->id);
+    expect(resolve(ActiveRepository::class)->id())->toBe($repoB->id);
 });

@@ -47,7 +47,7 @@ it('renders an img tag in the logo preview placeholder when logo_path is set', f
     // Simulate an already-stored logo file on the public disk.
     Storage::disk('public')->put('branding/test-logo.png', 'fake-image-content');
 
-    $settings = app(BrandingSettings::class);
+    $settings = resolve(BrandingSettings::class);
     $settings->logo_path = 'branding/test-logo.png';
     $settings->save();
 
@@ -64,7 +64,7 @@ it('renders fallback text in the logo preview placeholder when no logo is set', 
     $admin = actAsAdmin_logoPreview();
     $this->actingAs($admin);
 
-    $settings = app(BrandingSettings::class);
+    $settings = resolve(BrandingSettings::class);
     $settings->logo_path = null;
     $settings->save();
 
@@ -82,7 +82,7 @@ it('clears logo_path when the remove_logo header action is called', function () 
     // Set up a logo so the action is visible.
     Storage::disk('public')->put('branding/test-logo.png', 'fake-image-content');
 
-    $settings = app(BrandingSettings::class);
+    $settings = resolve(BrandingSettings::class);
     $settings->logo_path = 'branding/test-logo.png';
     $settings->save();
 
@@ -90,7 +90,7 @@ it('clears logo_path when the remove_logo header action is called', function () 
         ->callAction('remove_logo')
         ->assertNotified();
 
-    $fresh = app(BrandingSettings::class)->refresh();
+    $fresh = resolve(BrandingSettings::class)->refresh();
     expect($fresh->logo_path)->toBeNull();
 });
 
@@ -102,7 +102,7 @@ it('preserves existing logo when save is called with empty FileUpload', function
 
     Storage::disk('public')->put('branding/existing-logo.png', 'fake-image-content');
 
-    $settings = app(BrandingSettings::class);
+    $settings = resolve(BrandingSettings::class);
     $settings->logo_path = 'branding/existing-logo.png';
     $settings->save();
 
@@ -116,7 +116,7 @@ it('preserves existing logo when save is called with empty FileUpload', function
         ->assertHasNoFormErrors()
         ->assertNotified();
 
-    $fresh = app(BrandingSettings::class)->refresh();
+    $fresh = resolve(BrandingSettings::class)->refresh();
     // Logo path must be unchanged.
     expect($fresh->logo_path)->toBe('branding/existing-logo.png');
 });

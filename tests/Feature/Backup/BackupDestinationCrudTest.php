@@ -18,7 +18,7 @@ uses(RefreshDatabase::class);
  */
 function bcUserWithRole(string $role): User
 {
-    app(PermissionRegistrar::class)->forgetCachedPermissions();
+    resolve(PermissionRegistrar::class)->forgetCachedPermissions();
     Role::findOrCreate($role, 'web');
 
     /** @var User $user */

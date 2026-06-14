@@ -170,9 +170,6 @@ class ImportSampleData extends Command
                 $inSitu1 = trim((string) ($row[4] ?? ''));
                 $barcodeIn = trim((string) ($row[12] ?? ''));
                 $disinfest1 = $this->parseDate($row[27] ?? null);
-                $identifier = trim((string) ($row[27] ?? '') ?: ($row[28] ?? ''));
-                // Column "Identifier" is index "b" → 27 (0-based), so use 27 if non-numeric date, else 28
-                $identifier = trim((string) ($row[27] ?? ''));
                 // Actually based on headers given: column index for "Identifier" header was 27 (= column 'b' 0-based 27)
                 // Headers were: A=RAS Batch 1 (0), B=RAS Box 1 (1), C=RAS Batch 2 (2), D=RAS Box 2 (3),
                 // E=In Situ Box 1 (4), F=In Situ Box 2 (5), G=In Situ Box 3 (6), H=RAS 1 Destroyed (7),

@@ -108,17 +108,15 @@ class BoxMovementHistoryReport extends Page implements HasTable
                         Forms\Components\DatePicker::make('from')->label('From date'),
                         Forms\Components\DatePicker::make('to')->label('To date'),
                     ])
-                    ->query(function (Builder $query, array $data): Builder {
-                        return $query
-                            ->when(
-                                $data['from'] ?? null,
-                                fn (Builder $q, $date) => $q->where('movement_date', '>=', $date),
-                            )
-                            ->when(
-                                $data['to'] ?? null,
-                                fn (Builder $q, $date) => $q->where('movement_date', '<=', $date . ' 23:59:59'),
-                            );
-                    })
+                    ->query(fn (Builder $query, array $data): Builder => $query
+                        ->when(
+                            $data['from'] ?? null,
+                            fn (Builder $q, $date) => $q->where('movement_date', '>=', $date),
+                        )
+                        ->when(
+                            $data['to'] ?? null,
+                            fn (Builder $q, $date) => $q->where('movement_date', '<=', $date . ' 23:59:59'),
+                        ))
                     ->indicateUsing(function (array $data): array {
                         $indicators = [];
                         if (! empty($data['from'])) {
@@ -233,7 +231,7 @@ class BoxMovementHistoryReport extends Page implements HasTable
 
         $rows = [];
         /** @var BoxMovement $r */
-        foreach ($this->reportQuery()->orderByDesc('movement_date')->limit(5000)->get() as $r) {
+        foreach ($this->reportQuery()->latest('movement_date')->limit(5000)->get() as $r) {
             $rows[] = self::movementRow($r);
         }
 
@@ -258,7 +256,7 @@ class BoxMovementHistoryReport extends Page implements HasTable
                     'toBox:id,box_number',
                     'user:id,name,email',
                 ])
-                ->orderByDesc('movement_date'),
+                ->latest('movement_date'),
         );
 
         return ReportRenderer::streamXlsx(

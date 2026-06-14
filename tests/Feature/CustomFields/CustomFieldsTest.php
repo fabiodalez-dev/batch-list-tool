@@ -1046,7 +1046,7 @@ test('[Export] boolean custom field serialises as 1 or 0 in CSV', function (): v
     expect($csv)->toContain('Bool Export');
     // The export format normalises true → '1'.
     $lines = array_values(array_filter(explode("\n", trim($csv))));
-    $header = str_getcsv(array_shift($lines));
+    $header = str_getcsv(array_shift($lines), escape: '\\');
     $colIdx = array_search('Bool Export', $header, true);
     expect($colIdx)->not->toBeFalse();
 
@@ -1054,7 +1054,7 @@ test('[Export] boolean custom field serialises as 1 or 0 in CSV', function (): v
         if (trim($line) === '') {
             continue;
         }
-        $cells = str_getcsv($line);
+        $cells = str_getcsv($line, escape: '\\');
         // The doc row must have cell value '1'.
         expect($cells[$colIdx])->toBe('1');
     }

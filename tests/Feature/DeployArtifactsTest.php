@@ -45,7 +45,7 @@ it('ships an executable post-deploy script with a bash shebang', function (): vo
 
     // Shebang check - bash, env-resolved so it works on every distro the
     // GH Actions runner may use.
-    $firstLine = trim((string) (fgets(fopen($script, 'r')) ?: ''));
+    $firstLine = trim(fgets(fopen($script, 'r')) ?: '');
     expect($firstLine)->toStartWith('#!')
         ->and($firstLine)->toContain('bash');
 

@@ -88,17 +88,15 @@ class BarcodeHistoryRelationManager extends RelationManager
                         Forms\Components\DatePicker::make('from')->label('From'),
                         Forms\Components\DatePicker::make('to')->label('To'),
                     ])
-                    ->query(function (Builder $q, array $data): Builder {
-                        return $q
-                            ->when(
-                                $data['from'] ?? null,
-                                fn ($q, $v) => $q->whereDate('changed_at', '>=', $v),
-                            )
-                            ->when(
-                                $data['to'] ?? null,
-                                fn ($q, $v) => $q->whereDate('changed_at', '<=', $v),
-                            );
-                    })
+                    ->query(fn (Builder $q, array $data): Builder => $q
+                        ->when(
+                            $data['from'] ?? null,
+                            fn ($q, $v) => $q->whereDate('changed_at', '>=', $v),
+                        )
+                        ->when(
+                            $data['to'] ?? null,
+                            fn ($q, $v) => $q->whereDate('changed_at', '<=', $v),
+                        ))
                     ->indicateUsing(function (array $data): array {
                         $i = [];
                         if (! empty($data['from'])) {
@@ -131,8 +129,6 @@ class BarcodeHistoryRelationManager extends RelationManager
             return true;
         }
 
-        return method_exists($user, 'can')
-            ? (bool) $user->can('view_document')
-            : false;
+        return method_exists($user, 'can') && (bool) $user->can('view_document');
     }
 }

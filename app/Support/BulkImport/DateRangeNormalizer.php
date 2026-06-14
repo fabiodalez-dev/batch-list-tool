@@ -117,7 +117,7 @@ final class DateRangeNormalizer
         // lists ("1934-1936; 1938-1942; 1947" → 1934 / 1947).
         preg_match_all('/\b(\d{4})\b/', $s, $all);
         $years = array_values(array_unique(array_filter(
-            array_map('intval', $all[1]),
+            array_map(intval(...), $all[1]),
             static fn (int $y): bool => $y >= 1000 && $y <= 2099,
         )));
 

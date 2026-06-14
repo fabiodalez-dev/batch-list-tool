@@ -99,7 +99,7 @@ test('skip_duplicates=true skips an existing Series row instead of updating it',
             'code' => 'REG',
             'title' => 'CHANGED title',
         ], $u->id, ['skip_duplicates' => true]);
-    } catch (RowImportFailedException $e) {
+    } catch (RowImportFailedException) {
         $threw = true;
     }
 
@@ -152,7 +152,7 @@ test('skip_duplicates=true skips an existing Document row instead of updating it
             'series' => 'REG',
             'notes' => 'CHANGED note',
         ], $u->id, ['skip_duplicates' => true]);
-    } catch (RowImportFailedException $e) {
+    } catch (RowImportFailedException) {
         $threw = true;
     }
 

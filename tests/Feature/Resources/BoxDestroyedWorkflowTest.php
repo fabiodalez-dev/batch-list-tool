@@ -10,7 +10,6 @@ use App\Models\Repository;
 use App\Models\Scopes\RepositoryScope;
 use App\Models\Series;
 use App\Models\User;
-use Filament\Actions\Action;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use OwenIt\Auditing\Models\Audit;
 use Spatie\Permission\Models\Role;
@@ -297,7 +296,6 @@ test('DestroyBoxAction is authorized for delete_box holders and refused otherwis
     $batch = bd_batch($repo->id);
     $box = bd_box($batch->id);
 
-    /** @var Action $action */
     $action = DestroyBoxAction::make();
 
     // Editor: no delete_box permission → not authorized.

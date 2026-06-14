@@ -60,12 +60,12 @@ class ViewAudit extends ViewRecord
                         TextEntry::make('auditable_id')
                             ->label('Record ID')
                             ->url(function (?Audit $record): ?string {
-                                if ($record === null
+                                if (! $record instanceof Audit
                                     || empty($record->auditable_type)
                                     || empty($record->auditable_id)) {
                                     return null;
                                 }
-                                $routeName = self::auditableRouteName($record->auditable_type);
+                                $routeName = $this->auditableRouteName($record->auditable_type);
                                 if ($routeName === null) {
                                     return null;
                                 }
@@ -113,7 +113,7 @@ class ViewAudit extends ViewRecord
      * name when one exists. Returns null when the model is not surfaced
      * through a Filament Resource (or the Resource has no view page).
      */
-    private static function auditableRouteName(string $auditableType): ?string
+    private function auditableRouteName(string $auditableType): ?string
     {
         return match (ltrim($auditableType, '\\')) {
             Document::class => 'filament.admin.resources.documents.view',

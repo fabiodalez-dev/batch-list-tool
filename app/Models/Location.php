@@ -112,7 +112,7 @@ class Location extends Model implements AuditableContract
             return [];
         }
 
-        return array_values(array_map('intval', explode('/', $this->path)));
+        return array_values(array_map(intval(...), explode('/', $this->path)));
     }
 
     /* ---------------------------------------------------------------------
@@ -236,7 +236,7 @@ class Location extends Model implements AuditableContract
 
         /** @var EloquentCollection<int, Location> $sorted */
         $sorted = new EloquentCollection(
-            (new Collection($ids))
+            new Collection($ids)
                 ->map(fn (int $id) => $byId->get($id))
                 ->filter()
                 ->values()
@@ -394,9 +394,7 @@ class Location extends Model implements AuditableContract
         // Cycle defence: a node cannot be its own ancestor. The cheap check
         // is "parent_id !== self.id"; the deep check ("ancestor chain does
         // not include self.id") is the next block.
-        if ((int) $location->parent_id === (int) $location->getKey()) {
-            throw new \DomainException('Location cannot be its own parent.');
-        }
+        throw_if((int) $location->parent_id === (int) $location->getKey(), \DomainException::class, 'Location cannot be its own parent.');
 
         // Resolve parent WITHOUT the global RepositoryScope so a global
         // location (repository_id=null) can be a parent of a repo-scoped
@@ -435,12 +433,8 @@ class Location extends Model implements AuditableContract
             : (string) $parent->getKey();
         $location->depth = $parent->depth + 1;
 
-        if ($location->depth > self::MAX_DEPTH) {
-            throw new \DomainException(
-                'Location hierarchy depth exceeds MAX_DEPTH ('
-                . self::MAX_DEPTH . '). Restructure the tree.'
-            );
-        }
+        throw_if($location->depth > self::MAX_DEPTH, \DomainException::class, 'Location hierarchy depth exceeds MAX_DEPTH ('
+        . self::MAX_DEPTH . '). Restructure the tree.');
     }
 
     /**

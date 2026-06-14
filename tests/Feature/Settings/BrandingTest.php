@@ -51,12 +51,12 @@ it('persists branding settings via the page', function () {
     $this->actingAs(actAsAdmin_branding());
 
     // Directly manipulate BrandingSettings and verify round-trip.
-    $settings = app(BrandingSettings::class);
+    $settings = resolve(BrandingSettings::class);
     $settings->brand_name = 'NRA Archive';
     $settings->save();
 
     // Re-resolve from container to confirm persistence.
-    $fresh = app(BrandingSettings::class)->refresh();
+    $fresh = resolve(BrandingSettings::class)->refresh();
     expect($fresh->brand_name)->toBe('NRA Archive');
 
     // Drive the Livewire page form: fill brand_name and save via header action.
@@ -66,7 +66,7 @@ it('persists branding settings via the page', function () {
         ->assertHasNoFormErrors()
         ->assertNotified();
 
-    $updated = app(BrandingSettings::class)->refresh();
+    $updated = resolve(BrandingSettings::class)->refresh();
     expect($updated->brand_name)->toBe('NRA Test Name');
 });
 

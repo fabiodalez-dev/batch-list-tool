@@ -7,6 +7,7 @@ use Illuminate\Database\Eloquent\Factories\HasFactory;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
 use Illuminate\Database\Eloquent\Relations\MorphTo;
+use Illuminate\Support\Facades\Date;
 
 class CustomFieldValue extends Model
 {
@@ -65,8 +66,8 @@ class CustomFieldValue extends Model
             'number' => is_numeric($this->value)
                 ? (str_contains($this->value, '.') ? (float) $this->value : (int) $this->value)
                 : $this->value,
-            'date' => Carbon::parse($this->value)->startOfDay(),
-            'datetime' => Carbon::parse($this->value),
+            'date' => Date::parse($this->value)->startOfDay(),
+            'datetime' => Date::parse($this->value),
             // v1: single-select stored as plain string.
             // JSON array stored here signals a future multi-select upgrade path.
             'select' => $this->value,

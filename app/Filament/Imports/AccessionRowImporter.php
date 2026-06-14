@@ -349,7 +349,7 @@ class AccessionRowImporter extends Importer
 
             return $only === '' ? [] : [$only];
         }
-        $pieces = array_map('trim', explode(self::SEMICOLON_DELIMITER, $raw));
+        $pieces = array_map(trim(...), explode(self::SEMICOLON_DELIMITER, $raw));
 
         return array_values(array_filter($pieces, static fn (string $p): bool => $p !== ''));
     }
@@ -472,7 +472,7 @@ class AccessionRowImporter extends Importer
                         ]);
                     }
                 }
-                $authorityIds[] = (int) $res['authority_id'];
+                $authorityIds[] = $res['authority_id'];
             } else {
                 // Authority not found — create it (DECISION 3: on create,
                 // identifier + name + surname are used; entity_type = 'Notary').
@@ -591,7 +591,7 @@ class AccessionRowImporter extends Importer
                 throw ValidationException::withMessages([
                     'batch_number' => __(
                         'Batch :n is reserved (RFQ App.1 #1) and cannot be used.',
-                        ['n' => (int) $res['forbidden']]
+                        ['n' => $res['forbidden']]
                     ),
                 ]);
             }

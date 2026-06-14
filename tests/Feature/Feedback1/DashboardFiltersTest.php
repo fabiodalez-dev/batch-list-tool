@@ -94,7 +94,7 @@ function df_doc(int $repoId, int $seriesId, array $attrs = []): Document
 
 it('registers the QueryBuilder filter on the heavy dashboards (Authority, Document, Box)', function (): void {
     foreach ([AuthorityResource::class, DocumentResource::class, BoxResource::class] as $resource) {
-        $table = $resource::table(new Table(app(ListAuthorities::class)));
+        $table = $resource::table(new Table(resolve(ListAuthorities::class)));
         $hasQueryBuilder = collect($table->getFilters())
             ->contains(fn ($f): bool => $f instanceof QueryBuilder);
 

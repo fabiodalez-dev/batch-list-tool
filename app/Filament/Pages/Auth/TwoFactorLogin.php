@@ -36,9 +36,9 @@ class TwoFactorLogin extends BaseLogin
      * the POST (authenticate). Namespaced under our own prefix so it
      * cannot collide with any framework session entry.
      */
-    private const CAPTCHA_SESSION_KEY = 'bl_login_captcha_answer';
+    private const string CAPTCHA_SESSION_KEY = 'bl_login_captcha_answer';
 
-    private const CAPTCHA_QUESTION_KEY = 'bl_login_captcha_question';
+    private const string CAPTCHA_QUESTION_KEY = 'bl_login_captcha_question';
 
     public function mount(): void
     {

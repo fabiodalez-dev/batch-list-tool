@@ -100,7 +100,7 @@ return new class extends Migration
 
         try {
             DB::statement('ALTER TABLE documents DROP CONSTRAINT documents_current_box_type_chk');
-        } catch (QueryException $e) {
+        } catch (QueryException) {
             // not present
         }
         DB::statement(
@@ -122,7 +122,7 @@ return new class extends Migration
     {
         try {
             DB::statement("ALTER TABLE {$table} DROP CONSTRAINT {$constraint}");
-        } catch (QueryException $e) {
+        } catch (QueryException) {
             // Constraint absent (fresh DB never had it, or already dropped) — fine.
         }
     }

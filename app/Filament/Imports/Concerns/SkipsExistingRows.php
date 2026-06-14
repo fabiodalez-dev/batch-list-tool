@@ -36,14 +36,8 @@ trait SkipsExistingRows
      */
     protected function skipIfDuplicate(?Model $record): void
     {
-        if (
-            $record !== null
-            && $record->exists
-            && ($this->options['skip_duplicates'] ?? false)
-        ) {
-            throw new RowImportFailedException(
-                'Skipped — row already exists (skip duplicates enabled).'
-            );
-        }
+        throw_if($record instanceof Model
+        && $record->exists
+        && ($this->options['skip_duplicates'] ?? false), RowImportFailedException::class, 'Skipped — row already exists (skip duplicates enabled).');
     }
 }

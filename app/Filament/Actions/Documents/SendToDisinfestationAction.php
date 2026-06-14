@@ -80,7 +80,7 @@ final class SendToDisinfestationAction
                 // it's the natural outcome of an operator selecting a mixed
                 // batch (some already sent, some not) and the safe thing is
                 // a no-op. Counted as "ok" because nothing needed doing.
-                if ((bool) $doc->is_in_disinfestation === true) {
+                if ((bool) $doc->is_in_disinfestation) {
                     return;
                 }
 

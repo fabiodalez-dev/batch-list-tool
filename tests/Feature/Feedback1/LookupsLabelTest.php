@@ -56,7 +56,6 @@ function lk_admin(): User
 it('BarcodeStatusResource: code column label is "Identifier"', function () {
     $this->actingAs(lk_admin());
 
-    /** @var Table $table */
     $table = BarcodeStatusResource::table(
         Table::make(Livewire::test(ListBarcodeStatuses::class)->instance())
     );
@@ -70,7 +69,6 @@ it('BarcodeStatusResource: code column label is "Identifier"', function () {
 it('BarcodeStatusResource: code column is sortable', function () {
     $this->actingAs(lk_admin());
 
-    /** @var Table $table */
     $table = BarcodeStatusResource::table(
         Table::make(Livewire::test(ListBarcodeStatuses::class)->instance())
     );
@@ -88,7 +86,6 @@ it('BarcodeStatusResource: code column is sortable', function () {
 it('BoxTypeResource: code column label is "Identifier"', function () {
     $this->actingAs(lk_admin());
 
-    /** @var Table $table */
     $table = BoxTypeResource::table(
         Table::make(Livewire::test(ListBoxTypes::class)->instance())
     );
@@ -106,7 +103,6 @@ it('BoxTypeResource: code column label is "Identifier"', function () {
 it('CurrentBoxTypeResource: code column label is "Identifier"', function () {
     $this->actingAs(lk_admin());
 
-    /** @var Table $table */
     $table = CurrentBoxTypeResource::table(
         Table::make(Livewire::test(ListCurrentBoxTypes::class)->instance())
     );
@@ -124,7 +120,6 @@ it('CurrentBoxTypeResource: code column label is "Identifier"', function () {
 it('SeriesResource: code column label is "Identifier"', function () {
     $this->actingAs(lk_admin());
 
-    /** @var Table $table */
     $table = SeriesResource::table(
         Table::make(Livewire::test(ListSeries::class)->instance())
     );
@@ -138,7 +133,6 @@ it('SeriesResource: code column label is "Identifier"', function () {
 it('SeriesResource: code column is sortable', function () {
     $this->actingAs(lk_admin());
 
-    /** @var Table $table */
     $table = SeriesResource::table(
         Table::make(Livewire::test(ListSeries::class)->instance())
     );
@@ -160,7 +154,6 @@ it('BatchTypeResource navigation label is "Accession Types"', function () {
 it('BatchTypeResource: code column label is "Identifier"', function () {
     $this->actingAs(lk_admin());
 
-    /** @var Table $table */
     $table = BatchTypeResource::table(
         Table::make(Livewire::test(ListBatchTypes::class)->instance())
     );

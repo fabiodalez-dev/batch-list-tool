@@ -380,7 +380,7 @@ class DocumentImporter extends Importer
             return $only === '' ? [] : [$only];
         }
 
-        $pieces = array_map('trim', explode(self::SEMICOLON_DELIMITER, $raw));
+        $pieces = array_map(trim(...), explode(self::SEMICOLON_DELIMITER, $raw));
 
         return array_values(array_filter(
             $pieces,
@@ -773,7 +773,7 @@ class DocumentImporter extends Importer
                         throw ValidationException::withMessages([
                             'batch_number' => __(
                                 'Batch :n is reserved (RFQ App.1 #1) and cannot be assigned',
-                                ['n' => (int) $res['forbidden']],
+                                ['n' => $res['forbidden']],
                             ),
                         ]);
                     }
@@ -1020,9 +1020,7 @@ class DocumentImporter extends Importer
         }
 
         // B5 consistency — the document's batch must match its box's batch.
-        if ($record->batch_id !== null && (int) $box['batch_id'] !== (int) $record->batch_id) {
-            throw new RowImportFailedException('Document batch does not match its box batch.');
-        }
+        throw_if($record->batch_id !== null && (int) $box['batch_id'] !== (int) $record->batch_id, RowImportFailedException::class, 'Document batch does not match its box batch.');
 
         $record->current_box_id = $box['box_id'];
     }

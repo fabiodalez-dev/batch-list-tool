@@ -71,7 +71,7 @@ it('with active=All shows batches from all the user repos (current behaviour pre
     $ba = w2t10_batchIn($a);
     $bb = w2t10_batchIn($b);
 
-    app(ActiveRepository::class)->set(null); // All
+    resolve(ActiveRepository::class)->set(null); // All
 
     $ids = Batch::query()->pluck('id');
     expect($ids)->toContain($ba->id)->toContain($bb->id);
@@ -88,7 +88,7 @@ it('with a specific active repo shows only that repo', function () {
     $ba = w2t10_batchIn($a);
     $bb = w2t10_batchIn($b);
 
-    app(ActiveRepository::class)->set($a->id);
+    resolve(ActiveRepository::class)->set($a->id);
 
     $ids = Batch::query()->pluck('id');
     expect($ids)->toContain($ba->id)->not->toContain($bb->id);
@@ -100,7 +100,7 @@ it('defaults to All (null) when nothing is explicitly selected', function () {
     $user->assignRole('editor');
     actingAs($user);
 
-    expect(app(ActiveRepository::class)->id())->toBeNull();
+    expect(resolve(ActiveRepository::class)->id())->toBeNull();
 });
 
 it('falls back to All when the active id is outside the user allowed repos', function () {
@@ -116,9 +116,9 @@ it('falls back to All when the active id is outside the user allowed repos', fun
     $bb = w2t10_batchIn($b);
 
     // A repo the user is NOT a member of → must be rejected, fall back to All.
-    app(ActiveRepository::class)->set($foreign->id);
+    resolve(ActiveRepository::class)->set($foreign->id);
 
-    expect(app(ActiveRepository::class)->id())->toBeNull();
+    expect(resolve(ActiveRepository::class)->id())->toBeNull();
 
     $ids = Batch::query()->pluck('id');
     expect($ids)->toContain($ba->id)->toContain($bb->id);
@@ -132,12 +132,12 @@ it('persists the active repo to the user record across sessions', function () {
     $u->repositories()->attach([$a->id, $b->id]);
     $this->actingAs($u);
 
-    app(ActiveRepository::class)->set($a->id);
+    resolve(ActiveRepository::class)->set($a->id);
 
     expect($u->fresh()->active_repository_id)->toBe($a->id);
 
     // Setting back to All clears the persisted mirror too.
-    app(ActiveRepository::class)->set(null);
+    resolve(ActiveRepository::class)->set(null);
     expect($u->fresh()->active_repository_id)->toBeNull();
 });
 

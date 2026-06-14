@@ -41,7 +41,6 @@ function permout_actor(): User
 function runPermOutBulk(EloquentCollection $records): void
 {
     $m = new ReflectionMethod(MarkPermOutAction::class, 'perform');
-    $m->setAccessible(true);
     $m->invoke(null, $records);
 }
 

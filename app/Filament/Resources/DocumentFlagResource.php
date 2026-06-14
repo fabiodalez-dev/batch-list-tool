@@ -328,17 +328,15 @@ class DocumentFlagResource extends Resource
                         Forms\Components\DatePicker::make('from')->label('From'),
                         Forms\Components\DatePicker::make('to')->label('To'),
                     ])
-                    ->query(function (Builder $q, array $data): Builder {
-                        return $q
-                            ->when(
-                                $data['from'] ?? null,
-                                fn ($q, $v) => $q->whereDate('flagged_at', '>=', $v),
-                            )
-                            ->when(
-                                $data['to'] ?? null,
-                                fn ($q, $v) => $q->whereDate('flagged_at', '<=', $v),
-                            );
-                    }),
+                    ->query(fn (Builder $q, array $data): Builder => $q
+                        ->when(
+                            $data['from'] ?? null,
+                            fn ($q, $v) => $q->whereDate('flagged_at', '>=', $v),
+                        )
+                        ->when(
+                            $data['to'] ?? null,
+                            fn ($q, $v) => $q->whereDate('flagged_at', '<=', $v),
+                        )),
             ])
             ->actions([
                 ViewAction::make(),

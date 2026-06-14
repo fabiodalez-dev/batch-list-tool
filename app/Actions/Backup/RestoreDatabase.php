@@ -118,15 +118,11 @@ class RestoreDatabase
     {
         $storage = Storage::disk($disk);
 
-        if (! $storage->exists($relativePath)) {
-            throw new RuntimeException('Backup archive not found on disk "' . $disk . '": ' . $relativePath);
-        }
+        throw_unless($storage->exists($relativePath), RuntimeException::class, 'Backup archive not found on disk "' . $disk . '": ' . $relativePath);
 
         $stream = $storage->readStream($relativePath);
 
-        if ($stream === null) {
-            throw new RuntimeException('Could not open backup archive for reading: ' . $relativePath);
-        }
+        throw_if($stream === null, RuntimeException::class, 'Could not open backup archive for reading: ' . $relativePath);
 
         $localPath = $this->makeTempFile('bl-restore-zip-', '.zip');
         $out = fopen($localPath, 'wb');
@@ -165,9 +161,7 @@ class RestoreDatabase
     {
         $base = tempnam(sys_get_temp_dir(), $prefix);
 
-        if ($base === false) {
-            throw new RuntimeException('Could not create a temporary file for the restore.');
-        }
+        throw_if($base === false, RuntimeException::class, 'Could not create a temporary file for the restore.');
 
         $withExt = $base . $extension;
 
@@ -229,12 +223,8 @@ class RestoreDatabase
     {
         $exitCode = Artisan::call('backup:run', ['--only-db' => true]);
 
-        if ($exitCode !== 0) {
-            // ABORT: do NOT touch the database when the safety net failed.
-            throw new RuntimeException(
-                'Pre-restore safety snapshot failed (exit code ' . $exitCode . '); restore aborted.'
-            );
-        }
+        // ABORT: do NOT touch the database when the safety net failed.
+        throw_if($exitCode !== 0, RuntimeException::class, 'Pre-restore safety snapshot failed (exit code ' . $exitCode . '); restore aborted.');
 
         BackupRun::create([
             'type' => 'db',
@@ -253,15 +243,11 @@ class RestoreDatabase
      */
     protected function extractSqlDump(string $zipPath): string
     {
-        if (! is_file($zipPath)) {
-            throw new RuntimeException('Backup archive not found: ' . $zipPath);
-        }
+        throw_unless(is_file($zipPath), RuntimeException::class, 'Backup archive not found: ' . $zipPath);
 
         $zip = new ZipArchive;
 
-        if ($zip->open($zipPath) !== true) {
-            throw new RuntimeException('Could not open backup archive: ' . $zipPath);
-        }
+        throw_if($zip->open($zipPath) !== true, RuntimeException::class, 'Could not open backup archive: ' . $zipPath);
 
         try {
             $entry = null;
@@ -275,21 +261,15 @@ class RestoreDatabase
                 }
             }
 
-            if ($entry === null) {
-                throw new RuntimeException('No SQL dump found under db-dumps/ in the archive.');
-            }
+            throw_if($entry === null, RuntimeException::class, 'No SQL dump found under db-dumps/ in the archive.');
 
             $contents = $zip->getFromName($entry);
 
-            if ($contents === false) {
-                throw new RuntimeException('Could not read SQL dump from the archive: ' . $entry);
-            }
+            throw_if($contents === false, RuntimeException::class, 'Could not read SQL dump from the archive: ' . $entry);
 
             $sqlPath = $this->makeTempFile('bl-restore-', '.sql');
 
-            if (file_put_contents($sqlPath, $contents) === false) {
-                throw new RuntimeException('Could not write extracted SQL dump to a temporary file.');
-            }
+            throw_if(file_put_contents($sqlPath, $contents) === false, RuntimeException::class, 'Could not write extracted SQL dump to a temporary file.');
 
             return $sqlPath;
         } finally {
@@ -320,9 +300,7 @@ class RestoreDatabase
 
         $sql = file_get_contents($sqlPath);
 
-        if ($sql === false) {
-            throw new RuntimeException('Could not read the extracted SQL dump for import.');
-        }
+        throw_if($sql === false, RuntimeException::class, 'Could not read the extracted SQL dump for import.');
 
         DB::unprepared($sql);
     }
@@ -359,9 +337,7 @@ class RestoreDatabase
 
         $sql = file_get_contents($sqlPath);
 
-        if ($sql === false) {
-            throw new RuntimeException('Could not read the extracted SQL dump for import.');
-        }
+        throw_if($sql === false, RuntimeException::class, 'Could not read the extracted SQL dump for import.');
 
         $process = new Process(
             $command,

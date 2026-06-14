@@ -27,7 +27,7 @@ uses(RefreshDatabase::class);
 function wf2_repo(): Repository
 {
     return Repository::factory()->create([
-        'code' => 'WF2-' . strtoupper(substr((string) uniqid(), -6)),
+        'code' => 'WF2-' . strtoupper(substr(uniqid(), -6)),
     ]);
 }
 
@@ -59,7 +59,7 @@ function wf2_sa(int $repoId): User
 function wf2_doc(int $repoId, int $seriesId, array $attrs = []): Document
 {
     return Document::withoutGlobalScope(RepositoryScope::class)->create(array_merge([
-        'identifier' => 'WF2-' . substr((string) uniqid(), -6),
+        'identifier' => 'WF2-' . substr(uniqid(), -6),
         'repository_id' => $repoId,
         'series_id' => $seriesId,
     ], $attrs));

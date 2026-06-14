@@ -261,7 +261,7 @@ class Document extends Model implements AuditableContract, HasMedia, Sortable
      */
     public function barcodeHistory(): HasMany
     {
-        return $this->hasMany(DocumentBarcodeHistory::class)->orderByDesc('changed_at');
+        return $this->hasMany(DocumentBarcodeHistory::class)->latest('changed_at');
     }
 
     /**
@@ -307,7 +307,7 @@ class Document extends Model implements AuditableContract, HasMedia, Sortable
      */
     public function disinfestationTimeline(): Collection
     {
-        $rows = collect([
+        return collect([
             ['date' => $this->disinfestation_date_1, 'label' => 'Legacy round #1'],
             ['date' => $this->disinfestation_date_2, 'label' => 'Legacy round #2'],
             ['date' => $this->disinfestation_date_3, 'label' => 'Legacy round #3'],
@@ -316,8 +316,6 @@ class Document extends Model implements AuditableContract, HasMedia, Sortable
             ->filter(fn (array $row) => $row['date'] !== null)
             ->sortBy(fn (array $row) => $row['date'])
             ->values();
-
-        return $rows;
     }
 
     /**
@@ -400,12 +398,12 @@ class Document extends Model implements AuditableContract, HasMedia, Sortable
      */
     public static function withoutAuditGuards(callable $callback): mixed
     {
-        static::$bypassAuditGuard = true;
+        self::$bypassAuditGuard = true;
 
         try {
             return $callback();
         } finally {
-            static::$bypassAuditGuard = false;
+            self::$bypassAuditGuard = false;
         }
     }
 
@@ -436,7 +434,7 @@ class Document extends Model implements AuditableContract, HasMedia, Sortable
 
     public static function shouldBypassAuditGuard(): bool
     {
-        return static::$bypassAuditGuard;
+        return self::$bypassAuditGuard;
     }
 
     /**
@@ -828,13 +826,13 @@ class Document extends Model implements AuditableContract, HasMedia, Sortable
      */
     protected function performUpdate(Builder $query)
     {
-        $previous = static::$bypassAuditGuard;
-        static::$bypassAuditGuard = true;
+        $previous = self::$bypassAuditGuard;
+        self::$bypassAuditGuard = true;
 
         try {
             return parent::performUpdate($query);
         } finally {
-            static::$bypassAuditGuard = $previous;
+            self::$bypassAuditGuard = $previous;
         }
     }
 
@@ -860,12 +858,8 @@ class Document extends Model implements AuditableContract, HasMedia, Sortable
         }
 
         $series = $seriesId !== null ? Series::find($seriesId) : null;
-        if ($series === null || ! $series->is_wills_series) {
-            throw new \DomainException(
-                'Batch ' . Batch::WILLS_BATCH
-                . ' is reserved for wills documents (RFQ App.1 #2); '
-                . 'assign a wills series before placing the document there.'
-            );
-        }
+        throw_if($series === null || ! $series->is_wills_series, \DomainException::class, 'Batch ' . Batch::WILLS_BATCH
+        . ' is reserved for wills documents (RFQ App.1 #2); '
+        . 'assign a wills series before placing the document there.');
     }
 }

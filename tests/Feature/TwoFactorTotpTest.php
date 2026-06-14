@@ -56,7 +56,7 @@ function tfa_user(string $role = 'admin'): User
 
 function tfa_enableFor(User $user): User
 {
-    app(EnableTwoFactorAuthentication::class)($user);
+    resolve(EnableTwoFactorAuthentication::class)($user);
     $user->refresh();
 
     return $user;
@@ -89,7 +89,7 @@ it('enabling 2FA writes a non-null encrypted secret', function () {
 
     expect($user->two_factor_secret)->toBeNull();
 
-    app(EnableTwoFactorAuthentication::class)($user);
+    resolve(EnableTwoFactorAuthentication::class)($user);
     $user->refresh();
 
     expect($user->two_factor_secret)->not->toBeNull();
