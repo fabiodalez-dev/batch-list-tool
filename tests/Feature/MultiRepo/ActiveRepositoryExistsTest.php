@@ -21,7 +21,7 @@ beforeEach(fn () => bl_seedShieldPermissions());
 it('ignores a non-existent repository id for a privileged user', function (): void {
     actingAs(User::factory()->create()->assignRole('admin'));
 
-    $active = app(ActiveRepository::class);
+    $active = resolve(ActiveRepository::class);
     expect($active->set(999999))->toBeNull();
     expect($active->id())->toBeNull();
 });
@@ -30,7 +30,7 @@ it('accepts an existing repository id for a privileged user', function (): void 
     actingAs(User::factory()->create()->assignRole('admin'));
     $repo = Repository::factory()->create();
 
-    $active = app(ActiveRepository::class);
+    $active = resolve(ActiveRepository::class);
     expect($active->set($repo->id))->toBe($repo->id);
     expect($active->id())->toBe($repo->id);
 });

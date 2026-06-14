@@ -12,7 +12,7 @@ use Filament\Forms\Components\DatePicker;
 use Filament\Notifications\Notification;
 use Filament\Schemas\Components\Component;
 use Illuminate\Database\Eloquent\Collection as EloquentCollection;
-use Illuminate\Support\Carbon;
+use Illuminate\Support\Facades\Date;
 
 /**
  * Action #5 — Mark document(s) as disinfested with an explicit date.
@@ -88,7 +88,7 @@ final class MarkDisinfestedAction
         }
 
         // Defence-in-depth re-check beyond the form-level maxDate guard.
-        if (Carbon::parse($date)->isFuture()) {
+        if (Date::parse($date)->isFuture()) {
             Notification::make()
                 ->title('Disinfestation date cannot be in the future')
                 ->danger()->send();
@@ -103,7 +103,7 @@ final class MarkDisinfestedAction
                 // diff so the "Mark disinfested" event is queryable end-to-end
                 // (date stamped, in-flight flag cleared, barcode back to IN).
                 $oldValues = [
-                    'disinfestation_date' => optional($doc->getOriginal('disinfestation_date'))->toString() ?? $doc->getOriginal('disinfestation_date'),
+                    'disinfestation_date' => $doc->getOriginal('disinfestation_date')?->toString() ?? $doc->getOriginal('disinfestation_date'),
                     'is_in_disinfestation' => (bool) $doc->getOriginal('is_in_disinfestation'),
                     'barcode_status' => $doc->getOriginal('barcode_status'),
                 ];

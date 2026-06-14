@@ -238,9 +238,7 @@ class FlagsRelationManager extends RelationManager
             return true;
         }
 
-        return method_exists($user, 'can')
-            ? (bool) $user->can('view_any_document_flag')
-            : false;
+        return method_exists($user, 'can') && (bool) $user->can('view_any_document_flag');
     }
 
     /* ---------------------------------------------------------------------

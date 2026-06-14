@@ -147,12 +147,8 @@ final class MoveToBoxAction
                 // admin) bypass the Box Select's RepositoryScope, so we MUST
                 // re-check here. SetLocationAction / MoveToWillsAction
                 // enforce the same invariant.
-                if ($targetBoxRepoId !== null
-                    && (int) $targetBoxRepoId !== (int) $doc->repository_id) {
-                    throw new \DomainException(
-                        'target box belongs to a different repository'
-                    );
-                }
+                throw_if($targetBoxRepoId !== null
+                    && (int) $targetBoxRepoId !== (int) $doc->repository_id, \DomainException::class, 'target box belongs to a different repository');
 
                 $from = $doc->current_box_id;
                 $doc->current_box_id = $targetBox->getKey();

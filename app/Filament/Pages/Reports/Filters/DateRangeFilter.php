@@ -8,6 +8,7 @@ use Filament\Forms;
 use Filament\Tables\Filters\Filter;
 use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Support\Carbon;
+use Illuminate\Support\Facades\Date;
 
 /**
  * Universal "from / to" date range filter used across all report Pages.
@@ -156,7 +157,7 @@ class DateRangeFilter extends Filter
         }
 
         try {
-            $carbon = Carbon::parse((string) $value);
+            $carbon = Date::parse((string) $value);
         } catch (\Throwable) {
             return null;
         }
@@ -194,13 +195,9 @@ class DateRangeFilter extends Filter
 
         $this->columnSpan(['default' => 1, 'md' => 2]);
 
-        $this->query(function (Builder $query, array $data): Builder {
-            return $this->applyToQuery($query, $data);
-        });
+        $this->query(fn (Builder $query, array $data): Builder => $this->applyToQuery($query, $data));
 
-        $this->indicateUsing(function (array $data): array {
-            return $this->buildIndicators($data);
-        });
+        $this->indicateUsing(fn (array $data): array => $this->buildIndicators($data));
     }
 
     /**

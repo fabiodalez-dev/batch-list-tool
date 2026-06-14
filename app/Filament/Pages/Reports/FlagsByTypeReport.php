@@ -153,17 +153,15 @@ class FlagsByTypeReport extends Page implements HasTable
                         Forms\Components\DatePicker::make('from')->label('From date'),
                         Forms\Components\DatePicker::make('to')->label('To date'),
                     ])
-                    ->query(function (Builder $q, array $data): Builder {
-                        return $q
-                            ->when(
-                                $data['from'] ?? null,
-                                fn (Builder $b, $date): Builder => $b->where('document_flags.flagged_at', '>=', $date),
-                            )
-                            ->when(
-                                $data['to'] ?? null,
-                                fn (Builder $b, $date): Builder => $b->where('document_flags.flagged_at', '<=', $date . ' 23:59:59'),
-                            );
-                    })
+                    ->query(fn (Builder $q, array $data): Builder => $q
+                        ->when(
+                            $data['from'] ?? null,
+                            fn (Builder $b, $date): Builder => $b->where('document_flags.flagged_at', '>=', $date),
+                        )
+                        ->when(
+                            $data['to'] ?? null,
+                            fn (Builder $b, $date): Builder => $b->where('document_flags.flagged_at', '<=', $date . ' 23:59:59'),
+                        ))
                     ->indicateUsing(function (array $data): array {
                         $out = [];
                         if (! empty($data['from'])) {

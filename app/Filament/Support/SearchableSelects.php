@@ -44,7 +44,7 @@ use Illuminate\Database\Eloquent\Model;
 final class SearchableSelects
 {
     /** Hard cap on autocomplete result rows. Anything above this is paginated by typing more. */
-    public const MAX_RESULTS = 50;
+    public const int MAX_RESULTS = 50;
 
     /* =========================================================================
      |  Document
@@ -166,9 +166,7 @@ final class SearchableSelects
             ->searchable(['box_number', 'barcode'])
             ->preload(false)
             ->getOptionLabelFromRecordUsing(fn (Box $r): string => self::boxLabel($r))
-            ->getSearchResultsUsing(function (string $search) use ($queryModifier): array {
-                return self::boxSearchResults($search, $queryModifier);
-            })
+            ->getSearchResultsUsing(fn (string $search): array => self::boxSearchResults($search, $queryModifier))
             ->getOptionLabelUsing(fn ($value): ?string => self::boxOptionLabel($value));
     }
 
@@ -180,7 +178,7 @@ final class SearchableSelects
         $search = trim($search);
 
         $query = Box::query()->with('batch');
-        if ($queryModifier !== null) {
+        if ($queryModifier instanceof \Closure) {
             $queryModifier($query);
         }
 
@@ -458,9 +456,7 @@ final class SearchableSelects
             ->searchable(['code', 'name'])
             ->preload(false)
             ->getOptionLabelFromRecordUsing(fn (Repository $r): string => self::repositoryLabel($r))
-            ->getSearchResultsUsing(function (string $search) use ($queryModifier): array {
-                return self::repositorySearchResults($search, $queryModifier);
-            })
+            ->getSearchResultsUsing(fn (string $search): array => self::repositorySearchResults($search, $queryModifier))
             ->getOptionLabelUsing(fn ($value): ?string => self::repositoryOptionLabel($value));
     }
 
@@ -472,7 +468,7 @@ final class SearchableSelects
         $search = trim($search);
 
         $query = Repository::query();
-        if ($queryModifier !== null) {
+        if ($queryModifier instanceof \Closure) {
             $queryModifier($query);
         }
 
@@ -540,9 +536,7 @@ final class SearchableSelects
             // (on edit) or the form's currently-selected repository_id (on
             // create) so admins never see foreign-repo accessions to attach.
             // null (no record, no selection) → unscoped, mirroring prior behaviour.
-            ->getSearchResultsUsing(function (string $search, Get $get, ?Model $record): array {
-                return self::accessionSearchResults($search, self::resolveRepositoryId($get, $record));
-            })
+            ->getSearchResultsUsing(fn (string $search, Get $get, ?Model $record): array => self::accessionSearchResults($search, self::resolveRepositoryId($get, $record)))
             ->getOptionLabelsUsing(fn (array $values): array => self::accessionOptionLabels($values));
     }
 
@@ -562,9 +556,7 @@ final class SearchableSelects
             // (on edit) or the form's currently-selected repository_id (on
             // create) so admins never see foreign-repo batches to attach.
             // null (no record, no selection) → unscoped, mirroring prior behaviour.
-            ->getSearchResultsUsing(function (string $search, Get $get, ?Model $record): array {
-                return self::batchSearchResults($search, self::resolveRepositoryId($get, $record));
-            })
+            ->getSearchResultsUsing(fn (string $search, Get $get, ?Model $record): array => self::batchSearchResults($search, self::resolveRepositoryId($get, $record)))
             ->getOptionLabelsUsing(fn (array $values): array => self::batchOptionLabels($values));
     }
 
@@ -645,9 +637,7 @@ final class SearchableSelects
             ->searchable(['name', 'code'])
             ->preload(false)
             ->getOptionLabelFromRecordUsing(fn (Location $r): string => $r->breadcrumb())
-            ->getSearchResultsUsing(function (string $search) use ($queryModifier): array {
-                return self::locationSearchResults($search, $queryModifier);
-            })
+            ->getSearchResultsUsing(fn (string $search): array => self::locationSearchResults($search, $queryModifier))
             ->getOptionLabelUsing(fn ($value): ?string => self::locationOptionLabel($value));
     }
 
@@ -659,7 +649,7 @@ final class SearchableSelects
         $search = trim($search);
 
         $query = Location::query();
-        if ($queryModifier !== null) {
+        if ($queryModifier instanceof \Closure) {
             $queryModifier($query);
         }
 

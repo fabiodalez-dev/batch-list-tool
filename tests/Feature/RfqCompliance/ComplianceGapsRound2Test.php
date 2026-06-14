@@ -30,7 +30,7 @@ it('disables public self-registration (Fortify registration feature off)', funct
 });
 
 it('exposes no public /register route', function () {
-    expect(app('router')->getRoutes()->getByName('register'))->toBeNull();
+    expect(resolve('router')->getRoutes()->getByName('register'))->toBeNull();
     $this->get('/register')->assertNotFound();
 });
 

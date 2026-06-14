@@ -108,11 +108,7 @@ final class MoveToBatchAction
             $records,
             function (Document $doc) use ($targetBatch, $clearBox): void {
                 // C-3: per-row tenant gate.
-                if ((int) $targetBatch->repository_id !== (int) $doc->repository_id) {
-                    throw new \DomainException(
-                        'target batch belongs to a different repository'
-                    );
-                }
+                throw_if((int) $targetBatch->repository_id !== (int) $doc->repository_id, \DomainException::class, 'target batch belongs to a different repository');
 
                 $doc->batch_id = $targetBatch->getKey();
                 if ($clearBox && $doc->current_box_id !== null) {

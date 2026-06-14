@@ -47,7 +47,7 @@ beforeEach(function () {
 function rfu_sa(): User
 {
     $repo = Repository::factory()->create([
-        'code' => 'RFU-' . strtoupper(substr((string) uniqid(), -6)),
+        'code' => 'RFU-' . strtoupper(substr(uniqid(), -6)),
     ]);
 
     /** @var User $u */
@@ -65,7 +65,7 @@ function rfu_sa(): User
 function rfu_repo(string $prefix = 'RFU'): Repository
 {
     return Repository::factory()->create([
-        'code' => $prefix . '_' . strtoupper(substr((string) uniqid(), -6)),
+        'code' => $prefix . '_' . strtoupper(substr(uniqid(), -6)),
     ]);
 }
 
@@ -262,7 +262,7 @@ it('F05.5: BoxImporter location column throws for unknown code', function (): vo
 
     try {
         rfu_box_import($data, $user->id);
-    } catch (ValidationException $e) {
+    } catch (ValidationException) {
         $threw = true;
     } catch (Throwable $e) {
         $threw = str_contains($e->getMessage(), 'Unknown location code')

@@ -145,7 +145,7 @@ class AdminPanelProvider extends PanelProvider
     private function resolveBranding(): array
     {
         try {
-            $settings = app(BrandingSettings::class);
+            $settings = resolve(BrandingSettings::class);
 
             $brandName = $settings->brand_name ?: 'NAf';
             $brandLogoHeight = $settings->logo_height ?: '2.25rem';

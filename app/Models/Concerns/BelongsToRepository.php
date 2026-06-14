@@ -65,7 +65,7 @@ trait BelongsToRepository
                 );
             }
 
-            if (! in_array((int) $model->getAttribute('repository_id'), array_map('intval', $allowedIds), true)) {
+            if (! in_array((int) $model->getAttribute('repository_id'), array_map(intval(...), $allowedIds), true)) {
                 throw new \DomainException(
                     'Multi-tenant violation: cannot create '
                     . $model::class

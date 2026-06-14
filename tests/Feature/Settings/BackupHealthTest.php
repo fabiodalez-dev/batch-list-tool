@@ -91,7 +91,7 @@ it('persists retention settings', function () {
         ->assertHasNoFormErrors()
         ->assertNotified();
 
-    $fresh = app(BackupSettings::class)->refresh();
+    $fresh = resolve(BackupSettings::class)->refresh();
     expect($fresh->keep_daily)->toBe(30)
         ->and($fresh->keep_weekly)->toBe(10)
         ->and($fresh->keep_monthly)->toBe(6);

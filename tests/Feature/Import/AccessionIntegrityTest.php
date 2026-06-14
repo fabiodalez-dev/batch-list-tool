@@ -150,7 +150,7 @@ test('B5: create-if-absent still refuses a forbidden batch number (A1.1) and nev
             'current_box_number' => '5',
         ], $u->id);
         $this->fail('Expected the forbidden batch to be rejected.');
-    } catch (ValidationException|RowImportFailedException $e) {
+    } catch (ValidationException|RowImportFailedException) {
         // either surface is acceptable — the point is the row fails.
     }
 
@@ -271,7 +271,7 @@ test('I2: a PERM_OUT row missing a disinfestation_date is rejected BEFORE any sa
             'status_1' => 'status_1',
         ]);
         $this->fail('Expected a ValidationException for PERM_OUT without disinfestation_date.');
-    } catch (ValidationException|RowImportFailedException $e) {
+    } catch (ValidationException|RowImportFailedException) {
         // either surface is acceptable — the row must fail.
     }
 
@@ -299,9 +299,7 @@ test('I2: a failing box-status write rolls back the just-saved document (no half
     $originalDispatcher = Box::getEventDispatcher();
     $tempDispatcher = clone $originalDispatcher;
     $tempDispatcher->listen('eloquent.saving: ' . Box::class, function (Box $box): void {
-        if ($box->barcode_status === 'OUT') {
-            throw new RuntimeException('Simulated box-status write failure');
-        }
+        throw_if($box->barcode_status === 'OUT', RuntimeException::class, 'Simulated box-status write failure');
     });
     Box::setEventDispatcher($tempDispatcher);
 

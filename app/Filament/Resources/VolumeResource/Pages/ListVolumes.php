@@ -68,7 +68,7 @@ class ListVolumes extends ListRecords
         $allColumns = array_merge($columns, $customFieldColumns);
 
         $user = auth()->user();
-        $repoCode = optional($user?->defaultRepository ?? null)->code ?? 'all';
+        $repoCode = ($user?->defaultRepository ?? null)?->code ?? 'all';
         $filename = sprintf(
             'volumes_%s_%s.csv',
             Str::slug($repoCode, '_'),
@@ -88,7 +88,7 @@ class ListVolumes extends ListRecords
             $out = fopen('php://output', 'wb');
             // UTF-8 BOM — Excel on Windows needs it for non-ASCII characters.
             fwrite($out, "\xEF\xBB\xBF");
-            fputcsv($out, array_values($allColumns));
+            fputcsv($out, array_values($allColumns), escape: '\\');
 
             $query->orderBy('id')->chunk(500, function ($volumes) use ($out, $allColumns, $customFieldDefs): void {
                 foreach ($volumes as $volume) {
@@ -115,7 +115,7 @@ class ListVolumes extends ListRecords
                         $allCells['cf_' . $def->key] = $raw !== '' ? $this->sanitizeCsvCell($raw) : '';
                     }
 
-                    fputcsv($out, array_intersect_key($allCells, $allColumns));
+                    fputcsv($out, array_intersect_key($allCells, $allColumns), escape: '\\');
                 }
             });
 

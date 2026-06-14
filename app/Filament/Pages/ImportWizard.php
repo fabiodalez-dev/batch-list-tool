@@ -351,7 +351,7 @@ class ImportWizard extends Page
         // ?profile=N — preload a saved mapping. We only honour profiles the
         // current user can actually see (owner OR shared in their tenant).
         $profile = $this->resolveProfileFromQuery();
-        if ($profile !== null) {
+        if ($profile instanceof ImportProfile) {
             $initial['starting_profile_id'] = (string) $profile->getKey();
             $initial['import_type'] = $profile->import_type;
             $initial['column_map'] = is_array($profile->column_map) ? $profile->column_map : [];
@@ -516,7 +516,7 @@ class ImportWizard extends Page
         // header action becomes visible once the batch has produced any
         // failure records. The action polls the model on click; we don't
         // need to know failure count synchronously at dispatch time.
-        $this->lastImportId = (int) $importId;
+        $this->lastImportId = $importId;
     }
 
     /* ──────────────────────────────────────────────────────────────── */
@@ -584,30 +584,38 @@ class ImportWizard extends Page
                         // uploaded xlsx) ALSO need the sanitiser — a
                         // malicious header like '=cmd|...' would otherwise
                         // execute when the export is opened.
-                        fputcsv($out, array_merge(
-                            array_map(
-                                static fn ($k): string => $sanitizeForCsv((string) $k),
-                                array_keys($data),
+                        fputcsv(
+                            $out,
+                            array_merge(
+                                array_map(
+                                    static fn ($k): string => $sanitizeForCsv((string) $k),
+                                    array_keys($data),
+                                ),
+                                ['_validation_error'],
                             ),
-                            ['_validation_error'],
-                        ));
+                            escape: '\\'
+                        );
                         $first = false;
                     }
-                    fputcsv($out, array_merge(
-                        array_map(
-                            static fn ($v): string => $sanitizeForCsv(
-                                is_scalar($v) ? (string) $v : (string) json_encode($v),
+                    fputcsv(
+                        $out,
+                        array_merge(
+                            array_map(
+                                static fn ($v): string => $sanitizeForCsv(
+                                    is_scalar($v) ? (string) $v : (string) json_encode($v),
+                                ),
+                                $data,
                             ),
-                            $data,
+                            [$sanitizeForCsv((string) $row->getAttribute('validation_error'))],
                         ),
-                        [$sanitizeForCsv((string) $row->getAttribute('validation_error'))],
-                    ));
+                        escape: '\\'
+                    );
                 }
             });
 
             if ($first) {
                 // No failed rows yet — emit a single header row so the file is well-formed.
-                fputcsv($out, ['_no_failed_rows']);
+                fputcsv($out, ['_no_failed_rows'], escape: '\\');
             }
 
             fclose($out);
@@ -671,11 +679,10 @@ class ImportWizard extends Page
     /* ──────────────────────────────────────────────────────────────── */
     /* Compat shims for legacy callers (tests, blade includes) */
     /* ──────────────────────────────────────────────────────────────── */
-
-    /**
-     * @deprecated Use {@see TemplateGenerator::download()} directly. Kept
-     * for the few blade snippets that still call `$page->downloadTemplate`.
-     */
+    #[\Deprecated(message: <<<'TXT'
+    Use {@see TemplateGenerator::download()} directly. Kept
+     for the few blade snippets that still call `$page->downloadTemplate`.
+    TXT)]
     public function downloadTemplate(string $entity): StreamedResponse
     {
         abort_unless(static::canAccess(), 403);
@@ -879,7 +886,7 @@ class ImportWizard extends Page
     protected function resolveProfileFromQuery(): ?ImportProfile
     {
         $raw = $this->profileQuery;
-        if ($raw === null || $raw === '' || ! ctype_digit((string) $raw)) {
+        if ($raw === null || $raw === '' || ! ctype_digit($raw)) {
             return null;
         }
 
@@ -968,7 +975,7 @@ class ImportWizard extends Page
         if ($startingProfile === null) {
             return;
         }
-        if ($newProfile !== null && (int) $newProfile->getKey() === (int) $startingProfile->getKey()) {
+        if ($newProfile instanceof ImportProfile && (int) $newProfile->getKey() === (int) $startingProfile->getKey()) {
             return;
         }
         $startingProfile->markUsed();
@@ -1194,13 +1201,11 @@ class ImportWizard extends Page
                         }
 
                         return array_combine(
-                            array_map('strval', array_keys($sheets)),
+                            array_map(strval(...), array_keys($sheets)),
                             $sheets,
                         );
                     })
-                    ->visible(function (Get $get): bool {
-                        return count(self::detectSheetNames($get('file'))) > 1;
-                    })
+                    ->visible(fn (Get $get): bool => count(self::detectSheetNames($get('file'))) > 1)
                     ->live()
                     ->afterStateUpdated(function (Get $get, Set $set): void {
                         // Sheet change → re-guess unless a profile is in use.
@@ -1648,7 +1653,7 @@ class ImportWizard extends Page
         if (! $file instanceof TemporaryUploadedFile) {
             return [];
         }
-        $ext = strtolower((string) $file->getClientOriginalExtension());
+        $ext = strtolower($file->getClientOriginalExtension());
         if (! in_array($ext, ['xlsx', 'xls'], true)) {
             return [];
         }
@@ -1755,7 +1760,7 @@ class ImportWizard extends Page
         $tbody = '';
         foreach ($rows as $row) {
             $tbody .= '<tr>';
-            foreach ($headers as $i => $_h) {
+            foreach (array_keys($headers) as $i) {
                 /** @var mixed $cell */
                 $cell = $row[$i] ?? '';
                 $tbody .= '<td class="px-2 py-1 border-t border-gray-200 dark:border-gray-700">'
@@ -1854,7 +1859,7 @@ class ImportWizard extends Page
         $disk->makeDirectory('imports');
         $base = 'imports/' . date('Ymd_His') . '_' . bin2hex(random_bytes(4));
 
-        $ext = strtolower((string) $file->getClientOriginalExtension());
+        $ext = strtolower($file->getClientOriginalExtension());
         if (in_array($ext, ['xlsx', 'xls'], true)) {
             $csvAbs = $disk->path($base . '.csv');
             $reader = IOFactory::createReaderForFile($file->getRealPath());
@@ -1908,7 +1913,7 @@ class ImportWizard extends Page
         $user = auth()->user();
         $totalRows = count($rows);
 
-        $import = app(Import::class);
+        $import = resolve(Import::class);
         if ($user !== null) {
             $import->user()->associate($user);
         }
@@ -1930,7 +1935,7 @@ class ImportWizard extends Page
         $chunkSize = 100;
         $chunks = array_chunk($rows, $chunkSize);
 
-        $jobs = collect($chunks)->map(fn (array $chunk): object => app(ImportCsv::class, [
+        $jobs = collect($chunks)->map(fn (array $chunk): object => resolve(ImportCsv::class, [
             'import' => $import,
             'rows' => base64_encode(serialize($chunk)),
             'columnMap' => $cleanColumnMap,
@@ -1972,8 +1977,8 @@ class ImportWizard extends Page
                     $notification = Notification::make()
                         ->title($fresh->importer::getCompletedNotificationTitle($fresh))
                         ->body($fresh->importer::getCompletedNotificationBody($fresh))
-                        ->when(
-                            ! $failedRowsCount,
+                        ->unless(
+                            $failedRowsCount,
                             fn (Notification $n) => $n->success(),
                         )
                         ->when(

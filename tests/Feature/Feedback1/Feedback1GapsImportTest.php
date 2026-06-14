@@ -41,7 +41,7 @@ uses(RefreshDatabase::class);
 function fgi_repo(string $prefix = 'FGI'): Repository
 {
     return Repository::factory()->create([
-        'code' => $prefix . '_' . strtoupper(substr((string) uniqid(), -6)),
+        'code' => $prefix . '_' . strtoupper(substr(uniqid(), -6)),
     ]);
 }
 

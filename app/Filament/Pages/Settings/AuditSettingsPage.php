@@ -74,7 +74,7 @@ class AuditSettingsPage extends Page
     {
         abort_unless(static::canAccess(), 403);
 
-        $settings = app(AuditSettings::class);
+        $settings = resolve(AuditSettings::class);
 
         $this->form->fill([
             'enabled' => $settings->enabled,
@@ -115,7 +115,7 @@ class AuditSettingsPage extends Page
 
         $state = $this->form->getState();
 
-        $settings = app(AuditSettings::class);
+        $settings = resolve(AuditSettings::class);
         $settings->enabled = (bool) $state['enabled'];
         $settings->threshold = (int) $state['threshold'];
         $settings->save();

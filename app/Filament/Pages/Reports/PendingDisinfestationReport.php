@@ -293,7 +293,7 @@ class PendingDisinfestationReport extends Page implements HasTable
 
         $rows = [];
         /** @var Document $r */
-        foreach ($this->reportQuery()->orderBy('documents.created_at')->limit(5000)->get() as $r) {
+        foreach ($this->reportQuery()->oldest('documents.created_at')->limit(5000)->get() as $r) {
             $rows[] = self::pendingRow($r);
         }
 
@@ -313,7 +313,7 @@ class PendingDisinfestationReport extends Page implements HasTable
         $rows = $this->fetchExportRowsWithCap(
             $query
                 ->with(['currentBox:id,box_number,barcode_status', 'batch:id,batch_number', 'series:id,code'])
-                ->orderBy('documents.created_at'),
+                ->oldest('documents.created_at'),
         );
 
         return ReportRenderer::streamXlsx(

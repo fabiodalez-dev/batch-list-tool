@@ -42,7 +42,7 @@ class InitialDataSeeder extends Seeder
         // App\Support\RoleLabels helper; renaming the slugs themselves would
         // break the permission matrix + policy gates + ~900 tests for a purely
         // cosmetic gain, so the mapping is documented rather than renamed.
-        $superAdmin = Role::firstOrCreate(['name' => 'super_admin', 'guard_name' => 'web']);
+        Role::firstOrCreate(['name' => 'super_admin', 'guard_name' => 'web']);
         $admin = Role::firstOrCreate(['name' => 'admin', 'guard_name' => 'web']);
         $editor = Role::firstOrCreate(['name' => 'editor', 'guard_name' => 'web']);
         $viewer = Role::firstOrCreate(['name' => 'viewer', 'guard_name' => 'web']);

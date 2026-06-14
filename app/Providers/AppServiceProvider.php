@@ -120,7 +120,7 @@ class AppServiceProvider extends ServiceProvider
         // the settings table may not yet exist. In that case we leave both
         // values at their defaults rather than crashing the entire request.
         try {
-            $auditEnabled = app(AuditSettings::class)->enabled;
+            $auditEnabled = resolve(AuditSettings::class)->enabled;
             config(['audit.enabled' => $auditEnabled]);
             Audit::$auditingGloballyDisabled = ! $auditEnabled;
         } catch (\Throwable) {
@@ -131,9 +131,7 @@ class AppServiceProvider extends ServiceProvider
         // Laravel Pulse dashboard access: restrict /pulse to super_admin and admin
         // roles only. Pulse's PulseServiceProvider checks Gate::check('viewPulse')
         // on its dashboard route.
-        Gate::define('viewPulse', function (?User $user): bool {
-            return $user !== null && $user->hasAnyRole(['super_admin', 'admin']);
-        });
+        Gate::define('viewPulse', fn (?User $user): bool => $user instanceof User && $user->hasAnyRole(['super_admin', 'admin']));
 
         $this->registerHealthChecks();
 
@@ -184,11 +182,7 @@ class AppServiceProvider extends ServiceProvider
             return false;
         }
 
-        if ($driver === null || $driver === 'sqlite') {
-            return false;
-        }
-
-        return true;
+        return $driver !== null && $driver !== 'sqlite';
     }
 
     /**
@@ -206,7 +200,7 @@ class AppServiceProvider extends ServiceProvider
     protected function configureBackupNotifications(): void
     {
         try {
-            $settings = app(BackupSettings::class);
+            $settings = resolve(BackupSettings::class);
 
             $recipients = array_values(array_filter(
                 $settings->notify_emails,

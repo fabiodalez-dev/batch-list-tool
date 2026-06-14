@@ -204,9 +204,9 @@ it('§3.1.8 #14: null user in CONSOLE context (CLI/queue/pest) defaults to allow
     // CONSOLE context (CLI/queue/tinker/pest) so maintenance scripts
     // are never blocked. The pest harness runs under runningInConsole()
     // → this exercises the CONSOLE branch.
-    expect(FieldPermissions::canRead('document', 'extra', null))->toBeTrue();
-    expect(FieldPermissions::canWrite('document', 'extra', null))->toBeTrue();
-    expect(FieldPermissions::isHidden('document', 'extra', null))->toBeFalse();
+    expect(FieldPermissions::canRead('document', 'extra'))->toBeTrue();
+    expect(FieldPermissions::canWrite('document', 'extra'))->toBeTrue();
+    expect(FieldPermissions::isHidden('document', 'extra'))->toBeFalse();
 });
 
 it('§3.1.8 #15: hidden_from takes precedence over read — if both allow and hide, hide wins', function () {

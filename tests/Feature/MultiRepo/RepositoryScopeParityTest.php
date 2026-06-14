@@ -37,7 +37,7 @@ it('narrows Documents AND Boxes consistently for an admin with an active reposit
     Box::factory()->create(['batch_id' => $batchA->id, 'box_type' => 'RAS']);
     Box::factory()->create(['batch_id' => $batchB->id, 'box_type' => 'RAS']);
 
-    app(ActiveRepository::class)->set($repoA->id);
+    resolve(ActiveRepository::class)->set($repoA->id);
 
     expect(Document::count())->toBe(1);
     expect(Box::count())->toBe(1);
@@ -57,7 +57,7 @@ it('shows everything for an admin with no active repository (All)', function ():
     Box::factory()->create(['batch_id' => $batchA->id, 'box_type' => 'RAS']);
     Box::factory()->create(['batch_id' => $batchB->id, 'box_type' => 'RAS']);
 
-    app(ActiveRepository::class)->set(null);
+    resolve(ActiveRepository::class)->set(null);
 
     expect(Document::count())->toBe(2);
     expect(Box::count())->toBe(2);

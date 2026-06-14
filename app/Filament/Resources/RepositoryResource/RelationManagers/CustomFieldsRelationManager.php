@@ -53,14 +53,14 @@ class CustomFieldsRelationManager extends RelationManager
     {
         // Build human-readable option maps from the model constants.
         $entityTypeOptions = array_map(
-            fn (string $class): string => class_basename($class),
+            class_basename(...),
             CustomFieldDefinition::ENTITY_TYPES,
         );
 
         $typeOptions = array_combine(
             CustomFieldDefinition::TYPES,
             array_map(
-                fn (string $t): string => ucfirst($t),
+                ucfirst(...),
                 CustomFieldDefinition::TYPES,
             ),
         );
@@ -75,8 +75,8 @@ class CustomFieldsRelationManager extends RelationManager
                 ->required()
                 ->native(false)
                 ->helperText('Which resource this field will appear on.')
-                ->disabled(fn (?CustomFieldDefinition $record): bool => $record !== null && $record->values()->exists())
-                ->helperText(fn (?CustomFieldDefinition $record): string => ($record !== null && $record->values()->exists())
+                ->disabled(fn (?CustomFieldDefinition $record): bool => $record instanceof CustomFieldDefinition && $record->values()->exists())
+                ->helperText(fn (?CustomFieldDefinition $record): string => ($record instanceof CustomFieldDefinition && $record->values()->exists())
                     ? 'Locked — this field has stored values. Changing the entity type would orphan existing data.'
                     : 'Which resource this field will appear on.'),
 
@@ -109,32 +109,30 @@ class CustomFieldsRelationManager extends RelationManager
                 // EvaluatesClosures does not attempt to inject $attribute (which it cannot
                 // resolve), following the same pattern used in BatchResource::form().
                 // entity_type is read from the Livewire component's mounted actions data array.
-                ->rule(function (): \Closure {
-                    return function (string $attribute, mixed $value, \Closure $fail): void {
-                        $owner = $this->getOwnerRecord();
+                ->rule(fn (): \Closure => function (string $attribute, mixed $value, \Closure $fail): void {
+                    $owner = $this->getOwnerRecord();
 
-                        // Grab entity_type from the last mounted action's raw data payload
-                        // ($this->mountedActions is the Filament 5 Livewire property holding
-                        // the action stack; the innermost action is the last element).
-                        $lastAction = ! empty($this->mountedActions) ? end($this->mountedActions) : [];
-                        $entityType = $lastAction['data']['entity_type'] ?? null;
+                    // Grab entity_type from the last mounted action's raw data payload
+                    // ($this->mountedActions is the Filament 5 Livewire property holding
+                    // the action stack; the innermost action is the last element).
+                    $lastAction = empty($this->mountedActions) ? [] : end($this->mountedActions);
+                    $entityType = $lastAction['data']['entity_type'] ?? null;
 
-                        $currentRecordKey = $this->getMountedAction()?->getRecord()?->getKey();
+                    $currentRecordKey = $this->getMountedAction()?->getRecord()?->getKey();
 
-                        $exists = CustomFieldDefinition::query()
-                            ->where('repository_id', $owner->getKey())
-                            ->when($entityType !== null, fn ($q) => $q->where('entity_type', $entityType))
-                            ->where('key', $value)
-                            ->when(
-                                $currentRecordKey !== null,
-                                fn ($q) => $q->whereKeyNot($currentRecordKey),
-                            )
-                            ->exists();
+                    $exists = CustomFieldDefinition::query()
+                        ->where('repository_id', $owner->getKey())
+                        ->when($entityType !== null, fn ($q) => $q->where('entity_type', $entityType))
+                        ->where('key', $value)
+                        ->when(
+                            $currentRecordKey !== null,
+                            fn ($q) => $q->whereKeyNot($currentRecordKey),
+                        )
+                        ->exists();
 
-                        if ($exists) {
-                            $fail("The key '{$value}' is already taken for this entity type in this repository.");
-                        }
-                    };
+                    if ($exists) {
+                        $fail("The key '{$value}' is already taken for this entity type in this repository.");
+                    }
                 }),
 
             // type — determines which Filament component is rendered.
@@ -147,8 +145,8 @@ class CustomFieldsRelationManager extends RelationManager
                 ->required()
                 ->native(false)
                 ->live()
-                ->disabled(fn (?CustomFieldDefinition $record): bool => $record !== null && $record->values()->exists())
-                ->helperText(fn (?CustomFieldDefinition $record): string => ($record !== null && $record->values()->exists())
+                ->disabled(fn (?CustomFieldDefinition $record): bool => $record instanceof CustomFieldDefinition && $record->values()->exists())
+                ->helperText(fn (?CustomFieldDefinition $record): string => ($record instanceof CustomFieldDefinition && $record->values()->exists())
                     ? 'Locked — this field has stored values. Changing the type would silently reinterpret existing data.'
                     : 'Determines input widget and value casting.'),
 
@@ -175,7 +173,7 @@ class CustomFieldsRelationManager extends RelationManager
                 ])
                 ->visible(fn (Get $get): bool => $get('type') === 'select')
                 ->required(fn (Get $get): bool => $get('type') === 'select')
-                ->disabled(fn (?CustomFieldDefinition $record): bool => $record !== null && $record->values()->exists()),
+                ->disabled(fn (?CustomFieldDefinition $record): bool => $record instanceof CustomFieldDefinition && $record->values()->exists()),
 
             // Toggles.
             Forms\Components\Toggle::make('is_required')
@@ -212,7 +210,7 @@ class CustomFieldsRelationManager extends RelationManager
         $isSuperAdmin = auth()->user()?->hasRole('super_admin') === true;
 
         $entityTypeOptions = array_map(
-            fn (string $class): string => class_basename($class),
+            class_basename(...),
             CustomFieldDefinition::ENTITY_TYPES,
         );
 

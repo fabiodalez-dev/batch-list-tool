@@ -69,20 +69,20 @@ final class TemplateGenerator
      *
      * @var array<int, string>
      */
-    public const AUTHORITY_HEADERS = [
+    public const array AUTHORITY_HEADERS = [
         'Identifier', 'Alternative Identifier', 'Type of Entity',
         'Private Practice Dates Active', 'NTG Dates Active', 'Name Suffix',
         'Maiden Surname', 'Creator Surname', 'Creator Name',
     ];
 
     /** @var array<int, string> */
-    public const SERIES_HEADERS = [
+    public const array SERIES_HEADERS = [
         '', 'Identifier', 'Standard title in English (Plural)',
         'Level of description', 'Date of creation', 'Name of Inputter',
     ];
 
     /** @var array<int, string> */
-    public const DOCUMENT_HEADERS = [
+    public const array DOCUMENT_HEADERS = [
         'RAS Batch 1', 'RAS Box 1', 'RAS Batch 2', 'RAS Box 2',
         'In Situ Box 1', 'In Situ Box 2', 'In Situ Box 3',
         'RAS 1 Box Destroyed', 'RAS 2 Box Destroyed', 'In Situ Box 1 Destroyed',
@@ -106,7 +106,7 @@ final class TemplateGenerator
      * can detect a stale template at re-upload time and warn the operator.
      * Bump on any change to the header contract.
      */
-    public const GENERATOR_VERSION = '1.2.0';
+    public const string GENERATOR_VERSION = '1.2.0';
 
     /**
      * Supported template entities. Headers come from the in-repo constants
@@ -118,7 +118,7 @@ final class TemplateGenerator
      *
      * @var array<string, array{}>
      */
-    public const TEMPLATES = [
+    public const array TEMPLATES = [
         'authority' => [],
         'series' => [],
         'batch' => [],
@@ -141,9 +141,7 @@ final class TemplateGenerator
      */
     public static function download(string $entity): StreamedResponse
     {
-        if (! array_key_exists($entity, self::TEMPLATES)) {
-            throw new \InvalidArgumentException("Unknown template entity: {$entity}");
-        }
+        throw_unless(array_key_exists($entity, self::TEMPLATES), \InvalidArgumentException::class, "Unknown template entity: {$entity}");
 
         $headers = self::headersFor($entity);
         $spreadsheet = self::buildSpreadsheet($entity, $headers);
@@ -191,9 +189,7 @@ final class TemplateGenerator
      */
     public static function headersFor(string $entity): array
     {
-        if (! array_key_exists($entity, self::TEMPLATES)) {
-            throw new \InvalidArgumentException("Unknown template entity: {$entity}");
-        }
+        throw_unless(array_key_exists($entity, self::TEMPLATES), \InvalidArgumentException::class, "Unknown template entity: {$entity}");
 
         $staticHeaders = match ($entity) {
             'authority' => self::AUTHORITY_HEADERS,

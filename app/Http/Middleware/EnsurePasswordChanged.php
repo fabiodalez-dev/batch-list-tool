@@ -53,6 +53,6 @@ class EnsurePasswordChanged
             ->warning()
             ->send();
 
-        return redirect()->route('filament.admin.auth.profile');
+        return to_route('filament.admin.auth.profile');
     }
 }

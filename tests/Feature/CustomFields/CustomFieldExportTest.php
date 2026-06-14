@@ -150,14 +150,14 @@ test('document without a custom field value emits an empty cell', function (): v
     // Each row for documents without stored values must still have the correct
     // number of columns (the cell is empty, not missing).
     $lines = array_values(array_filter(explode("\n", trim($csv))));
-    $header = str_getcsv(array_shift($lines));
+    $header = str_getcsv(array_shift($lines), escape: '\\');
     $colCount = count($header);
 
     foreach ($lines as $line) {
         if (trim($line) === '') {
             continue;
         }
-        $cells = str_getcsv($line);
+        $cells = str_getcsv($line, escape: '\\');
         expect(count($cells))->toBe($colCount, "Row column count must match header: {$line}");
     }
 });
@@ -173,7 +173,7 @@ test('no custom field columns in export when no definitions exist', function ():
     $csv = cfe_captureExportCsv();
 
     $lines = array_values(array_filter(explode("\n", trim($csv))));
-    $header = str_getcsv(array_shift($lines));
+    $header = str_getcsv(array_shift($lines), escape: '\\');
 
     // Fixed columns must be present.
     expect($header)->toContain('Identifier');

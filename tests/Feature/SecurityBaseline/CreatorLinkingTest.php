@@ -87,7 +87,7 @@ test('F-001 — fuzzy match on a token shorter than 4 chars returns null', funct
     // Invoke the private resolveAuthority() via reflection — this is the
     // narrowest possible test of the F-001 guard. We pass a token whose final
     // word ("Foo") is 3 characters → must return null.
-    $command = app(LinkCreatorTextToAuthorities::class);
+    $command = resolve(LinkCreatorTextToAuthorities::class);
     $authoritiesBySurname = Authority::query()
         ->whereNotNull('surname')
         ->where('surname', '!=', '')
@@ -96,7 +96,6 @@ test('F-001 — fuzzy match on a token shorter than 4 chars returns null', funct
 
     $reflection = new ReflectionClass($command);
     $method = $reflection->getMethod('resolveAuthority');
-    $method->setAccessible(true);
 
     // Short token (3 chars) → must be REFUSED (null) even though "Fontana" is a
     // LIKE-match for "Foo". This is the F-001 contract.

@@ -58,7 +58,7 @@ final class FieldPermissions
      * here so the defence-in-depth check never depends on the config
      * file the operator is trying to debug.
      */
-    public const SUPER_ADMIN_ROLE = 'super_admin';
+    public const string SUPER_ADMIN_ROLE = 'super_admin';
 
     /**
      * Cache key for the persisted {@see FieldPermissionOverride} matrix.
@@ -66,7 +66,7 @@ final class FieldPermissions
      * model's saved/deleted events; in tests the array cache store is reset
      * with the application between cases, so each test reads fresh.
      */
-    public const OVERRIDE_CACHE_KEY = 'field_permission_overrides';
+    public const string OVERRIDE_CACHE_KEY = 'field_permission_overrides';
 
     /**
      * Can this role READ the given field?
@@ -79,7 +79,7 @@ final class FieldPermissions
     {
         $user ??= self::resolveUser();
 
-        if ($user === null) {
+        if (! $user instanceof User) {
             // Console: trusted local code (seeders, queue, tinker) — allow.
             // HTTP: no auth context, fail closed so the form layer never
             // leaks fields when an upstream policy gate misfires.
@@ -121,7 +121,7 @@ final class FieldPermissions
     {
         $user ??= self::resolveUser();
 
-        if ($user === null) {
+        if (! $user instanceof User) {
             return self::isConsole();
         }
 
@@ -156,7 +156,7 @@ final class FieldPermissions
     {
         $user ??= self::resolveUser();
 
-        if ($user === null) {
+        if (! $user instanceof User) {
             // Console: never hide (CLI / queue / tinker trusted).
             // HTTP without auth context: hide (fail-safe — never expose
             // a field whose policy decision we cannot evaluate).
@@ -230,7 +230,7 @@ final class FieldPermissions
     private static function isSuperAdmin(User $user): bool
     {
         try {
-            return (bool) $user->hasRole(self::SUPER_ADMIN_ROLE);
+            return $user->hasRole(self::SUPER_ADMIN_ROLE);
         } catch (\Throwable) {
             return false;
         }
@@ -318,7 +318,7 @@ final class FieldPermissions
                         'read' => $o->read,
                         'write' => $o->write,
                         'hidden_from' => $o->hidden_from,
-                    ], static fn ($v): bool => is_array($v));
+                    ], is_array(...));
 
                     return [$o->resource . '.' . $o->field => $block];
                 })

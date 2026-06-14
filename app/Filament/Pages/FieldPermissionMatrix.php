@@ -264,7 +264,7 @@ class FieldPermissionMatrix extends Page
                 'read' => $override->read,
                 'write' => $override->write,
                 'hidden_from' => $override->hidden_from,
-            ], static fn ($v): bool => is_array($v));
+            ], is_array(...));
         }
 
         $cfg = $config[$resource][$field] ?? [];

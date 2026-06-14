@@ -233,7 +233,7 @@ test('Batch export: boolean custom field renders as 1 or 0', function (): void {
     expect($csv)->toContain('Is sealed?');
     // Boolean true → '1'
     $lines = array_values(array_filter(explode("\n", trim($csv))));
-    $header = str_getcsv(array_shift($lines));
+    $header = str_getcsv(array_shift($lines), escape: '\\');
     $colIdx = array_search('Is sealed?', $header, true);
     expect($colIdx)->not->toBeFalse();
 
@@ -241,7 +241,7 @@ test('Batch export: boolean custom field renders as 1 or 0', function (): void {
         if (trim($line) === '') {
             continue;
         }
-        $cells = str_getcsv($line);
+        $cells = str_getcsv($line, escape: '\\');
         // Value must be '1' for the boolean true case.
         expect($cells[$colIdx])->toBe('1');
     }
@@ -256,7 +256,7 @@ test('Batch export: no custom field columns when no definitions exist', function
     $csv = cfx_batchCsv();
 
     $lines = array_values(array_filter(explode("\n", trim($csv))));
-    $header = str_getcsv(array_shift($lines));
+    $header = str_getcsv(array_shift($lines), escape: '\\');
 
     // Fixed columns present (A4 Wave A added Repository as a 5th fixed column).
     expect($header)->toContain('Batch number');
@@ -290,7 +290,7 @@ test('Batch export: row without custom field value emits empty cell', function (
     $csv = cfx_batchCsv();
 
     $lines = array_values(array_filter(explode("\n", trim($csv))));
-    $header = str_getcsv(array_shift($lines));
+    $header = str_getcsv(array_shift($lines), escape: '\\');
     $colCount = count($header);
     expect($header)->toContain('Origin');
 
@@ -298,7 +298,7 @@ test('Batch export: row without custom field value emits empty cell', function (
         if (trim($line) === '') {
             continue;
         }
-        $cells = str_getcsv($line);
+        $cells = str_getcsv($line, escape: '\\');
         expect(count($cells))->toBe($colCount, "Column count mismatch: {$line}");
     }
 });
@@ -404,7 +404,7 @@ test('Box export: no custom field columns when no definitions exist', function (
     $csv = cfx_boxCsv();
 
     $lines = array_values(array_filter(explode("\n", trim($csv))));
-    $header = str_getcsv(array_shift($lines));
+    $header = str_getcsv(array_shift($lines), escape: '\\');
 
     expect($header)->toContain('Box number');
     expect($header)->toContain('Batch number');
@@ -434,7 +434,7 @@ test('Box export: row without custom field value emits empty cell', function ():
     $csv = cfx_boxCsv();
 
     $lines = array_values(array_filter(explode("\n", trim($csv))));
-    $header = str_getcsv(array_shift($lines));
+    $header = str_getcsv(array_shift($lines), escape: '\\');
     $colCount = count($header);
     expect($header)->toContain('Shelf location');
 
@@ -442,7 +442,7 @@ test('Box export: row without custom field value emits empty cell', function ():
         if (trim($line) === '') {
             continue;
         }
-        $cells = str_getcsv($line);
+        $cells = str_getcsv($line, escape: '\\');
         expect(count($cells))->toBe($colCount, "Column count mismatch: {$line}");
     }
 });
@@ -556,7 +556,7 @@ test('Volume export: boolean custom field renders as 1 or 0', function (): void 
     expect($csv)->toContain('Digitised?');
 
     $lines = array_values(array_filter(explode("\n", trim($csv))));
-    $header = str_getcsv(array_shift($lines));
+    $header = str_getcsv(array_shift($lines), escape: '\\');
     $colIdx = array_search('Digitised?', $header, true);
     expect($colIdx)->not->toBeFalse();
 
@@ -564,7 +564,7 @@ test('Volume export: boolean custom field renders as 1 or 0', function (): void 
         if (trim($line) === '') {
             continue;
         }
-        $cells = str_getcsv($line);
+        $cells = str_getcsv($line, escape: '\\');
         // Boolean false → '0'
         expect($cells[$colIdx])->toBe('0');
     }
@@ -581,7 +581,7 @@ test('Volume export: no custom field columns when no definitions exist', functio
     $csv = cfx_volumeCsv();
 
     $lines = array_values(array_filter(explode("\n", trim($csv))));
-    $header = str_getcsv(array_shift($lines));
+    $header = str_getcsv(array_shift($lines), escape: '\\');
 
     // Exactly 5 fixed columns.
     expect($header)->toContain('Document identifier');
@@ -614,7 +614,7 @@ test('Volume export: row without custom field value emits empty cell', function 
     $csv = cfx_volumeCsv();
 
     $lines = array_values(array_filter(explode("\n", trim($csv))));
-    $header = str_getcsv(array_shift($lines));
+    $header = str_getcsv(array_shift($lines), escape: '\\');
     $colCount = count($header);
     expect($header)->toContain('Catalogue note');
 
@@ -622,7 +622,7 @@ test('Volume export: row without custom field value emits empty cell', function 
         if (trim($line) === '') {
             continue;
         }
-        $cells = str_getcsv($line);
+        $cells = str_getcsv($line, escape: '\\');
         expect(count($cells))->toBe($colCount, "Column count mismatch: {$line}");
     }
 });

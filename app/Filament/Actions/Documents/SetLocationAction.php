@@ -90,12 +90,8 @@ final class SetLocationAction
                 // Tenant safety: a repository-scoped location can only be
                 // assigned to documents in the same repository. A global
                 // location (repository_id=null) can be assigned to any doc.
-                if ($location->repository_id !== null
-                    && (int) $location->repository_id !== (int) $doc->repository_id) {
-                    throw new \DomainException(
-                        'location belongs to a different repository'
-                    );
-                }
+                throw_if($location->repository_id !== null
+                    && (int) $location->repository_id !== (int) $doc->repository_id, \DomainException::class, 'location belongs to a different repository');
 
                 $doc->location_id = $location->getKey();
                 $doc->save();

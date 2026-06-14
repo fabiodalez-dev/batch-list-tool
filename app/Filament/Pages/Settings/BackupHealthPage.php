@@ -9,7 +9,6 @@ use App\Filament\Concerns\ExplainsPage;
 use App\Filament\Resources\BackupDestinationResource;
 use App\Models\BackupRun;
 use App\Settings\BackupSettings;
-use Carbon\Carbon;
 use Filament\Actions\Action;
 use Filament\Forms\Components\Checkbox;
 use Filament\Forms\Components\TextInput;
@@ -20,6 +19,7 @@ use Filament\Schemas\Schema;
 use Illuminate\Support\Collection;
 use Illuminate\Support\Facades\Artisan;
 use Illuminate\Support\Facades\Auth;
+use Illuminate\Support\Facades\Date;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Storage;
 use Illuminate\Validation\ValidationException;
@@ -99,7 +99,7 @@ class BackupHealthPage extends Page
     {
         abort_unless(static::canAccess(), 403);
 
-        $settings = app(BackupSettings::class);
+        $settings = resolve(BackupSettings::class);
 
         $this->form->fill([
             'keep_daily' => $settings->keep_daily,
@@ -153,7 +153,7 @@ class BackupHealthPage extends Page
 
         $state = $this->form->getState();
 
-        $settings = app(BackupSettings::class);
+        $settings = resolve(BackupSettings::class);
         $settings->keep_daily = (int) $state['keep_daily'];
         $settings->keep_weekly = (int) $state['keep_weekly'];
         $settings->keep_monthly = (int) $state['keep_monthly'];
@@ -203,7 +203,7 @@ class BackupHealthPage extends Page
                         'path' => $file,
                         'size' => $this->formatBytes($size),
                         'size_bytes' => $size,
-                        'date' => Carbon::createFromTimestamp($modified)->toDateTimeString(),
+                        'date' => Date::createFromTimestamp($modified)->toDateTimeString(),
                         'timestamp' => $modified,
                     ];
                 }
@@ -364,7 +364,7 @@ class BackupHealthPage extends Page
         // (local/ftp/sftp/s3) into a local temp file, so restoring from a
         // remote destination works too.
         try {
-            $run = app(RestoreDatabase::class)->restore($disk, $path, auth()->id());
+            $run = resolve(RestoreDatabase::class)->restore($disk, $path, auth()->id());
 
             Notification::make()
                 ->title('Database restored')
@@ -543,8 +543,8 @@ class BackupHealthPage extends Page
             return [
                 'ok' => true,
                 'message' => 'Backup found',
-                'file' => basename((string) $latest),
-                'date' => Carbon::createFromTimestamp($lastModified)->toDateTimeString(),
+                'file' => basename($latest),
+                'date' => Date::createFromTimestamp($lastModified)->toDateTimeString(),
                 'size' => $this->formatBytes($size),
             ];
         } catch (\Throwable) {

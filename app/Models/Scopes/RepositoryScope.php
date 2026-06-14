@@ -33,7 +33,7 @@ class RepositoryScope implements Scope
             return; // CLI / queue / unauthenticated → no scope
         }
 
-        $active = app(ActiveRepository::class)->id();
+        $active = resolve(ActiveRepository::class)->id();
 
         // Allowed set = pivot ∪ default_repository_id (shared source of truth,
         // so this scope can never diverge from ThroughBatchRepositoryScope /
@@ -52,7 +52,7 @@ class RepositoryScope implements Scope
             return;
         }
 
-        if (empty($allowed)) {
+        if ($allowed === []) {
             // User assigned to no repository → see nothing (fail closed).
             $builder->whereRaw('1 = 0');
 
@@ -63,7 +63,7 @@ class RepositoryScope implements Scope
         // stale/revoked active id (not in $allowed) is ignored and we fall
         // back to the full allowed set — never widen, never expose a forbidden
         // repo, never go empty on a bad id.
-        if ($active !== null && in_array($active, array_map('intval', $allowed), true)) {
+        if ($active !== null && in_array($active, array_map(intval(...), $allowed), true)) {
             $builder->where($model->getTable() . '.repository_id', $active);
 
             return;

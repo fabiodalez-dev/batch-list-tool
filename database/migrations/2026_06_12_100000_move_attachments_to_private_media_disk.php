@@ -59,7 +59,7 @@ return new class extends Migration
             // Move the physical file when present on the source and not yet on
             // the destination. Missing source files are tolerated (the DB row
             // is still flipped so the app resolves the new disk consistently).
-            if ($source !== null
+            if ($source instanceof Filesystem
                 && $source->exists($relativePath)
                 && ! $target->exists($relativePath)) {
                 $stream = $source->readStream($relativePath);

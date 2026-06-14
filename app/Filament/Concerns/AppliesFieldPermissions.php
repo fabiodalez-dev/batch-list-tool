@@ -138,7 +138,6 @@ trait AppliesFieldPermissions
                 return null;
             }
             $prop = $ref->getProperty($property);
-            $prop->setAccessible(true);
 
             return $prop->getValue($target);
         } catch (\Throwable) {

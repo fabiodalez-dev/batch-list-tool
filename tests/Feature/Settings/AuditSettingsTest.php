@@ -66,7 +66,7 @@ it('persists audit settings', function () {
     $this->actingAs($superAdmin);
 
     // Confirm initial state
-    $settings = app(AuditSettings::class);
+    $settings = resolve(AuditSettings::class);
     $settings->enabled = true;
     $settings->threshold = 0;
     $settings->save();
@@ -78,7 +78,7 @@ it('persists audit settings', function () {
         ->assertHasNoFormErrors()
         ->assertNotified();
 
-    $fresh = app(AuditSettings::class)->refresh();
+    $fresh = resolve(AuditSettings::class)->refresh();
     expect($fresh->enabled)->toBeFalse();
     expect($fresh->threshold)->toBe(5);
 });

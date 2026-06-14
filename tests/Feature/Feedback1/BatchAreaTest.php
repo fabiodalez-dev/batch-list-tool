@@ -228,7 +228,7 @@ it('A4: CSV export contains a Repository column header', function (): void {
     $csv = ltrim($csv, "\xEF\xBB\xBF");
 
     $firstLine = strtok($csv, "\n");
-    $headers = str_getcsv($firstLine);
+    $headers = str_getcsv($firstLine, escape: '\\');
 
     expect($headers)->toContain('Repository');
 });

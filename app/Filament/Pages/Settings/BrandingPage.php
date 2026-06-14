@@ -78,7 +78,7 @@ class BrandingPage extends Page
     {
         abort_unless(static::canAccess(), 403);
 
-        $settings = app(BrandingSettings::class);
+        $settings = resolve(BrandingSettings::class);
 
         $this->form->fill([
             'brand_name' => $settings->brand_name,
@@ -117,7 +117,7 @@ class BrandingPage extends Page
                         Placeholder::make('logo_preview')
                             ->label('Current logo')
                             ->content(function (): HtmlString|string {
-                                $path = app(BrandingSettings::class)->logo_path;
+                                $path = resolve(BrandingSettings::class)->logo_path;
 
                                 if (! $path || ! Storage::disk('public')->exists($path)) {
                                     return 'No logo set — the brand name is shown as text.';
@@ -143,7 +143,7 @@ class BrandingPage extends Page
                             ->helperText('Toggle on and save to remove the logo (brand name will be shown as text).')
                             ->dehydrated(false)
                             ->default(false)
-                            ->visible(fn (): bool => (bool) app(BrandingSettings::class)->logo_path),
+                            ->visible(fn (): bool => (bool) resolve(BrandingSettings::class)->logo_path),
                     ]),
             ]);
     }
@@ -156,7 +156,7 @@ class BrandingPage extends Page
 
         $state = $this->form->getState();
 
-        $settings = app(BrandingSettings::class);
+        $settings = resolve(BrandingSettings::class);
         $settings->brand_name = $state['brand_name'];
         $settings->logo_height = $state['logo_height'];
 
@@ -192,11 +192,11 @@ class BrandingPage extends Page
                 ->requiresConfirmation()
                 ->modalHeading('Remove logo')
                 ->modalDescription('This will clear the current logo. The brand name will be shown as text until a new logo is uploaded.')
-                ->visible(fn (): bool => (bool) app(BrandingSettings::class)->logo_path)
+                ->visible(fn (): bool => (bool) resolve(BrandingSettings::class)->logo_path)
                 ->action(function (): void {
                     abort_unless(static::canAccess(), 403);
 
-                    $settings = app(BrandingSettings::class);
+                    $settings = resolve(BrandingSettings::class);
                     $settings->logo_path = null;
                     $settings->save();
 

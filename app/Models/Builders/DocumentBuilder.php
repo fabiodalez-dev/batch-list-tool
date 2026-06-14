@@ -45,14 +45,10 @@ class DocumentBuilder extends Builder
      */
     public function update(array $values)
     {
-        if (array_key_exists('identifier', $values) && ! Document::shouldBypassAuditGuard()) {
-            throw new \LogicException(
-                'Bulk update of Document.identifier is forbidden — it bypasses '
-                . 'DocumentObserver and breaks the identifier_history audit trail '
-                . '(RFQ §3.1.5). Loop over models and update individually, or wrap '
-                . 'in Document::withoutAuditGuards(fn () => $query->update([...])).'
-            );
-        }
+        throw_if(array_key_exists('identifier', $values) && ! Document::shouldBypassAuditGuard(), \LogicException::class, 'Bulk update of Document.identifier is forbidden — it bypasses '
+        . 'DocumentObserver and breaks the identifier_history audit trail '
+        . '(RFQ §3.1.5). Loop over models and update individually, or wrap '
+        . 'in Document::withoutAuditGuards(fn () => $query->update([...])).');
 
         return parent::update($values);
     }

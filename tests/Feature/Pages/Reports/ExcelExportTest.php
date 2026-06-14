@@ -14,7 +14,6 @@ use App\Models\User;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Spatie\Permission\Models\Role;
 use Symfony\Component\HttpFoundation\BinaryFileResponse;
-use Symfony\Component\HttpFoundation\StreamedResponse;
 
 /**
  * RFQ §3.2 — Excel export support across reports.
@@ -96,7 +95,6 @@ test('exportXlsx on DocumentsByBatchReport produces a non-empty xlsx response', 
     xls_doc($repo->id, $series->id, ['batch_id' => $batch->id]);
 
     $page = new DocumentsByBatchReport;
-    /** @var BinaryFileResponse|StreamedResponse $resp */
     $resp = $page->exportXlsx();
 
     // BinaryFileResponse sets Content-Disposition with the xlsx filename.
@@ -139,7 +137,6 @@ test('xlsx contains the expected headers from getXlsxColumns()', function () {
     // Round-trip through GenericReportExport: build the exporter ourselves
     // and assert the in-memory headings + first row.
     $rowsMethod = new ReflectionMethod($page, 'collectRowsAsAssoc');
-    $rowsMethod->setAccessible(true);
     $rows = $rowsMethod->invoke($page);
 
     $exporter = new GenericReportExport($rows, $columns, 'Documents by batch');
@@ -179,7 +176,6 @@ test('xlsx export honours RepositoryScope (cross-tenant safety)', function () {
 
     $page = new DocumentsBySeriesReport;
     $method = new ReflectionMethod($page, 'collectRowsAsAssoc');
-    $method->setAccessible(true);
     /** @var array<int, array<string, mixed>> $rows */
     $rows = $method->invoke($page);
 

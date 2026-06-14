@@ -11,6 +11,7 @@ use Filament\Actions\BulkAction;
 use Filament\Notifications\Notification;
 use Illuminate\Database\Eloquent\Collection as EloquentCollection;
 use Illuminate\Support\Carbon;
+use Illuminate\Support\Facades\Date;
 
 /**
  * Action #6 — Mark document(s) as PERM_OUT (permanently transferred out).
@@ -107,7 +108,7 @@ final class MarkPermOutAction
             // Normalise to Carbon defensively — the value may still be a raw
             // string if the cast has not been triggered on a freshly-filled
             // model — so the MAX comparison is always date-on-date.
-            $date = Carbon::parse($d->disinfestation_date);
+            $date = Date::parse($d->disinfestation_date);
             if (! isset($maxDateByBox[$boxId]) || $date->greaterThan($maxDateByBox[$boxId])) {
                 $maxDateByBox[$boxId] = $date;
             }

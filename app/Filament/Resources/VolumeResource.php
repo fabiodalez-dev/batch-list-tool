@@ -181,11 +181,11 @@ class VolumeResource extends Resource
                 Section::make('Custom fields')
                     ->columns($twoCols)
                     ->schema(static function (?Volume $record): array {
-                        if ($record === null) {
+                        if (! $record instanceof Volume) {
                             return [];
                         }
                         $data = $record->getCustomFieldData();
-                        if (empty($data)) {
+                        if ($data === []) {
                             return [];
                         }
                         $entries = [];
@@ -209,7 +209,7 @@ class VolumeResource extends Resource
                         return $entries;
                     })
                     ->visible(static function (?Volume $record): bool {
-                        if ($record === null) {
+                        if (! $record instanceof Volume) {
                             return false;
                         }
                         $data = $record->getCustomFieldData();

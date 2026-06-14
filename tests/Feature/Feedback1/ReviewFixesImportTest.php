@@ -51,7 +51,7 @@ uses(RefreshDatabase::class);
 function rfi_repo(string $prefix = 'RFI'): Repository
 {
     return Repository::factory()->create([
-        'code' => $prefix . '_' . strtoupper(substr((string) uniqid(), -6)),
+        'code' => $prefix . '_' . strtoupper(substr(uniqid(), -6)),
     ]);
 }
 
@@ -385,8 +385,8 @@ it('BUG-03: after a wizard-path import completes, a database notification exists
         $notification = Notification::make()
             ->title($fresh->importer::getCompletedNotificationTitle($fresh))
             ->body($fresh->importer::getCompletedNotificationBody($fresh))
-            ->when(
-                ! $failedRowsCount,
+            ->unless(
+                $failedRowsCount,
                 fn (Notification $n) => $n->success(),
             );
 

@@ -50,7 +50,7 @@ class SeriesImporter extends Importer
                     // — split on the colon and keep the part before it.
                     $candidate = trim($state);
                     if (str_contains($candidate, ':')) {
-                        $candidate = trim((string) explode(':', $candidate, 2)[0]);
+                        $candidate = trim(explode(':', $candidate, 2)[0]);
                     }
                     // Schema limit: VARCHAR(16). Anything longer is a typo.
                     $candidate = mb_substr($candidate, 0, 16);

@@ -38,7 +38,7 @@ function moveBoxActor(): User
 function invokeMoveBox(Box $box, array $data): void
 {
     $action = MoveBoxToLocationAction::make();
-    $closure = (new ReflectionObject($action))->getMethod('getActionFunction')->invoke($action);
+    $closure = new ReflectionObject($action)->getMethod('getActionFunction')->invoke($action);
 
     // The action closure is declared as fn (Box $record, array $data); call it
     // POSITIONALLY (the container's named-arg mapping does not bind to a raw

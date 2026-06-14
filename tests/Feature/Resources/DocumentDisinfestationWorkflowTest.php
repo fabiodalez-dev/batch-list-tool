@@ -98,13 +98,9 @@ function disinfest_asColl(Document ...$docs): EloquentCollection
  */
 function disinfest_runAction(Action|BulkAction $action, array $named): void
 {
-    $closure = (function () {
-        return $this->action;
-    })->call($action);
+    $closure = (fn () => $this->action)->call($action);
 
-    if (! $closure instanceof Closure) {
-        throw new RuntimeException('Action closure missing');
-    }
+    throw_unless($closure instanceof Closure, RuntimeException::class, 'Action closure missing');
 
     $ref = new ReflectionFunction($closure);
     $args = [];
@@ -260,9 +256,7 @@ test('SendToDisinfestationAction bulk is atomic per row (one failure does not ro
     $brokenId = $broken->id;
 
     Document::saving(function (Document $d) use ($brokenId): void {
-        if ($d->getKey() === $brokenId) {
-            throw new RuntimeException('intentional test failure on broken row');
-        }
+        throw_if($d->getKey() === $brokenId, RuntimeException::class, 'intentional test failure on broken row');
     });
 
     try {

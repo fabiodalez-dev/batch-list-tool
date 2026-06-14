@@ -7,7 +7,6 @@ use App\Models\CustomFieldDefinition;
 use App\Models\Document;
 use App\Models\Repository;
 use App\Models\Series;
-use App\Models\User;
 use App\Support\ActiveRepository;
 use App\Support\BulkImport\TemplateGenerator;
 use App\Support\CustomFields\CustomFieldResolver;
@@ -92,7 +91,6 @@ function cfe2e_downloadTemplate(string $entity): array
 }
 
 it('writes the active repository custom-field column into the real Document .xlsx and imports its value', function () {
-    /** @var User $admin */
     $admin = bl_actor('super_admin');
     /** @var Repository $repo */
     $repo = $admin->repositories()->first();

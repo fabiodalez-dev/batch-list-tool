@@ -219,22 +219,20 @@ class Reports extends Page
         $counts = Cache::remember(
             "reports:landing:counts:u={$uid}",
             now()->addSeconds(60),
-            function (): array {
-                return [
-                    'documents' => Document::query()->count(),
-                    'pending' => Document::query()
-                        ->whereNull('disinfestation_date')
-                        ->where(function ($q): void {
-                            $q->whereNull('current_box_id')
-                                ->orWhereHas('currentBox', function ($q): void {
-                                    $q->where('barcode_status', '!=', 'PERM_OUT');
-                                });
-                        })
-                        ->count(),
-                    'movements' => BoxMovement::query()->count(),
-                    'flags' => DocumentFlag::query()->count(),
-                ];
-            },
+            fn (): array => [
+                'documents' => Document::query()->count(),
+                'pending' => Document::query()
+                    ->whereNull('disinfestation_date')
+                    ->where(function ($q): void {
+                        $q->whereNull('current_box_id')
+                            ->orWhereHas('currentBox', function ($q): void {
+                                $q->where('barcode_status', '!=', 'PERM_OUT');
+                            });
+                    })
+                    ->count(),
+                'movements' => BoxMovement::query()->count(),
+                'flags' => DocumentFlag::query()->count(),
+            ],
         );
 
         return [

@@ -25,7 +25,7 @@ use Illuminate\Support\Collection;
 function backupScheduledEvents(string $command): Collection
 {
     /** @var Schedule $schedule */
-    $schedule = app(Schedule::class);
+    $schedule = resolve(Schedule::class);
 
     return collect($schedule->events())
         ->filter(fn ($event) => is_string($event->command)

@@ -24,6 +24,7 @@ use Filament\Tables\Filters\TernaryFilter;
 use Filament\Tables\Table;
 use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Support\HtmlString;
+use Spatie\MediaLibrary\MediaCollections\Models\Collections\MediaCollection;
 
 class AccessionResource extends Resource
 {
@@ -246,7 +247,7 @@ class AccessionResource extends Resource
                             ->state(function (?Accession $record): ?HtmlString {
                                 $media = $record?->getMedia('attachments');
 
-                                if ($media === null || $media->isEmpty()) {
+                                if (! $media instanceof MediaCollection || $media->isEmpty()) {
                                     return null;
                                 }
 
