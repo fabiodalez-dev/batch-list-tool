@@ -34,11 +34,28 @@ class ImportBatchList extends Command
 {
     private const WINDOW = 2000;
 
+    /**
+     * Tables emptied by --truncate-data. EXCLUDES users, roles, permissions,
+     * model_has_roles, the lookup vocabularies, repositories and custom-field
+     * DEFINITIONS — re-importing data must never disturb accounts or config.
+     * Order is irrelevant (FK checks are disabled around the truncate).
+     *
+     * @var array<int, string>
+     */
+    private const DATA_TABLES = [
+        'document_authority', 'accession_batch', 'box_movements',
+        'document_location_history', 'document_barcode_history',
+        'document_identifier_history', 'box_barcode_history', 'box_seal_number_history',
+        'custom_field_values',
+        'documents', 'boxes', 'accessions', 'batches', 'series', 'authorities',
+    ];
+
     protected $signature = 'nra:import-batch-list
         {--file= : Path to the New_BATCH_LIST xlsx}
         {--sheet=BATCH_LIST : Worksheet name}
         {--limit=0 : Import at most N data rows (0 = all)}
         {--dry-run : Roll everything back at the end and print a field-level spot check}
+        {--truncate-data : Empty ONLY the data tables (documents/boxes/batches/accessions/series/authorities + pivots/history) before importing — NEVER touches users, roles, permissions or lookups}
         {--repo=NRA : Repository code to attach rows to}';
 
     protected $description = 'Header-driven import of the NAF New_BATCH_LIST workbook (Wizard-consistent column mapping).';
@@ -88,6 +105,20 @@ class ImportBatchList extends Command
 
         $limit = (int) $this->option('limit');
         $dry = (bool) $this->option('dry-run');
+
+        // Optional selective wipe of the DATA tables only. Never in dry-run.
+        // Guarded by a confirmation unless --no-interaction (CI/automation).
+        if ($this->option('truncate-data') && ! $dry) {
+            $this->warn('--truncate-data will EMPTY: ' . implode(', ', self::DATA_TABLES));
+            $this->info('It will NOT touch: users, roles, permissions, lookups, repositories.');
+            if ($this->input->isInteractive() && ! $this->confirm('Proceed with truncating the data tables?', false)) {
+                $this->info('Aborted — nothing truncated, nothing imported.');
+
+                return self::SUCCESS;
+            }
+            $this->truncateDataTables();
+            $this->info('Data tables truncated (accounts and lookups preserved).');
+        }
 
         $batches = [];
         $series = [];
@@ -288,6 +319,24 @@ class ImportBatchList extends Command
         }
 
         return self::SUCCESS;
+    }
+
+    /* ── Selective wipe ──────────────────────────────────────────────────── */
+
+    private function truncateDataTables(): void
+    {
+        $driver = DB::connection()->getDriverName();
+        if ($driver === 'mysql') {
+            DB::statement('SET FOREIGN_KEY_CHECKS=0');
+        }
+        foreach (self::DATA_TABLES as $table) {
+            if (DB::getSchemaBuilder()->hasTable($table)) {
+                DB::table($table)->truncate();
+            }
+        }
+        if ($driver === 'mysql') {
+            DB::statement('SET FOREIGN_KEY_CHECKS=1');
+        }
     }
 
     /* ── Reading ─────────────────────────────────────────────────────────── */
