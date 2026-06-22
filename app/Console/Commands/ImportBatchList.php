@@ -292,9 +292,27 @@ class ImportBatchList extends Command
 
     /* ── Reading ─────────────────────────────────────────────────────────── */
 
+    private function isCsv(string $file): bool
+    {
+        return strtolower(pathinfo($file, PATHINFO_EXTENSION)) === 'csv';
+    }
+
     /** @return array<int, string|null> */
     private function readHeader(string $file, string $sheet): array
     {
+        // CSV is read by streaming (fgetcsv) — memory-safe regardless of size,
+        // unlike PhpSpreadsheet which loads the whole workbook and is killed by
+        // shared-host (CloudLinux LVE) memory limits on large xlsx files.
+        if ($this->isCsv($file)) {
+            $fh = fopen($file, 'r');
+            $header = $fh ? fgetcsv($fh) : [];
+            if ($fh) {
+                fclose($fh);
+            }
+
+            return is_array($header) ? $header : [];
+        }
+
         $reader = new XlsxReader;
         $reader->setReadDataOnly(true);
         $reader->setReadFilter(new class implements IReadFilter
@@ -316,6 +334,29 @@ class ImportBatchList extends Command
      */
     private function rowWindows(string $file, string $sheet, int $limit): \Generator
     {
+        // CSV: stream row-by-row with fgetcsv (constant memory).
+        if ($this->isCsv($file)) {
+            $fh = fopen($file, 'r');
+            if ($fh === false) {
+                return;
+            }
+            fgetcsv($fh); // skip header
+            $emitted = 0;
+            while (($row = fgetcsv($fh)) !== false) {
+                if ($this->isBlank($row)) {
+                    continue;
+                }
+                yield $row;
+                $emitted++;
+                if ($limit > 0 && $emitted >= $limit) {
+                    break;
+                }
+            }
+            fclose($fh);
+
+            return;
+        }
+
         // True total row count for the sheet WITHOUT loading the data — a
         // per-window getHighestDataRow() only sees the filtered window and would
         // stop the loop after the first 2000 rows.
