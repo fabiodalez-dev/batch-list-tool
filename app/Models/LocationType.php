@@ -5,6 +5,8 @@ namespace App\Models;
 use App\Models\Lookup\Concerns\HasLookupOptions;
 use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Database\Eloquent\Model;
+use OwenIt\Auditing\Auditable;
+use OwenIt\Auditing\Contracts\Auditable as AuditableContract;
 
 /**
  * Controlled vocabulary for Location types (Feedback1 gaps — editable
@@ -14,8 +16,9 @@ use Illuminate\Database\Eloquent\Model;
  * create_location_types migration; the `code` (lowercase, e.g. 'room') is
  * what {@see Location::$type} stores, so existing rows stay compatible.
  */
-class LocationType extends Model
+class LocationType extends Model implements AuditableContract
 {
+    use Auditable;
     use HasLookupOptions;
 
     protected $table = 'location_types';

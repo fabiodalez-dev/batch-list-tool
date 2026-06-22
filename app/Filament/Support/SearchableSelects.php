@@ -331,14 +331,18 @@ final class SearchableSelects
             ->searchable(['batch_number'])
             ->preload(false)
             ->getOptionLabelFromRecordUsing(fn (Batch $r): string => self::batchLabel($r))
-            ->getSearchResultsUsing(fn (string $search): array => self::batchSearchResults($search))
+            // NAF Feedback-1 comment #9 — only ACTIVE batches are offered as a
+            // selectable parent here (Box / Document forms). An already-selected
+            // batch that later went inactive still renders via the label
+            // resolver below, so editing an existing record is unaffected.
+            ->getSearchResultsUsing(fn (string $search): array => self::batchSearchResults($search, activeOnly: true))
             ->getOptionLabelUsing(fn ($value): ?string => self::batchOptionLabel($value));
     }
 
     /**
      * @return array<int|string, string>
      */
-    public static function batchSearchResults(string $search, ?int $repositoryId = null): array
+    public static function batchSearchResults(string $search, ?int $repositoryId = null, bool $activeOnly = false): array
     {
         $search = trim($search);
 
@@ -348,6 +352,13 @@ final class SearchableSelects
         // attachable (the pivot guard would reject cross-repo rows anyway).
         if ($repositoryId !== null) {
             $query->where('repository_id', $repositoryId);
+        }
+
+        // NAF Feedback-1 comment #9 — hide inactive batches from parent-selection
+        // autocompletes (Box / Document). Not applied to the Accession↔Batch
+        // multi-select, which passes activeOnly=false.
+        if ($activeOnly) {
+            $query->where('is_active', true);
         }
 
         if ($search === '') {

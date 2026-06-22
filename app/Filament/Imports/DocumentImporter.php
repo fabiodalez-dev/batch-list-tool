@@ -551,6 +551,13 @@ class DocumentImporter extends Importer
                 })
                 ->rules(['nullable', 'string', 'max:64']),
 
+            // NAF Feedback-1 DECISION 5 — `part_number` (parity with
+            // AccessionRowImporter so the mass-import template supports it too).
+            ImportColumn::make('part_number')
+                ->label('Part Number')
+                ->guess(['Part Number', 'part_number', 'Part No', 'Part'])
+                ->rules(['nullable', 'string', 'max:64']),
+
             // ── Dates ───────────────────────────────────────────────────
             ImportColumn::make('dates')
                 ->label('Dates (free-text)')

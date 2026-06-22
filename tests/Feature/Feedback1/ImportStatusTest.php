@@ -136,3 +136,24 @@ it('surfaces processed and total row counts', function () {
         ->and($found['successful_rows'])->toBe(16)
         ->and($found['failed_rows'])->toBe(4); // total - successful
 });
+
+// ---------------------------------------------------------------------------
+// 5. Stalled detection — a long-pending import flags the dead queue worker
+//    (NAF Feedback-1 comment #3: "did not import at all / not shown")
+// ---------------------------------------------------------------------------
+
+it('flags a long-pending import as stalled but not a fresh one', function () {
+    $admin = is_makeUser('admin');
+    $this->actingAs($admin);
+
+    $fresh = is_makeImport($admin, ['file_name' => 'fresh.csv']); // created now, pending
+    $old = is_makeImport($admin, ['file_name' => 'old.csv']);     // pending, but aged below
+    $old->forceFill(['created_at' => now()->subMinutes(10)])->saveQuietly();
+    $done = is_makeImport($admin, ['file_name' => 'done.csv', 'completed_at' => now()->timestamp]);
+
+    $imports = collect((new ImportStatus)->getImports())->keyBy('id');
+
+    expect($imports[$fresh->id]['is_stalled'])->toBeFalse()
+        ->and($imports[$old->id]['is_stalled'])->toBeTrue()
+        ->and($imports[$done->id]['is_stalled'])->toBeFalse();
+});

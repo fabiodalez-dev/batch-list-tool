@@ -174,6 +174,26 @@ class BatchResource extends Resource
                         SearchableSelects::accessionsMulti('accessions')
                             ->label('Linked Accessions')
                             ->helperText('Link one or more accessions to this batch. Description is auto-derived from accession titles when left blank.')
+                            // NAF Feedback-1 comment #10 — a cross-repository link
+                            // makes the AccessionBatch pivot guard throw a
+                            // DomainException at save time, which surfaced as an
+                            // opaque error. Validate the selection up-front so the
+                            // operator gets a clear, field-level message instead.
+                            ->rules([
+                                fn (Get $get): \Closure => function (string $attribute, mixed $value, \Closure $fail) use ($get): void {
+                                    $repoId = $get('repository_id');
+                                    if ($repoId === null || $repoId === '' || empty($value)) {
+                                        return;
+                                    }
+                                    $foreign = Accession::query()
+                                        ->whereIn('id', (array) $value)
+                                        ->where('repository_id', '!=', (int) $repoId)
+                                        ->exists();
+                                    if ($foreign) {
+                                        $fail('All linked accessions must belong to the selected repository.');
+                                    }
+                                },
+                            ])
                             // Live so description can be re-derived when accessions change.
                             ->live()
                             ->afterStateUpdated(function (Set $set, Get $get, array $state): void {
@@ -228,8 +248,14 @@ class BatchResource extends Resource
                             ->default(fn () => auth()->user()?->default_repository_id)),
                         // A10 (spec) — is_active is non-mandatory (default true);
                         // removing ->required() so the asterisk is gone.
+                        // NAF Feedback-1 comment #9 — explain what the flag does:
+                        // an inactive batch stays here (editable, reactivatable)
+                        // but is no longer offered when assigning a parent batch
+                        // to new Boxes or Documents.
                         $g(Forms\Components\Toggle::make('is_active')
-                            ->default(true)),
+                            ->default(true)
+                            ->helperText('Inactive batches stay listed and editable here, '
+                                . 'but are hidden from the batch picker when creating new Boxes or Documents.')),
                     ]),
 
                 // Custom fields (EAV, per-repository).

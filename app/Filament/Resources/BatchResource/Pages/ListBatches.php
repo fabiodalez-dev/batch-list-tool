@@ -137,6 +137,9 @@ class ListBatches extends ListRecords
             FullImportAction::make()
                 ->importer(BatchImporter::class)
                 ->label('Import Excel / CSV')
+                // NAF Feedback-1 (Batches page) — the upload step should read
+                // "Upload a Excel/CSV file".
+                ->modalHeading('Upload a Excel/CSV file')
                 ->icon('heroicon-o-arrow-up-tray')
                 ->color('gray')
                 ->chunkSize(500)

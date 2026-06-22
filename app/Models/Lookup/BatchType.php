@@ -5,13 +5,16 @@ namespace App\Models\Lookup;
 use App\Models\Lookup\Concerns\HasLookupOptions;
 use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Database\Eloquent\Model;
+use OwenIt\Auditing\Auditable;
+use OwenIt\Auditing\Contracts\Auditable as AuditableContract;
 
 /**
  * Controlled vocabulary for batch types (RFQ §3.1.11).
  * Seeded from the `batches.type` enum (MAIN_COLLECTION / NOTARY_ACCESSION).
  */
-class BatchType extends Model
+class BatchType extends Model implements AuditableContract
 {
+    use Auditable;
     use HasLookupOptions;
 
     protected $table = 'batch_types';

@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace App\Filament\Resources\Lookups;
 
 use App\Filament\Resources\Lookups\BatchTypeResource\Pages;
+use App\Filament\Support\CreatorColumn;
 use App\Models\Lookup\BatchType;
 use Filament\Actions\Action;
 use Filament\Actions\BulkActionGroup;
@@ -32,6 +33,14 @@ class BatchTypeResource extends Resource
     protected static ?int $navigationSort = 60;
 
     protected static ?string $navigationLabel = 'Accession Types';
+
+    // NAF Feedback-1 comment #2: the underlying model/table is still `BatchType`
+    // for backward-compatibility, but every user-facing label (page heading,
+    // breadcrumb, create button) must read "Accession Type(s)". Without these
+    // Filament derives the heading from the model class → "Batch Types".
+    protected static ?string $modelLabel = 'Accession Type';
+
+    protected static ?string $pluralModelLabel = 'Accession Types';
 
     protected static ?string $recordTitleAttribute = 'label';
 
@@ -113,6 +122,8 @@ class BatchTypeResource extends Resource
                 Tables\Columns\IconColumn::make('is_active')
                     ->boolean()
                     ->sortable(),
+                // NAF Feedback-1 comment #4 — show who created the record.
+                CreatorColumn::make(),
                 Tables\Columns\TextColumn::make('updated_at')
                     ->dateTime()
                     ->sortable()

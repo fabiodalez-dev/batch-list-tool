@@ -6,6 +6,7 @@ use App\Filament\Resources\AccessionResource\Pages;
 use App\Filament\Support\CreatorColumn;
 use App\Filament\Support\SearchableSelects;
 use App\Models\Accession;
+use App\Models\Batch;
 use App\Models\Repository;
 use Filament\Actions\BulkActionGroup;
 use Filament\Actions\DeleteBulkAction;
@@ -16,6 +17,7 @@ use Filament\Forms\Components\SpatieMediaLibraryFileUpload;
 use Filament\Infolists\Components\TextEntry;
 use Filament\Resources\Resource;
 use Filament\Schemas\Components\Section;
+use Filament\Schemas\Components\Utilities\Get;
 use Filament\Schemas\Schema;
 use Filament\Tables;
 use Filament\Tables\Enums\FiltersLayout;
@@ -95,6 +97,24 @@ class AccessionResource extends Resource
                         // restriction is explicitly REMOVED per spec B4).
                         SearchableSelects::batchesMulti('batches')
                             ->label('Batches')
+                            // NAF Feedback-1 comment #10 (symmetric guard) — reject a
+                            // cross-repository batch link up-front so the AccessionBatch
+                            // pivot guard never throws an opaque DomainException at save.
+                            ->rules([
+                                fn (Get $get): \Closure => function (string $attribute, mixed $value, \Closure $fail) use ($get): void {
+                                    $repoId = $get('repository_id');
+                                    if ($repoId === null || $repoId === '' || empty($value)) {
+                                        return;
+                                    }
+                                    $foreign = Batch::query()
+                                        ->whereIn('id', (array) $value)
+                                        ->where('repository_id', '!=', (int) $repoId)
+                                        ->exists();
+                                    if ($foreign) {
+                                        $fail('All linked batches must belong to the selected repository.');
+                                    }
+                                },
+                            ])
                             ->columnSpanFull(),
                         // Repository dropdown: scoped to the user's assigned tenants.
                         // Same tenant-scoping closure as before; only the search/label
@@ -308,16 +328,19 @@ class AccessionResource extends Resource
                     ->label('Accession Number')
                     ->searchable()
                     ->sortable()
-                    ->placeholder('—'),
+                    ->placeholder('—')
+                    ->toggleable(),
                 // A3 — label is already "Accession Date" (capitalised); A5 — sortable.
                 Tables\Columns\TextColumn::make('accession_date')
                     ->label('Accession Date')
                     ->date()
-                    ->sortable(),
+                    ->sortable()
+                    ->toggleable(),
                 // A5 — sortable on the related column.
                 Tables\Columns\TextColumn::make('authority.surname')
                     ->label('Authority')
-                    ->sortable(),
+                    ->sortable()
+                    ->toggleable(),
                 // Wave B (B4) — accession may be linked to multiple batches (N:N).
                 // The list is rendered as comma-separated batch numbers. Not sortable
                 // (no single column to order by across the N:N) but togglable.
@@ -333,7 +356,8 @@ class AccessionResource extends Resource
                 // A5 — sortable on repository name.
                 Tables\Columns\TextColumn::make('repository.name')
                     ->label('Repository')
-                    ->sortable(),
+                    ->sortable()
+                    ->toggleable(),
                 // A9 — Inputter column (record creator via audit trail).
                 // Toggleable, default visible, not sortable (cross-table sort).
                 CreatorColumn::make(),

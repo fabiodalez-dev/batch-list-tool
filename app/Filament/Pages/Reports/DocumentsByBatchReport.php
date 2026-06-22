@@ -94,7 +94,7 @@ class DocumentsByBatchReport extends Page implements HasTable
             ->filtersFormColumns(2)
             ->filters([
                 Tables\Filters\SelectFilter::make('batch_type')
-                    ->label('Batch type')
+                    ->label('Accession type')
                     ->options([
                         'MAIN_COLLECTION' => 'Main collection',
                         'NOTARY_ACCESSION' => 'Notary accession',

@@ -82,6 +82,13 @@ class AdminPanelProvider extends PanelProvider
                 PanelsRenderHook::GLOBAL_SEARCH_AFTER,
                 fn (): View => view('filament.topbar.repository-switcher'),
             )
+            // NAF Feedback-1 (Documents page) — synced top horizontal scrollbar
+            // for wide tables (the bottom-only scrollbar forced staff to scroll
+            // to the end of a long grid first). Progressive enhancement.
+            ->renderHook(
+                PanelsRenderHook::BODY_END,
+                fn (): View => view('filament.partials.wide-table-top-scroll'),
+            )
             // Brand palette — NAf slate green. 500 step (#4A6F77) is the
             // official "ink-chromatography" green from the NRA & NAf 2024
             // brand guidelines. Steps mirror --brand-* in

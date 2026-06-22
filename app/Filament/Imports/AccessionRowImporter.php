@@ -20,6 +20,7 @@ use App\Support\BulkImport\EntityResolver;
 use App\Support\BulkImport\SpreadsheetParsers;
 use App\Support\BulkImport\TemplateGenerator;
 use App\Support\CustomFields\CustomFieldResolver;
+use App\Support\Import\BatchListColumnMap;
 use Filament\Actions\Imports\ImportColumn;
 use Filament\Actions\Imports\Importer;
 use Filament\Actions\Imports\Models\Import;
@@ -216,14 +217,29 @@ class AccessionRowImporter extends Importer
             return new Document;
         }
 
-        $q = Document::query()
+        // withTrashed() first as a static call so the soft-delete scope is typed
+        // on the Document model (the custom DocumentBuilder does not re-expose it
+        // on a chained instance). Same query, satisfies static analysis.
+        $q = Document::withTrashed()
             ->withoutGlobalScope(RepositoryScope::class)
             ->where('identifier', trim((string) $identifier));
         if ($repoId !== null) {
             $q->where('repository_id', $repoId);
         }
 
-        $record = $q->first() ?? new Document;
+        $record = $q->first();
+        if ($record === null) {
+            return new Document;
+        }
+
+        // Soft-deleted document re-import: restore + update in place instead of
+        // inserting a colliding new row (NAF Feedback-1 comment #3).
+        if ($record->trashed()) {
+            $record->restore();
+
+            return $record;
+        }
+
         $this->skipIfDuplicate($record);
 
         return $record;
@@ -968,7 +984,7 @@ class AccessionRowImporter extends Importer
             // 'Date Range' is also added to the dates column guess (see below).
             ImportColumn::make('authority_name')
                 ->label('Authority Name')
-                ->guess(['Authority Name', 'authority_name', 'Given Name', 'Creator Name', 'Notary Name', 'Notary'])
+                ->guess(['Authority Name', 'authority_name', 'Given Name', 'Creator Name', 'Notary Name', ...BatchListColumnMap::aliases('creator')])
                 ->fillRecordUsing(function (Document $record, ?string $state): void {
                     $key = spl_object_id($record);
                     static::$rowAuthorityStash[$key]['names'] = $state ?? '';
@@ -1092,7 +1108,7 @@ class AccessionRowImporter extends Importer
             // cleanly here instead of crashing in the model `saving` hook.
             ImportColumn::make('current_box_type')
                 ->label('Current Box Type')
-                ->guess(['Current Box Type', 'current_box_type'])
+                ->guess([...BatchListColumnMap::aliases('current_box_type'), 'Current Box Type', 'current_box_type'])
                 ->fillRecordUsing(function (Document $record, ?string $state): void {
                     if ($state === null || trim($state) === '') {
                         return;
@@ -1119,7 +1135,7 @@ class AccessionRowImporter extends Importer
             // Template column header is lowercase 'identifier' (NAf convention).
             ImportColumn::make('identifier')
                 ->label('Identifier')
-                ->guess(['identifier', 'Identifier', 'Document Identifier', 'Doc ID'])
+                ->guess([...BatchListColumnMap::aliases('identifier'), 'Document Identifier', 'Doc ID'])
                 ->rules(['nullable', 'string', 'max:64']),
 
             ImportColumn::make('document_type')
@@ -1151,7 +1167,7 @@ class AccessionRowImporter extends Importer
             // Template column header is 'Volume No' (NAf Feedback 1 convention).
             ImportColumn::make('volume_number')
                 ->label('Volume Number')
-                ->guess(['Volume No', 'Volume Number', 'Volume', 'volume_number', 'Volume Label', 'volume_label'])
+                ->guess([...BatchListColumnMap::aliases('volume_number'), 'volume_number', 'Volume Label', 'volume_label'])
                 // F-005: normalise Excel float artefacts ('2.0' → '2') while
                 // keeping every other value verbatim — including '180A/181',
                 // '18+20', leading-zero volumes ('007') and genuine decimals

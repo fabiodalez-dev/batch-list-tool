@@ -75,6 +75,12 @@
                                     <span title="{{ \Carbon\Carbon::createFromTimestamp($row['completed_at'])->toDateTimeString() }}">
                                         {{ \Carbon\Carbon::createFromTimestamp($row['completed_at'])->diffForHumans() }}
                                     </span>
+                                @elseif (!empty($row['is_stalled']))
+                                    <span class="inline-flex items-center gap-1 text-red-600 dark:text-red-400"
+                                          title="Pending for over 5 minutes. The queue worker is probably not running — start it with `php artisan queue:work`.">
+                                        <x-heroicon-o-exclamation-triangle class="h-3.5 w-3.5" />
+                                        Stalled — queue worker?
+                                    </span>
                                 @else
                                     <span class="inline-flex items-center gap-1 text-amber-600 dark:text-amber-400">
                                         <x-heroicon-o-clock class="h-3.5 w-3.5" />

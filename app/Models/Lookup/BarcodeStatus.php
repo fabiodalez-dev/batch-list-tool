@@ -6,13 +6,16 @@ use App\Models\Box;
 use App\Models\Lookup\Concerns\HasLookupOptions;
 use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Database\Eloquent\Model;
+use OwenIt\Auditing\Auditable;
+use OwenIt\Auditing\Contracts\Auditable as AuditableContract;
 
 /**
  * Controlled vocabulary for box barcode statuses (RFQ §3.1.11).
  * Seeded from {@see Box::BARCODE_STATUSES}.
  */
-class BarcodeStatus extends Model
+class BarcodeStatus extends Model implements AuditableContract
 {
+    use Auditable;
     use HasLookupOptions;
 
     protected $table = 'barcode_statuses';

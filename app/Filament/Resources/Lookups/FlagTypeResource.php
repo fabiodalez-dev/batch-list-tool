@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace App\Filament\Resources\Lookups;
 
 use App\Filament\Resources\Lookups\FlagTypeResource\Pages;
+use App\Filament\Support\CreatorColumn;
 use App\Models\Lookup\FlagType;
 use Filament\Actions\Action;
 use Filament\Actions\BulkActionGroup;
@@ -114,10 +115,13 @@ class FlagTypeResource extends Resource
                     ->sortable(),
                 Tables\Columns\TextColumn::make('colour')
                     ->label('Colour')
-                    ->placeholder('—'),
+                    ->placeholder('—')
+                    ->sortable(),
                 Tables\Columns\IconColumn::make('is_active')
                     ->boolean()
                     ->sortable(),
+                // NAF Feedback-1 comment #4 — show who created the record.
+                CreatorColumn::make(),
                 Tables\Columns\TextColumn::make('updated_at')
                     ->dateTime()
                     ->sortable()
