@@ -86,6 +86,16 @@ class ImportStatus extends Page
             ->map(function (Import $import): array {
                 $failedCount = $import->total_rows - $import->successful_rows;
 
+                // An import that has been "Pending" (completed_at IS NULL) for
+                // more than a few minutes almost always means the queue worker
+                // is not running (QUEUE_CONNECTION=database needs `queue:work`).
+                // Flag it so the operator understands why nothing appears to
+                // happen instead of silently waiting (NAF Feedback-1 comment #3:
+                // "it did not import at all and was not shown on the page").
+                $isStalled = $import->completed_at === null
+                    && $import->created_at !== null
+                    && $import->created_at->lt(now()->subMinutes(5));
+
                 // Filament registers the download route as a signed URL keyed
                 // by the import id and an auth-guard parameter.  We generate
                 // it on the server (signed) so it is ready to embed as a link.
@@ -135,6 +145,7 @@ class ImportStatus extends Page
                     'successful_rows' => $import->successful_rows,
                     'failed_rows' => $failedCount,
                     'completed_at' => $import->completed_at,
+                    'is_stalled' => $isStalled,
                     'inputter' => $inputterName,
                     'failed_download' => $failedDownloadUrl,
                 ];

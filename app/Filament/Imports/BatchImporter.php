@@ -88,6 +88,14 @@ class BatchImporter extends Importer
      * super_admin / admin privileges can legitimately update batches in any
      * tenant — the BelongsToRepository hook does the real tenancy check
      * when we call save().
+     *
+     * Soft-deletes: Batch uses SoftDeletes and the (batch_number,
+     * repository_id) unique index covers trashed rows. If the operator
+     * imported a file, deleted a created batch, then re-imported the same
+     * file, a fresh INSERT would collide with the soft-deleted row and fail
+     * the row with an opaque SQL error (NAF Feedback-1 comment #3). We
+     * therefore match WITH trashed rows and restore a soft-deleted hit so the
+     * re-import un-deletes and updates it in place instead of inserting.
      */
     public function resolveRecord(): ?Batch
     {
@@ -96,10 +104,27 @@ class BatchImporter extends Importer
             return new Batch;
         }
 
+        /** @var Batch|null $record */
         $record = Batch::query()
             ->withoutGlobalScope(RepositoryScope::class)
+            ->withTrashed()
             ->where('batch_number', (int) $number)
-            ->first() ?? new Batch;
+            ->first();
+
+        if ($record === null) {
+            return new Batch;
+        }
+
+        // A soft-deleted match means the operator is re-importing a row they
+        // previously deleted: restore + update it (idempotent un-delete) and
+        // never treat it as a skippable duplicate — they clearly want it back.
+        if ($record->trashed()) {
+            $record->restore();
+
+            return $record;
+        }
+
+        // Only a live record can be a "duplicate" for skip-duplicates semantics.
         $this->skipIfDuplicate($record);
 
         return $record;

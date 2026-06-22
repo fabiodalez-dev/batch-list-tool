@@ -741,6 +741,30 @@ class DocumentResource extends Resource
                             ->visible(fn (?Document $record): bool => filled($record?->museum_location)),
                     ]),
 
+                // NAF Feedback-1 (Documents page) — "we have no history of
+                // locations, just the current location". A document's physical
+                // location follows its box, and box moves are already logged in
+                // box_movements (Document::movements()). Surface that log here as
+                // a read-only location history instead of only the current box.
+                Section::make('Location history')
+                    ->description(fn (?Document $record): ?string => ($record && $record->locationHistory()->exists())
+                        ? 'Every recorded change of this document’s location, most recent first.'
+                        : 'No location changes recorded yet — only the current location above.')
+                    ->collapsed()
+                    ->schema([
+                        RepeatableEntry::make('locationHistory')
+                            ->hiddenLabel()
+                            ->columns(4)
+                            ->columnSpanFull()
+                            ->schema([
+                                TextEntry::make('changed_at')->label('When')->dateTime('Y-m-d H:i')->badge()->color('gray'),
+                                TextEntry::make('from_location_label')->label('From')->placeholder('—'),
+                                TextEntry::make('to_location_label')->label('To')->placeholder('—'),
+                                TextEntry::make('changedBy.name')->label('By')->placeholder('—'),
+                            ])
+                            ->visible(fn (?Document $record): bool => $record !== null && $record->locationHistory()->exists()),
+                    ]),
+
                 Section::make('Disinfestation timeline')
                     ->columns($twoCols)
                     ->description(fn (?Document $record): ?string => ($record && $record->disinfestationTimeline()->isEmpty())
@@ -968,6 +992,15 @@ class DocumentResource extends Resource
                     // (then to the legacy identifier) when catalogue_identifier
                     // is null. Sorting / search remain on the canonical column.
                     ->state(fn (Document $record): ?string => $record->display_identifier)),
+                // NAF Feedback-1 (Documents page) — show the notary / creator.
+                // In the NAF batch list this is the "Creator" / "Notary" column;
+                // a document may have more than one authority (badge list).
+                $gc(Tables\Columns\TextColumn::make('authorities.surname')
+                    ->label('Notary')
+                    ->badge()
+                    ->listWithLineBreaks()
+                    ->limitList(2)
+                    ->toggleable()),
                 $gc(Tables\Columns\TextColumn::make('document_type')->toggleable()),
                 $gc(Tables\Columns\TextColumn::make('series.code')->label('Series')->badge()->sortable()->toggleable(), 'series_id'),
                 $gc(Tables\Columns\TextColumn::make('batch.batch_number')->label('Batch')->sortable()->alignCenter()->toggleable(), 'batch_id'),
@@ -976,8 +1009,8 @@ class DocumentResource extends Resource
                 $gc(Tables\Columns\TextColumn::make('volume_number')->label('Vol.')->toggleable()),
                 $gc(Tables\Columns\TextColumn::make('part_number')->label('Part No')->toggleable(isToggledHiddenByDefault: true)),
                 $gc(Tables\Columns\TextColumn::make('dates')->label('Dates')->toggleable()->limit(30)),
-                $gc(Tables\Columns\TextColumn::make('dates_year_start')->label('From')->numeric(thousandsSeparator: '')->sortable()->alignEnd()),
-                $gc(Tables\Columns\TextColumn::make('dates_year_end')->label('To')->numeric(thousandsSeparator: '')->sortable()->alignEnd()),
+                $gc(Tables\Columns\TextColumn::make('dates_year_start')->label('From')->numeric(thousandsSeparator: '')->sortable()->alignEnd()->toggleable()),
+                $gc(Tables\Columns\TextColumn::make('dates_year_end')->label('To')->numeric(thousandsSeparator: '')->sortable()->alignEnd()->toggleable()),
                 $gc(Tables\Columns\TextColumn::make('number_of_acts')->label('No of Acts')->toggleable(isToggledHiddenByDefault: true)),
                 $gc(Tables\Columns\TextColumn::make('pages_folios')->label('Pages/Folios')->toggleable(isToggledHiddenByDefault: true)),
                 $gc(Tables\Columns\TextColumn::make('barcode_in')->label('Barcode (IN)')->toggleable(isToggledHiddenByDefault: true)),
@@ -1066,6 +1099,12 @@ class DocumentResource extends Resource
                 SelectFilter::make('authorities')
                     ->label('Creators')
                     ->relationship('authorities', 'surname')->searchable()->multiple(),
+
+                // NAF Feedback-1 (Documents page) — filter by notary IDENTIFIER
+                // (the R-code), complementing the surname-based "Creators" filter.
+                SelectFilter::make('authorities_identifier')
+                    ->label('Notary identifier')
+                    ->relationship('authorities', 'identifier')->searchable()->multiple(),
 
                 // Free-text search per field (POC-style filtri puntuali).
                 // For columns covered by a single-column FULLTEXT index

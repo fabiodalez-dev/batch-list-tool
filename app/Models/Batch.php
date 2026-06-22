@@ -5,6 +5,7 @@ namespace App\Models;
 use App\Models\Concerns\BelongsToRepository;
 use App\Models\Concerns\HasCustomFields;
 use App\Models\Pivots\AccessionBatch;
+use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Database\Eloquent\Factories\HasFactory;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
@@ -80,6 +81,21 @@ class Batch extends Model implements AuditableContract
         return $this->belongsToMany(Accession::class, 'accession_batch')
             ->using(AccessionBatch::class)
             ->withTimestamps();
+    }
+
+    /**
+     * Active batches only. NAF Feedback-1 comment #9 gave `is_active` a real
+     * meaning: an inactive batch stays visible/editable on the Batches list
+     * (so staff can reactivate it) but must not be offered as a selectable
+     * parent when creating Boxes or Documents. Use this scope on those
+     * selects: `Batch::active()->...`.
+     *
+     * @param Builder<Batch> $query
+     * @return Builder<Batch>
+     */
+    public function scopeActive(Builder $query): Builder
+    {
+        return $query->where('is_active', true);
     }
 
     public function isForbidden(): bool

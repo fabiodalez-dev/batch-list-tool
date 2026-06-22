@@ -286,25 +286,31 @@ class AuthorityResource extends Resource
                     ->searchable()),
                 $gc(Tables\Columns\TextColumn::make('alternative_identifier')
                     ->sortable()
-                    ->searchable()),
+                    ->searchable()
+                    ->toggleable()),
                 $gc(Tables\Columns\TextColumn::make('surname')
                     ->sortable()
-                    ->searchable()),
+                    ->searchable()
+                    ->toggleable()),
                 $gc(Tables\Columns\TextColumn::make('given_names')
                     ->label('Given name')
                     ->sortable()
-                    ->searchable()),
+                    ->searchable()
+                    ->toggleable()),
                 $gc(Tables\Columns\TextColumn::make('entity_type')
                     ->badge()
                     ->formatStateUsing(fn (?string $state): string => self::ENTITY_TYPES[$state] ?? (string) $state)
                     ->sortable()
-                    ->searchable()),
+                    ->searchable()
+                    ->toggleable()),
                 $gc(Tables\Columns\TextColumn::make('practice_dates_start')
                     ->numeric()
-                    ->sortable()),
+                    ->sortable()
+                    ->toggleable()),
                 $gc(Tables\Columns\TextColumn::make('practice_dates_end')
                     ->numeric()
-                    ->sortable()),
+                    ->sortable()
+                    ->toggleable()),
                 // Feedback1 C1.2 — NTG date column, toggleable (off by default
                 // to keep the default grid focused on identity columns).
                 $gc(Tables\Columns\TextColumn::make('ntg_date')

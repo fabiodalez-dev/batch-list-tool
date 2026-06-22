@@ -279,30 +279,36 @@ class LocationResource extends Resource
                     ->badge()
                     ->formatStateUsing(fn (string $state) => self::typeLabel($state))
                     ->color(fn (string $state) => self::typeColor($state))
-                    ->sortable(),
+                    ->sortable()
+                    ->toggleable(),
                 Tables\Columns\TextColumn::make('repository.code')
                     ->label('Repo')
                     ->badge()
                     ->color('gray')
-                    ->placeholder('GLOBAL'),
+                    ->placeholder('GLOBAL')
+                    ->toggleable(),
                 Tables\Columns\TextColumn::make('code')
                     ->label('Identifier')
                     ->searchable()
                     ->copyable()
-                    ->placeholder('—'),
+                    ->placeholder('—')
+                    ->toggleable(),
                 Tables\Columns\TextColumn::make('boxes_count')
                     ->label('Boxes')
                     ->counts('boxes')
                     ->alignCenter()
-                    ->sortable(),
+                    ->sortable()
+                    ->toggleable(),
                 Tables\Columns\TextColumn::make('documents_count')
                     ->label('Documents')
                     ->counts('documents')
                     ->alignCenter()
-                    ->sortable(),
+                    ->sortable()
+                    ->toggleable(),
                 Tables\Columns\IconColumn::make('is_active')
                     ->boolean()
-                    ->sortable(),
+                    ->sortable()
+                    ->toggleable(),
                 // A9 — inputter column (who created the record).
                 CreatorColumn::make(),
                 Tables\Columns\TextColumn::make('updated_at')

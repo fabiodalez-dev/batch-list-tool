@@ -119,15 +119,26 @@ class BoxImporter extends Importer
         if ($barcode !== null && trim((string) $barcode) !== '') {
             $existing = Box::query()
                 ->withoutGlobalScope(ThroughBatchRepositoryScope::class)
+                ->withTrashed()
                 ->where('barcode', trim((string) $barcode))
                 ->first();
             if ($existing !== null) {
-                // RFQ §3.1.3 — honour the "skip duplicates" checkbox for the
-                // ONE case we can detect an existing box: a barcode hit.
-                $this->skipIfDuplicate($existing);
-
                 // F023: stash repo id so the static closures can use it.
                 self::$rowRepositoryStash[spl_object_id($existing)] = $repoId;
+
+                // Soft-deleted barcode hit: the operator is re-importing a box
+                // they deleted. Restore + update it rather than INSERT a new row
+                // that would collide with the (soft-deleted) unique barcode
+                // (NAF Feedback-1 comment #3 — re-import not working).
+                if ($existing->trashed()) {
+                    $existing->restore();
+
+                    return $existing;
+                }
+
+                // RFQ §3.1.3 — honour the "skip duplicates" checkbox for the
+                // ONE case we can detect an existing box: a (live) barcode hit.
+                $this->skipIfDuplicate($existing);
 
                 return $existing;
             }

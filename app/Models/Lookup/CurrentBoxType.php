@@ -6,6 +6,8 @@ use App\Models\Document;
 use App\Models\Lookup\Concerns\HasLookupOptions;
 use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Database\Eloquent\Model;
+use OwenIt\Auditing\Auditable;
+use OwenIt\Auditing\Contracts\Auditable as AuditableContract;
 
 /**
  * Controlled vocabulary for the document's current-box physical type
@@ -13,8 +15,9 @@ use Illuminate\Database\Eloquent\Model;
  * {@see Document::CURRENT_BOX_TYPES}; `counts_as` is the
  * disinfestation weight (Big Brown Box counts as 2 against the 250/cycle limit).
  */
-class CurrentBoxType extends Model
+class CurrentBoxType extends Model implements AuditableContract
 {
+    use Auditable;
     use HasLookupOptions;
 
     protected $table = 'current_box_types';

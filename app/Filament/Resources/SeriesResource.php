@@ -256,7 +256,8 @@ class SeriesResource extends Resource
                     ->sortable()),
                 $gc(Tables\Columns\TextColumn::make('title')
                     ->searchable()
-                    ->sortable()),
+                    ->sortable()
+                    ->toggleable()),
                 Tables\Columns\TextColumn::make('document_types_count')
                     ->label('Doc. types')
                     ->counts('documentTypes')
@@ -277,9 +278,11 @@ class SeriesResource extends Resource
                     ->placeholder('—')
                     ->toggleable(isToggledHiddenByDefault: true)),
                 $gc(Tables\Columns\IconColumn::make('is_wills_series')
-                    ->boolean()),
+                    ->boolean()
+                    ->toggleable()),
                 $gc(Tables\Columns\IconColumn::make('is_active')
-                    ->boolean()),
+                    ->boolean()
+                    ->toggleable()),
                 Tables\Columns\TextColumn::make('created_at')
                     ->dateTime()
                     ->sortable()

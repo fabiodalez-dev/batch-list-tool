@@ -6,14 +6,17 @@ use App\Models\DocumentFlag;
 use App\Models\Lookup\Concerns\HasLookupOptions;
 use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Database\Eloquent\Model;
+use OwenIt\Auditing\Auditable;
+use OwenIt\Auditing\Contracts\Auditable as AuditableContract;
 
 /**
  * Controlled vocabulary for document flag types (RFQ §3.1.11 / §3.1.12).
  * Seeded from {@see DocumentFlag::TYPES}; `colour` mapped from the
  * inverted {@see DocumentFlag::COLOUR_TYPES} (legacy colour-coding).
  */
-class FlagType extends Model
+class FlagType extends Model implements AuditableContract
 {
+    use Auditable;
     use HasLookupOptions;
 
     protected $table = 'flag_types';

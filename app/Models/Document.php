@@ -265,6 +265,19 @@ class Document extends Model implements AuditableContract, HasMedia, Sortable
     }
 
     /**
+     * Append-only log of this document's `location_id` transitions
+     * (NAF Feedback-1 comment #19). Written by the created / updated hooks.
+     */
+    public function locationHistory(): HasMany
+    {
+        // id desc is a deterministic tiebreaker when several changes share the
+        // same `changed_at` second (e.g. create + immediate move).
+        return $this->hasMany(DocumentLocationHistory::class)
+            ->orderByDesc('changed_at')
+            ->orderByDesc('id');
+    }
+
+    /**
      * Distinct list of previous identifiers this document has ever held.
      * Built from the `identifierHistory` log; uniqueness is enforced in PHP
      * so the result is stable across DB drivers (SQLite collation quirks).
@@ -781,6 +794,47 @@ class Document extends Model implements AuditableContract, HasMedia, Sortable
             ]);
         });
 
+        // NAF Feedback-1 comment #19 — per-document LOCATION history. Same
+        // created/updated split as the barcode log so the "from" side is always
+        // unambiguous. We snapshot each location's breadcrumb label so the trail
+        // stays readable after a Location is later renamed or deleted.
+        static::created(function (self $document): void {
+            if ($document->location_id === null) {
+                return;
+            }
+            $document->locationHistory()->create([
+                'from_location_id' => null,
+                'to_location_id' => $document->location_id,
+                'from_location_label' => null,
+                'to_location_label' => self::locationLabelFor($document->location_id),
+                'changed_by_user_id' => Auth::id(),
+                'changed_at' => now(),
+                'source' => 'create',
+                'repository_id' => $document->repository_id,
+            ]);
+        });
+
+        static::updated(function (self $document): void {
+            if (! $document->wasChanged('location_id')) {
+                return;
+            }
+            $old = $document->getOriginal('location_id');
+            $new = $document->location_id;
+            if ($old === $new) {
+                return;
+            }
+            $document->locationHistory()->create([
+                'from_location_id' => $old,
+                'to_location_id' => $new,
+                'from_location_label' => self::locationLabelFor($old !== null ? (int) $old : null),
+                'to_location_label' => self::locationLabelFor($new !== null ? (int) $new : null),
+                'changed_by_user_id' => Auth::id(),
+                'changed_at' => now(),
+                'source' => 'update',
+                'repository_id' => $document->repository_id,
+            ]);
+        });
+
         // F1 (review finding) — re-mirror custody state when a document
         // changes box. The Box mirror (Box::mirrorBarcodeStatusToDocuments)
         // only fires on a box's OWN barcode_status change, so a document that
@@ -836,6 +890,20 @@ class Document extends Model implements AuditableContract, HasMedia, Sortable
         } finally {
             static::$bypassAuditGuard = $previous;
         }
+    }
+
+    /**
+     * Human-readable breadcrumb for a location id, resolved tenancy-blind and
+     * snapshot into the history so it survives later renames/deletes. Null id
+     * (document had / now has no location) → null label.
+     */
+    private static function locationLabelFor(?int $locationId): ?string
+    {
+        if ($locationId === null) {
+            return null;
+        }
+
+        return Location::withoutGlobalScopes()->find($locationId)?->breadcrumb();
     }
 
     /**
