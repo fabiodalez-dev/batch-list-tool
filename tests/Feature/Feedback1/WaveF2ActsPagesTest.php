@@ -87,6 +87,14 @@ function wf2_run(array $data, int $userId, ?array $columnMap = null): Importer
         'user_id' => $userId,
     ]);
 
+    // The document-id column was renamed 'identifier' -> 'document_identifier'
+    // (so the bare "Identifier" header maps to the authority, not the document).
+    // These fixtures still pass 'identifier'; translate it for this importer.
+    if (array_key_exists('identifier', $data)) {
+        $data['document_identifier'] = $data['identifier'];
+        unset($data['identifier']);
+    }
+
     if ($columnMap === null) {
         $columnMap = array_combine(array_keys($data), array_keys($data));
     }

@@ -207,7 +207,7 @@ class AccessionRowImporter extends Importer
      */
     public function resolveRecord(): ?Document
     {
-        $identifier = $this->data['identifier'] ?? null;
+        $identifier = $this->data['document_identifier'] ?? null;
 
         // Resolve the row's repository early so the Document lookup is
         // tenant-correct. Result stored in instance property for the cascade.
@@ -1191,10 +1191,23 @@ class AccessionRowImporter extends Importer
             // ── Document fields ─────────────────────────────────────────
             // DECISION 4: operator-provided identifier (optional).
             // Template column header is lowercase 'identifier' (NAf convention).
-            ImportColumn::make('identifier')
-                ->label('Identifier')
+            // Column NAME is 'document_identifier' (not 'identifier') on purpose:
+            // guessColumnMap matches a column's name/label at tier-1, so a column
+            // literally named 'identifier'/labelled 'Identifier' would auto-claim
+            // the bare "Identifier" header — which in the NAF accession sheet is
+            // the notary R-number, not the document id. With that mis-mapping every
+            // same-R-number row collapses onto one document (identifier is the
+            // resolveRecord match key). The column still writes Document.identifier
+            // via fillRecordUsing.
+            ImportColumn::make('document_identifier')
+                ->label('Document Identifier')
                 ->guess([...BatchListColumnMap::aliases('identifier'), 'Document Identifier', 'Doc ID'])
-                ->rules(['nullable', 'string', 'max:64']),
+                ->rules(['nullable', 'string', 'max:64'])
+                ->fillRecordUsing(function (Document $record, ?string $state): void {
+                    if ($state !== null && trim($state) !== '') {
+                        $record->identifier = trim($state);
+                    }
+                }),
 
             ImportColumn::make('document_type')
                 ->label('Document Type')

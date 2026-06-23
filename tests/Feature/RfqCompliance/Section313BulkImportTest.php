@@ -135,6 +135,13 @@ function s313_run(array $data, int $userId, ?array $columnMap = null): Importer
         'successful_rows' => 0,
         'user_id' => $userId,
     ]);
+    // The document-id column was renamed 'identifier' -> 'document_identifier'
+    // (so the bare "Identifier" header maps to the authority, not the document).
+    // These fixtures still pass 'identifier'; translate it for this importer.
+    if (array_key_exists('identifier', $data)) {
+        $data['document_identifier'] = $data['identifier'];
+        unset($data['identifier']);
+    }
     if ($columnMap === null) {
         $columnMap = array_combine(array_keys($data), array_keys($data));
     }
@@ -186,7 +193,7 @@ it('§ 3.1.3-B #2: row 1 committed, row 2 forbidden — row 1 intact, row 2 prod
         'accession_number' => 'ACC-2ROW-OK',
         'batch_number' => 70,
         'box_number' => '1',
-        'identifier' => 'DOC-2ROW-OK',
+        'document_identifier' => 'DOC-2ROW-OK',
         'document_type' => 'DEED',
         'series' => 'REG',
     ];
@@ -201,7 +208,7 @@ it('§ 3.1.3-B #2: row 1 committed, row 2 forbidden — row 1 intact, row 2 prod
         'accession_number' => 'ACC-2ROW-FAIL',
         'batch_number' => 36,   // FORBIDDEN
         'box_number' => '1',
-        'identifier' => 'DOC-2ROW-FAIL',
+        'document_identifier' => 'DOC-2ROW-FAIL',
         'document_type' => 'DEED',
         'series' => 'REG',
     ];

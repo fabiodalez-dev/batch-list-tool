@@ -107,6 +107,15 @@ function rfi_run(array $data, int $userId, ?array $columnMap = null): Importer
         'user_id' => $userId,
     ]);
 
+    // The document-id column was renamed 'identifier' -> 'document_identifier'
+    // (so the bare "Identifier" header maps to the authority, not the document).
+    // These fixtures still pass 'identifier'; translate it for this importer.
+    // (DocumentImporter still uses 'identifier' — rfi_doc_run is untouched.)
+    if (array_key_exists('identifier', $data)) {
+        $data['document_identifier'] = $data['identifier'];
+        unset($data['identifier']);
+    }
+
     if ($columnMap === null) {
         $columnMap = array_combine(array_keys($data), array_keys($data));
     }
@@ -773,7 +782,7 @@ it('RFQ-3.1.3-A: in a two-row import, row 1 is committed and row 2 failure leave
         'box_number' => '1',
         'document_type' => 'Original',
         'series' => 'REG',
-        'identifier' => 'DOC-3131-GOOD',
+        'document_identifier' => 'DOC-3131-GOOD',
     ];
     $colMap1 = array_combine(array_keys($row1), array_keys($row1));
     $importer1 = new AccessionRowImporter($imp, $colMap1, []);
@@ -790,7 +799,7 @@ it('RFQ-3.1.3-A: in a two-row import, row 1 is committed and row 2 failure leave
         'box_number' => '1',
         'document_type' => 'Original',
         'series' => 'REG',
-        'identifier' => 'DOC-3131-FAIL',
+        'document_identifier' => 'DOC-3131-FAIL',
     ];
     $colMap2 = array_combine(array_keys($row2), array_keys($row2));
     $importer2 = new AccessionRowImporter($imp, $colMap2, []);

@@ -44,7 +44,7 @@ it('C3-Headers: synthesiseAccessionHeaders returns the exact 23 columns in casca
         'Box Barcode',
         'Box Status',       // renamed from 'Box Type'
         'Current Box Type', // FB1-GAP-2: current_box_types lookup ref code
-        'identifier',       // lowercase per NAf convention
+        'Document Identifier', // the document_identifier column (bare "Identifier" is the authority R-number)
         'Document Type',
         'Series',
         'Volume No',        // renamed from 'Volume Number'
@@ -115,7 +115,7 @@ it('D11-Synonyms: guessColumnMap resolves NAf Feedback 1 column name variants fo
         'Box No',
         'Box Barcode',
         'Box Status',      // → box_type
-        'identifier',      // → identifier
+        'Document Identifier', // → document_identifier
         'Document Type',
         'Series',
         'Volume No',       // → volume_number
@@ -142,7 +142,7 @@ it('D11-Synonyms: guessColumnMap resolves NAf Feedback 1 column name variants fo
 
     // NAf Feedback 1 renamed columns must also auto-resolve.
     expect($map['box_type'])->toBe('Box Status');        // 'Box Status' → box_type
-    expect($map['identifier'])->toBe('identifier');      // lowercase 'identifier' → identifier
+    expect($map['document_identifier'])->toBe('Document Identifier'); // → document_identifier
     expect($map['volume_number'])->toBe('Volume No');     // 'Volume No' → volume_number
     expect($map['notes'])->toBe('Note');                 // singular 'Note' → notes
 });
