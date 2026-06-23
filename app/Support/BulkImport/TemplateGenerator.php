@@ -106,7 +106,7 @@ final class TemplateGenerator
      * can detect a stale template at re-upload time and warn the operator.
      * Bump on any change to the header contract.
      */
-    public const GENERATOR_VERSION = '1.2.0';
+    public const GENERATOR_VERSION = '1.3.0';
 
     /**
      * Supported template entities. Headers come from the in-repo constants
@@ -319,7 +319,8 @@ final class TemplateGenerator
      * Column name contract (must stay in sync with AccessionRowImporter guesses):
      *   'Box Status'         → box_type field (RAS | IN_SITU | NRA)
      *   'Current Box Type'   → current_box_type field (FB1-GAP-2, lookup-validated)
-     *   'identifier'         → document identifier (lowercase per NAf convention)
+     *   'Document Identifier' → document identifier (the document_identifier column;
+     *                          a bare "Identifier" header is the authority R-number)
      *   'Volume No'          → volume_label / volume_number field
      *   'Note'               → notes field (singular per NAf convention)
      *   'No of Acts'         → number_of_acts field (F2)
@@ -350,7 +351,7 @@ final class TemplateGenerator
             'Box Status',             // optional; RAS | IN_SITU | NRA (default: RAS)
             'Current Box Type',       // optional; current_box_types lookup ref code (FB1-GAP-2)
             // Document (DECISIONS 4, 5, 7, 10)
-            'identifier',             // optional; auto-generated when blank (DECISION 4)
+            'Document Identifier',    // optional; auto-generated when blank (DECISION 4). NOT "Identifier" — that bare header is the authority R-number.
             'Document Type',          // required
             'Series',                 // required; code or "CODE: Title"
             'Volume No',              // optional; renamed from volume_label (DECISION 7)
