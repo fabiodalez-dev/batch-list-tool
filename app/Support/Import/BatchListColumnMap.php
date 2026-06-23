@@ -48,7 +48,7 @@ final class BatchListColumnMap
 
         // ── Identifiers / volume ────────────────────────────────────────────
         'catalogue_identifier' => ['Catalogue Identifier', 'Catalouge Identifier'],
-        'identifier' => ['Actual Identifier', 'Identifier'],
+        'identifier' => ['Actual Identifier'],          // bare "Identifier" is the AUTHORITY R-code, not the document
         'volume_number' => ['Actual Volume', 'Volume No', 'Volume Number', 'Volume'],
         'prev_identifier' => ['Prev Attributed Identifier'],
         'prev_volume' => ['Prev Attibuted Volume', 'Prev Attributed Volume'],

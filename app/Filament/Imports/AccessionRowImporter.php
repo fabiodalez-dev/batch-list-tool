@@ -450,6 +450,14 @@ class AccessionRowImporter extends Importer
         $authorityIds = [];
         foreach ($identifiers as $idx => $ident) {
             $intIdx = (int) $idx;
+            // NAF's "Barcodes"/accession sheets store the R-number as an Excel
+            // numeric cell, so it arrives as a float artefact ('642.0'). Strip
+            // the trailing '.0' so the authority is keyed on '642' — same strict
+            // regex as box_number/volume_number, leaving alphanumeric R-codes
+            // ('R642', '180A') untouched.
+            if (preg_match('/^(\d+)\.0+$/', $ident, $m)) {
+                $ident = $m[1];
+            }
             $name = $names[$intIdx] ?? null;
             $surname = $surnames[$intIdx] ?? null;
 
@@ -527,6 +535,8 @@ class AccessionRowImporter extends Importer
 
         $accessionNumber = static::$rowAccessionStash[$key]['accession_number'] ?? null;
         $accessionTitle = static::$rowAccessionStash[$key]['accession_title'] ?? null;
+        $accessionDate = static::$rowAccessionStash[$key]['accession_date'] ?? null;
+        $boxBarcodeStatus = static::$rowAccessionStash[$key]['box_barcode_status'] ?? null;
         $batchNumber = static::$rowAccessionStash[$key]['batch_number'] ?? null;
         $batchType = static::$rowAccessionStash[$key]['batch_type'] ?? null;
         // repository_code still stashed by the column closure — used only for
@@ -574,13 +584,23 @@ class AccessionRowImporter extends Importer
                 $createAttrs = [
                     'accession_number' => $accessionNumber,
                     'code' => $accessionTitle ?? $accessionNumber,
+                    'accession_date' => $accessionDate,
                     'repository_id' => $repoId,
                 ];
                 $accession = Accession::withoutGlobalScope(RepositoryScope::class)
                     ->create($createAttrs);
-            } elseif ($accessionTitle !== null && empty($accession->code)) {
-                // Update title only if blank (don't overwrite operator edits).
-                $accession->update(['code' => $accessionTitle]);
+            } else {
+                // Backfill blank fields only — never overwrite operator edits.
+                $patch = [];
+                if ($accessionTitle !== null && empty($accession->code)) {
+                    $patch['code'] = $accessionTitle;
+                }
+                if ($accessionDate !== null && $accession->accession_date === null) {
+                    $patch['accession_date'] = $accessionDate;
+                }
+                if ($patch !== []) {
+                    $accession->update($patch);
+                }
             }
             $accessionId = (int) $accession->id;
         }
@@ -796,6 +816,16 @@ class AccessionRowImporter extends Importer
 
             $record->current_box_id = $boxRes['box_id'];
             $record->ras_box_1 = $boxNumber;
+
+            // NAF "Status" column → the box's IN/OUT custody status. Set only
+            // when the row provides it; backfill so an operator edit isn't lost.
+            if ($boxBarcodeStatus !== null) {
+                $box = Box::withoutGlobalScope(ThroughBatchRepositoryScope::class)->find($boxRes['box_id']);
+                if ($box !== null && $box->barcode_status !== $boxBarcodeStatus) {
+                    $box->barcode_status = $boxBarcodeStatus;
+                    $box->save();
+                }
+            }
         }
     }
 
@@ -984,7 +1014,7 @@ class AccessionRowImporter extends Importer
             // 'Date Range' is also added to the dates column guess (see below).
             ImportColumn::make('authority_name')
                 ->label('Authority Name')
-                ->guess(['Authority Name', 'authority_name', 'Given Name', 'Creator Name', 'Notary Name', ...BatchListColumnMap::aliases('creator')])
+                ->guess(['Authority Name', 'authority_name', 'Name', 'Given Name', 'Creator Name', 'Notary Name', ...BatchListColumnMap::aliases('creator')])
                 ->fillRecordUsing(function (Document $record, ?string $state): void {
                     $key = spl_object_id($record);
                     static::$rowAuthorityStash[$key]['names'] = $state ?? '';
@@ -1017,6 +1047,17 @@ class AccessionRowImporter extends Importer
                     $key = spl_object_id($record);
                     if ($state !== null && trim($state) !== '') {
                         static::$rowAccessionStash[$key]['accession_title'] = trim($state);
+                    }
+                }),
+
+            ImportColumn::make('accession_date')
+                ->label('Accession Date')
+                ->guess(['Accession Date', 'accession_date'])
+                ->fillRecordUsing(function (Document $record, mixed $state): void {
+                    $d = SpreadsheetParsers::parseDate($state);
+                    if ($d !== null) {
+                        $key = spl_object_id($record);
+                        static::$rowAccessionStash[$key]['accession_date'] = $d;
                     }
                 }),
 
@@ -1087,9 +1128,26 @@ class AccessionRowImporter extends Importer
                     }
                 }),
 
+            // Box's IN/OUT custody status (NAF "Status" column). Distinct from
+            // box_type (the structural RAS/MAV/… type) — kept separate so the
+            // "Status" header maps here, not onto box_type.
+            ImportColumn::make('box_barcode_status')
+                ->label('Box Status (IN / OUT / PERM_OUT)')
+                ->guess(['Status', 'Box Status', 'Barcode Status', 'barcode_status'])
+                ->fillRecordUsing(function (Document $record, ?string $state): void {
+                    if ($state !== null && trim($state) !== '') {
+                        $key = spl_object_id($record);
+                        $s = strtoupper(trim($state));
+                        static::$rowAccessionStash[$key]['box_barcode_status'] = match ($s) {
+                            'PERM OUT', 'PERM-OUT', 'PERMOUT' => 'PERM_OUT',
+                            default => $s,
+                        };
+                    }
+                }),
+
             ImportColumn::make('box_type')
                 ->label('Box Type')
-                ->guess(['Box Type', 'Box Status', 'box_type', 'Type of Box'])
+                ->guess(['Box Type', 'box_type', 'Type of Box'])
                 ->fillRecordUsing(function (Document $record, ?string $state): void {
                     if ($state !== null && trim($state) !== '') {
                         $key = spl_object_id($record);
