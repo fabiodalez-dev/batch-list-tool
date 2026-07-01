@@ -94,6 +94,12 @@ class AppServiceProvider extends ServiceProvider
                 fn (Action $action): Action => $action
                     ->alpineClickHandler('applyTableColumnManager(); close()')
             );
+
+            // Bug #14 — the client prefers filters laid out side by side (wrapped)
+            // rather than stacked one under the other. Default every table's filter
+            // form to 2 columns; resources that set their own filtersFormColumns()
+            // (e.g. DocumentResource → 3) still win, since table() runs after this.
+            $table->filtersFormColumns(2);
         });
 
         // Authentication event listeners — write every login lifecycle event to

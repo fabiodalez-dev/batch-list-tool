@@ -729,7 +729,11 @@ class BoxResource extends Resource
                 $gc(Tables\Columns\TextColumn::make('box_number')
                     ->label('Box')
                     ->searchable()
-                    ->sortable()
+                    // Bug #2 — a combined "Batch then Box" sort: clicking Box orders
+                    // by the parent batch number first, then the box number.
+                    ->sortable(query: fn (Builder $query, string $direction): Builder => $query
+                        ->orderByLeftPowerJoins('batch.batch_number', $direction)
+                        ->orderBy('box_number', $direction))
                     ->toggleable()),
                 $gc(Tables\Columns\TextColumn::make('barcode')
                     ->label('Barcode')

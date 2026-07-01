@@ -1024,7 +1024,12 @@ class DocumentResource extends Resource
                 $gc(Tables\Columns\TextColumn::make('document_type')->sortable()->toggleable()),
                 $gc(Tables\Columns\TextColumn::make('series.code')->label('Series')->badge()->sortable()->toggleable(), 'series_id'),
                 $gc(Tables\Columns\TextColumn::make('batch.batch_number')->label('Batch')->sortable()->alignCenter()->toggleable(), 'batch_id'),
-                $gc(Tables\Columns\TextColumn::make('currentBox.box_number')->label('Box')->sortable()->toggleable(), 'current_box_id'),
+                $gc(Tables\Columns\TextColumn::make('currentBox.box_number')->label('Box')
+                    // Bug #2 — combined "Batch then Box" sort on the Box column.
+                    ->sortable(query: fn (Builder $query, string $direction): Builder => $query
+                        ->orderByLeftPowerJoins('batch.batch_number', $direction)
+                        ->orderByLeftPowerJoins('currentBox.box_number', $direction))
+                    ->toggleable(), 'current_box_id'),
                 $gc(Tables\Columns\TextColumn::make('practice')->sortable()->toggleable()),
                 $gc(Tables\Columns\TextColumn::make('volume_number')->label('Vol.')->sortable()->toggleable()),
                 $gc(Tables\Columns\TextColumn::make('part_number')->label('Part No')->sortable()->toggleable(isToggledHiddenByDefault: true)),
