@@ -121,8 +121,13 @@ class StockTakeReport extends Page implements HasTable
                 Tables\Filters\Filter::make('non_empty')
                     ->label('Only locations holding stock')
                     ->toggle()
+                    // Review finding: exclude destroyed boxes here too, so a location
+                    // that holds ONLY destroyed boxes (box_count = 0) is not shown as
+                    // "holding stock".
                     ->query(fn (Builder $query, array $data): Builder => ($data['isActive'] ?? false)
-                        ? $query->where(fn (Builder $q): Builder => $q->has('boxes')->orHas('documents'))
+                        ? $query->where(fn (Builder $q): Builder => $q
+                            ->whereHas('boxes', fn (Builder $b): Builder => $b->whereNull('destroyed_at'))
+                            ->orHas('documents'))
                         : $query),
             ])
             ->paginated([25, 50, 100, 'all']);

@@ -139,11 +139,14 @@ class DisinfestationCycleReport extends Page implements HasTable
 
                         return match ($value) {
                             DisinfestationCycle::NEVER => $query->whereNull('disinfestation_date'),
+                            // Review finding: the lower bound must be EXCLUSIVE so a box
+                            // disinfested exactly OVERDUE_DAYS (80) ago is Overdue only,
+                            // never Due — matching DisinfestationCycle::status() (days >= 80
+                            // ⇒ overdue). An inclusive whereBetween put the 80-day boundary
+                            // in both filters.
                             DisinfestationCycle::DUE => $query->whereNotNull('disinfestation_date')
-                                ->whereBetween('disinfestation_date', [
-                                    now()->subDays(DisinfestationCycle::OVERDUE_DAYS)->startOfDay(),
-                                    now()->subDays(DisinfestationCycle::DUE_DAYS)->endOfDay(),
-                                ]),
+                                ->where('disinfestation_date', '>', now()->subDays(DisinfestationCycle::OVERDUE_DAYS)->startOfDay())
+                                ->where('disinfestation_date', '<=', now()->subDays(DisinfestationCycle::DUE_DAYS)->endOfDay()),
                             DisinfestationCycle::OVERDUE => $query->whereNotNull('disinfestation_date')
                                 ->where('disinfestation_date', '<=', now()->subDays(DisinfestationCycle::OVERDUE_DAYS)->startOfDay()),
                             default => $query,

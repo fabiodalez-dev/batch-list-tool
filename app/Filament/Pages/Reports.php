@@ -21,6 +21,7 @@ use App\Models\DocumentFlag;
 use App\Models\Location;
 use App\Models\ReportTemplate;
 use App\Models\User;
+use App\Support\Reports\DisinfestationCycle;
 use Filament\Pages\Page;
 use Illuminate\Support\Facades\Cache;
 
@@ -273,8 +274,10 @@ class Reports extends Page
                     'cycle' => Box::query()
                         ->whereNull('destroyed_at')
                         ->where(function ($q): void {
+                            // Use the shared cycle constant so this dashboard count can
+                            // never drift from DisinfestationCycleReport::reportQuery().
                             $q->whereNull('disinfestation_date')
-                                ->orWhere('disinfestation_date', '<=', now()->subDays(40)->startOfDay());
+                                ->orWhere('disinfestation_date', '<=', now()->subDays(DisinfestationCycle::DUE_DAYS)->startOfDay());
                         })
                         ->count(),
                     'reconciliation' => Document::query()

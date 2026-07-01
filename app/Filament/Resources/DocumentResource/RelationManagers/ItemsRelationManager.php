@@ -19,6 +19,7 @@ use Filament\Schemas\Schema;
 use Filament\Tables;
 use Filament\Tables\Table;
 use Illuminate\Database\Eloquent\Model;
+use Livewire\Features\SupportFileUploads\TemporaryUploadedFile;
 
 /**
  * NAF Queries Q5 — box itemisation.
@@ -57,7 +58,10 @@ class ItemsRelationManager extends RelationManager
         return $table
             ->recordTitleAttribute('reference')
             ->defaultSort('position')
-            ->reorderable('position')
+            // Review finding: gate drag-reorder on the same write permission as
+            // create/edit/delete — a view-only user must not mutate item order via
+            // the reorderTable Livewire method.
+            ->reorderable('position', condition: static::userCanUpdate())
             ->columns([
                 Tables\Columns\TextColumn::make('position')
                     ->label('#')
@@ -92,14 +96,14 @@ class ItemsRelationManager extends RelationManager
                     ->color('primary')
                     ->visible(fn (): bool => static::userCanUpdate())
                     ->modalHeading('Itemise this document')
-                    ->modalDescription('Expand this record into individual items — enter a count of placeholder items, or paste a list (one item per line; use " | " or a tab to add a description).')
+                    ->modalDescription('Expand this record into individual items — enter a count of placeholder items, paste a list, or upload a .csv/.txt (one item per line; use " | " or a tab to add a description).')
                     ->form([
                         Forms\Components\TextInput::make('count')
                             ->label('Number of placeholder items')
                             ->numeric()
                             ->minValue(1)
                             ->maxValue(5000)
-                            ->helperText('e.g. 71 to create "Folder 1"…"Folder 71".'),
+                            ->helperText('e.g. 71 to create "Folder 1"…"Folder 71". Large counts create that many rows at once.'),
                         Forms\Components\TextInput::make('prefix')
                             ->label('Placeholder prefix')
                             ->default('Folder')
@@ -107,8 +111,13 @@ class ItemsRelationManager extends RelationManager
                         Forms\Components\Textarea::make('lines')
                             ->label('…or paste a list (one item per line)')
                             ->rows(6),
+                        Forms\Components\FileUpload::make('file')
+                            ->label('…or upload a sheet (.csv / .txt, one item per line)')
+                            ->acceptedFileTypes(['text/csv', 'text/plain', 'application/csv'])
+                            ->storeFiles(false),
                         Forms\Components\Toggle::make('replace')
                             ->label('Replace the existing itemised list')
+                            ->helperText('⚠ Deletes every existing itemised row for this document before adding the new ones. This cannot be undone.')
                             ->default(false),
                     ])
                     ->action(function (array $data): void {
@@ -117,12 +126,16 @@ class ItemsRelationManager extends RelationManager
                         $replace = (bool) ($data['replace'] ?? false);
 
                         $lines = trim((string) ($data['lines'] ?? ''));
+                        $uploaded = self::uploadedLines($data['file'] ?? null);
+
                         if ($lines !== '') {
                             $created = BoxItemisation::itemiseFromLines(
                                 $owner,
                                 preg_split('/\r\n|\r|\n/', $lines) ?: [],
                                 $replace,
                             );
+                        } elseif ($uploaded !== []) {
+                            $created = BoxItemisation::itemiseFromLines($owner, $uploaded, $replace);
                         } else {
                             $count = (int) ($data['count'] ?? 0);
                             $created = BoxItemisation::itemiseCount(
@@ -186,5 +199,24 @@ class ItemsRelationManager extends RelationManager
         }
 
         return method_exists($user, 'can') && (bool) $user->can('update_document');
+    }
+
+    /**
+     * Read an uploaded .csv/.txt (from the FileUpload, storeFiles(false)) into a
+     * list of lines for {@see BoxItemisation::itemiseFromLines()}. Tolerates the
+     * single-file, array, and empty shapes Filament can hand back.
+     *
+     * @return list<string>
+     */
+    protected static function uploadedLines(mixed $file): array
+    {
+        if (is_array($file)) {
+            $file = reset($file) ?: null;
+        }
+        if (! $file instanceof TemporaryUploadedFile) {
+            return [];
+        }
+
+        return preg_split('/\r\n|\r|\n/', (string) $file->get()) ?: [];
     }
 }

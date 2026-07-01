@@ -56,3 +56,18 @@ it('orders never-disinfested boxes before re-cycle boxes', function (): void {
     Livewire::test(DisinfestationCycleReport::class)
         ->assertCanSeeTableRecords([$never, $recycled], inOrder: true);
 });
+
+it('classifies a box at exactly 80 days as Overdue only, not Due (filter boundary)', function (): void {
+    $this->actingAs(cycleAdmin());
+
+    // Exactly OVERDUE_DAYS ago → status() says Overdue; the two filters must not overlap.
+    $boundary = Box::factory()->create(['disinfestation_date' => now()->subDays(80)->startOfDay()]);
+
+    Livewire::test(DisinfestationCycleReport::class)
+        ->filterTable('cycle_status', 'overdue')
+        ->assertCanSeeTableRecords([$boundary]);
+
+    Livewire::test(DisinfestationCycleReport::class)
+        ->filterTable('cycle_status', 'due')
+        ->assertCanNotSeeTableRecords([$boundary]);
+});

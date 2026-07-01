@@ -106,6 +106,9 @@ class RasNraReconciliationReport extends Page implements HasTable
                 Tables\Columns\IconColumn::make('reconcilable')
                     ->label('Reconcilable')
                     ->boolean()
+                    ->tooltip(fn (Document $r): string => RasReconciliation::isReconcilable($r)
+                        ? 'Has the full RAS key (Batch + Box + latest Barcode IN).'
+                        : 'Missing part of the RAS key — fill in the RAS Batch / Box / Barcode IN to reconcile.')
                     ->state(fn (Document $r): bool => RasReconciliation::isReconcilable($r)),
             ])
             ->filtersFormColumns(2)
