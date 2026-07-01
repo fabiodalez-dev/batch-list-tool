@@ -565,8 +565,15 @@ pre,
    inline buttons that open modals (teleported to <body>), not inline dropdowns —
    so nothing in the scroll body gets clipped. The toolbar (search / filters /
    Columns) sits ABOVE this wrapper and is unaffected. */
+/* The `17rem` offset approximates the page chrome above the table (topbar +
+   heading + toolbar). Review finding: it can't account for per-page toolbar
+   height variance (multi-line filter chips, banners, the 2-column filter form),
+   so pair it with a `min-height` floor — on short viewports or tall toolbars the
+   calc can otherwise collapse the table region to a near-zero height. The floor
+   guarantees the body always shows a few rows and stays scrollable. */
 .fi-ta-content-ctn {
     max-height: calc(100vh - 17rem);
+    min-height: 20rem;
 }
 
 .fi-ta-table thead th,

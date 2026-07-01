@@ -22,7 +22,6 @@ use Filament\Actions\Imports\Models\Import;
 use Illuminate\Database\Eloquent\Collection as EloquentCollection;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Support\Facades\DB;
-use Illuminate\Support\Str;
 use Illuminate\Validation\ValidationException;
 use Spatie\SchemalessAttributes\SchemalessAttributes;
 
@@ -447,6 +446,12 @@ class DocumentImporter extends Importer
             $body .= ', ' . number_format($failed) . ' failed';
         }
 
+        // Review finding (#22 feedback): rows left blank in the identifier
+        // column are given an auto-generated code (Repository/Series/Type +
+        // suffix). Flag it here so the operator knows to review/replace them —
+        // a per-row count isn't available across the chunked import jobs.
+        $body .= '. Rows with a blank identifier received an auto-generated code — review and replace as needed.';
+
         return $body;
     }
 
@@ -456,8 +461,17 @@ class DocumentImporter extends Importer
      */
     protected function generateDocumentIdentifier(Document $record): string
     {
+        // Review finding: repository_id is stamped by BelongsToRepository on the
+        // `creating` event (i.e. at save) — during afterFill() the record's
+        // repository_id is still null, so read it from the per-row stash
+        // (set in resolveRecord) or the acting user's default instead, otherwise
+        // the Repository code is silently always dropped from the identifier.
+        $repoId = $record->repository_id
+            ?? (self::$rowRepositoryStash[spl_object_id($record)] ?? null)
+            ?? auth()->user()?->default_repository_id;
+
         $parts = array_filter([
-            $this->lookupRelatedCode(Repository::class, $record->repository_id),
+            $this->lookupRelatedCode(Repository::class, $repoId !== null ? (int) $repoId : null),
             $this->lookupRelatedCode(Series::class, $record->series_id),
             $record->document_type
                 ? strtoupper(substr((string) preg_replace('/[^A-Za-z0-9]/', '', (string) $record->document_type), 0, 3))
@@ -465,7 +479,15 @@ class DocumentImporter extends Importer
         ]);
         $prefix = $parts !== [] ? implode('-', $parts) : 'DOC';
 
-        return $prefix . '-' . strtoupper(substr(str_replace('-', '', (string) Str::uuid()), 0, 6));
+        // Review finding: a random uuid tail made RE-IMPORTING the same sheet
+        // non-idempotent — blank-identifier rows got a new id every run, so
+        // resolveRecord() never matched and duplicated every document. Derive
+        // the tail deterministically from the parsed row so an identical row
+        // yields an identical identifier (resolveRecord then matches + updates),
+        // while distinct rows stay distinct.
+        $tail = strtoupper(substr(sha1((string) (json_encode($this->data) ?: spl_object_id($record))), 0, 8));
+
+        return $prefix . '-' . $tail;
     }
 
     /**

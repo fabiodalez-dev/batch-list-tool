@@ -14,6 +14,7 @@ use App\Models\Repository;
 use App\Models\Scopes\RepositoryScope;
 use App\Models\Series;
 use App\Models\User;
+use App\Support\ActiveRepository;
 use Filament\Forms\Components\Select;
 use Filament\Schemas\Components\Utilities\Get;
 use Illuminate\Database\Eloquent\Model;
@@ -670,7 +671,24 @@ final class SearchableSelects
     {
         $search = trim($search);
 
+        // Bug #33 wanted GLOBAL locations (repository_id IS NULL) to show —
+        // RepositoryScope's `whereIn(repository_id, allowed)` silently drops
+        // NULLs. Review finding: dropping the scope entirely leaked OTHER
+        // tenants' locations into the picker. Correct scope = the user's own
+        // repositories PLUS global, never a different tenant's. Reuses
+        // ActiveRepository (RepositoryScope's own source of truth) so the two
+        // can never diverge; privileged users (allowed === null) stay
+        // unrestricted, matching RepositoryScope.
         $query = Location::query()->withoutGlobalScope(RepositoryScope::class);
+        $allowed = ActiveRepository::allowedRepositoryIdsFor(auth()->user());
+        if (auth()->check() && $allowed !== null) {
+            $query->where(function ($q) use ($allowed) {
+                $q->whereNull('repository_id');
+                if (! empty($allowed)) {
+                    $q->orWhereIn('repository_id', $allowed);
+                }
+            });
+        }
         if ($queryModifier !== null) {
             $queryModifier($query);
         }

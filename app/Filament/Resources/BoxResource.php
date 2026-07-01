@@ -238,8 +238,18 @@ class BoxResource extends Resource
                         // provenance; these are supplementary origins.
                         $g(Forms\Components\Select::make('parents')
                             ->label('Additional parent boxes')
-                            ->helperText('Optional — other origin boxes this one was assembled from.')
-                            ->relationship('parents', 'box_number')
+                            ->helperText('Optional — other origin RAS boxes this one was assembled from.')
+                            // Review finding: mirror the single parent_box_id guard —
+                            // additional parents must be RAS boxes (provenance origins)
+                            // and a box may never be its own parent.
+                            ->relationship('parents', 'box_number', function (Builder $query, ?Box $record) {
+                                $query->where('box_type', 'RAS');
+                                if ($record !== null) {
+                                    $query->whereKeyNot($record->getKey());
+                                }
+
+                                return $query;
+                            })
                             ->getOptionLabelFromRecordUsing(fn (Box $r): string => ($r->batch?->batch_number ? 'Batch ' . $r->batch->batch_number . ' / ' : '') . 'Box ' . $r->box_number)
                             ->multiple()
                             ->searchable()
@@ -934,7 +944,11 @@ class BoxResource extends Resource
                                 ->maxLength(255),
                         ])
                         ->action(function (Collection $records, array $data): void {
-                            $records->each(function (Box $record) use ($data): void {
+                            // Review finding: count what actually changed so the
+                            // notification is honest — a submit that leaves every
+                            // field blank must not report success.
+                            $changed = 0;
+                            $records->each(function (Box $record) use ($data, &$changed): void {
                                 $update = [];
 
                                 if (filled($data['location_id'] ?? null)) {
@@ -957,15 +971,32 @@ class BoxResource extends Resource
 
                                 if (! empty($update)) {
                                     $record->update($update);
+                                    $changed++;
                                 }
                             });
 
+                            if ($changed === 0) {
+                                Notification::make()
+                                    ->title('No boxes changed')
+                                    ->body('Every field was left blank, so nothing was updated.')
+                                    ->warning()
+                                    ->send();
+
+                                return;
+                            }
+
                             Notification::make()
-                                ->title('Boxes relocated')
+                                ->title($changed . ' ' . ($changed === 1 ? 'box' : 'boxes') . ' relocated')
                                 ->success()
                                 ->send();
                         })
                         ->requiresConfirmation()
+                        ->modalHeading('Relocate boxes')
+                        // Review finding: confirmation must match blast radius —
+                        // state the count and that PERM OUT is a permanent change.
+                        ->modalDescription(fn (Collection $records): string => 'You are about to update '
+                            . $records->count() . ' ' . ($records->count() === 1 ? 'box' : 'boxes')
+                            . '. Marking them PERM OUT is a permanent custody change (RFQ A1.2).')
                         ->deselectRecordsAfterCompletion(),
                     DeleteBulkAction::make(),
                 ]),

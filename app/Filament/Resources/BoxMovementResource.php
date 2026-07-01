@@ -15,6 +15,7 @@ use Filament\Forms;
 use Filament\Infolists\Components\TextEntry;
 use Filament\Resources\Resource;
 use Filament\Schemas\Components\Section;
+use Filament\Schemas\Components\Utilities\Get;
 use Filament\Schemas\Schema;
 use Filament\Tables;
 use Filament\Tables\Table;
@@ -60,9 +61,10 @@ class BoxMovementResource extends Resource
                         SearchableSelects::box('to_box_id', 'toBox')
                             ->label('To box')
                             // Bug #28 — let the operator create the target box inline when
-                            // it doesn't exist yet. Kept to a RAS box (the only type that
-                            // needs no parent and no location/disinfestation preconditions),
-                            // so the Box model guards are always satisfied.
+                            // it doesn't exist yet. Hardcoded to a RAS box: RAS needs no
+                            // parent and no location/disinfestation preconditions (unlike
+                            // IN_SITU/NRA) and isn't blocked from fresh creation (unlike the
+                            // legacy MAV/STVC types), so the Box model guards are satisfied.
                             ->helperText('Pick an existing box, or use “Create” to add a new RAS box.')
                             ->createOptionForm([
                                 SearchableSelects::batch('batch_id')
@@ -71,11 +73,25 @@ class BoxMovementResource extends Resource
                                 Forms\Components\TextInput::make('box_number')
                                     ->label('Box number')
                                     ->required()
-                                    ->maxLength(32),
+                                    ->maxLength(32)
+                                    // Review finding: box_number is unique within a batch
+                                    // (no DB unique index on it, only the BoxResource form
+                                    // rule) — validate it here too so the inline create can't
+                                    // persist a duplicate.
+                                    ->rule(fn (Get $get) => function (string $attribute, $value, \Closure $fail) use ($get): void {
+                                        $batchId = $get('batch_id');
+                                        if ($batchId && Box::where('batch_id', $batchId)->where('box_number', $value)->exists()) {
+                                            $fail("Box number {$value} already exists in this batch.");
+                                        }
+                                    }),
                                 Forms\Components\TextInput::make('barcode')
                                     ->label('Barcode')
                                     ->required()
-                                    ->maxLength(64),
+                                    ->maxLength(64)
+                                    // Review finding: boxes.barcode is UNIQUE at the DB level —
+                                    // validate here so a duplicate surfaces as an inline error
+                                    // instead of an unhandled QueryException.
+                                    ->unique(table: 'boxes', column: 'barcode'),
                             ])
                             ->createOptionUsing(fn (array $data): int => Box::create([
                                 'batch_id' => $data['batch_id'],
