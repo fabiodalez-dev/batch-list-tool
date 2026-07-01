@@ -130,7 +130,7 @@ jobs:
           # not required).
           ok=0
           for attempt in 1 2 3 4 5; do
-            if ssh-keyscan -T 20 -p 22 -H "${SSH_HOST}" >> ~/.ssh/known_hosts 2>/dev/null && [ -s ~/.ssh/known_hosts ]; then
+            if ssh-keyscan -4 -T 20 -p 22 -H "${SSH_HOST}" >> ~/.ssh/known_hosts 2>/dev/null && [ -s ~/.ssh/known_hosts ]; then
               ok=1; break
             fi
             echo "ssh-keyscan attempt ${attempt} failed; retrying in $((attempt * 5))s"
@@ -147,7 +147,11 @@ jobs:
           # StrictHostKeyChecking=accept-new: trust on first connect even when
           # the Trust-deploy-host keyscan above couldn't reach the host. Safe
           # here because the deploy uses a dedicated key and a fixed SSH_HOST.
-          ssh -o ServerAliveInterval=30 \
+          # -4: force IPv4. The cPanel host publishes an AAAA (IPv6) record that
+          # GitHub-hosted runners cannot route to, so a default connect fails with
+          # "Network is unreachable". Pin to the routable IPv4 A record.
+          ssh -4 \
+              -o ServerAliveInterval=30 \
               -o ServerAliveCountMax=6 \
               -o StrictHostKeyChecking=accept-new \
               -o ConnectTimeout=30 \
@@ -162,7 +166,7 @@ jobs:
           # AFTER post-deploy.sh so the host always serves freshly-compiled CSS/JS.
           # --delete keeps the remote dir an exact mirror (drops stale hashed files).
           rsync -az --delete \
-            -e "ssh -o ServerAliveInterval=30 -o ServerAliveCountMax=6" \
+            -e "ssh -4 -o ServerAliveInterval=30 -o ServerAliveCountMax=6" \
             ./public/build/ \
             "${SSH_USER}@${SSH_HOST}:${DEPLOY_PATH}/public/build/"
 
