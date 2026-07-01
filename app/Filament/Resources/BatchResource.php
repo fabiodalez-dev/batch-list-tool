@@ -445,7 +445,7 @@ class BatchResource extends Resource
                     ->sortable()
                     ->toggleable()),
                 // A9 — inputter column (who created the record).
-                CreatorColumn::make(),
+                CreatorColumn::make()->toggleable(),
                 Tables\Columns\TextColumn::make('created_at')
                     ->dateTime()
                     ->sortable()

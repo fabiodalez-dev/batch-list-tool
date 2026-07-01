@@ -3,6 +3,7 @@
 namespace App\Filament\Resources;
 
 use App\Filament\Resources\BoxMovementResource\Pages;
+use App\Filament\Support\CreatorColumn;
 use App\Filament\Support\SearchableSelects;
 use App\Models\BoxMovement;
 use Filament\Actions\BulkActionGroup;
@@ -16,6 +17,7 @@ use Filament\Schemas\Components\Section;
 use Filament\Schemas\Schema;
 use Filament\Tables;
 use Filament\Tables\Table;
+use Illuminate\Database\Eloquent\Builder;
 
 class BoxMovementResource extends Resource
 {
@@ -145,18 +147,24 @@ class BoxMovementResource extends Resource
                     ->sortable(),
                 Tables\Columns\TextColumn::make('fromBox.box_number')
                     ->numeric()
-                    ->sortable(),
+                    ->sortable()
+                    ->toggleable(),
                 Tables\Columns\TextColumn::make('toBox.box_number')
                     ->numeric()
-                    ->sortable(),
+                    ->sortable()
+                    ->toggleable(),
                 Tables\Columns\TextColumn::make('movement_date')
                     ->dateTime()
-                    ->sortable(),
+                    ->sortable()
+                    ->toggleable(),
                 Tables\Columns\TextColumn::make('reason')
-                    ->searchable(),
+                    ->searchable()
+                    ->sortable()
+                    ->toggleable(),
                 Tables\Columns\TextColumn::make('user.name')
                     ->numeric()
-                    ->sortable(),
+                    ->sortable()
+                    ->toggleable(),
                 Tables\Columns\TextColumn::make('created_at')
                     ->dateTime()
                     ->sortable()
@@ -165,6 +173,7 @@ class BoxMovementResource extends Resource
                     ->dateTime()
                     ->sortable()
                     ->toggleable(isToggledHiddenByDefault: true),
+                CreatorColumn::make(),
             ])
             ->filters([
                 //
@@ -178,6 +187,12 @@ class BoxMovementResource extends Resource
                     DeleteBulkAction::make(),
                 ]),
             ]);
+    }
+
+    public static function getEloquentQuery(): Builder
+    {
+        return parent::getEloquentQuery()
+            ->with(['audits' => fn ($q) => $q->where('event', 'created')->with('user')]);
     }
 
     public static function getRelations(): array

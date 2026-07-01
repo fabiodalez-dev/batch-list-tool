@@ -360,7 +360,8 @@ class AccessionResource extends Resource
                     ->toggleable(),
                 // A9 — Inputter column (record creator via audit trail).
                 // Toggleable, default visible, not sortable (cross-table sort).
-                CreatorColumn::make(),
+                CreatorColumn::make()
+                    ->toggleable(),
                 Tables\Columns\TextColumn::make('created_at')
                     ->dateTime()
                     ->sortable()

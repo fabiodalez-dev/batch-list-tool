@@ -331,7 +331,8 @@ class AuthorityResource extends Resource
                     ->sortable()
                     ->toggleable(isToggledHiddenByDefault: true),
                 // A9 — inputter column (who created the record).
-                CreatorColumn::make(),
+                CreatorColumn::make()
+                    ->toggleable(),
             ])
             ->filters([
                 // Feedback1 Wave B (B1) — rich filter mechanism (#1) on top of

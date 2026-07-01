@@ -192,13 +192,17 @@ class UserResource extends Resource
                     ->sortable(),
                 Tables\Columns\TextColumn::make('email')
                     ->searchable()
-                    ->sortable(),
+                    ->sortable()
+                    ->toggleable(),
                 Tables\Columns\TextColumn::make('roles.name')
                     ->label('Roles')
                     ->badge()
-                    ->formatStateUsing(fn (string $state): string => RoleLabels::for($state)),
+                    ->formatStateUsing(fn (string $state): string => RoleLabels::for($state))
+                    ->toggleable(),
                 Tables\Columns\IconColumn::make('is_active')
-                    ->boolean(),
+                    ->boolean()
+                    ->sortable()
+                    ->toggleable(),
                 Tables\Columns\TextColumn::make('created_at')
                     ->dateTime()
                     ->sortable()

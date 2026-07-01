@@ -286,12 +286,14 @@ class LocationResource extends Resource
                     ->badge()
                     ->color('gray')
                     ->placeholder('GLOBAL')
+                    ->sortable()
                     ->toggleable(),
                 Tables\Columns\TextColumn::make('code')
                     ->label('Identifier')
                     ->searchable()
                     ->copyable()
                     ->placeholder('—')
+                    ->sortable()
                     ->toggleable(),
                 Tables\Columns\TextColumn::make('boxes_count')
                     ->label('Boxes')
@@ -310,7 +312,8 @@ class LocationResource extends Resource
                     ->sortable()
                     ->toggleable(),
                 // A9 — inputter column (who created the record).
-                CreatorColumn::make(),
+                CreatorColumn::make()
+                    ->toggleable(),
                 Tables\Columns\TextColumn::make('updated_at')
                     ->dateTime()
                     ->sortable()
