@@ -66,15 +66,48 @@ class DocumentsPerSeriesChart extends ChartWidget
             },
         );
 
+        $values = array_values($rows);
+
         return [
             'datasets' => [
                 [
                     'label' => 'Documents',
-                    'data' => array_values($rows),
+                    'data' => $values,
+                    // Without an explicit per-segment palette Filament fills every
+                    // doughnut slice with the single primary colour, which on the
+                    // NAf light theme resolves to a near-white cream (#EFF3F4) —
+                    // making the whole chart invisible. Give each slice a distinct,
+                    // saturated colour so the breakdown is actually readable.
+                    'backgroundColor' => self::segmentColors(count($values)),
+                    'borderColor' => '#ffffff',
+                    'borderWidth' => 2,
                 ],
             ],
             'labels' => array_keys($rows),
         ];
+    }
+
+    /**
+     * A categorical palette of distinct, saturated colours (visible on the light
+     * NAf paper theme), cycled to cover $count slices. Starts on the brand green.
+     *
+     * @return list<string>
+     */
+    protected static function segmentColors(int $count): array
+    {
+        $palette = [
+            '#4A6F77', '#C2703D', '#5B8A72', '#8E5B9F', '#C24D5B',
+            '#3E7CB1', '#B58B2A', '#6D8C3A', '#A0522D', '#4C9AA8',
+            '#8C6D4A', '#7A5C99', '#B85C8A', '#5F9E6E', '#9C7A3C',
+            '#3D6B8C', '#A94E4E', '#547C8A', '#7E8B3D', '#96588C',
+        ];
+
+        $out = [];
+        for ($i = 0; $i < max(0, $count); $i++) {
+            $out[] = $palette[$i % count($palette)];
+        }
+
+        return $out;
     }
 
     protected function cacheKey(): string
