@@ -49,15 +49,20 @@ class StatsOverviewWidget extends BaseStatsOverviewWidget
                 ->color('primary')
                 ->chart($stats['documents_chart']),
 
-            Stat::make('Authorities (Notaries)', number_format($stats['authorities_total']))
-                ->description('Creators on file')
-                ->descriptionIcon('heroicon-m-user-group')
-                ->color('gray'),
-
             Stat::make('Active Batches', number_format($stats['batches_active']))
                 ->description('of ' . number_format($stats['batches_total']) . ' total')
                 ->descriptionIcon('heroicon-m-archive-box')
                 ->color('info'),
+
+            Stat::make('Boxes in archive', number_format($stats['boxes_in']))
+                ->description('barcode status IN')
+                ->descriptionIcon('heroicon-m-cube')
+                ->color('success'),
+
+            Stat::make('Authorities (Notaries)', number_format($stats['authorities_total']))
+                ->description('Creators on file')
+                ->descriptionIcon('heroicon-m-user-group')
+                ->color('gray'),
 
             Stat::make('Pending disinfestation', number_format($stats['pending_disinfestation']))
                 ->description($stats['pending_disinfestation'] > 0
@@ -67,11 +72,6 @@ class StatsOverviewWidget extends BaseStatsOverviewWidget
                     ? 'heroicon-m-exclamation-triangle'
                     : 'heroicon-m-check-circle')
                 ->color($stats['pending_disinfestation'] > 0 ? 'warning' : 'success'),
-
-            Stat::make('Boxes in archive', number_format($stats['boxes_in']))
-                ->description('barcode status IN')
-                ->descriptionIcon('heroicon-m-cube')
-                ->color('success'),
 
             // RFQ §3.1.12 — issue flags replace spreadsheet colour-coding.
             // Card colour is `danger` if any critical flag is open, `warning`

@@ -84,7 +84,8 @@ class AuditResource extends Resource
                     ->label('Who')
                     ->default('—')
                     ->searchable()
-                    ->sortable(),
+                    ->sortable()
+                    ->toggleable(),
                 Tables\Columns\TextColumn::make('event')
                     ->badge()
                     ->color(fn (string $state): string => match ($state) {
@@ -93,18 +94,24 @@ class AuditResource extends Resource
                         'deleted', 'restored' => 'danger',
                         'impersonation_started', 'impersonation_ended' => 'gray',
                         default => 'primary',
-                    }),
+                    })
+                    ->sortable()
+                    ->toggleable(),
                 Tables\Columns\TextColumn::make('auditable_type')
                     ->label('Model')
                     ->formatStateUsing(fn (string $state): string => class_basename($state))
-                    ->sortable(),
+                    ->sortable()
+                    ->toggleable(),
                 Tables\Columns\TextColumn::make('auditable_id')
                     ->label('Record ID')
-                    ->sortable(),
+                    ->sortable()
+                    ->toggleable(),
                 Tables\Columns\TextColumn::make('ip_address')
+                    ->sortable()
                     ->toggleable(isToggledHiddenByDefault: true),
                 Tables\Columns\TextColumn::make('user_agent')
                     ->limit(40)
+                    ->sortable()
                     ->toggleable(isToggledHiddenByDefault: true),
             ])
             ->filters([

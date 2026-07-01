@@ -80,7 +80,11 @@ final class MoveToBoxAction
     private static function form(): array
     {
         return [
-            SearchableSelects::box('to_box_id', 'currentBox')
+            SearchableSelects::boxFiltered(
+                'to_box_id',
+                'currentBox',
+                fn ($q) => $q->whereNull('destroyed_at')->where('barcode_status', '!=', 'PERM_OUT'),
+            )
                 ->label('Target box')
                 ->required(),
             Textarea::make('reason')

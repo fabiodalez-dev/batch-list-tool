@@ -21,6 +21,10 @@ use Carbon\Carbon;
 use Filament\Actions\BulkActionGroup;
 use Filament\Actions\DeleteBulkAction;
 use Filament\Actions\EditAction;
+use Filament\Actions\ForceDeleteAction;
+use Filament\Actions\ForceDeleteBulkAction;
+use Filament\Actions\RestoreAction;
+use Filament\Actions\RestoreBulkAction;
 use Filament\Actions\ViewAction;
 use Filament\Forms;
 use Filament\Forms\Components\SpatieMediaLibraryFileUpload;
@@ -48,6 +52,7 @@ use Filament\Tables\Filters\TrashedFilter;
 use Filament\Tables\Table;
 use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Database\Eloquent\Model;
+use Illuminate\Database\Eloquent\SoftDeletingScope;
 use Illuminate\Support\Str;
 
 class DocumentResource extends Resource
@@ -137,6 +142,7 @@ class DocumentResource extends Resource
                         $g(Forms\Components\Select::make('document_type')
                             ->label('Document type')
                             ->searchable()
+                            ->preload()
                             ->options(fn (): array => DocumentType::query()
                                 ->where('is_active', true)->orderBy('name')->pluck('name', 'name')->all())
                             ->createOptionForm([
@@ -338,7 +344,21 @@ class DocumentResource extends Resource
                     ->collapsed()
                     ->columns(2)
                     ->schema([
-                        $g(Forms\Components\TextInput::make('colour_code')->maxLength(32)),
+                        $g(Forms\Components\Select::make('colour_code')
+                            // Six preset colours (bug #27). colour_code is a legacy free-text
+                            // field, so surface any already-saved out-of-list value too, or
+                            // the form would drop it on edit.
+                            ->options(function (?Document $record): array {
+                                $base = ['pink' => 'Pink', 'brown' => 'Brown', 'orange' => 'Orange', 'grey' => 'Grey', 'red' => 'Red', 'yellow' => 'Yellow'];
+                                $current = $record?->colour_code;
+                                if (is_string($current) && $current !== '' && ! array_key_exists($current, $base)) {
+                                    $base[$current] = ucfirst($current) . ' (legacy)';
+                                }
+
+                                return $base;
+                            })
+                            ->native(false)
+                            ->nullable()),
                         $g(Forms\Components\Select::make('digitised')
                             ->options(fn (): array => DigitisationStatus::options())
                             ->nullable()
@@ -1001,23 +1021,32 @@ class DocumentResource extends Resource
                     ->listWithLineBreaks()
                     ->limitList(2)
                     ->toggleable()),
-                $gc(Tables\Columns\TextColumn::make('document_type')->toggleable()),
+                $gc(Tables\Columns\TextColumn::make('document_type')->sortable()->toggleable()),
                 $gc(Tables\Columns\TextColumn::make('series.code')->label('Series')->badge()->sortable()->toggleable(), 'series_id'),
                 $gc(Tables\Columns\TextColumn::make('batch.batch_number')->label('Batch')->sortable()->alignCenter()->toggleable(), 'batch_id'),
-                $gc(Tables\Columns\TextColumn::make('currentBox.box_number')->label('Box')->toggleable(), 'current_box_id'),
-                $gc(Tables\Columns\TextColumn::make('practice')->toggleable()),
-                $gc(Tables\Columns\TextColumn::make('volume_number')->label('Vol.')->toggleable()),
-                $gc(Tables\Columns\TextColumn::make('part_number')->label('Part No')->toggleable(isToggledHiddenByDefault: true)),
-                $gc(Tables\Columns\TextColumn::make('dates')->label('Dates')->toggleable()->limit(30)),
+                $gc(Tables\Columns\TextColumn::make('currentBox.box_number')->label('Box')
+                    // Bug #2 — combined "Batch then Box" sort on the Box column.
+                    ->sortable(query: fn (Builder $query, string $direction): Builder => $query
+                        ->orderByLeftPowerJoins('batch.batch_number', $direction)
+                        ->orderByLeftPowerJoins('currentBox.box_number', $direction))
+                    ->toggleable(), 'current_box_id'),
+                $gc(Tables\Columns\TextColumn::make('practice')->sortable()->toggleable()),
+                $gc(Tables\Columns\TextColumn::make('volume_number')->label('Vol.')->sortable()->toggleable()),
+                $gc(Tables\Columns\TextColumn::make('part_number')->label('Part No')->sortable()->toggleable(isToggledHiddenByDefault: true)),
+                $gc(Tables\Columns\TextColumn::make('dates')->label('Dates')->sortable()->toggleable()->limit(30)),
                 $gc(Tables\Columns\TextColumn::make('dates_year_start')->label('From')->numeric(thousandsSeparator: '')->sortable()->alignEnd()->toggleable()),
                 $gc(Tables\Columns\TextColumn::make('dates_year_end')->label('To')->numeric(thousandsSeparator: '')->sortable()->alignEnd()->toggleable()),
-                $gc(Tables\Columns\TextColumn::make('number_of_acts')->label('No of Acts')->toggleable(isToggledHiddenByDefault: true)),
-                $gc(Tables\Columns\TextColumn::make('pages_folios')->label('Pages/Folios')->toggleable(isToggledHiddenByDefault: true)),
-                $gc(Tables\Columns\TextColumn::make('barcode_in')->label('Barcode (IN)')->toggleable(isToggledHiddenByDefault: true)),
-                $gc(Tables\Columns\TextColumn::make('catalogue_identifier')->label('Catalogue ID')->toggleable(isToggledHiddenByDefault: true)),
-                $gc(Tables\Columns\TextColumn::make('repository.code')->label('Repo')->badge()->color('gray')->toggleable(), 'repository_id'),
+                $gc(Tables\Columns\TextColumn::make('number_of_acts')->label('No of Acts')->sortable()->toggleable(isToggledHiddenByDefault: true)),
+                $gc(Tables\Columns\TextColumn::make('pages_folios')->label('Pages/Folios')->sortable()->toggleable(isToggledHiddenByDefault: true)),
+                $gc(Tables\Columns\TextColumn::make('barcode_in')->label('Barcode (IN)')->sortable()->toggleable(isToggledHiddenByDefault: true)),
+                $gc(Tables\Columns\TextColumn::make('catalogue_identifier')->label('Catalogue ID')->sortable()->toggleable(isToggledHiddenByDefault: true)),
+                // Bug #31 — Notes visible by default: some documents can only be
+                // identified by the note (no known creator, date or type). Hideable
+                // via the column picker; truncated with the full text on hover.
+                $gc(Tables\Columns\TextColumn::make('notes')->label('Notes')->limit(60)->tooltip(fn (?string $state): ?string => $state)->sortable()->toggleable()),
+                $gc(Tables\Columns\TextColumn::make('repository.code')->label('Repo')->badge()->color('gray')->sortable()->toggleable(), 'repository_id'),
                 $gc(Tables\Columns\TextColumn::make('disinfestation_date')->label('Disinfested')->date()->sortable()->toggleable(isToggledHiddenByDefault: true)),
-                $gc(Tables\Columns\IconColumn::make('torre')->boolean()->toggleable(isToggledHiddenByDefault: true)),
+                $gc(Tables\Columns\IconColumn::make('torre')->boolean()->sortable()->toggleable(isToggledHiddenByDefault: true)),
                 $gc(Tables\Columns\TextColumn::make('updated_at')->dateTime()->sortable()->toggleable(isToggledHiddenByDefault: true)),
                 // A9 — inputter column (who created the record).
                 CreatorColumn::make(),
@@ -1271,6 +1300,8 @@ class DocumentResource extends Resource
                 MarkDisinfestedAction::make('rowMarkDisinfested')
                     ->label('Disinfested')
                     ->iconButton(),
+                RestoreAction::make(),
+                ForceDeleteAction::make(),
             ])
             ->bulkActions([
                 // The 14 Document power-actions (RFQ §3.1.1 / §3.1.4 /
@@ -1283,6 +1314,8 @@ class DocumentResource extends Resource
                     ->color('primary'),
                 BulkActionGroup::make([
                     DeleteBulkAction::make(),
+                    RestoreBulkAction::make(),
+                    ForceDeleteBulkAction::make(),
                 ]),
             ]);
     }
@@ -1353,6 +1386,17 @@ class DocumentResource extends Resource
                 // A9 — creator resolution: first 'created' audit with its user.
                 'audits' => fn ($q) => $q->where('event', 'created')->oldest('id')->with('user'),
             ]);
+    }
+
+    /**
+     * Bug #26 — the TrashedFilter + Restore/ForceDelete actions are useless if a
+     * soft-deleted document 404s on its edit/view route. Drop the SoftDeletingScope
+     * from the record route binding so a trashed record can be opened and restored.
+     */
+    public static function getRecordRouteBindingEloquentQuery(): Builder
+    {
+        return parent::getRecordRouteBindingEloquentQuery()
+            ->withoutGlobalScopes([SoftDeletingScope::class]);
     }
 
     /**

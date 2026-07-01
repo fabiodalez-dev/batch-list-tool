@@ -5,6 +5,7 @@ namespace App\Models;
 use App\Models\Lookup\Concerns\HasLookupOptions;
 use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Database\Eloquent\Model;
+use Illuminate\Database\Eloquent\Relations\BelongsTo;
 use OwenIt\Auditing\Auditable;
 use OwenIt\Auditing\Contracts\Auditable as AuditableContract;
 
@@ -23,12 +24,17 @@ class LocationType extends Model implements AuditableContract
 
     protected $table = 'location_types';
 
-    protected $fillable = ['code', 'label', 'sort_order', 'is_active'];
+    protected $fillable = ['code', 'repository_id', 'label', 'sort_order', 'is_active'];
 
     protected $casts = [
         'is_active' => 'boolean',
         'sort_order' => 'integer',
     ];
+
+    public function repository(): BelongsTo
+    {
+        return $this->belongsTo(Repository::class);
+    }
 
     public function scopeActive(Builder $q): Builder
     {

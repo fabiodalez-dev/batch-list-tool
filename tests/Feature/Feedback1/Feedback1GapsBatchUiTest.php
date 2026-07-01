@@ -21,7 +21,7 @@ use Spatie\Permission\Models\Role;
  *  2. All main table columns are toggleable EXCEPT batch_number (the
  *     key/hyperlink column stays fixed).
  *  3. Filters stay visible above the table content so a null result set
- *     never hides them (FiltersLayout::AboveContentCollapsible, mirroring
+ *     never hides them (FiltersLayout::BeforeContentCollapsible, mirroring
  *     BoxResource).
  */
 uses(RefreshDatabase::class);
@@ -109,11 +109,11 @@ it('makes all other main columns toggleable', function (): void {
 });
 
 // ============================================================================
-// 3 — filters always visible (AboveContentCollapsible)
+// 3 — filters always visible (BeforeContentCollapsible)
 // ============================================================================
 
-it('uses the AboveContentCollapsible filters layout (mirrors BoxResource)', function (): void {
+it('uses the BeforeContentCollapsible filters layout (mirrors BoxResource)', function (): void {
     $this->actingAs(f1gb_superAdmin());
 
-    expect(f1gb_table()->getFiltersLayout())->toBe(FiltersLayout::AboveContentCollapsible);
+    expect(f1gb_table()->getFiltersLayout())->toBe(FiltersLayout::BeforeContentCollapsible);
 });

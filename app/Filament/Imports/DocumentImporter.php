@@ -9,7 +9,9 @@ use App\Models\Authority;
 use App\Models\Box;
 use App\Models\CustomFieldDefinition;
 use App\Models\Document;
+use App\Models\Repository;
 use App\Models\Scopes\RepositoryScope;
+use App\Models\Series;
 use App\Support\BulkImport\EntityResolver;
 use App\Support\BulkImport\SpreadsheetParsers;
 use App\Support\CustomFields\CustomFieldResolver;
@@ -18,6 +20,7 @@ use Filament\Actions\Imports\ImportColumn;
 use Filament\Actions\Imports\Importer;
 use Filament\Actions\Imports\Models\Import;
 use Illuminate\Database\Eloquent\Collection as EloquentCollection;
+use Illuminate\Database\Eloquent\Model;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Validation\ValidationException;
 use Spatie\SchemalessAttributes\SchemalessAttributes;
@@ -161,6 +164,14 @@ class DocumentImporter extends Importer
     protected static array $rowRepositoryStash = [];
 
     /**
+     * Bug #22 — memoised `code` lookups (Repository/Series) used when
+     * auto-generating a document identifier for a blank row.
+     *
+     * @var array<string, string|null>
+     */
+    protected static array $autoIdCodeMemo = [];
+
+    /**
      * @return array<ImportColumn>
      */
     public static function getColumns(): array
@@ -185,6 +196,18 @@ class DocumentImporter extends Importer
 
         $user = auth()->user();
         $repoId = $user?->default_repository_id;
+
+        // Bug #22 — when the identifier column is blank, afterFill() falls the
+        // document identifier back to the Catalogue Identifier (then to an
+        // auto-generated code). Match on that natural key here so RE-IMPORTING a
+        // blank-identifier row with a Catalogue Identifier updates the existing
+        // document instead of colliding on the unique (identifier, repository_id)
+        // key. Rows with neither key are genuinely new each time.
+        if (($identifier === null || trim((string) $identifier) === '')
+            && ! empty($this->data['catalogue_identifier'])
+        ) {
+            $identifier = trim((string) $this->data['catalogue_identifier']);
+        }
 
         if ($identifier === null || trim((string) $identifier) === '') {
             $record = new Document;
@@ -244,6 +267,14 @@ class DocumentImporter extends Importer
             && ! empty($record->catalogue_identifier)
         ) {
             $record->identifier = $record->catalogue_identifier;
+        }
+
+        // Bug #22 — still blank? Auto-create an identifier from the row's
+        // Repository / Series / Document Type so a mass upload by Series does not
+        // require pre-assigned R-codes. A short uuid tail keeps it collision-free
+        // (documents.identifier is indexed).
+        if (empty($record->identifier) || $record->identifier === 'AUTO-') {
+            $record->identifier = $this->generateDocumentIdentifier($record);
         }
 
         // Task 8 (B5) — resolve the current box now that the document's batch
@@ -427,7 +458,68 @@ class DocumentImporter extends Importer
             $body .= ', ' . number_format($failed) . ' failed';
         }
 
+        // Review finding (#22 feedback): rows left blank in the identifier
+        // column are given an auto-generated code (Repository/Series/Type +
+        // suffix). Flag it here so the operator knows to review/replace them —
+        // a per-row count isn't available across the chunked import jobs.
+        $body .= '. Rows with a blank identifier received an auto-generated code — review and replace as needed.';
+
         return $body;
+    }
+
+    /**
+     * Bug #22 — build an auto identifier from Repository / Series / Document Type,
+     * with a short uuid tail for uniqueness (documents.identifier is indexed).
+     */
+    protected function generateDocumentIdentifier(Document $record): string
+    {
+        // Review finding: repository_id is stamped by BelongsToRepository on the
+        // `creating` event (i.e. at save) — during afterFill() the record's
+        // repository_id is still null, so read it from the per-row stash
+        // (set in resolveRecord) or the acting user's default instead, otherwise
+        // the Repository code is silently always dropped from the identifier.
+        $repoId = $record->repository_id
+            ?? (self::$rowRepositoryStash[spl_object_id($record)] ?? null)
+            ?? auth()->user()?->default_repository_id;
+
+        $parts = array_filter([
+            $this->lookupRelatedCode(Repository::class, $repoId !== null ? (int) $repoId : null),
+            $this->lookupRelatedCode(Series::class, $record->series_id),
+            $record->document_type
+                ? strtoupper(substr((string) preg_replace('/[^A-Za-z0-9]/', '', (string) $record->document_type), 0, 3))
+                : null,
+        ]);
+        $prefix = $parts !== [] ? implode('-', $parts) : 'DOC';
+
+        // Review finding: a random uuid tail made RE-IMPORTING the same sheet
+        // non-idempotent — blank-identifier rows got a new id every run, so
+        // resolveRecord() never matched and duplicated every document. Derive
+        // the tail deterministically from the parsed row so an identical row
+        // yields an identical identifier (resolveRecord then matches + updates),
+        // while distinct rows stay distinct.
+        $tail = strtoupper(substr(sha1((string) (json_encode($this->data) ?: spl_object_id($record))), 0, 8));
+
+        return $prefix . '-' . $tail;
+    }
+
+    /**
+     * Memoised `code` lookup for a related model id (Repository/Series).
+     *
+     * @param class-string<Model> $modelClass
+     */
+    protected function lookupRelatedCode(string $modelClass, ?int $id): ?string
+    {
+        if ($id === null) {
+            return null;
+        }
+        $key = $modelClass . ':' . $id;
+        if (! array_key_exists($key, self::$autoIdCodeMemo)) {
+            /** @var string|null $code */
+            $code = $modelClass::withoutGlobalScopes()->whereKey($id)->value('code');
+            self::$autoIdCodeMemo[$key] = $code;
+        }
+
+        return self::$autoIdCodeMemo[$key];
     }
 
     /**
@@ -510,11 +602,14 @@ class DocumentImporter extends Importer
             // unmapped — all documents silently unlinked from their authorities.
             // The document's own identifier should be mapped from 'Catalogue
             // Identifier' or 'Document Identifier' columns in the source sheet.
+            // Bug #22 — the identifier is OPTIONAL: when the sheet leaves it blank
+            // the importer auto-creates one from Repository + Series + Document Type
+            // (see afterFill()), so a mass upload by Series doesn't need pre-assigned
+            // R-codes. A supplied value still wins.
             ImportColumn::make('identifier')
-                ->label('Document identifier (R-code or composite)')
-                ->requiredMappingForNewRecordsOnly()
+                ->label('Document identifier (optional — auto-created from Repository/Series/Type when blank)')
                 ->guess(['identifier', 'Document Identifier', 'Doc ID'])
-                ->rules(['required', 'string', 'max:64']),
+                ->rules(['nullable', 'string', 'max:64']),
 
             ImportColumn::make('catalogue_identifier')
                 ->label('Catalogue Identifier')

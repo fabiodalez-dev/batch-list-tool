@@ -15,6 +15,7 @@ use App\Models\Lookup\BoxType;
 use App\Support\CustomFields\CustomFieldSchema;
 use Carbon\Carbon;
 use Filament\Actions\Action;
+use Filament\Actions\BulkAction;
 use Filament\Actions\BulkActionGroup;
 use Filament\Actions\DeleteBulkAction;
 use Filament\Actions\EditAction;
@@ -22,6 +23,7 @@ use Filament\Actions\ViewAction;
 use Filament\Forms;
 use Filament\Infolists\Components\IconEntry;
 use Filament\Infolists\Components\TextEntry;
+use Filament\Notifications\Notification;
 use Filament\Resources\Resource;
 use Filament\Schemas;
 use Filament\Schemas\Components\Section;
@@ -38,6 +40,7 @@ use Filament\Tables\Filters\SelectFilter;
 use Filament\Tables\Filters\TernaryFilter;
 use Filament\Tables\Table;
 use Illuminate\Database\Eloquent\Builder;
+use Illuminate\Database\Eloquent\Collection;
 
 class BoxResource extends Resource
 {
@@ -229,6 +232,28 @@ class BoxResource extends Resource
                                     }
                                 };
                             })),
+                        // Bug #36 — a box may have MORE THAN ONE parent box (documents
+                        // from several origin boxes combined after cataloguing). This is
+                        // additive: the single "Parent RAS box" above stays the primary
+                        // provenance; these are supplementary origins.
+                        $g(Forms\Components\Select::make('parents')
+                            ->label('Additional parent boxes')
+                            ->helperText('Optional — other origin RAS boxes this one was assembled from.')
+                            // Review finding: mirror the single parent_box_id guard —
+                            // additional parents must be RAS boxes (provenance origins)
+                            // and a box may never be its own parent.
+                            ->relationship('parents', 'box_number', function (Builder $query, ?Box $record) {
+                                $query->where('box_type', 'RAS');
+                                if ($record !== null) {
+                                    $query->whereKeyNot($record->getKey());
+                                }
+
+                                return $query;
+                            })
+                            ->getOptionLabelFromRecordUsing(fn (Box $r): string => ($r->batch?->batch_number ? 'Batch ' . $r->batch->batch_number . ' / ' : '') . 'Box ' . $r->box_number)
+                            ->multiple()
+                            ->searchable()
+                            ->columnSpanFull()),
                     ]),
 
                 Section::make('Barcode & status')
@@ -239,7 +264,7 @@ class BoxResource extends Resource
                         $g(Forms\Components\TextInput::make('barcode')
                             ->label('Box barcode')
                             ->helperText('Barcode label affixed to this box. Must be globally unique. Distinct from any per-document barcodes inside it.')
-                            ->required()
+                            ->required(fn (Get $get): bool => $isRas($get))
                             ->maxLength(64)
                             ->rule(static function (?Box $record): \Closure {
                                 return static function (string $attribute, $value, \Closure $fail) use ($record): void {
@@ -541,6 +566,17 @@ class BoxResource extends Resource
                             ->placeholder('—'),
                     ]),
 
+                // Bug #36 — additional (many-to-many) parent boxes, shown when set.
+                Section::make('Additional parent boxes')
+                    ->visible(fn (?Box $record): bool => (bool) $record?->parents()->exists())
+                    ->schema([
+                        TextEntry::make('parents.box_number')
+                            ->label('Assembled from')
+                            ->badge()
+                            ->color('gray')
+                            ->placeholder('—'),
+                    ]),
+
                 Section::make('Barcode & status')
                     ->columns($twoCols)
                     ->schema([
@@ -705,7 +741,7 @@ class BoxResource extends Resource
             ->persistFiltersInSession()
             // A7 — keep the filter panel visible even when the result set is
             // empty, so the operator can still adjust/clear their criteria.
-            ->filtersLayout(FiltersLayout::AboveContentCollapsible)
+            ->filtersLayout(FiltersLayout::BeforeContentCollapsible)
             // Feedback1 Wave B (B4) — clicking a box row navigates to the
             // Documents dashboard showing that box's contents. Documents'
             // `current_box_id` SelectFilter is `->multiple()`, so the URL shape
@@ -726,7 +762,11 @@ class BoxResource extends Resource
                 $gc(Tables\Columns\TextColumn::make('box_number')
                     ->label('Box')
                     ->searchable()
-                    ->sortable()
+                    // Bug #2 — a combined "Batch then Box" sort: clicking Box orders
+                    // by the parent batch number first, then the box number.
+                    ->sortable(query: fn (Builder $query, string $direction): Builder => $query
+                        ->orderByLeftPowerJoins('batch.batch_number', $direction)
+                        ->orderBy('box_number', $direction))
                     ->toggleable()),
                 $gc(Tables\Columns\TextColumn::make('barcode')
                     ->label('Barcode')
@@ -874,6 +914,90 @@ class BoxResource extends Resource
             ])
             ->bulkActions([
                 BulkActionGroup::make([
+                    BulkAction::make('relocate')
+                        ->label('Relocate boxes')
+                        ->icon('heroicon-o-arrows-right-left')
+                        // Gate on the same permission the model policy uses for edits.
+                        ->authorize(fn (): bool => (bool) (auth()->user()?->can('update_box')))
+                        ->form([
+                            // Repository-scoped + active locations only (same as the main
+                            // form field) so a bulk relocate can't reach another tenant's
+                            // or an inactive location.
+                            SearchableSelects::location(
+                                'location_id',
+                                fn ($query) => $query
+                                    ->active()
+                                    ->forRepository(auth()->user()?->default_repository_id),
+                            )->required(fn (Get $get): bool => (bool) $get('set_perm_out')),
+                            Forms\Components\Toggle::make('set_perm_out')
+                                ->label('Mark barcode as PERM OUT')
+                                ->live(),
+                            // RFQ Appendix-1 #2: a PERM_OUT box needs a disinfestation date
+                            // and a location. Enforce both here instead of bypassing them.
+                            Forms\Components\DatePicker::make('disinfestation_date')
+                                ->label('Disinfestation date')
+                                ->helperText('Required when marking boxes PERM OUT (RFQ A1.2).')
+                                ->visible(fn (Get $get): bool => (bool) $get('set_perm_out'))
+                                ->required(fn (Get $get): bool => (bool) $get('set_perm_out')),
+                            Forms\Components\TextInput::make('tracking_note')
+                                ->label('Tracking note')
+                                ->maxLength(255),
+                        ])
+                        ->action(function (Collection $records, array $data): void {
+                            // Review finding: count what actually changed so the
+                            // notification is honest — a submit that leaves every
+                            // field blank must not report success.
+                            $changed = 0;
+                            $records->each(function (Box $record) use ($data, &$changed): void {
+                                $update = [];
+
+                                if (filled($data['location_id'] ?? null)) {
+                                    $update['location_id'] = $data['location_id'];
+                                }
+
+                                if (! empty($data['set_perm_out'])) {
+                                    $update['barcode_status'] = 'PERM_OUT';
+                                    if (filled($data['disinfestation_date'] ?? null)) {
+                                        $update['disinfestation_date'] = $data['disinfestation_date'];
+                                    }
+                                }
+
+                                if (filled($data['tracking_note'] ?? null)) {
+                                    $existing = trim((string) ($record->notes ?? ''));
+                                    $update['notes'] = $existing !== ''
+                                        ? $existing . "\n" . $data['tracking_note']
+                                        : $data['tracking_note'];
+                                }
+
+                                if (! empty($update)) {
+                                    $record->update($update);
+                                    $changed++;
+                                }
+                            });
+
+                            if ($changed === 0) {
+                                Notification::make()
+                                    ->title('No boxes changed')
+                                    ->body('Every field was left blank, so nothing was updated.')
+                                    ->warning()
+                                    ->send();
+
+                                return;
+                            }
+
+                            Notification::make()
+                                ->title($changed . ' ' . ($changed === 1 ? 'box' : 'boxes') . ' relocated')
+                                ->success()
+                                ->send();
+                        })
+                        ->requiresConfirmation()
+                        ->modalHeading('Relocate boxes')
+                        // Review finding: confirmation must match blast radius —
+                        // state the count and that PERM OUT is a permanent change.
+                        ->modalDescription(fn (Collection $records): string => 'You are about to update '
+                            . $records->count() . ' ' . ($records->count() === 1 ? 'box' : 'boxes')
+                            . '. Marking them PERM OUT is a permanent custody change (RFQ A1.2).')
+                        ->deselectRecordsAfterCompletion(),
                     DeleteBulkAction::make(),
                 ]),
             ]);

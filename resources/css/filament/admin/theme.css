@@ -523,8 +523,64 @@ pre,
     background-color: var(--cream-50);
     border: 1px solid var(--cream-200);
     border-radius: 12px;
-    overflow: hidden;
     box-shadow: none;
+}
+
+/* Bug #3 — the Columns / filter dropdown panel is absolutely positioned inside
+   .fi-ta-ctn; a blanket `overflow: hidden` clips it whenever the table is short.
+   Filament itself skips the clip for tables that carry a header toolbar
+   (.fi-ta-ctn-with-header) for exactly this reason, so we mirror that: keep the
+   rounded-corner clip only on toolbar-less tables. */
+.fi-ta,
+.fi-ta-ctn:not(.fi-ta-ctn-with-header) {
+    overflow: hidden;
+}
+
+/* Bug #3 (client: "scroll bar needed") — the Columns manager panel is an
+   absolutely-positioned dropdown with no max-height, so with many columns it runs
+   past the viewport and its Apply button becomes unreachable. The items list is a
+   `grid-auto-flow: column` grid (fi-grid-direction-col), so simply capping its
+   height makes it wrap into extra columns to the RIGHT (a horizontal scrollbar) —
+   not what we want. Force a single VERTICAL column, cap the height, and give it a
+   VERTICAL-only scrollbar; the header and Apply action stay fixed above/below. */
+.fi-ta-col-manager {
+    display: flex;
+    flex-direction: column;
+}
+
+.fi-ta-col-manager-items {
+    display: flex;
+    flex-direction: column;
+    flex-wrap: nowrap;
+    min-height: 0;
+    max-height: 18rem;
+    overflow-x: hidden;
+    overflow-y: auto;
+}
+
+/* Bug #6 — frozen table header. The table's `.fi-ta-content-ctn` wrapper is the
+   nearest scroll container (it already carries overflow:auto for horizontal
+   scroll of wide tables). Give it a bounded height so the body scrolls inside it
+   while the header row sticks to its top. Safe here because table ROW actions are
+   inline buttons that open modals (teleported to <body>), not inline dropdowns —
+   so nothing in the scroll body gets clipped. The toolbar (search / filters /
+   Columns) sits ABOVE this wrapper and is unaffected. */
+/* The `17rem` offset approximates the page chrome above the table (topbar +
+   heading + toolbar). Review finding: it can't account for per-page toolbar
+   height variance (multi-line filter chips, banners, the 2-column filter form),
+   so pair it with a `min-height` floor — on short viewports or tall toolbars the
+   calc can otherwise collapse the table region to a near-zero height. The floor
+   guarantees the body always shows a few rows and stays scrollable. */
+.fi-ta-content-ctn {
+    max-height: calc(100vh - 17rem);
+    min-height: 20rem;
+}
+
+.fi-ta-table thead th,
+.fi-ta-table thead .fi-ta-header-cell {
+    position: sticky;
+    top: 0;
+    z-index: 20;
 }
 
 /* Table header band — uniform cream-100 (#F4EFE7) so the whole thead
@@ -663,6 +719,14 @@ input.fi-input {
     background-color: transparent;
     border: 0;
     padding: 0.625rem 0.875rem;
+}
+
+/* Bug #8 — a <select> needs extra right padding for its dropdown chevron
+   (Filament reserves pe-8 = 2rem). The rule above cuts it to 0.875rem, so the
+   arrow is drawn on top of the value (e.g. the per-page number). Restore the
+   chevron gutter while keeping the other three sides. */
+.fi-input-wrp select {
+    padding-right: 2rem;
 }
 
 .fi-input:not(textarea),

@@ -106,6 +106,7 @@ class SeriesResource extends Resource
                         $g(Forms\Components\Toggle::make('is_wills_series')
                             ->required()),
                         $g(Forms\Components\Toggle::make('is_active')
+                            ->default(true)   // Bug #21 — a new Series is active by default
                             ->required()),
                     ]),
 
@@ -249,6 +250,7 @@ class SeriesResource extends Resource
                     ->badge()
                     ->color('gray')
                     ->placeholder('GLOBAL')
+                    ->sortable()
                     ->toggleable()),
                 $gc(Tables\Columns\TextColumn::make('code')
                     ->label('Identifier')
@@ -276,12 +278,15 @@ class SeriesResource extends Resource
                 $gc(Tables\Columns\TextColumn::make('parent.code')
                     ->label('Parent')
                     ->placeholder('—')
+                    ->sortable()
                     ->toggleable(isToggledHiddenByDefault: true)),
                 $gc(Tables\Columns\IconColumn::make('is_wills_series')
                     ->boolean()
+                    ->sortable()
                     ->toggleable()),
                 $gc(Tables\Columns\IconColumn::make('is_active')
                     ->boolean()
+                    ->sortable()
                     ->toggleable()),
                 Tables\Columns\TextColumn::make('created_at')
                     ->dateTime()

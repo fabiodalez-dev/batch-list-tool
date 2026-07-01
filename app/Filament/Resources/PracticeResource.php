@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace App\Filament\Resources;
 
 use App\Filament\Resources\PracticeResource\Pages;
+use App\Filament\Support\CreatorColumn;
 use App\Models\Practice;
 use App\Models\Repository;
 use Filament\Actions\BulkAction;
@@ -15,6 +16,7 @@ use Filament\Resources\Resource;
 use Filament\Schemas\Schema;
 use Filament\Tables;
 use Filament\Tables\Table;
+use Illuminate\Database\Eloquent\Builder;
 
 /**
  * RFQ §3.1.11 — manage the canonical list of `practice` values
@@ -83,16 +85,18 @@ class PracticeResource extends Resource
                     ->sortable()
                     ->toggleable(isToggledHiddenByDefault: true),
                 Tables\Columns\TextColumn::make('name')->searchable()->sortable(),
-                Tables\Columns\TextColumn::make('description')->limit(60)->toggleable(),
-                Tables\Columns\IconColumn::make('is_active')->boolean()->sortable(),
+                Tables\Columns\TextColumn::make('description')->limit(60)->sortable()->toggleable(),
+                Tables\Columns\IconColumn::make('is_active')->boolean()->sortable()->toggleable(),
                 // D4 — repository column, toggleable (off by default).
                 Tables\Columns\TextColumn::make('repository.code')
                     ->label('Repository')
                     ->badge()
                     ->color('gray')
                     ->placeholder('GLOBAL')
+                    ->sortable()
                     ->toggleable(isToggledHiddenByDefault: true),
                 Tables\Columns\TextColumn::make('updated_at')->dateTime('Y-m-d H:i')->sortable()->toggleable(),
+                CreatorColumn::make(),
             ])
             ->defaultSort('name')
             ->filters([
@@ -111,6 +115,16 @@ class PracticeResource extends Resource
                             ->whereKey($records->modelKeys())
                             ->update(['is_active' => false])),
                 ]),
+            ]);
+    }
+
+    public static function getEloquentQuery(): Builder
+    {
+        return parent::getEloquentQuery()
+            ->with([
+                // Eager-load the repository shown in the table (avoid N+1).
+                'repository',
+                'audits' => fn ($q) => $q->where('event', 'created')->with('user'),
             ]);
     }
 

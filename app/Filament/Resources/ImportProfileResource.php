@@ -181,16 +181,20 @@ class ImportProfileResource extends Resource
                     ->label('Imports')
                     ->badge()
                     ->formatStateUsing(fn (string $state): string => self::importTypeOptions()[$state] ?? $state)
-                    ->sortable(),
+                    ->sortable()
+                    ->toggleable(),
 
                 Tables\Columns\IconColumn::make('is_shared')
                     ->label('Shared')
-                    ->boolean(),
+                    ->boolean()
+                    ->sortable()
+                    ->toggleable(),
 
                 Tables\Columns\TextColumn::make('user.name')
                     ->label('Owner')
                     ->placeholder('—')
                     ->searchable()
+                    ->sortable()
                     ->toggleable(),
 
                 Tables\Columns\TextColumn::make('use_count')

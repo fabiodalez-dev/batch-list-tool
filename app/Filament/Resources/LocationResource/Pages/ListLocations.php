@@ -42,7 +42,8 @@ class ListLocations extends ListRecords
                 ->action(fn () => TemplateGenerator::download('location'))
                 ->visible(fn () => auth()->user()?->can('create', Location::class) ?? false),
 
-            Actions\CreateAction::make(),
+            Actions\CreateAction::make()
+                ->label('New Location'),   // Bug #15
         ];
     }
 }
