@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 use App\Filament\Pages\Reports;
 use App\Filament\Pages\Reports\BoxMovementHistoryReport;
+use App\Filament\Pages\Reports\DisinfestationCycleReport;
 use App\Filament\Pages\Reports\DocumentsByBatchReport;
 use App\Filament\Pages\Reports\DocumentsByCreatorReport;
 use App\Filament\Pages\Reports\DocumentsBySeriesReport;
@@ -157,6 +158,7 @@ test('All 5 report pages render 200 for admin', function () {
     Livewire::test(DocumentsByCreatorReport::class)->assertOk();
     Livewire::test(DocumentsBySeriesReport::class)->assertOk();
     Livewire::test(PendingDisinfestationReport::class)->assertOk();
+    Livewire::test(DisinfestationCycleReport::class)->assertOk();
     Livewire::test(BoxMovementHistoryReport::class)->assertOk();
 });
 
@@ -507,8 +509,8 @@ test('landing page caches counts for 60 seconds', function () {
 
     $page = new Reports;
     $cards1 = $page->cards();
-    // 5 original canned reports + 1 new "Flags by type" report (RFQ APP2-xviii).
-    expect($cards1)->toHaveCount(6);
+    // 6 canned reports + the NAF Queries Q1 "Disinfestation cycle plan".
+    expect($cards1)->toHaveCount(7);
 
     // Second call hits the cache — verify by checking the cache key.
     $uid = auth()->id();

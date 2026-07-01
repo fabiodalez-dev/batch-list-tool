@@ -6,11 +6,13 @@ namespace App\Filament\Pages;
 
 use App\Filament\Concerns\ExplainsPage;
 use App\Filament\Pages\Reports\BoxMovementHistoryReport;
+use App\Filament\Pages\Reports\DisinfestationCycleReport;
 use App\Filament\Pages\Reports\DocumentsByBatchReport;
 use App\Filament\Pages\Reports\DocumentsByCreatorReport;
 use App\Filament\Pages\Reports\DocumentsBySeriesReport;
 use App\Filament\Pages\Reports\FlagsByTypeReport;
 use App\Filament\Pages\Reports\PendingDisinfestationReport;
+use App\Models\Box;
 use App\Models\BoxMovement;
 use App\Models\Document;
 use App\Models\DocumentFlag;
@@ -112,6 +114,16 @@ class Reports extends Page
                 'count' => $counts['pending'] . ' pending',
             ],
             [
+                'key' => 'disinfestation-cycle',
+                'title' => 'Disinfestation cycle plan',
+                'description' => 'Boxes due for disinfestation — never-done first, then re-cycle (40/80-day cycle).',
+                'icon' => 'heroicon-o-calendar-days',
+                'url' => DisinfestationCycleReport::getUrl(),
+                // ?? 0 guards the 60s window right after a deploy when the cached
+                // counts array may predate this key.
+                'count' => ($counts['cycle'] ?? 0) . ' boxes',
+            ],
+            [
                 'key' => 'movements',
                 'title' => 'Box movement history',
                 'description' => 'Chronological log of box-to-box transfers, filterable by date.',
@@ -158,6 +170,7 @@ class Reports extends Page
                 ReportTemplate::SOURCE_DOCUMENTS_BY_CREATOR => DocumentsByCreatorReport::class,
                 ReportTemplate::SOURCE_DOCUMENTS_BY_SERIES => DocumentsBySeriesReport::class,
                 ReportTemplate::SOURCE_PENDING_DISINFESTATION => PendingDisinfestationReport::class,
+                ReportTemplate::SOURCE_DISINFESTATION_CYCLE => DisinfestationCycleReport::class,
                 ReportTemplate::SOURCE_BOX_MOVEMENTS => BoxMovementHistoryReport::class,
                 ReportTemplate::SOURCE_FLAGS_BY_TYPE => FlagsByTypeReport::class,
                 default => null,
@@ -189,6 +202,7 @@ class Reports extends Page
             ReportTemplate::SOURCE_DOCUMENTS_BY_CREATOR => 'Documents by creator',
             ReportTemplate::SOURCE_DOCUMENTS_BY_SERIES => 'Documents by series',
             ReportTemplate::SOURCE_PENDING_DISINFESTATION => 'Pending disinfestation',
+            ReportTemplate::SOURCE_DISINFESTATION_CYCLE => 'Disinfestation cycle plan',
             ReportTemplate::SOURCE_BOX_MOVEMENTS => 'Box movement history',
             ReportTemplate::SOURCE_FLAGS_BY_TYPE => 'Flags by type',
             ReportTemplate::SOURCE_DOCUMENTS => 'Documents',
@@ -233,6 +247,13 @@ class Reports extends Page
                         ->count(),
                     'movements' => BoxMovement::query()->count(),
                     'flags' => DocumentFlag::query()->count(),
+                    'cycle' => Box::query()
+                        ->whereNull('destroyed_at')
+                        ->where(function ($q): void {
+                            $q->whereNull('disinfestation_date')
+                                ->orWhere('disinfestation_date', '<=', now()->subDays(40)->startOfDay());
+                        })
+                        ->count(),
                 ];
             },
         );
