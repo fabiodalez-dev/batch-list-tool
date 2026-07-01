@@ -12,6 +12,7 @@ use App\Observers\DocumentObserver;
 use App\Settings\AuditSettings;
 use App\Settings\BackupSettings;
 use App\Support\BackupDestinations;
+use Filament\Actions\Action;
 use Filament\Tables\Table;
 use Illuminate\Auth\Events\Failed;
 use Illuminate\Auth\Events\Lockout;
@@ -84,6 +85,15 @@ class AppServiceProvider extends ServiceProvider
             } catch (\Throwable) {
                 // Never let a missing preference crash a page.
             }
+
+            // Bug #5 — Filament v5.6.5: the column-manager "Apply" button (dropdown
+            // variant) runs `applyTableColumnManager` but never closes the panel,
+            // so the dropdown stays open after Apply. The modal variant already
+            // appends `close()`; mirror that here for the dropdown path.
+            $table->columnManagerApplyAction(
+                fn (Action $action): Action => $action
+                    ->alpineClickHandler('applyTableColumnManager(); close()')
+            );
         });
 
         // Authentication event listeners — write every login lifecycle event to

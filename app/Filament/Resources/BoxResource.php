@@ -705,7 +705,7 @@ class BoxResource extends Resource
             ->persistFiltersInSession()
             // A7 — keep the filter panel visible even when the result set is
             // empty, so the operator can still adjust/clear their criteria.
-            ->filtersLayout(FiltersLayout::AboveContentCollapsible)
+            ->filtersLayout(FiltersLayout::BeforeContentCollapsible)
             // Feedback1 Wave B (B4) — clicking a box row navigates to the
             // Documents dashboard showing that box's contents. Documents'
             // `current_box_id` SelectFilter is `->multiple()`, so the URL shape

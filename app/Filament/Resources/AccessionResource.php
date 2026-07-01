@@ -306,7 +306,7 @@ class AccessionResource extends Resource
             ->persistFiltersInSession()
             // Feedback1 — filters always visible above the table content
             // (collapsible), mirroring BoxResource.
-            ->filtersLayout(FiltersLayout::AboveContentCollapsible)
+            ->filtersLayout(FiltersLayout::BeforeContentCollapsible)
             // Feedback1 Wave A (A6) — drag-and-drop column reordering, mirroring
             // DocumentResource and BoxResource (spec: all main resource lists).
             ->reorderableColumns()

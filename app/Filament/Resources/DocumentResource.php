@@ -1015,6 +1015,10 @@ class DocumentResource extends Resource
                 $gc(Tables\Columns\TextColumn::make('pages_folios')->label('Pages/Folios')->toggleable(isToggledHiddenByDefault: true)),
                 $gc(Tables\Columns\TextColumn::make('barcode_in')->label('Barcode (IN)')->toggleable(isToggledHiddenByDefault: true)),
                 $gc(Tables\Columns\TextColumn::make('catalogue_identifier')->label('Catalogue ID')->toggleable(isToggledHiddenByDefault: true)),
+                // Bug #31 — Notes visible by default: some documents can only be
+                // identified by the note (no known creator, date or type). Hideable
+                // via the column picker; truncated with the full text on hover.
+                $gc(Tables\Columns\TextColumn::make('notes')->label('Notes')->limit(60)->tooltip(fn (?string $state): ?string => $state)->toggleable()),
                 $gc(Tables\Columns\TextColumn::make('repository.code')->label('Repo')->badge()->color('gray')->toggleable(), 'repository_id'),
                 $gc(Tables\Columns\TextColumn::make('disinfestation_date')->label('Disinfested')->date()->sortable()->toggleable(isToggledHiddenByDefault: true)),
                 $gc(Tables\Columns\IconColumn::make('torre')->boolean()->toggleable(isToggledHiddenByDefault: true)),

@@ -485,7 +485,7 @@ class BatchResource extends Resource
             // Feedback1 gaps — keep filters visible above the table content so
             // an empty (null) result set never hides the active filters
             // (mirrors BoxResource).
-            ->filtersLayout(FiltersLayout::AboveContentCollapsible)
+            ->filtersLayout(FiltersLayout::BeforeContentCollapsible)
             ->actions([
                 ViewAction::make(),
                 EditAction::make(),

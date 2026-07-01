@@ -523,8 +523,17 @@ pre,
     background-color: var(--cream-50);
     border: 1px solid var(--cream-200);
     border-radius: 12px;
-    overflow: hidden;
     box-shadow: none;
+}
+
+/* Bug #3 — the Columns / filter dropdown panel is absolutely positioned inside
+   .fi-ta-ctn; a blanket `overflow: hidden` clips it whenever the table is short.
+   Filament itself skips the clip for tables that carry a header toolbar
+   (.fi-ta-ctn-with-header) for exactly this reason, so we mirror that: keep the
+   rounded-corner clip only on toolbar-less tables. */
+.fi-ta,
+.fi-ta-ctn:not(.fi-ta-ctn-with-header) {
+    overflow: hidden;
 }
 
 /* Table header band — uniform cream-100 (#F4EFE7) so the whole thead
@@ -663,6 +672,14 @@ input.fi-input {
     background-color: transparent;
     border: 0;
     padding: 0.625rem 0.875rem;
+}
+
+/* Bug #8 — a <select> needs extra right padding for its dropdown chevron
+   (Filament reserves pe-8 = 2rem). The rule above cuts it to 0.875rem, so the
+   arrow is drawn on top of the value (e.g. the per-page number). Restore the
+   chevron gutter while keeping the other three sides. */
+.fi-input-wrp select {
+    padding-right: 2rem;
 }
 
 .fi-input:not(textarea),

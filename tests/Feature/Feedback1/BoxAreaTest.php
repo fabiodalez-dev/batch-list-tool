@@ -22,7 +22,7 @@ use Spatie\Permission\Models\Role;
  *
  *  A10: barcode required everywhere + globally unique (form validation).
  *   A6: columns in requested order; reorderableColumns(); all toggleable.
- *   A7: filters layout AboveContentCollapsible (visible when result set empty).
+ *   A7: filters layout BeforeContentCollapsible (visible when result set empty).
  *   A9: CreatorColumn (Inputter) present in column list.
  *   Sorting: per-column sortable() applied.
  */
@@ -232,7 +232,7 @@ it('A6: every core column is toggleable', function (): void {
 // A7 — Filters visible when result set is empty
 // ---------------------------------------------------------------------------
 
-it('A7: box table uses AboveContentCollapsible filters layout so filters are always accessible', function (): void {
+it('A7: box table uses BeforeContentCollapsible filters layout so filters are always accessible', function (): void {
     $user = ba_actor();
     $this->actingAs($user);
 
@@ -243,7 +243,7 @@ it('A7: box table uses AboveContentCollapsible filters layout so filters are alw
         Table::make($livewire)
     );
 
-    expect($table->getFiltersLayout())->toBe(FiltersLayout::AboveContentCollapsible);
+    expect($table->getFiltersLayout())->toBe(FiltersLayout::BeforeContentCollapsible);
 });
 
 // ---------------------------------------------------------------------------

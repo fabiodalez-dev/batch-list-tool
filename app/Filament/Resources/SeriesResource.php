@@ -106,6 +106,7 @@ class SeriesResource extends Resource
                         $g(Forms\Components\Toggle::make('is_wills_series')
                             ->required()),
                         $g(Forms\Components\Toggle::make('is_active')
+                            ->default(true)   // Bug #21 — a new Series is active by default
                             ->required()),
                     ]),
 

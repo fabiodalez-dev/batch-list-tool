@@ -208,10 +208,13 @@ class UserResource extends Resource
                 //
             ])
             ->actions([
-                ViewAction::make(),
-                EditAction::make(),
+                // Bug #9 — uniform compact icon buttons so the actions cell keeps a
+                // consistent width/alignment across rows (some rows hide toggleActive).
+                ViewAction::make()->iconButton(),
+                EditAction::make()->iconButton(),
                 Action::make('resetPassword')
                     ->label('Reset password')
+                    ->iconButton()
                     ->icon('heroicon-o-key')
                     ->requiresConfirmation()
                     ->visible(fn (User $record): bool => (bool) auth()->user()?->can('update', $record))
@@ -231,6 +234,7 @@ class UserResource extends Resource
                     }),
                 Action::make('toggleActive')
                     ->label(fn (User $record): string => $record->is_active ? 'Deactivate' : 'Activate')
+                    ->iconButton()
                     ->icon(fn (User $record): string => $record->is_active ? 'heroicon-o-no-symbol' : 'heroicon-o-check-circle')
                     ->requiresConfirmation()
                     ->visible(fn (User $record): bool => ! $record->is(auth()->user()) && (bool) auth()->user()?->can('update', $record))
