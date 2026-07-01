@@ -880,10 +880,28 @@ class BoxResource extends Resource
                     BulkAction::make('relocate')
                         ->label('Relocate boxes')
                         ->icon('heroicon-o-arrows-right-left')
+                        // Gate on the same permission the model policy uses for edits.
+                        ->authorize(fn (): bool => (bool) (auth()->user()?->can('update_box')))
                         ->form([
-                            SearchableSelects::location('location_id'),
+                            // Repository-scoped + active locations only (same as the main
+                            // form field) so a bulk relocate can't reach another tenant's
+                            // or an inactive location.
+                            SearchableSelects::location(
+                                'location_id',
+                                fn ($query) => $query
+                                    ->active()
+                                    ->forRepository(auth()->user()?->default_repository_id),
+                            )->required(fn (Get $get): bool => (bool) $get('set_perm_out')),
                             Forms\Components\Toggle::make('set_perm_out')
-                                ->label('Mark barcode as PERM OUT'),
+                                ->label('Mark barcode as PERM OUT')
+                                ->live(),
+                            // RFQ Appendix-1 #2: a PERM_OUT box needs a disinfestation date
+                            // and a location. Enforce both here instead of bypassing them.
+                            Forms\Components\DatePicker::make('disinfestation_date')
+                                ->label('Disinfestation date')
+                                ->helperText('Required when marking boxes PERM OUT (RFQ A1.2).')
+                                ->visible(fn (Get $get): bool => (bool) $get('set_perm_out'))
+                                ->required(fn (Get $get): bool => (bool) $get('set_perm_out')),
                             Forms\Components\TextInput::make('tracking_note')
                                 ->label('Tracking note')
                                 ->maxLength(255),
@@ -898,6 +916,9 @@ class BoxResource extends Resource
 
                                 if (! empty($data['set_perm_out'])) {
                                     $update['barcode_status'] = 'PERM_OUT';
+                                    if (filled($data['disinfestation_date'] ?? null)) {
+                                        $update['disinfestation_date'] = $data['disinfestation_date'];
+                                    }
                                 }
 
                                 if (filled($data['tracking_note'] ?? null)) {

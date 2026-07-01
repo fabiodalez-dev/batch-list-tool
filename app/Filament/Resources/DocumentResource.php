@@ -52,6 +52,7 @@ use Filament\Tables\Filters\TrashedFilter;
 use Filament\Tables\Table;
 use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Database\Eloquent\Model;
+use Illuminate\Database\Eloquent\SoftDeletingScope;
 use Illuminate\Support\Str;
 
 class DocumentResource extends Resource
@@ -344,7 +345,18 @@ class DocumentResource extends Resource
                     ->columns(2)
                     ->schema([
                         $g(Forms\Components\Select::make('colour_code')
-                            ->options(['pink' => 'Pink', 'brown' => 'Brown', 'orange' => 'Orange', 'grey' => 'Grey', 'red' => 'Red', 'yellow' => 'Yellow'])
+                            // Six preset colours (bug #27). colour_code is a legacy free-text
+                            // field, so surface any already-saved out-of-list value too, or
+                            // the form would drop it on edit.
+                            ->options(function (?Document $record): array {
+                                $base = ['pink' => 'Pink', 'brown' => 'Brown', 'orange' => 'Orange', 'grey' => 'Grey', 'red' => 'Red', 'yellow' => 'Yellow'];
+                                $current = $record?->colour_code;
+                                if (is_string($current) && $current !== '' && ! array_key_exists($current, $base)) {
+                                    $base[$current] = ucfirst($current) . ' (legacy)';
+                                }
+
+                                return $base;
+                            })
                             ->native(false)
                             ->nullable()),
                         $g(Forms\Components\Select::make('digitised')
@@ -1367,6 +1379,17 @@ class DocumentResource extends Resource
                 // A9 — creator resolution: first 'created' audit with its user.
                 'audits' => fn ($q) => $q->where('event', 'created')->oldest('id')->with('user'),
             ]);
+    }
+
+    /**
+     * Bug #26 — the TrashedFilter + Restore/ForceDelete actions are useless if a
+     * soft-deleted document 404s on its edit/view route. Drop the SoftDeletingScope
+     * from the record route binding so a trashed record can be opened and restored.
+     */
+    public static function getRecordRouteBindingEloquentQuery(): Builder
+    {
+        return parent::getRecordRouteBindingEloquentQuery()
+            ->withoutGlobalScopes([SoftDeletingScope::class]);
     }
 
     /**
