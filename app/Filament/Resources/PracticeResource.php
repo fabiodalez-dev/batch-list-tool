@@ -121,7 +121,11 @@ class PracticeResource extends Resource
     public static function getEloquentQuery(): Builder
     {
         return parent::getEloquentQuery()
-            ->with(['audits' => fn ($q) => $q->where('event', 'created')->with('user')]);
+            ->with([
+                // Eager-load the repository shown in the table (avoid N+1).
+                'repository',
+                'audits' => fn ($q) => $q->where('event', 'created')->with('user'),
+            ]);
     }
 
     public static function getPages(): array

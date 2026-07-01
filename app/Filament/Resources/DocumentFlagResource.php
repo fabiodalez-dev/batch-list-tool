@@ -420,6 +420,10 @@ class DocumentFlagResource extends Resource
     {
         return parent::getEloquentQuery()
             ->with([
+                // Eager-load the relations the table columns render (avoid N+1).
+                'document',
+                'repository',
+                'flaggedBy',
                 'audits' => fn ($q) => $q->where('event', 'created')->oldest('id')->with('user'),
             ]);
     }

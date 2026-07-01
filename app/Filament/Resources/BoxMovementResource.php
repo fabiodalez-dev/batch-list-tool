@@ -193,7 +193,14 @@ class BoxMovementResource extends Resource
     public static function getEloquentQuery(): Builder
     {
         return parent::getEloquentQuery()
-            ->with(['audits' => fn ($q) => $q->where('event', 'created')->with('user')]);
+            ->with([
+                // Eager-load the relations the table columns render (avoid N+1).
+                'document',
+                'fromBox',
+                'toBox',
+                'user',
+                'audits' => fn ($q) => $q->where('event', 'created')->with('user'),
+            ]);
     }
 
     public static function getRelations(): array
