@@ -13,10 +13,12 @@ use App\Filament\Pages\Reports\DocumentsBySeriesReport;
 use App\Filament\Pages\Reports\FlagsByTypeReport;
 use App\Filament\Pages\Reports\PendingDisinfestationReport;
 use App\Filament\Pages\Reports\RasNraReconciliationReport;
+use App\Filament\Pages\Reports\StockTakeReport;
 use App\Models\Box;
 use App\Models\BoxMovement;
 use App\Models\Document;
 use App\Models\DocumentFlag;
+use App\Models\Location;
 use App\Models\ReportTemplate;
 use App\Models\User;
 use Filament\Pages\Page;
@@ -141,6 +143,14 @@ class Reports extends Page
                 'count' => $counts['movements'] . ' movements',
             ],
             [
+                'key' => 'stock-take',
+                'title' => 'Stock take (by location)',
+                'description' => 'Box and item counts per location/room — the "what we hold and where" view.',
+                'icon' => 'heroicon-o-clipboard-document-check',
+                'url' => StockTakeReport::getUrl(),
+                'count' => ($counts['stocktake'] ?? 0) . ' locations',
+            ],
+            [
                 'key' => 'flags-by-type',
                 'title' => 'Flags by type',
                 'description' => 'Counts of issue flags grouped by category and severity (RFQ APP2-xviii).',
@@ -181,6 +191,7 @@ class Reports extends Page
                 ReportTemplate::SOURCE_PENDING_DISINFESTATION => PendingDisinfestationReport::class,
                 ReportTemplate::SOURCE_DISINFESTATION_CYCLE => DisinfestationCycleReport::class,
                 ReportTemplate::SOURCE_RAS_NRA_RECONCILIATION => RasNraReconciliationReport::class,
+                ReportTemplate::SOURCE_STOCK_TAKE => StockTakeReport::class,
                 ReportTemplate::SOURCE_BOX_MOVEMENTS => BoxMovementHistoryReport::class,
                 ReportTemplate::SOURCE_FLAGS_BY_TYPE => FlagsByTypeReport::class,
                 default => null,
@@ -214,6 +225,7 @@ class Reports extends Page
             ReportTemplate::SOURCE_PENDING_DISINFESTATION => 'Pending disinfestation',
             ReportTemplate::SOURCE_DISINFESTATION_CYCLE => 'Disinfestation cycle plan',
             ReportTemplate::SOURCE_RAS_NRA_RECONCILIATION => 'RAS ↔ NRA reconciliation',
+            ReportTemplate::SOURCE_STOCK_TAKE => 'Stock take',
             ReportTemplate::SOURCE_BOX_MOVEMENTS => 'Box movement history',
             ReportTemplate::SOURCE_FLAGS_BY_TYPE => 'Flags by type',
             ReportTemplate::SOURCE_DOCUMENTS => 'Documents',
@@ -272,6 +284,7 @@ class Reports extends Page
                                 ->orWhere(fn ($b) => $b->whereNotNull('barcode_ras_1')->where('barcode_ras_1', '!=', ''));
                         })
                         ->count(),
+                    'stocktake' => Location::query()->count(),
                 ];
             },
         );

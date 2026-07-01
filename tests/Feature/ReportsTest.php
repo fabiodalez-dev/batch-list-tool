@@ -10,6 +10,7 @@ use App\Filament\Pages\Reports\DocumentsByCreatorReport;
 use App\Filament\Pages\Reports\DocumentsBySeriesReport;
 use App\Filament\Pages\Reports\PendingDisinfestationReport;
 use App\Filament\Pages\Reports\RasNraReconciliationReport;
+use App\Filament\Pages\Reports\StockTakeReport;
 use App\Models\Authority;
 use App\Models\Batch;
 use App\Models\Box;
@@ -161,6 +162,7 @@ test('All 5 report pages render 200 for admin', function () {
     Livewire::test(PendingDisinfestationReport::class)->assertOk();
     Livewire::test(DisinfestationCycleReport::class)->assertOk();
     Livewire::test(RasNraReconciliationReport::class)->assertOk();
+    Livewire::test(StockTakeReport::class)->assertOk();
     Livewire::test(BoxMovementHistoryReport::class)->assertOk();
 });
 
@@ -511,8 +513,8 @@ test('landing page caches counts for 60 seconds', function () {
 
     $page = new Reports;
     $cards1 = $page->cards();
-    // 6 canned reports + NAF Queries Q1 (cycle) + Q3 (RAS↔NRA reconciliation).
-    expect($cards1)->toHaveCount(8);
+    // 6 canned reports + NAF Queries Q1 (cycle) + Q3 (reconciliation) + Q4 (stock take).
+    expect($cards1)->toHaveCount(9);
 
     // Second call hits the cache — verify by checking the cache key.
     $uid = auth()->id();
