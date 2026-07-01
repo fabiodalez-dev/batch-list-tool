@@ -15,6 +15,7 @@ use App\Models\Lookup\BoxType;
 use App\Support\CustomFields\CustomFieldSchema;
 use Carbon\Carbon;
 use Filament\Actions\Action;
+use Filament\Actions\BulkAction;
 use Filament\Actions\BulkActionGroup;
 use Filament\Actions\DeleteBulkAction;
 use Filament\Actions\EditAction;
@@ -22,6 +23,7 @@ use Filament\Actions\ViewAction;
 use Filament\Forms;
 use Filament\Infolists\Components\IconEntry;
 use Filament\Infolists\Components\TextEntry;
+use Filament\Notifications\Notification;
 use Filament\Resources\Resource;
 use Filament\Schemas;
 use Filament\Schemas\Components\Section;
@@ -38,6 +40,7 @@ use Filament\Tables\Filters\SelectFilter;
 use Filament\Tables\Filters\TernaryFilter;
 use Filament\Tables\Table;
 use Illuminate\Database\Eloquent\Builder;
+use Illuminate\Database\Eloquent\Collection;
 
 class BoxResource extends Resource
 {
@@ -239,7 +242,7 @@ class BoxResource extends Resource
                         $g(Forms\Components\TextInput::make('barcode')
                             ->label('Box barcode')
                             ->helperText('Barcode label affixed to this box. Must be globally unique. Distinct from any per-document barcodes inside it.')
-                            ->required()
+                            ->required(fn (Get $get): bool => $isRas($get))
                             ->maxLength(64)
                             ->rule(static function (?Box $record): \Closure {
                                 return static function (string $attribute, $value, \Closure $fail) use ($record): void {
@@ -874,6 +877,48 @@ class BoxResource extends Resource
             ])
             ->bulkActions([
                 BulkActionGroup::make([
+                    BulkAction::make('relocate')
+                        ->label('Relocate boxes')
+                        ->icon('heroicon-o-arrows-right-left')
+                        ->form([
+                            SearchableSelects::location('location_id'),
+                            Forms\Components\Toggle::make('set_perm_out')
+                                ->label('Mark barcode as PERM OUT'),
+                            Forms\Components\TextInput::make('tracking_note')
+                                ->label('Tracking note')
+                                ->maxLength(255),
+                        ])
+                        ->action(function (Collection $records, array $data): void {
+                            $records->each(function (Box $record) use ($data): void {
+                                $update = [];
+
+                                if (filled($data['location_id'] ?? null)) {
+                                    $update['location_id'] = $data['location_id'];
+                                }
+
+                                if (! empty($data['set_perm_out'])) {
+                                    $update['barcode_status'] = 'PERM_OUT';
+                                }
+
+                                if (filled($data['tracking_note'] ?? null)) {
+                                    $existing = trim((string) ($record->notes ?? ''));
+                                    $update['notes'] = $existing !== ''
+                                        ? $existing . "\n" . $data['tracking_note']
+                                        : $data['tracking_note'];
+                                }
+
+                                if (! empty($update)) {
+                                    $record->update($update);
+                                }
+                            });
+
+                            Notification::make()
+                                ->title('Boxes relocated')
+                                ->success()
+                                ->send();
+                        })
+                        ->requiresConfirmation()
+                        ->deselectRecordsAfterCompletion(),
                     DeleteBulkAction::make(),
                 ]),
             ]);

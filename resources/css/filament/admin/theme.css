@@ -558,6 +558,24 @@ pre,
     overflow-y: auto;
 }
 
+/* Bug #6 — frozen table header. The table's `.fi-ta-content-ctn` wrapper is the
+   nearest scroll container (it already carries overflow:auto for horizontal
+   scroll of wide tables). Give it a bounded height so the body scrolls inside it
+   while the header row sticks to its top. Safe here because table ROW actions are
+   inline buttons that open modals (teleported to <body>), not inline dropdowns —
+   so nothing in the scroll body gets clipped. The toolbar (search / filters /
+   Columns) sits ABOVE this wrapper and is unaffected. */
+.fi-ta-content-ctn {
+    max-height: calc(100vh - 17rem);
+}
+
+.fi-ta-table thead th,
+.fi-ta-table thead .fi-ta-header-cell {
+    position: sticky;
+    top: 0;
+    z-index: 20;
+}
+
 /* Table header band — uniform cream-100 (#F4EFE7) so the whole thead
    reads as one surface, no column-tint / sort-cell drift. Quieter
    than the previous #F9F3E9 in line with the rest of the dialed-down

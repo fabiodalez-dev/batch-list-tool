@@ -11,6 +11,7 @@ use App\Models\Box;
 use App\Models\Document;
 use App\Models\Location;
 use App\Models\Repository;
+use App\Models\Scopes\RepositoryScope;
 use App\Models\Series;
 use App\Models\User;
 use Filament\Forms\Components\Select;
@@ -669,7 +670,7 @@ final class SearchableSelects
     {
         $search = trim($search);
 
-        $query = Location::query();
+        $query = Location::query()->withoutGlobalScope(RepositoryScope::class);
         if ($queryModifier !== null) {
             $queryModifier($query);
         }

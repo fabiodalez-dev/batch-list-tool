@@ -21,6 +21,10 @@ use Carbon\Carbon;
 use Filament\Actions\BulkActionGroup;
 use Filament\Actions\DeleteBulkAction;
 use Filament\Actions\EditAction;
+use Filament\Actions\ForceDeleteAction;
+use Filament\Actions\ForceDeleteBulkAction;
+use Filament\Actions\RestoreAction;
+use Filament\Actions\RestoreBulkAction;
 use Filament\Actions\ViewAction;
 use Filament\Forms;
 use Filament\Forms\Components\SpatieMediaLibraryFileUpload;
@@ -137,6 +141,7 @@ class DocumentResource extends Resource
                         $g(Forms\Components\Select::make('document_type')
                             ->label('Document type')
                             ->searchable()
+                            ->preload()
                             ->options(fn (): array => DocumentType::query()
                                 ->where('is_active', true)->orderBy('name')->pluck('name', 'name')->all())
                             ->createOptionForm([
@@ -338,7 +343,10 @@ class DocumentResource extends Resource
                     ->collapsed()
                     ->columns(2)
                     ->schema([
-                        $g(Forms\Components\TextInput::make('colour_code')->maxLength(32)),
+                        $g(Forms\Components\Select::make('colour_code')
+                            ->options(['pink' => 'Pink', 'brown' => 'Brown', 'orange' => 'Orange', 'grey' => 'Grey', 'red' => 'Red', 'yellow' => 'Yellow'])
+                            ->native(false)
+                            ->nullable()),
                         $g(Forms\Components\Select::make('digitised')
                             ->options(fn (): array => DigitisationStatus::options())
                             ->nullable()
@@ -1275,6 +1283,8 @@ class DocumentResource extends Resource
                 MarkDisinfestedAction::make('rowMarkDisinfested')
                     ->label('Disinfested')
                     ->iconButton(),
+                RestoreAction::make(),
+                ForceDeleteAction::make(),
             ])
             ->bulkActions([
                 // The 14 Document power-actions (RFQ §3.1.1 / §3.1.4 /
@@ -1287,6 +1297,8 @@ class DocumentResource extends Resource
                     ->color('primary'),
                 BulkActionGroup::make([
                     DeleteBulkAction::make(),
+                    RestoreBulkAction::make(),
+                    ForceDeleteBulkAction::make(),
                 ]),
             ]);
     }

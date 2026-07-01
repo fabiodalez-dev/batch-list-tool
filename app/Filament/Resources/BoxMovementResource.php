@@ -57,7 +57,8 @@ class BoxMovementResource extends Resource
                         SearchableSelects::box('from_box_id', 'fromBox')
                             ->label('From box'),
                         SearchableSelects::box('to_box_id', 'toBox')
-                            ->label('To box'),
+                            ->label('To box')
+                            ->helperText('If the target box does not exist yet, create it first in Boxes.'),
                         Forms\Components\DateTimePicker::make('movement_date')
                             ->required(),
                         SearchableSelects::user('user_id', 'user'),
@@ -143,7 +144,7 @@ class BoxMovementResource extends Resource
         return $table
             ->columns([
                 Tables\Columns\TextColumn::make('document.identifier')
-                    ->numeric()
+                    ->label('Document')
                     ->sortable(),
                 Tables\Columns\TextColumn::make('fromBox.box_number')
                     ->numeric()

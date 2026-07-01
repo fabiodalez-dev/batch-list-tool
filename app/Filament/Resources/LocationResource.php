@@ -121,7 +121,24 @@ class LocationResource extends Resource
                             ->native(false),
                         Forms\Components\TextInput::make('name')
                             ->required()
-                            ->maxLength(100),
+                            ->maxLength(100)
+                            ->rule(function (?Location $record) {
+                                return function (string $attribute, $value, \Closure $fail) use ($record) {
+                                    $repoId = request()->input('data.repository_id') ?? optional($record)->repository_id;
+                                    $q = Location::query()
+                                        ->withoutGlobalScopes()
+                                        ->where('name', $value);
+                                    $repoId === null
+                                        ? $q->whereNull('repository_id')
+                                        : $q->where('repository_id', $repoId);
+                                    if ($record !== null) {
+                                        $q->whereKeyNot($record->getKey());
+                                    }
+                                    if ($q->exists()) {
+                                        $fail("A location named '{$value}' already exists in this repository.");
+                                    }
+                                };
+                            }),
                         // Wave D3: code is auto-generated on create when blank.
                         Forms\Components\TextInput::make('code')
                             ->label('Identifier')

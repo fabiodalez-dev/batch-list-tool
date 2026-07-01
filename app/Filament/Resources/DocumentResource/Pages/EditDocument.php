@@ -27,7 +27,12 @@ class EditDocument extends EditRecord
                 ->icon('heroicon-o-bolt')
                 ->color('primary')
                 ->button(),
-            Actions\DeleteAction::make(),
+            Actions\RestoreAction::make(),
+            Actions\ForceDeleteAction::make(),
+            Actions\DeleteAction::make()
+                ->requiresConfirmation()
+                ->modalHeading('Delete document')
+                ->modalDescription('This record will be deleted.'),
         ];
     }
 }

@@ -80,7 +80,30 @@ it('A10: barcode is required for every box type via the create form', function (
         ->assertHasFormErrors(['barcode']);
 });
 
-it('A10: null barcode is rejected for an IN_SITU box via the create form', function (): void {
+it('#35: barcode is STILL required for a RAS box', function (): void {
+    // The other half of bug #35: RAS-family boxes DO need a barcode.
+    $user = ba_actor();
+    $this->actingAs($user);
+    $batch = ba_batchFor($user);
+
+    Livewire::test(CreateBox::class)
+        ->fillForm([
+            'box_type' => 'RAS',
+            'batch_id' => $batch->id,
+            'box_number' => 'RAS-T1',
+            'barcode' => null,     // <-- missing on a RAS box → must error
+            'barcode_status' => 'IN',
+            'is_legacy' => false,
+        ])
+        ->call('create')
+        ->assertHasFormErrors(['barcode']);
+});
+
+it('#35: barcode is OPTIONAL for an IN_SITU box (only RAS-family boxes need one)', function (): void {
+    // Client bug #35: "NRA boxes do NOT have a barcode, only boxes sent to RAS
+    // have a barcode." So a non-RAS box (IN_SITU/NRA) with a null barcode must
+    // NOT raise a barcode error. (Other fields like location_id are validated
+    // separately — we assert only the barcode rule here.)
     $user = ba_actor();
     $this->actingAs($user);
 
@@ -89,12 +112,12 @@ it('A10: null barcode is rejected for an IN_SITU box via the create form', funct
             'box_type' => 'IN_SITU',
             'provenance_unknown' => true,
             'box_number' => 'NRA-T1',
-            'barcode' => null,     // <-- intentionally empty
+            'barcode' => null,     // <-- intentionally empty; now allowed
             'barcode_status' => 'IN',
             'is_legacy' => false,
         ])
         ->call('create')
-        ->assertHasFormErrors(['barcode']);
+        ->assertHasNoFormErrors(['barcode']);
 });
 
 // ---------------------------------------------------------------------------
