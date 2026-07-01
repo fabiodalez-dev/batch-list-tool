@@ -232,6 +232,18 @@ class BoxResource extends Resource
                                     }
                                 };
                             })),
+                        // Bug #36 — a box may have MORE THAN ONE parent box (documents
+                        // from several origin boxes combined after cataloguing). This is
+                        // additive: the single "Parent RAS box" above stays the primary
+                        // provenance; these are supplementary origins.
+                        $g(Forms\Components\Select::make('parents')
+                            ->label('Additional parent boxes')
+                            ->helperText('Optional — other origin boxes this one was assembled from.')
+                            ->relationship('parents', 'box_number')
+                            ->getOptionLabelFromRecordUsing(fn (Box $r): string => ($r->batch?->batch_number ? 'Batch ' . $r->batch->batch_number . ' / ' : '') . 'Box ' . $r->box_number)
+                            ->multiple()
+                            ->searchable()
+                            ->columnSpanFull()),
                     ]),
 
                 Section::make('Barcode & status')
@@ -539,6 +551,17 @@ class BoxResource extends Resource
                             ->placeholder('Provenance lost'),
                         TextEntry::make('parent.batch.batch_number')
                             ->label('Parent batch')
+                            ->badge()
+                            ->color('gray')
+                            ->placeholder('—'),
+                    ]),
+
+                // Bug #36 — additional (many-to-many) parent boxes, shown when set.
+                Section::make('Additional parent boxes')
+                    ->visible(fn (?Box $record): bool => (bool) $record?->parents()->exists())
+                    ->schema([
+                        TextEntry::make('parents.box_number')
+                            ->label('Assembled from')
                             ->badge()
                             ->color('gray')
                             ->placeholder('—'),
