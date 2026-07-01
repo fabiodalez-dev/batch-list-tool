@@ -197,6 +197,18 @@ class DocumentImporter extends Importer
         $user = auth()->user();
         $repoId = $user?->default_repository_id;
 
+        // Bug #22 — when the identifier column is blank, afterFill() falls the
+        // document identifier back to the Catalogue Identifier (then to an
+        // auto-generated code). Match on that natural key here so RE-IMPORTING a
+        // blank-identifier row with a Catalogue Identifier updates the existing
+        // document instead of colliding on the unique (identifier, repository_id)
+        // key. Rows with neither key are genuinely new each time.
+        if (($identifier === null || trim((string) $identifier) === '')
+            && ! empty($this->data['catalogue_identifier'])
+        ) {
+            $identifier = trim((string) $this->data['catalogue_identifier']);
+        }
+
         if ($identifier === null || trim((string) $identifier) === '') {
             $record = new Document;
             // BUG-05: stash repo id so the static batch_number closure can use it.
