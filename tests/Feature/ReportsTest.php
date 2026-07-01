@@ -16,6 +16,7 @@ use App\Models\Batch;
 use App\Models\Box;
 use App\Models\BoxMovement;
 use App\Models\Document;
+use App\Models\Location;
 use App\Models\Repository;
 use App\Models\Scopes\RepositoryScope;
 use App\Models\Scopes\ThroughBatchRepositoryScope;
@@ -507,7 +508,16 @@ test('landing page caches counts for 60 seconds', function () {
 
     $repo = rep_repo();
     $series = rep_series();
+    $batch = rep_batch($repo->id);
     rep_doc($repo->id, $series->id);
+    rep_doc($repo->id, $series->id, ['ras_batch_2' => '20']);
+    rep_box($batch->id);
+    Location::withoutGlobalScope(RepositoryScope::class)->create([
+        'name' => 'Landing Count Room',
+        'type' => 'room',
+        'repository_id' => null,
+        'is_active' => true,
+    ]);
 
     Cache::flush();
 
@@ -515,6 +525,10 @@ test('landing page caches counts for 60 seconds', function () {
     $cards1 = $page->cards();
     // 6 canned reports + NAF Queries Q1 (cycle) + Q3 (reconciliation) + Q4 (stock take).
     expect($cards1)->toHaveCount(9);
+    $byKey = collect($cards1)->keyBy('key');
+    expect($byKey['disinfestation-cycle']['count'])->toBe('1 boxes')
+        ->and($byKey['ras-nra-reconciliation']['count'])->toBe('1 RAS-origin docs')
+        ->and($byKey['stock-take']['count'])->toBe('1 locations');
 
     // Second call hits the cache — verify by checking the cache key.
     $uid = auth()->id();

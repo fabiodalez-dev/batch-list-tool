@@ -25,6 +25,26 @@ it('reads the latest Barcode IN from the document, then the current box', functi
     expect(RasReconciliation::latestBarcodeIn($none))->toBeNull();
 });
 
+it('prefers the second legacy RAS pair and Barcode IN as the latest reconciliation key', function (): void {
+    $doc = Document::factory()->create([
+        'ras_batch_1' => '19',
+        'ras_box_1' => '98',
+        'ras_batch_2' => '20',
+        'ras_box_2' => '99',
+        'barcode_in' => 'AA18049',
+        'barcode_in_2' => 'AA99999',
+    ]);
+
+    expect(RasReconciliation::latestRasBatch($doc))->toBe('20')
+        ->and(RasReconciliation::latestRasBox($doc))->toBe('99')
+        ->and(RasReconciliation::latestBarcodeIn($doc))->toBe('AA99999')
+        ->and(RasReconciliation::key($doc))->toBe([
+            'batch' => '20',
+            'box' => '99',
+            'barcode_in' => 'AA99999',
+        ]);
+});
+
 it('does not treat an OUT box barcode as a Barcode IN', function (): void {
     $box = Box::factory()->create(['barcode' => 'ZZ00001', 'barcode_status' => 'OUT']);
     $doc = Document::factory()->create(['barcode_in' => null, 'current_box_id' => $box->id]);

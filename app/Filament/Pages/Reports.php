@@ -283,8 +283,12 @@ class Reports extends Page
                     'reconciliation' => Document::query()
                         ->where(function ($q): void {
                             $q->where(fn ($b) => $b->whereNotNull('ras_batch_1')->where('ras_batch_1', '!=', ''))
+                                ->orWhere(fn ($b) => $b->whereNotNull('ras_batch_2')->where('ras_batch_2', '!=', ''))
                                 ->orWhere(fn ($b) => $b->whereNotNull('ras_box_1')->where('ras_box_1', '!=', ''))
-                                ->orWhere(fn ($b) => $b->whereNotNull('barcode_ras_1')->where('barcode_ras_1', '!=', ''));
+                                ->orWhere(fn ($b) => $b->whereNotNull('ras_box_2')->where('ras_box_2', '!=', ''))
+                                ->orWhere(fn ($b) => $b->whereNotNull('barcode_ras_1')->where('barcode_ras_1', '!=', ''))
+                                ->orWhere(fn ($b) => $b->whereNotNull('barcode_ras_2')->where('barcode_ras_2', '!=', ''))
+                                ->orWhere(fn ($b) => $b->whereNotNull('barcode_in_2')->where('barcode_in_2', '!=', ''));
                         })
                         ->count(),
                     'stocktake' => Location::query()->count(),
@@ -297,6 +301,9 @@ class Reports extends Page
             'pending' => number_format((int) $counts['pending']),
             'movements' => number_format((int) $counts['movements']),
             'flags' => number_format((int) $counts['flags']),
+            'cycle' => number_format((int) $counts['cycle']),
+            'reconciliation' => number_format((int) $counts['reconciliation']),
+            'stocktake' => number_format((int) $counts['stocktake']),
         ];
     }
 }

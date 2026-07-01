@@ -41,10 +41,11 @@ it('counts boxes (destroyed excluded) and items per location via the report quer
 it('shows a global (null repository) location as GLOBAL, not tied to a tenant', function (): void {
     $this->actingAs(qf_admin());
     $global = qf_location(null);
+    $box = qf_box(['location_id' => $global->id]);
 
     expect($global->repository_id)->toBeNull();
 
-    Livewire::test(StockTakeReport::class)->assertCanSeeTableRecords([$global]);
+    Livewire::test(StockTakeReport::class)->assertCanSeeTableRecords([qf_stockEntry('box', $box->id)]);
 });
 
 it('renders the stock-take report for a report-viewer', function (): void {
@@ -57,25 +58,25 @@ it('filters stock take by a specific location/room', function (): void {
     $this->actingAs(qf_admin());
     $roomA = qf_location(null, ['name' => 'Archive A']);
     $roomB = qf_location(null, ['name' => 'Archive B']);
+    $boxA = qf_box(['location_id' => $roomA->id]);
+    $boxB = qf_box(['location_id' => $roomB->id]);
 
     Livewire::test(StockTakeReport::class)
-        ->filterTable('id', [$roomA->id])
-        ->assertCanSeeTableRecords([$roomA])
-        ->assertCanNotSeeTableRecords([$roomB]);
+        ->filterTable('location_id', [$roomA->id])
+        ->assertCanSeeTableRecords([qf_stockEntry('box', $boxA->id)])
+        ->assertCanNotSeeTableRecords([qf_stockEntry('box', $boxB->id)]);
 });
 
-it('the non-empty filter hides a location holding only destroyed boxes', function (): void {
+it('excludes destroyed boxes from detailed stock-take rows', function (): void {
     $this->actingAs(qf_admin());
-    $empty = qf_location(null, ['name' => 'Empty room']);
-    qf_box(['location_id' => $empty->id, 'destroyed_at' => now(), 'destroyed_reason' => 'x']);
-
-    $stocked = qf_location(null, ['name' => 'Stocked room']);
-    qf_box(['location_id' => $stocked->id]);
+    $loc = qf_location(null, ['name' => 'Stocked room']);
+    $destroyed = qf_box(['location_id' => $loc->id, 'destroyed_at' => now(), 'destroyed_reason' => 'x']);
+    $active = qf_box(['location_id' => $loc->id]);
 
     Livewire::test(StockTakeReport::class)
-        ->filterTable('non_empty', true)
-        ->assertCanSeeTableRecords([$stocked])
-        ->assertCanNotSeeTableRecords([$empty]);
+        ->assertCanSeeTableRecords([qf_stockEntry('box', $active->id)]);
+
+    expect(qf_stockEntry('box', $destroyed->id))->toBeNull();
 });
 
 it('exposes the boxes and documents hasMany relations on Location', function (): void {

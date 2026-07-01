@@ -8,6 +8,7 @@ use App\Models\Location;
 use App\Models\Repository;
 use App\Models\Scopes\RepositoryScope;
 use App\Models\Series;
+use App\Models\StockTakeEntry;
 use App\Models\User;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Spatie\Permission\Models\Permission;
@@ -259,15 +260,31 @@ function qf_location(?int $repoId = null, array $attrs = []): Location
     ], $attrs));
 }
 
-/** Run StockTakeReport::reportQuery() (protected) and return the row for a location. */
+/** Run StockTakeReport::summaryQuery() (protected) and return the summary row for a location. */
 function qf_stockRow(int $locationId): ?Location
+{
+    $page = new StockTakeReport;
+    $m = new ReflectionMethod($page, 'summaryQuery');
+    $m->setAccessible(true);
+
+    /** @var Location|null $row */
+    $row = $m->invoke($page)->where('locations.id', $locationId)->first();
+
+    return $row;
+}
+
+/** Run StockTakeReport::reportQuery() and return one detailed stock-take row. */
+function qf_stockEntry(string $type, int $sourceId): ?StockTakeEntry
 {
     $page = new StockTakeReport;
     $m = new ReflectionMethod($page, 'reportQuery');
     $m->setAccessible(true);
 
-    /** @var Location|null $row */
-    $row = $m->invoke($page)->where('locations.id', $locationId)->first();
+    /** @var StockTakeEntry|null $row */
+    $row = $m->invoke($page)
+        ->where('stock_type', $type)
+        ->where('source_id', $sourceId)
+        ->first();
 
     return $row;
 }

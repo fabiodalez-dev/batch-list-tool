@@ -77,11 +77,13 @@ class RasNraReconciliationReport extends Page implements HasTable
 
                 Tables\Columns\TextColumn::make('ras_batch_1')
                     ->label('RAS batch')
+                    ->state(fn (Document $r): ?string => RasReconciliation::latestRasBatch($r))
                     ->searchable()
                     ->placeholder('—'),
 
                 Tables\Columns\TextColumn::make('ras_box_1')
                     ->label('RAS box')
+                    ->state(fn (Document $r): ?string => RasReconciliation::latestRasBox($r))
                     ->searchable()
                     ->placeholder('—'),
 
@@ -121,16 +123,26 @@ class RasNraReconciliationReport extends Page implements HasTable
                     ->queries(
                         // Reconcilable = RAS batch + RAS box + a barcode IN all present.
                         true: fn (Builder $q): Builder => $q
-                            ->whereNotNull('ras_batch_1')->where('ras_batch_1', '!=', '')
-                            ->whereNotNull('ras_box_1')->where('ras_box_1', '!=', '')
                             ->where(fn (Builder $b): Builder => $b
-                                ->where(fn (Builder $bb) => $bb->whereNotNull('barcode_in')->where('barcode_in', '!=', ''))
+                                ->where(fn (Builder $bb) => $bb->whereNotNull('ras_batch_2')->where('ras_batch_2', '!=', ''))
+                                ->orWhere(fn (Builder $bb) => $bb->whereNotNull('ras_batch_1')->where('ras_batch_1', '!=', '')))
+                            ->where(fn (Builder $b): Builder => $b
+                                ->where(fn (Builder $bb) => $bb->whereNotNull('ras_box_2')->where('ras_box_2', '!=', ''))
+                                ->orWhere(fn (Builder $bb) => $bb->whereNotNull('ras_box_1')->where('ras_box_1', '!=', '')))
+                            ->where(fn (Builder $b): Builder => $b
+                                ->where(fn (Builder $bb) => $bb->whereNotNull('barcode_in_2')->where('barcode_in_2', '!=', ''))
+                                ->orWhere(fn (Builder $bb) => $bb->whereNotNull('barcode_in')->where('barcode_in', '!=', ''))
                                 ->orWhereHas('currentBox', fn (Builder $box) => $box->where('barcode_status', 'IN')->whereNotNull('barcode')->where('barcode', '!=', ''))),
                         false: fn (Builder $q): Builder => $q
                             ->where(fn (Builder $b): Builder => $b
-                                ->whereNull('ras_batch_1')->orWhere('ras_batch_1', '')
-                                ->orWhereNull('ras_box_1')->orWhere('ras_box_1', '')
+                                ->where(fn (Builder $bb) => $bb
+                                    ->where(fn (Builder $x) => $x->whereNull('ras_batch_2')->orWhere('ras_batch_2', ''))
+                                    ->where(fn (Builder $x) => $x->whereNull('ras_batch_1')->orWhere('ras_batch_1', '')))
                                 ->orWhere(fn (Builder $bb) => $bb
+                                    ->where(fn (Builder $x) => $x->whereNull('ras_box_2')->orWhere('ras_box_2', ''))
+                                    ->where(fn (Builder $x) => $x->whereNull('ras_box_1')->orWhere('ras_box_1', '')))
+                                ->orWhere(fn (Builder $bb) => $bb
+                                    ->where(fn (Builder $x) => $x->whereNull('barcode_in_2')->orWhere('barcode_in_2', ''))
                                     ->where(fn (Builder $x) => $x->whereNull('barcode_in')->orWhere('barcode_in', ''))
                                     ->whereDoesntHave('currentBox', fn (Builder $box) => $box->where('barcode_status', 'IN')->whereNotNull('barcode')->where('barcode', '!=', '')))),
                     ),
@@ -202,8 +214,8 @@ class RasNraReconciliationReport extends Page implements HasTable
     {
         return [
             'Document' => fn (Document $r) => $r->identifier,
-            'RAS batch' => fn (Document $r) => $r->ras_batch_1,
-            'RAS box' => fn (Document $r) => $r->ras_box_1,
+            'RAS batch' => fn (Document $r): ?string => RasReconciliation::latestRasBatch($r),
+            'RAS box' => fn (Document $r): ?string => RasReconciliation::latestRasBox($r),
             'RAS barcode' => fn (Document $r) => $r->barcode_ras_1,
             'Latest barcode IN' => fn (Document $r): ?string => RasReconciliation::latestBarcodeIn($r),
             'Current batch' => fn (Document $r) => $r->batch?->getAttribute('batch_number'),
@@ -231,8 +243,12 @@ class RasNraReconciliationReport extends Page implements HasTable
             ->with(['batch:id,batch_number', 'currentBox:id,box_number,barcode,barcode_status'])
             ->where(function (Builder $q): void {
                 $q->where(fn (Builder $b) => $b->whereNotNull('ras_batch_1')->where('ras_batch_1', '!=', ''))
+                    ->orWhere(fn (Builder $b) => $b->whereNotNull('ras_batch_2')->where('ras_batch_2', '!=', ''))
                     ->orWhere(fn (Builder $b) => $b->whereNotNull('ras_box_1')->where('ras_box_1', '!=', ''))
-                    ->orWhere(fn (Builder $b) => $b->whereNotNull('barcode_ras_1')->where('barcode_ras_1', '!=', ''));
+                    ->orWhere(fn (Builder $b) => $b->whereNotNull('ras_box_2')->where('ras_box_2', '!=', ''))
+                    ->orWhere(fn (Builder $b) => $b->whereNotNull('barcode_ras_1')->where('barcode_ras_1', '!=', ''))
+                    ->orWhere(fn (Builder $b) => $b->whereNotNull('barcode_ras_2')->where('barcode_ras_2', '!=', ''))
+                    ->orWhere(fn (Builder $b) => $b->whereNotNull('barcode_in_2')->where('barcode_in_2', '!=', ''));
             });
     }
 
@@ -243,8 +259,8 @@ class RasNraReconciliationReport extends Page implements HasTable
     {
         return [
             $r->identifier,
-            $r->ras_batch_1,
-            $r->ras_box_1,
+            RasReconciliation::latestRasBatch($r),
+            RasReconciliation::latestRasBox($r),
             $r->barcode_ras_1,
             RasReconciliation::latestBarcodeIn($r),
             $r->batch?->getAttribute('batch_number'),

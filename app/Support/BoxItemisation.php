@@ -7,6 +7,7 @@ namespace App\Support;
 use App\Models\Document;
 use App\Models\DocumentItem;
 use Illuminate\Support\Facades\DB;
+use PhpOffice\PhpSpreadsheet\IOFactory;
 
 /**
  * NAF Queries Q5 — box itemisation service.
@@ -45,6 +46,49 @@ final class BoxItemisation
         }
 
         return self::persist($document, $rows, $replace);
+    }
+
+    /**
+     * Read an itemisation spreadsheet. The first non-empty column is the item
+     * reference; the second non-empty column is an optional description.
+     *
+     * @return list<string>
+     */
+    public static function linesFromSpreadsheet(string $path): array
+    {
+        $reader = IOFactory::createReaderForFile($path);
+        $reader->setReadDataOnly(true);
+
+        $spreadsheet = $reader->load($path);
+
+        try {
+            $rows = $spreadsheet->getActiveSheet()->toArray(null, false, false, false);
+        } finally {
+            $spreadsheet->disconnectWorksheets();
+        }
+
+        $lines = [];
+        foreach ($rows as $index => $row) {
+            $reference = self::cleanCell($row[0] ?? null);
+            $description = self::cleanCell($row[1] ?? null);
+
+            if ($reference === null && $description === null) {
+                continue;
+            }
+
+            if ($index === 0 && self::looksLikeHeader($reference, $description)) {
+                continue;
+            }
+
+            if ($reference === null) {
+                $reference = $description;
+                $description = null;
+            }
+
+            $lines[] = $description === null ? $reference : $reference . ' | ' . $description;
+        }
+
+        return $lines;
     }
 
     /**
@@ -99,5 +143,25 @@ final class BoxItemisation
 
             return count($rows);
         });
+    }
+
+    private static function cleanCell(mixed $value): ?string
+    {
+        if ($value === null) {
+            return null;
+        }
+
+        $value = trim((string) $value);
+
+        return $value === '' ? null : $value;
+    }
+
+    private static function looksLikeHeader(?string $reference, ?string $description): bool
+    {
+        $reference = strtolower((string) $reference);
+        $description = strtolower((string) $description);
+
+        return in_array($reference, ['reference', 'item', 'folder', 'folder number', 'folder no'], true)
+            || in_array($description, ['description', 'details', 'notes'], true);
     }
 }

@@ -8,6 +8,8 @@ use App\Support\BoxItemisation;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Support\Facades\DB;
 use Livewire\Livewire;
+use PhpOffice\PhpSpreadsheet\Spreadsheet;
+use PhpOffice\PhpSpreadsheet\Writer\Xlsx;
 
 /**
  * Fields touched by the NAF document — box itemisation: document_items.position,
@@ -50,6 +52,39 @@ it('splits reference and description on " | " or a tab', function (): void {
         ->and($items[0]->description)->toBe('Deed of sale')
         ->and($items[1]->reference)->toBe('F-2')
         ->and($items[1]->description)->toBe('Will');
+});
+
+it('itemises from a real Excel sheet with reference and description columns', function (): void {
+    $dir = storage_path('framework/testing');
+    if (! is_dir($dir)) {
+        mkdir($dir, 0777, true);
+    }
+    $path = $dir . '/itemisation_' . uniqid() . '.xlsx';
+
+    $spreadsheet = new Spreadsheet;
+    $sheet = $spreadsheet->getActiveSheet();
+    $sheet->setCellValue('A1', 'Reference');
+    $sheet->setCellValue('B1', 'Description');
+    $sheet->setCellValue('A2', 'F-1');
+    $sheet->setCellValue('B2', 'Deed of sale');
+    $sheet->setCellValue('A3', 'F-2');
+    (new Xlsx($spreadsheet))->save($path);
+    $spreadsheet->disconnectWorksheets();
+
+    try {
+        $doc = qf_doc();
+        $lines = BoxItemisation::linesFromSpreadsheet($path);
+        $created = BoxItemisation::itemiseFromLines($doc, $lines);
+
+        $items = $doc->items()->orderBy('position')->get();
+        expect($lines)->toBe(['F-1 | Deed of sale', 'F-2'])
+            ->and($created)->toBe(2)
+            ->and($items[0]->reference)->toBe('F-1')
+            ->and($items[0]->description)->toBe('Deed of sale')
+            ->and($items[1]->reference)->toBe('F-2');
+    } finally {
+        @unlink($path);
+    }
 });
 
 it('skips blank lines when itemising from a list', function (): void {
