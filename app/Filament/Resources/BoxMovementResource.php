@@ -5,6 +5,7 @@ namespace App\Filament\Resources;
 use App\Filament\Resources\BoxMovementResource\Pages;
 use App\Filament\Support\CreatorColumn;
 use App\Filament\Support\SearchableSelects;
+use App\Models\Box;
 use App\Models\BoxMovement;
 use Filament\Actions\BulkActionGroup;
 use Filament\Actions\DeleteBulkAction;
@@ -58,7 +59,31 @@ class BoxMovementResource extends Resource
                             ->label('From box'),
                         SearchableSelects::box('to_box_id', 'toBox')
                             ->label('To box')
-                            ->helperText('If the target box does not exist yet, create it first in Boxes.'),
+                            // Bug #28 — let the operator create the target box inline when
+                            // it doesn't exist yet. Kept to a RAS box (the only type that
+                            // needs no parent and no location/disinfestation preconditions),
+                            // so the Box model guards are always satisfied.
+                            ->helperText('Pick an existing box, or use “Create” to add a new RAS box.')
+                            ->createOptionForm([
+                                SearchableSelects::batch('batch_id')
+                                    ->label('Batch')
+                                    ->required(),
+                                Forms\Components\TextInput::make('box_number')
+                                    ->label('Box number')
+                                    ->required()
+                                    ->maxLength(32),
+                                Forms\Components\TextInput::make('barcode')
+                                    ->label('Barcode')
+                                    ->required()
+                                    ->maxLength(64),
+                            ])
+                            ->createOptionUsing(fn (array $data): int => Box::create([
+                                'batch_id' => $data['batch_id'],
+                                'box_number' => $data['box_number'],
+                                'barcode' => $data['barcode'],
+                                'box_type' => 'RAS',
+                                'barcode_status' => 'IN',
+                            ])->getKey()),
                         Forms\Components\DateTimePicker::make('movement_date')
                             ->required(),
                         SearchableSelects::user('user_id', 'user'),
