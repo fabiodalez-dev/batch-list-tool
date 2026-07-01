@@ -54,6 +54,13 @@ class ReportTemplate extends Model implements AuditableContract
 
     public const SOURCE_FLAGS_BY_TYPE = 'flags_by_type';
 
+    // NAF Queries reports (Q1/Q3/Q4).
+    public const SOURCE_DISINFESTATION_CYCLE = 'disinfestation_cycle';
+
+    public const SOURCE_RAS_NRA_RECONCILIATION = 'ras_nra_reconciliation';
+
+    public const SOURCE_STOCK_TAKE = 'stock_take';
+
     /**
      * Whitelist of accepted source values — exposed so forms / validation
      * never drift from the actual report pages.
@@ -68,6 +75,9 @@ class ReportTemplate extends Model implements AuditableContract
         self::SOURCE_PENDING_DISINFESTATION,
         self::SOURCE_BOX_MOVEMENTS,
         self::SOURCE_FLAGS_BY_TYPE,
+        self::SOURCE_DISINFESTATION_CYCLE,
+        self::SOURCE_RAS_NRA_RECONCILIATION,
+        self::SOURCE_STOCK_TAKE,
     ];
 
     /**

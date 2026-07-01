@@ -303,6 +303,15 @@ class Document extends Model implements AuditableContract, HasMedia, Sortable
     }
 
     /**
+     * NAF Queries Q5 — the itemised list expanding this document into its
+     * individual physical items ("71 folders" → 71 rows), ordered by position.
+     */
+    public function items(): HasMany
+    {
+        return $this->hasMany(DocumentItem::class)->orderBy('position');
+    }
+
+    /**
      * Disinfestation history rendered as a flat, ordered collection of
      * `{date, label}` rows — ready for the Filament `RepeatableEntry` on
      * the View Document page.

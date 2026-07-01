@@ -6,16 +6,22 @@ namespace App\Filament\Pages;
 
 use App\Filament\Concerns\ExplainsPage;
 use App\Filament\Pages\Reports\BoxMovementHistoryReport;
+use App\Filament\Pages\Reports\DisinfestationCycleReport;
 use App\Filament\Pages\Reports\DocumentsByBatchReport;
 use App\Filament\Pages\Reports\DocumentsByCreatorReport;
 use App\Filament\Pages\Reports\DocumentsBySeriesReport;
 use App\Filament\Pages\Reports\FlagsByTypeReport;
 use App\Filament\Pages\Reports\PendingDisinfestationReport;
+use App\Filament\Pages\Reports\RasNraReconciliationReport;
+use App\Filament\Pages\Reports\StockTakeReport;
+use App\Models\Box;
 use App\Models\BoxMovement;
 use App\Models\Document;
 use App\Models\DocumentFlag;
+use App\Models\Location;
 use App\Models\ReportTemplate;
 use App\Models\User;
+use App\Support\Reports\DisinfestationCycle;
 use Filament\Pages\Page;
 use Illuminate\Support\Facades\Cache;
 
@@ -112,12 +118,38 @@ class Reports extends Page
                 'count' => $counts['pending'] . ' pending',
             ],
             [
+                'key' => 'disinfestation-cycle',
+                'title' => 'Disinfestation cycle plan',
+                'description' => 'Boxes due for disinfestation — never-done first, then re-cycle (40/80-day cycle).',
+                'icon' => 'heroicon-o-calendar-days',
+                'url' => DisinfestationCycleReport::getUrl(),
+                // ?? 0 guards the 60s window right after a deploy when the cached
+                // counts array may predate this key.
+                'count' => ($counts['cycle'] ?? 0) . ' boxes',
+            ],
+            [
+                'key' => 'ras-nra-reconciliation',
+                'title' => 'RAS ↔ NRA reconciliation',
+                'description' => 'RAS Batch / Box / latest Barcode IN per document, flagging rows that cannot be reconciled.',
+                'icon' => 'heroicon-o-scale',
+                'url' => RasNraReconciliationReport::getUrl(),
+                'count' => ($counts['reconciliation'] ?? 0) . ' RAS-origin docs',
+            ],
+            [
                 'key' => 'movements',
                 'title' => 'Box movement history',
                 'description' => 'Chronological log of box-to-box transfers, filterable by date.',
                 'icon' => 'heroicon-o-arrow-path',
                 'url' => BoxMovementHistoryReport::getUrl(),
                 'count' => $counts['movements'] . ' movements',
+            ],
+            [
+                'key' => 'stock-take',
+                'title' => 'Stock take (by location)',
+                'description' => 'Box and item counts per location/room — the "what we hold and where" view.',
+                'icon' => 'heroicon-o-clipboard-document-check',
+                'url' => StockTakeReport::getUrl(),
+                'count' => ($counts['stocktake'] ?? 0) . ' locations',
             ],
             [
                 'key' => 'flags-by-type',
@@ -158,6 +190,9 @@ class Reports extends Page
                 ReportTemplate::SOURCE_DOCUMENTS_BY_CREATOR => DocumentsByCreatorReport::class,
                 ReportTemplate::SOURCE_DOCUMENTS_BY_SERIES => DocumentsBySeriesReport::class,
                 ReportTemplate::SOURCE_PENDING_DISINFESTATION => PendingDisinfestationReport::class,
+                ReportTemplate::SOURCE_DISINFESTATION_CYCLE => DisinfestationCycleReport::class,
+                ReportTemplate::SOURCE_RAS_NRA_RECONCILIATION => RasNraReconciliationReport::class,
+                ReportTemplate::SOURCE_STOCK_TAKE => StockTakeReport::class,
                 ReportTemplate::SOURCE_BOX_MOVEMENTS => BoxMovementHistoryReport::class,
                 ReportTemplate::SOURCE_FLAGS_BY_TYPE => FlagsByTypeReport::class,
                 default => null,
@@ -189,6 +224,9 @@ class Reports extends Page
             ReportTemplate::SOURCE_DOCUMENTS_BY_CREATOR => 'Documents by creator',
             ReportTemplate::SOURCE_DOCUMENTS_BY_SERIES => 'Documents by series',
             ReportTemplate::SOURCE_PENDING_DISINFESTATION => 'Pending disinfestation',
+            ReportTemplate::SOURCE_DISINFESTATION_CYCLE => 'Disinfestation cycle plan',
+            ReportTemplate::SOURCE_RAS_NRA_RECONCILIATION => 'RAS ↔ NRA reconciliation',
+            ReportTemplate::SOURCE_STOCK_TAKE => 'Stock take',
             ReportTemplate::SOURCE_BOX_MOVEMENTS => 'Box movement history',
             ReportTemplate::SOURCE_FLAGS_BY_TYPE => 'Flags by type',
             ReportTemplate::SOURCE_DOCUMENTS => 'Documents',
@@ -233,6 +271,23 @@ class Reports extends Page
                         ->count(),
                     'movements' => BoxMovement::query()->count(),
                     'flags' => DocumentFlag::query()->count(),
+                    'cycle' => Box::query()
+                        ->whereNull('destroyed_at')
+                        ->where(function ($q): void {
+                            // Use the shared cycle constant so this dashboard count can
+                            // never drift from DisinfestationCycleReport::reportQuery().
+                            $q->whereNull('disinfestation_date')
+                                ->orWhere('disinfestation_date', '<=', now()->subDays(DisinfestationCycle::DUE_DAYS)->startOfDay());
+                        })
+                        ->count(),
+                    'reconciliation' => Document::query()
+                        ->where(function ($q): void {
+                            $q->where(fn ($b) => $b->whereNotNull('ras_batch_1')->where('ras_batch_1', '!=', ''))
+                                ->orWhere(fn ($b) => $b->whereNotNull('ras_box_1')->where('ras_box_1', '!=', ''))
+                                ->orWhere(fn ($b) => $b->whereNotNull('barcode_ras_1')->where('barcode_ras_1', '!=', ''));
+                        })
+                        ->count(),
+                    'stocktake' => Location::query()->count(),
                 ];
             },
         );

@@ -1,6 +1,13 @@
 <?php
 
+use App\Filament\Pages\Reports\StockTakeReport;
+use App\Models\Batch;
+use App\Models\Box;
+use App\Models\Document;
+use App\Models\Location;
 use App\Models\Repository;
+use App\Models\Scopes\RepositoryScope;
+use App\Models\Series;
 use App\Models\User;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Spatie\Permission\Models\Permission;
@@ -187,4 +194,80 @@ function bl_seedShieldPermissions(): void
     );
 
     app(PermissionRegistrar::class)->forgetCachedPermissions();
+}
+
+/*
+|--------------------------------------------------------------------------
+| Reusable field builders for the NAF Bug-Log + Queries suites (qf_*)
+|--------------------------------------------------------------------------
+|
+| Small, composable factories used by the "fields touched by the document"
+| tests. Prefixed `qf_` (Queries/Fields) so they never collide with the
+| per-file helpers. They bypass the tenant global scopes when seeding so a
+| test can build cross-repository fixtures deterministically.
+*/
+
+/** Super-admin (bypasses Gate + tenant scope), optionally bound to a repository. */
+function qf_admin(?int $repoId = null): User
+{
+    bl_seedRoles();
+    /** @var User $u */
+    $u = User::factory()->create(['is_active' => true, 'default_repository_id' => $repoId]);
+    $u->assignRole('super_admin');
+
+    return $u;
+}
+
+/** A repository with a unique code. */
+function qf_repo(string $prefix = 'QF'): Repository
+{
+    return Repository::factory()->create(['code' => $prefix . substr(uniqid(), -6)]);
+}
+
+/** A series (idempotent by code). */
+function qf_series(string $code = 'REG'): Series
+{
+    return Series::firstOrCreate(['code' => $code], ['title' => $code . ' series', 'is_active' => true]);
+}
+
+/** A batch (factory sets a repository when none given). */
+function qf_batch(array $attrs = []): Batch
+{
+    return Batch::factory()->create($attrs);
+}
+
+/** A box (factory defaults to a RAS box with a batch + barcode). */
+function qf_box(array $attrs = []): Box
+{
+    return Box::factory()->create($attrs);
+}
+
+/** A document (factory sets the required series/repository). */
+function qf_doc(array $attrs = []): Document
+{
+    return Document::factory()->create($attrs);
+}
+
+/** A location, optionally repository-scoped (NULL = global). Bypasses the scope on seed. */
+function qf_location(?int $repoId = null, array $attrs = []): Location
+{
+    return Location::withoutGlobalScope(RepositoryScope::class)->create(array_merge([
+        'name' => 'Room ' . substr(uniqid(), -6),
+        'type' => 'room',
+        'repository_id' => $repoId,
+        'is_active' => true,
+    ], $attrs));
+}
+
+/** Run StockTakeReport::reportQuery() (protected) and return the row for a location. */
+function qf_stockRow(int $locationId): ?Location
+{
+    $page = new StockTakeReport;
+    $m = new ReflectionMethod($page, 'reportQuery');
+    $m->setAccessible(true);
+
+    /** @var Location|null $row */
+    $row = $m->invoke($page)->where('locations.id', $locationId)->first();
+
+    return $row;
 }

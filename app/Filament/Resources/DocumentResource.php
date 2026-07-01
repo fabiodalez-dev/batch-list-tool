@@ -1326,6 +1326,8 @@ class DocumentResource extends Resource
             DocumentResource\RelationManagers\IdentifierHistoryRelationManager::class,
             DocumentResource\RelationManagers\FlagsRelationManager::class,
             DocumentResource\RelationManagers\BarcodeHistoryRelationManager::class,
+            // NAF Queries Q5 — box itemisation.
+            DocumentResource\RelationManagers\ItemsRelationManager::class,
         ];
     }
 
