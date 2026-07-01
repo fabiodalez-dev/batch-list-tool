@@ -12,6 +12,7 @@ use App\Filament\Pages\Reports\DocumentsByCreatorReport;
 use App\Filament\Pages\Reports\DocumentsBySeriesReport;
 use App\Filament\Pages\Reports\FlagsByTypeReport;
 use App\Filament\Pages\Reports\PendingDisinfestationReport;
+use App\Filament\Pages\Reports\RasNraReconciliationReport;
 use App\Models\Box;
 use App\Models\BoxMovement;
 use App\Models\Document;
@@ -124,6 +125,14 @@ class Reports extends Page
                 'count' => ($counts['cycle'] ?? 0) . ' boxes',
             ],
             [
+                'key' => 'ras-nra-reconciliation',
+                'title' => 'RAS ↔ NRA reconciliation',
+                'description' => 'RAS Batch / Box / latest Barcode IN per document, flagging rows that cannot be reconciled.',
+                'icon' => 'heroicon-o-scale',
+                'url' => RasNraReconciliationReport::getUrl(),
+                'count' => ($counts['reconciliation'] ?? 0) . ' RAS-origin docs',
+            ],
+            [
                 'key' => 'movements',
                 'title' => 'Box movement history',
                 'description' => 'Chronological log of box-to-box transfers, filterable by date.',
@@ -171,6 +180,7 @@ class Reports extends Page
                 ReportTemplate::SOURCE_DOCUMENTS_BY_SERIES => DocumentsBySeriesReport::class,
                 ReportTemplate::SOURCE_PENDING_DISINFESTATION => PendingDisinfestationReport::class,
                 ReportTemplate::SOURCE_DISINFESTATION_CYCLE => DisinfestationCycleReport::class,
+                ReportTemplate::SOURCE_RAS_NRA_RECONCILIATION => RasNraReconciliationReport::class,
                 ReportTemplate::SOURCE_BOX_MOVEMENTS => BoxMovementHistoryReport::class,
                 ReportTemplate::SOURCE_FLAGS_BY_TYPE => FlagsByTypeReport::class,
                 default => null,
@@ -203,6 +213,7 @@ class Reports extends Page
             ReportTemplate::SOURCE_DOCUMENTS_BY_SERIES => 'Documents by series',
             ReportTemplate::SOURCE_PENDING_DISINFESTATION => 'Pending disinfestation',
             ReportTemplate::SOURCE_DISINFESTATION_CYCLE => 'Disinfestation cycle plan',
+            ReportTemplate::SOURCE_RAS_NRA_RECONCILIATION => 'RAS ↔ NRA reconciliation',
             ReportTemplate::SOURCE_BOX_MOVEMENTS => 'Box movement history',
             ReportTemplate::SOURCE_FLAGS_BY_TYPE => 'Flags by type',
             ReportTemplate::SOURCE_DOCUMENTS => 'Documents',
@@ -252,6 +263,13 @@ class Reports extends Page
                         ->where(function ($q): void {
                             $q->whereNull('disinfestation_date')
                                 ->orWhere('disinfestation_date', '<=', now()->subDays(40)->startOfDay());
+                        })
+                        ->count(),
+                    'reconciliation' => Document::query()
+                        ->where(function ($q): void {
+                            $q->where(fn ($b) => $b->whereNotNull('ras_batch_1')->where('ras_batch_1', '!=', ''))
+                                ->orWhere(fn ($b) => $b->whereNotNull('ras_box_1')->where('ras_box_1', '!=', ''))
+                                ->orWhere(fn ($b) => $b->whereNotNull('barcode_ras_1')->where('barcode_ras_1', '!=', ''));
                         })
                         ->count(),
                 ];
