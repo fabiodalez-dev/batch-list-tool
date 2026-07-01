@@ -16,6 +16,10 @@ use Filament\Actions\Action;
 use Filament\Actions\BulkActionGroup;
 use Filament\Actions\DeleteBulkAction;
 use Filament\Actions\EditAction;
+use Filament\Actions\ForceDeleteAction;
+use Filament\Actions\ForceDeleteBulkAction;
+use Filament\Actions\RestoreAction;
+use Filament\Actions\RestoreBulkAction;
 use Filament\Actions\ViewAction;
 use Filament\Forms;
 use Filament\Infolists\Components\IconEntry;
@@ -30,6 +34,7 @@ use Filament\Tables;
 use Filament\Tables\Enums\FiltersLayout;
 use Filament\Tables\Filters\SelectFilter;
 use Filament\Tables\Filters\TernaryFilter;
+use Filament\Tables\Filters\TrashedFilter;
 use Filament\Tables\Table;
 use Illuminate\Database\Eloquent\Builder;
 
@@ -106,6 +111,7 @@ class BatchResource extends Resource
                                         ?? auth()->user()?->default_repository_id;
 
                                     $query = Batch::query()
+                                        ->withTrashed()
                                         ->where('batch_number', (int) $value)
                                         ->where('repository_id', $repositoryId);
 
@@ -114,7 +120,7 @@ class BatchResource extends Resource
                                     }
 
                                     if ($query->exists()) {
-                                        $fail('Batch number already exists.');
+                                        $fail("Batch number {$value} already exists in this repository (it may be in the trash — restore or permanently delete it first).");
                                     }
                                 };
                             })
@@ -445,7 +451,7 @@ class BatchResource extends Resource
                     ->sortable()
                     ->toggleable()),
                 // A9 — inputter column (who created the record).
-                CreatorColumn::make(),
+                CreatorColumn::make()->toggleable(),
                 Tables\Columns\TextColumn::make('created_at')
                     ->dateTime()
                     ->sortable()
@@ -481,14 +487,17 @@ class BatchResource extends Resource
                     ->placeholder('All')
                     ->trueLabel('Active only')
                     ->falseLabel('Inactive only'),
+                TrashedFilter::make(),
             ])
             // Feedback1 gaps — keep filters visible above the table content so
             // an empty (null) result set never hides the active filters
             // (mirrors BoxResource).
-            ->filtersLayout(FiltersLayout::AboveContentCollapsible)
+            ->filtersLayout(FiltersLayout::BeforeContentCollapsible)
             ->actions([
                 ViewAction::make(),
                 EditAction::make(),
+                RestoreAction::make(),
+                ForceDeleteAction::make(),
                 // Feedback1 Wave B (B3) — explicit "View boxes" row action as a
                 // discoverable alternative to the whole-row recordUrl above.
                 Action::make('viewBoxes')
@@ -502,6 +511,8 @@ class BatchResource extends Resource
             ->bulkActions([
                 BulkActionGroup::make([
                     DeleteBulkAction::make(),
+                    RestoreBulkAction::make(),
+                    ForceDeleteBulkAction::make(),
                 ]),
             ]);
     }

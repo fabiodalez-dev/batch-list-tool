@@ -19,6 +19,7 @@ use Filament\Infolists\Components\TextEntry;
 use Filament\Notifications\Notification;
 use Filament\Resources\Resource;
 use Filament\Schemas\Components\Section;
+use Filament\Schemas\Components\Utilities\Get;
 use Filament\Schemas\Schema;
 use Filament\Tables;
 use Filament\Tables\Filters\SelectFilter;
@@ -121,7 +122,27 @@ class LocationResource extends Resource
                             ->native(false),
                         Forms\Components\TextInput::make('name')
                             ->required()
-                            ->maxLength(100),
+                            ->maxLength(100)
+                            // Bug #17 — location name unique per repository. Use the
+                            // injectable Get so it works inside modals/relation managers
+                            // (not the brittle request()->input('data.*')).
+                            ->rule(function (?Location $record, Get $get) {
+                                return function (string $attribute, $value, \Closure $fail) use ($record, $get) {
+                                    $repoId = $get('repository_id') ?? optional($record)->repository_id;
+                                    $q = Location::query()
+                                        ->withoutGlobalScopes()
+                                        ->where('name', $value);
+                                    $repoId === null
+                                        ? $q->whereNull('repository_id')
+                                        : $q->where('repository_id', $repoId);
+                                    if ($record !== null) {
+                                        $q->whereKeyNot($record->getKey());
+                                    }
+                                    if ($q->exists()) {
+                                        $fail("A location named '{$value}' already exists in this repository.");
+                                    }
+                                };
+                            }),
                         // Wave D3: code is auto-generated on create when blank.
                         Forms\Components\TextInput::make('code')
                             ->label('Identifier')
@@ -286,12 +307,14 @@ class LocationResource extends Resource
                     ->badge()
                     ->color('gray')
                     ->placeholder('GLOBAL')
+                    ->sortable()
                     ->toggleable(),
                 Tables\Columns\TextColumn::make('code')
                     ->label('Identifier')
                     ->searchable()
                     ->copyable()
                     ->placeholder('—')
+                    ->sortable()
                     ->toggleable(),
                 Tables\Columns\TextColumn::make('boxes_count')
                     ->label('Boxes')
@@ -310,7 +333,8 @@ class LocationResource extends Resource
                     ->sortable()
                     ->toggleable(),
                 // A9 — inputter column (who created the record).
-                CreatorColumn::make(),
+                CreatorColumn::make()
+                    ->toggleable(),
                 Tables\Columns\TextColumn::make('updated_at')
                     ->dateTime()
                     ->sortable()

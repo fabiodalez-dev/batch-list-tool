@@ -49,7 +49,8 @@ class ListSeries extends ListRecords
                 ->action(fn () => TemplateGenerator::download('series'))
                 ->visible(fn () => auth()->user()?->can('create', Series::class) ?? false),
 
-            Actions\CreateAction::make(),
+            Actions\CreateAction::make()
+                ->label('New Series'),   // Bug #20
         ];
     }
 }

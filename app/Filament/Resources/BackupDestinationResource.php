@@ -294,19 +294,26 @@ class BackupDestinationResource extends Resource
                     ->sortable(),
                 TextColumn::make('driver')
                     ->badge()
-                    ->sortable(),
+                    ->sortable()
+                    ->toggleable(),
                 TextColumn::make('disk_key')
                     ->label('Disk key')
                     ->searchable()
-                    ->sortable(),
+                    ->sortable()
+                    ->toggleable(),
                 ToggleColumn::make('is_active')
-                    ->label('Active'),
+                    ->label('Active')
+                    ->sortable()
+                    ->toggleable(),
                 IconColumn::make('is_default')
                     ->label('Default')
-                    ->boolean(),
+                    ->boolean()
+                    ->sortable()
+                    ->toggleable(),
                 TextColumn::make('sort_order')
                     ->label('Order')
-                    ->sortable(),
+                    ->sortable()
+                    ->toggleable(),
             ])
             ->recordActions([
                 Action::make('testConnection')

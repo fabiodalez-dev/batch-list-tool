@@ -4,6 +4,7 @@ namespace App\Filament\Resources;
 
 use App\Filament\Resources\DocumentFlagResource\Pages;
 use App\Filament\Resources\DocumentResource\RelationManagers\FlagsRelationManager;
+use App\Filament\Support\CreatorColumn;
 use App\Filament\Support\SearchableSelects;
 use App\Models\DocumentFlag;
 use Filament\Actions\BulkAction;
@@ -247,7 +248,8 @@ class DocumentFlagResource extends Resource
                     ->color('gray')
                     ->formatStateUsing(fn (string $state): string => FlagsRelationManager::typeLabel($state))
                     ->sortable()
-                    ->searchable(),
+                    ->searchable()
+                    ->toggleable(),
 
                 Tables\Columns\TextColumn::make('document.identifier')
                     ->label('Document')
@@ -255,12 +257,15 @@ class DocumentFlagResource extends Resource
                         ? DocumentResource::getUrl('view', ['record' => $record->document_id])
                         : null)
                     ->sortable()
-                    ->searchable(),
+                    ->searchable()
+                    ->toggleable(),
 
                 Tables\Columns\TextColumn::make('title')
                     ->limit(60)
                     ->wrap()
-                    ->searchable(),
+                    ->searchable()
+                    ->sortable()
+                    ->toggleable(),
 
                 Tables\Columns\TextColumn::make('status')
                     ->badge()
@@ -271,29 +276,35 @@ class DocumentFlagResource extends Resource
                         'dismissed' => 'gray',
                         default => 'gray',
                     })
-                    ->sortable(),
+                    ->sortable()
+                    ->toggleable(),
 
                 Tables\Columns\TextColumn::make('repository.code')
                     ->label('Repo')
                     ->badge()
                     ->color('gray')
+                    ->sortable()
                     ->toggleable(),
 
                 Tables\Columns\TextColumn::make('flaggedBy.name')
                     ->label('Flagged by')
                     ->default('—')
+                    ->sortable()
                     ->toggleable(),
 
                 Tables\Columns\TextColumn::make('flagged_at')
                     ->label('Flagged')
                     ->dateTime()
-                    ->sortable(),
+                    ->sortable()
+                    ->toggleable(),
 
                 Tables\Columns\TextColumn::make('resolved_at')
                     ->label('Resolved')
                     ->dateTime()
                     ->placeholder('—')
+                    ->sortable()
                     ->toggleable(),
+                CreatorColumn::make(),
             ])
             ->filters([
                 SelectFilter::make('status')
@@ -403,6 +414,18 @@ class DocumentFlagResource extends Resource
             ->count();
 
         return $critical > 0 ? 'danger' : 'warning';
+    }
+
+    public static function getEloquentQuery(): Builder
+    {
+        return parent::getEloquentQuery()
+            ->with([
+                // Eager-load the relations the table columns render (avoid N+1).
+                'document',
+                'repository',
+                'flaggedBy',
+                'audits' => fn ($q) => $q->where('event', 'created')->oldest('id')->with('user'),
+            ]);
     }
 
     public static function getRelations(): array

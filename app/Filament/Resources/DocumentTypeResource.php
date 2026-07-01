@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace App\Filament\Resources;
 
 use App\Filament\Resources\DocumentTypeResource\Pages;
+use App\Filament\Support\CreatorColumn;
 use App\Models\DocumentType;
 use Filament\Actions\BulkAction;
 use Filament\Actions\BulkActionGroup;
@@ -14,6 +15,7 @@ use Filament\Resources\Resource;
 use Filament\Schemas\Schema;
 use Filament\Tables;
 use Filament\Tables\Table;
+use Illuminate\Database\Eloquent\Builder;
 
 /**
  * RFQ §3.1.11 — manage the canonical list of `document_type` values.
@@ -68,9 +70,10 @@ class DocumentTypeResource extends Resource
                     ->placeholder('—')
                     ->toggleable(),
                 Tables\Columns\TextColumn::make('name')->searchable()->sortable(),
-                Tables\Columns\TextColumn::make('description')->limit(60)->toggleable(),
-                Tables\Columns\IconColumn::make('is_active')->boolean()->sortable(),
+                Tables\Columns\TextColumn::make('description')->limit(60)->toggleable()->sortable(),
+                Tables\Columns\IconColumn::make('is_active')->boolean()->sortable()->toggleable(),
                 Tables\Columns\TextColumn::make('updated_at')->dateTime('Y-m-d H:i')->sortable()->toggleable(),
+                CreatorColumn::make(),
             ])
             ->defaultSort('name')
             ->filters([
@@ -93,6 +96,14 @@ class DocumentTypeResource extends Resource
                             ->whereKey($records->modelKeys())
                             ->update(['is_active' => false])),
                 ]),
+            ]);
+    }
+
+    public static function getEloquentQuery(): Builder
+    {
+        return parent::getEloquentQuery()
+            ->with([
+                'audits' => fn ($q) => $q->where('event', 'created')->oldest('id')->with('user'),
             ]);
     }
 

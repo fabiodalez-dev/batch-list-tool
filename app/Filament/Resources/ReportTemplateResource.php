@@ -170,16 +170,20 @@ class ReportTemplateResource extends Resource
                     ->label('Report')
                     ->badge()
                     ->formatStateUsing(fn (string $state): string => self::sourceOptions()[$state] ?? $state)
-                    ->sortable(),
+                    ->sortable()
+                    ->toggleable(),
 
                 Tables\Columns\IconColumn::make('is_shared')
                     ->label('Shared')
-                    ->boolean(),
+                    ->boolean()
+                    ->sortable()
+                    ->toggleable(),
 
                 Tables\Columns\TextColumn::make('user.name')
                     ->label('Owner')
                     ->placeholder('—')
                     ->searchable()
+                    ->sortable()
                     ->toggleable(),
 
                 Tables\Columns\TextColumn::make('created_at')

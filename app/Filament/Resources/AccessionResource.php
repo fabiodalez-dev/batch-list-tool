@@ -306,7 +306,7 @@ class AccessionResource extends Resource
             ->persistFiltersInSession()
             // Feedback1 — filters always visible above the table content
             // (collapsible), mirroring BoxResource.
-            ->filtersLayout(FiltersLayout::AboveContentCollapsible)
+            ->filtersLayout(FiltersLayout::BeforeContentCollapsible)
             // Feedback1 Wave A (A6) — drag-and-drop column reordering, mirroring
             // DocumentResource and BoxResource (spec: all main resource lists).
             ->reorderableColumns()
@@ -360,7 +360,8 @@ class AccessionResource extends Resource
                     ->toggleable(),
                 // A9 — Inputter column (record creator via audit trail).
                 // Toggleable, default visible, not sortable (cross-table sort).
-                CreatorColumn::make(),
+                CreatorColumn::make()
+                    ->toggleable(),
                 Tables\Columns\TextColumn::make('created_at')
                     ->dateTime()
                     ->sortable()

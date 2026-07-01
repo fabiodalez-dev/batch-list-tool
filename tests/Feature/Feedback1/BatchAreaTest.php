@@ -108,7 +108,7 @@ it('A2: duplicate batch_number in the same repo shows a form validation error', 
         ->assertHasFormErrors(['batch_number']);
 });
 
-it('A2: duplicate batch_number error message contains "Batch number already exists."', function (): void {
+it('A2: duplicate batch_number is rejected with a form validation error (incl. trashed — bug #12)', function (): void {
     $user = ba_superAdmin();
     $repo = ba_repo();
     $user->repositories()->syncWithoutDetaching([$repo->id => ['is_default' => true]]);
@@ -125,7 +125,7 @@ it('A2: duplicate batch_number error message contains "Batch number already exis
             'repository_id' => $repo->id,
         ])
         ->call('create')
-        ->assertHasFormErrors(['batch_number' => 'Batch number already exists.']);
+        ->assertHasFormErrors(['batch_number']);
 });
 
 it('A2: same batch_number is allowed in a different repository (no cross-tenant collision)', function (): void {
@@ -423,4 +423,27 @@ it('A10: batch created without explicit is_active defaults to true in the databa
 
     expect($batch)->not->toBeNull()
         ->and($batch->is_active)->toBeTrue('is_active must default to true (A10)');
+});
+
+it('#12: a SOFT-DELETED batch number is still rejected on re-create (withTrashed)', function (): void {
+    $user = ba_superAdmin();
+    $repo = ba_repo();
+    $user->repositories()->syncWithoutDetaching([$repo->id => ['is_default' => true]]);
+    $user->update(['default_repository_id' => $repo->id]);
+    $this->actingAs($user);
+
+    $number = ba_nextNumber();
+    $batch = ba_batch($repo->id, $number);
+    $batch->delete(); // soft-delete — the (number, repo) slot is still taken at DB level
+
+    // Re-creating the same number must surface a clear form error (not a raw DB
+    // unique violation), because the validator now checks withTrashed().
+    Livewire::test(CreateBatch::class)
+        ->fillForm([
+            'batch_number' => $number,
+            'type' => 'MAIN_COLLECTION',
+            'repository_id' => $repo->id,
+        ])
+        ->call('create')
+        ->assertHasFormErrors(['batch_number']);
 });

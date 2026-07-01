@@ -71,6 +71,21 @@ final class MoveBoxToLocationAction
                     return;
                 }
 
+                // Review finding (tenant isolation): a repository-scoped location
+                // may only be assigned to a box in the SAME repository. Global
+                // locations (repository_id IS NULL) are assignable anywhere.
+                // Mirrors SetLocationAction's cross-repository guard.
+                $boxRepositoryId = $record->customFieldRepositoryId();
+                if ($location->repository_id !== null
+                    && (int) $location->repository_id !== (int) $boxRepositoryId) {
+                    Notification::make()
+                        ->title('Cannot move — target location belongs to a different repository')
+                        ->danger()
+                        ->send();
+
+                    return;
+                }
+
                 $reason = isset($data['reason']) && is_string($data['reason'])
                     ? trim($data['reason'])
                     : null;

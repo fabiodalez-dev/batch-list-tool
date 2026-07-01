@@ -31,7 +31,7 @@ use Spatie\Permission\Models\Role;
  *       implements HasMedia, registers the collection (PDF + image mimes),
  *       form exposes a multiple SpatieMediaLibraryFileUpload, infolist
  *       lists the uploaded files.
- *   2 — Filters always visible: FiltersLayout::AboveContentCollapsible,
+ *   2 — Filters always visible: FiltersLayout::BeforeContentCollapsible,
  *       mirroring BoxResource.
  */
 uses(RefreshDatabase::class);
@@ -299,14 +299,14 @@ it('infolist has an attachments_list entry', function () {
 });
 
 // ===========================================================================
-// 2 — Filters always visible (AboveContentCollapsible)
+// 2 — Filters always visible (BeforeContentCollapsible)
 // ===========================================================================
 
 /**
- * 2.1 — The table uses FiltersLayout::AboveContentCollapsible, mirroring
+ * 2.1 — The table uses FiltersLayout::BeforeContentCollapsible, mirroring
  * BoxResource, so the filter panel is always visible above the content.
  */
-it('table uses the AboveContentCollapsible filters layout', function () {
+it('table uses the BeforeContentCollapsible filters layout', function () {
     $this->actingAs(fga_superAdmin());
 
     $table = AccessionResource::table(
@@ -315,5 +315,5 @@ it('table uses the AboveContentCollapsible filters layout', function () {
         )
     );
 
-    expect($table->getFiltersLayout())->toBe(FiltersLayout::AboveContentCollapsible);
+    expect($table->getFiltersLayout())->toBe(FiltersLayout::BeforeContentCollapsible);
 });

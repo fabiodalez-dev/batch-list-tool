@@ -11,6 +11,7 @@ use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Database\Eloquent\Factories\HasFactory;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
+use Illuminate\Database\Eloquent\Relations\BelongsToMany;
 use Illuminate\Database\Eloquent\Relations\HasMany;
 use Illuminate\Database\Eloquent\SoftDeletes;
 use Illuminate\Support\Collection;
@@ -133,6 +134,17 @@ class Box extends Model implements AuditableContract, Sortable
     public function children(): HasMany
     {
         return $this->hasMany(self::class, 'parent_box_id');
+    }
+
+    /**
+     * Bug #36 — ADDITIONAL parent boxes (many-to-many), on top of the single
+     * primary `parent_box_id`. Used when a box was assembled from documents that
+     * came from several origin boxes after cataloguing. Does not affect the RFQ
+     * A1.3 provenance guard, which only governs `parent_box_id`.
+     */
+    public function parents(): BelongsToMany
+    {
+        return $this->belongsToMany(self::class, 'box_parents', 'box_id', 'parent_box_id');
     }
 
     public function documents(): HasMany

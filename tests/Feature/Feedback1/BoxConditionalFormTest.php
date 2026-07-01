@@ -60,12 +60,12 @@ it('RAS box requires batch, box_number and barcode through the create form', fun
         ->assertHasFormErrors(['batch_id', 'box_number', 'barcode']);
 });
 
-it('In-Situ box requires identifier, location and barcode (A10) but NOT batch', function () {
+it('In-Situ box requires identifier and location but NOT batch or barcode (A10 + bug #35)', function () {
     $this->actingAs(bcf_actAsSuperAdmin());
 
-    // A10 (Wave A) — barcode is now required for ALL box types, including
-    // IN_SITU. Missing box_number, location_id and barcode → those three error;
-    // batch_id is still NOT required for IN_SITU boxes.
+    // Client bug #35 — barcode is required only for RAS-family boxes; an IN_SITU
+    // box does NOT need one. Missing box_number and location_id still error;
+    // batch_id and barcode do NOT.
     Livewire::test(CreateBox::class)
         ->fillForm([
             'box_type' => 'IN_SITU',
@@ -78,8 +78,8 @@ it('In-Situ box requires identifier, location and barcode (A10) but NOT batch', 
             'is_legacy' => false,
         ])
         ->call('create')
-        ->assertHasFormErrors(['box_number', 'location_id', 'barcode'])
-        ->assertHasNoFormErrors(['batch_id']);
+        ->assertHasFormErrors(['box_number', 'location_id'])
+        ->assertHasNoFormErrors(['batch_id', 'barcode']);
 });
 
 it('creates a valid In-Situ box with identifier, location and barcode and no batch', function () {

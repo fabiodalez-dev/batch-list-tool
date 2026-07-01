@@ -7,6 +7,7 @@ namespace App\Filament\Resources\Lookups;
 use App\Filament\Resources\Lookups\LocationTypeResource\Pages;
 use App\Filament\Support\CreatorColumn;
 use App\Models\LocationType;
+use App\Models\Repository;
 use Filament\Actions\Action;
 use Filament\Actions\BulkActionGroup;
 use Filament\Actions\DeleteBulkAction;
@@ -85,6 +86,13 @@ class LocationTypeResource extends Resource
                             ->helperText('Controls display order in dropdowns (lower numbers first).'),
                         Forms\Components\Toggle::make('is_active')
                             ->default(true),
+                        Forms\Components\Select::make('repository_id')
+                            ->label('Repository')
+                            ->relationship('repository', 'name')
+                            ->searchable()
+                            ->preload()
+                            ->nullable()
+                            ->helperText('Leave blank for a global type (all repositories).'),
                     ]),
             ]);
     }
@@ -101,12 +109,20 @@ class LocationTypeResource extends Resource
                     ->sortable(),
                 Tables\Columns\TextColumn::make('label')
                     ->searchable()
-                    ->sortable(),
+                    ->sortable()
+                    ->toggleable(),
                 Tables\Columns\TextColumn::make('sort_order')
-                    ->sortable(),
+                    ->sortable()
+                    ->toggleable(),
                 Tables\Columns\IconColumn::make('is_active')
                     ->boolean()
-                    ->sortable(),
+                    ->sortable()
+                    ->toggleable(),
+                Tables\Columns\TextColumn::make('repository.code')
+                    ->label('Repository')
+                    ->badge()
+                    ->toggleable()
+                    ->placeholder('—'),
                 // NAF Feedback-1 comment #4 — show who created the record.
                 CreatorColumn::make(),
                 Tables\Columns\TextColumn::make('updated_at')
