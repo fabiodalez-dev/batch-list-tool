@@ -18,6 +18,13 @@ it('reads the latest Barcode IN from documents.barcode_in first', function (): v
     expect(RasReconciliation::latestBarcodeIn(qf_doc(['barcode_in' => 'AA18049'])))->toBe('AA18049');
 });
 
+it('uses Barcode IN #2 as the latest document barcode when present', function (): void {
+    expect(RasReconciliation::latestBarcodeIn(qf_doc([
+        'barcode_in' => 'AA18049',
+        'barcode_in_2' => 'AA99999',
+    ])))->toBe('AA99999');
+});
+
 it('falls back to the current box barcode when the box is IN', function (): void {
     $box = qf_box(['barcode' => 'AC39451', 'barcode_status' => 'IN']);
     $doc = qf_doc(['barcode_in' => null, 'current_box_id' => $box->id]);
@@ -38,10 +45,17 @@ it('trims and treats a blank Barcode IN as null', function (): void {
         ->and(RasReconciliation::latestBarcodeIn(qf_doc(['barcode_in' => '  AB1  '])))->toBe('AB1');
 });
 
-it('builds the RAS reconciliation key from ras_batch_1 / ras_box_1 / barcode_in', function (): void {
-    $doc = qf_doc(['ras_batch_1' => '19', 'ras_box_1' => '98', 'barcode_in' => 'AA18049']);
+it('builds the RAS reconciliation key from the latest RAS pair and barcode IN', function (): void {
+    $doc = qf_doc([
+        'ras_batch_1' => '19',
+        'ras_box_1' => '98',
+        'ras_batch_2' => '20',
+        'ras_box_2' => '99',
+        'barcode_in' => 'AA18049',
+        'barcode_in_2' => 'AA99999',
+    ]);
 
-    expect(RasReconciliation::key($doc))->toBe(['batch' => '19', 'box' => '98', 'barcode_in' => 'AA18049']);
+    expect(RasReconciliation::key($doc))->toBe(['batch' => '20', 'box' => '99', 'barcode_in' => 'AA99999']);
 });
 
 it('is reconcilable only when batch, box and a barcode IN are all present', function (): void {
@@ -54,10 +68,11 @@ it('lists documents with any RAS-origin column and hides those without', functio
     $this->actingAs(qf_admin());
     $withBatch = qf_doc(['ras_batch_1' => '19', 'ras_box_1' => '98', 'barcode_in' => 'AA1']);
     $withBarcodeRas = qf_doc(['barcode_ras_1' => 'RB-1']);
+    $withSecondPair = qf_doc(['ras_batch_2' => '20', 'ras_box_2' => '99', 'barcode_in_2' => 'AA2']);
     $none = qf_doc(['ras_batch_1' => null, 'ras_box_1' => null, 'barcode_ras_1' => null]);
 
     Livewire::test(RasNraReconciliationReport::class)
-        ->assertCanSeeTableRecords([$withBatch, $withBarcodeRas])
+        ->assertCanSeeTableRecords([$withBatch, $withBarcodeRas, $withSecondPair])
         ->assertCanNotSeeTableRecords([$none]);
 });
 

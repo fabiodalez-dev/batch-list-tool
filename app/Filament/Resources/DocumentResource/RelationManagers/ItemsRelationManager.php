@@ -26,8 +26,8 @@ use Livewire\Features\SupportFileUploads\TemporaryUploadedFile;
  *
  * Lets a document that stands for many physical items ("71 folders") be
  * expanded into an itemised list — added one at a time, or in bulk via the
- * "Itemise" header action (a count of placeholders, or a pasted/uploaded list,
- * one item per line). Items are reorderable; the operator's order is stored in
+ * "Itemise" header action (a count of placeholders, a pasted list, CSV/TXT, or
+ * an Excel sheet). Items are reorderable; the operator's order is stored in
  * `position`. See {@see BoxItemisation}.
  */
 class ItemsRelationManager extends RelationManager
@@ -96,7 +96,7 @@ class ItemsRelationManager extends RelationManager
                     ->color('primary')
                     ->visible(fn (): bool => static::userCanUpdate())
                     ->modalHeading('Itemise this document')
-                    ->modalDescription('Expand this record into individual items — enter a count of placeholder items, paste a list, or upload a .csv/.txt (one item per line; use " | " or a tab to add a description).')
+                    ->modalDescription('Expand this record into individual items — enter a count of placeholder items, paste a list, or upload a .xlsx/.csv/.txt sheet. Use the first column for the reference and the second for an optional description.')
                     ->form([
                         Forms\Components\TextInput::make('count')
                             ->label('Number of placeholder items')
@@ -112,8 +112,14 @@ class ItemsRelationManager extends RelationManager
                             ->label('…or paste a list (one item per line)')
                             ->rows(6),
                         Forms\Components\FileUpload::make('file')
-                            ->label('…or upload a sheet (.csv / .txt, one item per line)')
-                            ->acceptedFileTypes(['text/csv', 'text/plain', 'application/csv'])
+                            ->label('…or upload a sheet (.xlsx / .csv / .txt)')
+                            ->acceptedFileTypes([
+                                'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
+                                'application/vnd.ms-excel',
+                                'text/csv',
+                                'text/plain',
+                                'application/csv',
+                            ])
                             ->storeFiles(false),
                         Forms\Components\Toggle::make('replace')
                             ->label('Replace the existing itemised list')
@@ -202,7 +208,7 @@ class ItemsRelationManager extends RelationManager
     }
 
     /**
-     * Read an uploaded .csv/.txt (from the FileUpload, storeFiles(false)) into a
+     * Read an uploaded .xlsx/.csv/.txt (from the FileUpload, storeFiles(false)) into a
      * list of lines for {@see BoxItemisation::itemiseFromLines()}. Tolerates the
      * single-file, array, and empty shapes Filament can hand back.
      *
@@ -215,6 +221,15 @@ class ItemsRelationManager extends RelationManager
         }
         if (! $file instanceof TemporaryUploadedFile) {
             return [];
+        }
+
+        $extension = strtolower($file->getClientOriginalExtension());
+        if (in_array($extension, ['xlsx', 'xls'], true)) {
+            // getRealPath() can return false at runtime for a missing temp file;
+            // (string) normalises that to '' so the guard below stays honest.
+            $path = (string) $file->getRealPath();
+
+            return $path !== '' ? BoxItemisation::linesFromSpreadsheet($path) : [];
         }
 
         return preg_split('/\r\n|\r|\n/', (string) $file->get()) ?: [];

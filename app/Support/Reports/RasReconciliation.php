@@ -14,21 +14,21 @@ use App\Models\Document;
  * latest one. The combination of the Batch, Box and latest Barcode IN is what
  * we need for reconciliation."
  *
- * A document carries its RAS origin in the legacy columns `ras_batch_1`,
- * `ras_box_1` and its scanned-in barcode in `barcode_in` (falling back to the
- * current box's barcode while that box is IN). This helper reads that key
+ * A document carries its RAS origin in paired legacy columns. The `*_2`
+ * values represent the later scan when present, falling back to `*_1`, then
+ * to the current IN box barcode only for the latest Barcode IN. This helper reads that key
  * consistently so the reconciliation report and any future consumer agree, and
  * so the extraction logic is unit-testable without a report page.
  */
 final class RasReconciliation
 {
     /**
-     * The latest "Barcode IN" for a document: its own `barcode_in`, else the
-     * current box's barcode while that box is scanned IN.
+     * The latest "Barcode IN" for a document: #2 beats #1, then the current
+     * box's barcode while that box is scanned IN.
      */
     public static function latestBarcodeIn(Document $document): ?string
     {
-        $own = self::clean($document->barcode_in);
+        $own = self::clean($document->barcode_in_2) ?? self::clean($document->barcode_in);
         if ($own !== null) {
             return $own;
         }
@@ -41,6 +41,16 @@ final class RasReconciliation
         return null;
     }
 
+    public static function latestRasBatch(Document $document): ?string
+    {
+        return self::clean($document->ras_batch_2) ?? self::clean($document->ras_batch_1);
+    }
+
+    public static function latestRasBox(Document $document): ?string
+    {
+        return self::clean($document->ras_box_2) ?? self::clean($document->ras_box_1);
+    }
+
     /**
      * The reconciliation key: RAS Batch, RAS Box and the latest Barcode IN.
      *
@@ -49,8 +59,8 @@ final class RasReconciliation
     public static function key(Document $document): array
     {
         return [
-            'batch' => self::clean($document->ras_batch_1),
-            'box' => self::clean($document->ras_box_1),
+            'batch' => self::latestRasBatch($document),
+            'box' => self::latestRasBox($document),
             'barcode_in' => self::latestBarcodeIn($document),
         ];
     }
