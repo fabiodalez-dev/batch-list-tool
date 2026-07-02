@@ -150,14 +150,38 @@ jobs:
           # -4: force IPv4. The cPanel host publishes an AAAA (IPv6) record that
           # GitHub-hosted runners cannot route to, so a default connect fails with
           # "Network is unreachable". Pin to the routable IPv4 A record.
-          ssh -4 \
-              -o ServerAliveInterval=30 \
-              -o ServerAliveCountMax=6 \
-              -o StrictHostKeyChecking=accept-new \
-              -o ConnectTimeout=30 \
-              "${SSH_USER}@${SSH_HOST}" \
-              "DEPLOY_PATH='${DEPLOY_PATH}' BRANCH='${DEPLOY_BRANCH}' bash -s" \
-              < deploy/post-deploy.sh
+          #
+          # Retry with backoff: the cPanel firewall intermittently drops/filters
+          # GitHub-runner IPs ("Connection timed out", observed 2026-07-02).
+          # Retry ONLY transport-level failures (ssh exit 255) — a non-255 exit
+          # comes from post-deploy.sh itself, which has its own rollback trap,
+          # so re-running would just repeat the same failure.
+          attempt=1
+          max_attempts=5
+          while :; do
+            set +e
+            ssh -4 \
+                -o ServerAliveInterval=30 \
+                -o ServerAliveCountMax=6 \
+                -o StrictHostKeyChecking=accept-new \
+                -o ConnectTimeout=30 \
+                "${SSH_USER}@${SSH_HOST}" \
+                "DEPLOY_PATH='${DEPLOY_PATH}' BRANCH='${DEPLOY_BRANCH}' bash -s" \
+                < deploy/post-deploy.sh
+            rc=$?
+            set -e
+            if [ "$rc" -eq 0 ]; then
+              break
+            fi
+            if [ "$rc" -ne 255 ] || [ "$attempt" -ge "$max_attempts" ]; then
+              echo "Deploy failed (exit ${rc}, attempt ${attempt}/${max_attempts})."
+              exit "$rc"
+            fi
+            delay=$((attempt * 20))
+            echo "SSH transport failure (exit 255) on attempt ${attempt}/${max_attempts}; retrying in ${delay}s…"
+            sleep "$delay"
+            attempt=$((attempt + 1))
+          done
 
       - name: Ship built production assets to the host
         run: |
@@ -165,10 +189,30 @@ jobs:
           # gitignored, so it never travels through git. Rsync it into place
           # AFTER post-deploy.sh so the host always serves freshly-compiled CSS/JS.
           # --delete keeps the remote dir an exact mirror (drops stale hashed files).
-          rsync -az --delete \
-            -e "ssh -4 -o ServerAliveInterval=30 -o ServerAliveCountMax=6" \
-            ./public/build/ \
-            "${SSH_USER}@${SSH_HOST}:${DEPLOY_PATH}/public/build/"
+          # Retry with backoff (idempotent mirror op) — same intermittent
+          # firewall drops as the SSH deploy step above.
+          attempt=1
+          max_attempts=5
+          while :; do
+            set +e
+            rsync -az --delete \
+              -e "ssh -4 -o ServerAliveInterval=30 -o ServerAliveCountMax=6 -o ConnectTimeout=30" \
+              ./public/build/ \
+              "${SSH_USER}@${SSH_HOST}:${DEPLOY_PATH}/public/build/"
+            rc=$?
+            set -e
+            if [ "$rc" -eq 0 ]; then
+              break
+            fi
+            if [ "$attempt" -ge "$max_attempts" ]; then
+              echo "Asset rsync failed (exit ${rc}) after ${max_attempts} attempts."
+              exit "$rc"
+            fi
+            delay=$((attempt * 20))
+            echo "rsync failed (exit ${rc}) on attempt ${attempt}/${max_attempts}; retrying in ${delay}s…"
+            sleep "$delay"
+            attempt=$((attempt + 1))
+          done
 
       - name: Smoke test admin panel
         id: smoke
