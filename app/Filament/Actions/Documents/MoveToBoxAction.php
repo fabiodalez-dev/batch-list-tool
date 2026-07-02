@@ -79,13 +79,29 @@ final class MoveToBoxAction
      */
     private static function form(): array
     {
+        $assignable = fn ($q) => $q->whereNull('destroyed_at')->where('barcode_status', '!=', 'PERM_OUT');
+
         return [
             SearchableSelects::boxFiltered(
                 'to_box_id',
                 'currentBox',
-                fn ($q) => $q->whereNull('destroyed_at')->where('barcode_status', '!=', 'PERM_OUT'),
+                $assignable,
             )
                 ->label('Target box')
+                // Bug #34 — the batch is already shown on the document, so the
+                // picker shows just the box number ("Box N — TYPE — STATUS"),
+                // not "Batch X/Box N — …".
+                ->getOptionLabelFromRecordUsing(fn (Box $r): string => SearchableSelects::boxShortLabel($r))
+                ->getSearchResultsUsing(fn (string $search): array => SearchableSelects::boxSearchResults(
+                    $search,
+                    $assignable,
+                    fn (Box $r): string => SearchableSelects::boxShortLabel($r),
+                ))
+                ->getOptionLabelUsing(function ($value): ?string {
+                    $box = Box::query()->find($value);
+
+                    return $box instanceof Box ? SearchableSelects::boxShortLabel($box) : null;
+                })
                 ->required(),
             Textarea::make('reason')
                 ->label('Reason (optional)')

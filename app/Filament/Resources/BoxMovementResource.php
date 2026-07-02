@@ -7,6 +7,7 @@ use App\Filament\Support\CreatorColumn;
 use App\Filament\Support\SearchableSelects;
 use App\Models\Box;
 use App\Models\BoxMovement;
+use App\Models\Document;
 use Filament\Actions\BulkActionGroup;
 use Filament\Actions\DeleteBulkAction;
 use Filament\Actions\EditAction;
@@ -20,6 +21,7 @@ use Filament\Schemas\Schema;
 use Filament\Tables;
 use Filament\Tables\Table;
 use Illuminate\Database\Eloquent\Builder;
+use Illuminate\Support\Str;
 
 class BoxMovementResource extends Resource
 {
@@ -30,6 +32,47 @@ class BoxMovementResource extends Resource
     protected static string|\UnitEnum|null $navigationGroup = 'Archive';
 
     protected static ?int $navigationSort = 15;
+
+    /**
+     * Bug #29 — a clearer document label for the movements table/infolist:
+     * full identifier, the notary's full name, the volume number, and — when
+     * the identifier is missing or auto-generated — the dates or a notes
+     * excerpt so the operator can still tell which document moved.
+     */
+    public static function movementDocumentLabel(?Document $doc): ?string
+    {
+        if ($doc === null) {
+            return null;
+        }
+
+        $parts = [];
+        $id = $doc->display_identifier;
+        $parts[] = ($id !== null && $id !== '') ? $id : 'No identifier';
+
+        $authority = $doc->relationLoaded('authorities')
+            ? $doc->authorities->first()
+            : $doc->authorities()->first();
+        if ($authority !== null) {
+            $notary = trim(((string) $authority->getAttribute('given_names')) . ' ' . ((string) $authority->getAttribute('surname')));
+            if ($notary !== '') {
+                $parts[] = $notary;
+            }
+        }
+
+        if (! empty($doc->volume_number)) {
+            $parts[] = 'vol. ' . $doc->volume_number;
+        }
+
+        // Identifier unknown → surface dates / notes so the row stays identifiable.
+        if ($id === null || $id === '' || str_starts_with((string) $id, 'AUTO-')) {
+            $extra = $doc->dates ?: ($doc->notes ? Str::limit((string) $doc->notes, 60) : null);
+            if ($extra) {
+                $parts[] = (string) $extra;
+            }
+        }
+
+        return implode(' — ', $parts);
+    }
 
     public static function form(Schema $schema): Schema
     {
@@ -125,6 +168,8 @@ class BoxMovementResource extends Resource
                     ->schema([
                         TextEntry::make('document.identifier')
                             ->label('Document')
+                            // Bug #29 — same enriched label as the table.
+                            ->state(fn (?BoxMovement $record): ?string => self::movementDocumentLabel($record?->document))
                             ->badge()
                             ->color('primary')
                             ->url(fn (?BoxMovement $record): ?string => $record?->document_id
@@ -186,6 +231,11 @@ class BoxMovementResource extends Resource
             ->columns([
                 Tables\Columns\TextColumn::make('document.identifier')
                     ->label('Document')
+                    // Bug #29 — identifier + notary + volume (+ dates/notes when
+                    // the identifier is unknown), not just the bare identifier.
+                    ->state(fn (BoxMovement $r): ?string => self::movementDocumentLabel($r->document))
+                    ->wrap()
+                    ->searchable()
                     ->sortable(),
                 Tables\Columns\TextColumn::make('fromBox.box_number')
                     ->numeric()
@@ -236,7 +286,8 @@ class BoxMovementResource extends Resource
         return parent::getEloquentQuery()
             ->with([
                 // Eager-load the relations the table columns render (avoid N+1).
-                'document',
+                // Bug #29 — authorities feed the enriched document label.
+                'document.authorities',
                 'fromBox',
                 'toBox',
                 'user',
