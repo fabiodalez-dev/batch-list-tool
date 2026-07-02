@@ -175,9 +175,11 @@ final class SearchableSelects
     }
 
     /**
+     * @param ?\Closure(Box): string $labeler custom option-label builder
+     *                                        (defaults to {@see boxLabel()})
      * @return array<int|string, string>
      */
-    public static function boxSearchResults(string $search, ?\Closure $queryModifier = null): array
+    public static function boxSearchResults(string $search, ?\Closure $queryModifier = null, ?\Closure $labeler = null): array
     {
         $search = trim($search);
 
@@ -201,7 +203,7 @@ final class SearchableSelects
         $out = [];
         foreach ($rows as $r) {
             /** @var Box $r */
-            $out[$r->id] = self::boxLabel($r);
+            $out[$r->id] = $labeler !== null ? $labeler($r) : self::boxLabel($r);
         }
 
         return $out;
@@ -219,6 +221,20 @@ final class SearchableSelects
         $status = $r->barcode_status ?? '—';
 
         return "Batch {$batchNumber}/Box {$r->box_number} — {$type} — {$status}";
+    }
+
+    /**
+     * Bug #34 — box-number-only label for pickers where the batch is already
+     * shown separately on the record (e.g. Documents → Move box): "the
+     * function should just have a box number rather than a batch and box
+     * number".
+     */
+    public static function boxShortLabel(Box $r): string
+    {
+        $type = $r->box_type ?? '—';
+        $status = $r->barcode_status ?? '—';
+
+        return "Box {$r->box_number} — {$type} — {$status}";
     }
 
     /* =========================================================================

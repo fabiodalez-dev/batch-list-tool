@@ -213,17 +213,15 @@ class BatchResource extends Resource
                                 if ($currentDesc !== null && trim((string) $currentDesc) !== '') {
                                     return;
                                 }
-                                // Fetch the linked accession codes and derive the description.
-                                // Uses the normal scoped query so only accessions visible
-                                // to the current user (respecting RepositoryScope) are
-                                // concatenated — preventing cross-tenant data leakage.
-                                $codes = Accession::query()
-                                    ->whereIn('id', $state)
-                                    ->orderBy('code')
-                                    ->pluck('code')
-                                    ->all();
-                                if ($codes !== []) {
-                                    $set('description', implode(', ', $codes));
+                                // Bug #11 — the batch takes the name of the accession
+                                // chosen FIRST (selection order = $state[0]), not a
+                                // concatenation of every linked code. The field stays
+                                // editable — this only prefills a blank description.
+                                // Scoped query: only an accession visible to the current
+                                // user (RepositoryScope) can flow into the description.
+                                $first = Accession::query()->find((int) $state[0]);
+                                if ($first !== null) {
+                                    $set('description', (string) $first->getAttribute('code'));
                                 }
                             })
                             ->columnSpanFull(),

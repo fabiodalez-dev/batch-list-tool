@@ -329,28 +329,26 @@ it('BatchResource edit form has accessions multi-select', function (): void {
  * behaviour directly (no Livewire roundtrip needed) because the closure
  * calls Accession::withoutGlobalScopes()->whereIn('id', $ids)->pluck('code').
  */
-it('batch description is auto-derived from linked accession codes', function (): void {
+it('batch description is auto-derived from the FIRST chosen accession (Bug #11)', function (): void {
     $repo = wbnn_repo();
-    $acc1 = wbnn_accession($repo->id, 'Alpha Accession');
-    $acc2 = wbnn_accession($repo->id, 'Beta Accession');
+    $acc1 = wbnn_accession($repo->id, 'Beta Accession');   // chosen FIRST
+    $acc2 = wbnn_accession($repo->id, 'Alpha Accession');  // chosen second
 
     $batch = wbnn_batch($repo->id, attrs: ['description' => null]);
     expect($batch->description)->toBeNull();
 
-    // Simulate what afterStateUpdated does: resolve codes sorted, join with ', '.
-    $codes = Accession::withoutGlobalScopes()
-        ->whereIn('id', [$acc1->id, $acc2->id])
-        ->orderBy('code')
-        ->pluck('code')
-        ->all();
-
-    $derived = implode(', ', $codes);
+    // Simulate what afterStateUpdated does now (Bug #11): the FIRST element of
+    // the selection state drives the description — no concatenation, no
+    // alphabetical reordering (Beta was chosen first and must win over Alpha).
+    $state = [$acc1->id, $acc2->id];
+    $first = Accession::withoutGlobalScopes()->find((int) $state[0]);
+    $derived = (string) $first->getAttribute('code');
 
     $batch->update(['description' => $derived]);
     $batch->accessions()->attach([$acc1->id, $acc2->id]);
 
     $batch->refresh();
-    expect($batch->description)->toBe('Alpha Accession, Beta Accession');
+    expect($batch->description)->toBe('Beta Accession');
     expect($batch->accessions()->count())->toBe(2);
 });
 

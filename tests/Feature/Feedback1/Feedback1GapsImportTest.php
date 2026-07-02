@@ -296,7 +296,8 @@ it('GAP4-Description: two accessions on one batch concatenate their titles into 
         'series' => 'REG',
     ], $u->id);
 
-    // Description must now be the ', '-joined titles of BOTH accessions,
-    // ordered by code (same formula as BatchResource's form derivation).
-    expect($batch->refresh()->description)->toBe('Alpha Title, Beta Title');
+    // Bug #11 — the batch takes the name of the accession linked FIRST:
+    // adding a second accession must NOT concatenate; the description stays
+    // the first accession's title (same rule as BatchResource's form).
+    expect($batch->refresh()->description)->toBe('Alpha Title');
 });

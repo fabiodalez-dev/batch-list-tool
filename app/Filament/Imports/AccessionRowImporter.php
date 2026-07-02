@@ -11,6 +11,7 @@ use App\Models\Authority;
 use App\Models\Batch;
 use App\Models\Box;
 use App\Models\Document;
+use App\Models\DocumentFlag;
 use App\Models\Lookup\BatchType;
 use App\Models\Lookup\CurrentBoxType;
 use App\Models\Scopes\RepositoryScope;
@@ -113,6 +114,15 @@ class AccessionRowImporter extends Importer
      * @var array<int, array<int, int>>
      */
     protected static array $rowAuthorityStash = [];
+
+    /**
+     * Q8 — rows with NEITHER an Authority Identifier NOR a notary name are
+     * imported but flagged (missing_data) for operator review. Marked in
+     * resolveAuthorities(), consumed in persistRowSideEffects().
+     *
+     * @var array<int, bool>
+     */
+    protected static array $rowMissingNotaryStash = [];
 
     /**
      * Resolved accession id for the row. Written to the document in
@@ -437,6 +447,13 @@ class AccessionRowImporter extends Importer
                     ),
                 ]);
             }
+
+            // Q8 (client answer): "Flag any rows that do not have an identifier
+            // or notary name." The row still imports, but gets an open
+            // missing_data flag so the operator can assign the notary later —
+            // stashed here, created in persistRowSideEffects() once the
+            // document has an id.
+            static::$rowMissingNotaryStash[$key] = true;
 
             return;
         }
@@ -894,9 +911,10 @@ class AccessionRowImporter extends Importer
     }
 
     /**
-     * Derived batch description: the ', '-joined codes of ALL accessions
-     * linked to the batch, ordered by code. Returns null when the batch does
-     * not exist or has no linked accessions.
+     * Bug #11 — derived batch description: the code of the FIRST accession
+     * linked to the batch (the one "chosen first" — pivot insertion order),
+     * mirroring the BatchResource form. Returns null when the batch does not
+     * exist or has no linked accessions.
      */
     protected function deriveBatchDescription(int $batchId): ?string
     {
@@ -905,19 +923,19 @@ class AccessionRowImporter extends Importer
             return null;
         }
 
-        $codes = $batch->accessions()
+        /** @var string|null $code */
+        $code = $batch->accessions()
             ->withoutGlobalScope(RepositoryScope::class)
-            ->orderBy('accessions.code')
-            ->pluck('accessions.code')
-            ->all();
-        if ($codes === []) {
+            // Pivot rowid order = link order, so the first-linked accession wins.
+            ->orderBy('accession_batch.id')
+            ->value('accessions.code');
+        if ($code === null || $code === '') {
             return null;
         }
 
         // batches.description is a 255-char string column (same cap as the
-        // BatchResource form's maxLength) — clamp so a long accession list
-        // can never fail the row at the DB layer.
-        return mb_substr(implode(', ', $codes), 0, 255);
+        // BatchResource form's maxLength).
+        return mb_substr($code, 0, 255);
     }
 
     /**
@@ -977,6 +995,24 @@ class AccessionRowImporter extends Importer
                 $pivot[$authorityId] = ['is_primary' => $i === 0];
             }
             $record->authorities()->syncWithoutDetaching($pivot);
+        }
+
+        // Q8 — flag rows that arrived with neither an Authority Identifier nor
+        // a notary name: the document imports, but carries an open missing_data
+        // flag so the operator can assign the correct notary later.
+        if (static::$rowMissingNotaryStash[$key] ?? false) {
+            unset(static::$rowMissingNotaryStash[$key]);
+            DocumentFlag::create([
+                'document_id' => $record->getKey(),
+                'repository_id' => $record->repository_id,
+                'type' => 'missing_data',
+                'severity' => 'warning',
+                'status' => 'open',
+                'title' => 'No notary identifier or name on imported row',
+                'description' => 'The accession sheet row had neither an Authority Identifier nor a notary name (Q8) — assign the correct notary to this document.',
+                'flagged_by_user_id' => auth()->id(),
+                'flagged_at' => now(),
+            ]);
         }
 
         // Clear the accession stash slot (no further work needed for it).
