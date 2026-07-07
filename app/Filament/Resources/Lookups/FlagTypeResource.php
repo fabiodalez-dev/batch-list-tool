@@ -17,6 +17,7 @@ use Filament\Schemas\Components\Section;
 use Filament\Schemas\Schema;
 use Filament\Tables;
 use Filament\Tables\Table;
+use Illuminate\Database\Eloquent\Builder;
 
 /**
  * RFQ §3.1.11 — Administrator CRUD for the document flag-type controlled vocabulary.
@@ -161,6 +162,15 @@ class FlagTypeResource extends Resource
     public static function getRelations(): array
     {
         return [];
+    }
+
+    public static function getEloquentQuery(): Builder
+    {
+        // CreatorColumn resolves the inputter from the first 'created' audit;
+        // eager-load it (with its user) so the table does not run one audit
+        // query per row (N+1 — schema/query review 2026-07-07).
+        return parent::getEloquentQuery()
+            ->with(['audits' => fn ($q) => $q->where('event', 'created')->with('user')]);
     }
 
     public static function getPages(): array
