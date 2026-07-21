@@ -686,10 +686,16 @@ class AccessionRowImporter extends Importer
                 // (MAIN_COLLECTION / NOTARY_ACCESSION) but the lookup is
                 // operator-editable, so compare case-insensitively and adopt
                 // the lookup's canonical code casing. Only ACTIVE entries count.
-                $canonicalType = BatchType::query()
-                    ->where('is_active', true)
-                    ->whereRaw('UPPER(code) = ?', [strtoupper($batchType)])
-                    ->value('code');
+                $needle = strtoupper(trim($batchType));
+                $activeCodes = BatchType::query()->where('is_active', true)->pluck('code');
+                $canonicalType = $activeCodes->first(
+                    fn (string $code): bool => strtoupper($code) === $needle
+                        // NAF's sheets abbreviate ("NA" for NOTARY_ACCESSION —
+                        // every row of the Sam Abela sample) or use spaces:
+                        // accept the space form and the word-initials acronym.
+                        || strtoupper(str_replace(' ', '_', $needle)) === strtoupper($code)
+                        || implode('', array_map(fn (string $w): string => mb_substr($w, 0, 1), explode('_', strtoupper($code)))) === $needle
+                );
                 if ($canonicalType === null) {
                     throw ValidationException::withMessages([
                         'accession_type' => __(
@@ -1209,6 +1215,13 @@ class AccessionRowImporter extends Importer
                     }
                     $value = trim($state);
                     $normalized = Document::canonicalEnumValue($value, Document::CURRENT_BOX_TYPES);
+                    // NAF's own sheets abbreviate the container type ("RAS",
+                    // "Big Brown" — 200/200 rows of the Sam Abela sample say
+                    // just "RAS"): retry with the " Box" suffix before failing
+                    // the row, so the client's real files import as-is.
+                    if ($normalized === null) {
+                        $normalized = Document::canonicalEnumValue($value . ' Box', Document::CURRENT_BOX_TYPES);
+                    }
                     $isActive = $normalized !== null && CurrentBoxType::query()
                         ->where('code', $normalized)
                         ->where('is_active', true)
