@@ -46,6 +46,7 @@ it('neutralises formula-leading cells in the XLSX export, leaving normal text in
             ->and($sheet->getCell('A8')->getValue())->toBe('a=b (not leading)')
             ->and($sheet->getCell('A9')->getValue())->toBe('R642/001');
     } finally {
+        // nosemgrep: php.lang.security.unlink-use.unlink-use -- $file is a test-controlled storage_path()/uniqid() temp file, never user input.
         @unlink($file);
     }
 });
