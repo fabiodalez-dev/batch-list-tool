@@ -99,7 +99,13 @@ final class GenericReportExport implements FromCollection, ShouldAutoSize, WithH
         }
 
         if (is_array($value)) {
-            return self::neutraliseFormula(json_encode($value, JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES));
+            // json_encode() returns false on failure (e.g. malformed UTF-8 or a
+            // resource in the array); with strict_types that would be a TypeError
+            // in neutraliseFormula(?string). Degrade to an empty cell instead of
+            // crashing the whole export.
+            $json = json_encode($value, JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES);
+
+            return self::neutraliseFormula($json === false ? null : $json);
         }
 
         if (is_object($value) && method_exists($value, '__toString')) {

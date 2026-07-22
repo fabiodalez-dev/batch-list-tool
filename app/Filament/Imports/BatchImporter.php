@@ -117,12 +117,21 @@ class BatchImporter extends Importer
         }
         $repositoryId ??= auth()->user()?->default_repository_id;
 
+        // No repository determinable (neither repository_code nor a user default
+        // — the likely profile of a cross-tenant super_admin): we CANNOT match on
+        // batch_number alone across every repository, or we reintroduce the very
+        // cross-tenant steal this fix prevents. Treat it as a new record; the
+        // insert then fails cleanly on the NOT NULL repository_id instead.
+        if ($repositoryId === null) {
+            return new Batch;
+        }
+
         /** @var Batch|null $record */
         $record = Batch::query()
             ->withoutGlobalScope(RepositoryScope::class)
             ->withTrashed()
             ->where('batch_number', (int) $number)
-            ->when($repositoryId !== null, fn ($q) => $q->where('repository_id', $repositoryId))
+            ->where('repository_id', $repositoryId)
             ->first();
 
         if ($record === null) {

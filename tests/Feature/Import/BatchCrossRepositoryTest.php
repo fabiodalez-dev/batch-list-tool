@@ -23,7 +23,7 @@ use Spatie\Permission\Models\Role;
  */
 uses(RefreshDatabase::class);
 
-function bcr_admin(int $repoId): User
+function bcr_admin(?int $repoId): User
 {
     foreach (['super_admin', 'admin', 'editor', 'viewer'] as $r) {
         Role::firstOrCreate(['name' => $r, 'guard_name' => 'web']);
@@ -84,6 +84,34 @@ test('importing batch 50 for repository B does not steal repository A\'s batch 5
     expect($all)->toHaveCount(2)
         ->and($all->pluck('repository_id')->sort()->values()->all())
         ->toBe(collect([$repoA->id, $repoB->id])->sort()->values()->all());
+});
+
+test('a user with no default repository and no repository_code cannot match (and steal) another repo\'s batch', function () {
+    $repoA = Repository::create(['code' => 'AAA', 'name' => 'Repo A']);
+
+    $batchA = Batch::withoutGlobalScope(RepositoryScope::class)->create([
+        'batch_number' => 50,
+        'repository_id' => $repoA->id,
+        'description' => 'A-owned',
+    ]);
+
+    // Cross-tenant super_admin: default_repository_id = null, row has no
+    // repository_code → repository is undeterminable. resolveRecord() must NOT
+    // fall back to a batch_number-only match across every repository.
+    $user = bcr_admin(null);
+    $this->actingAs($user);
+
+    // The row can't resolve a repository, so it fails cleanly (NOT NULL
+    // repository_id) instead of matching A's batch — swallow that failure.
+    try {
+        bcr_import(['batch_number' => 50], $user->id);
+    } catch (Throwable) {
+        // expected: no repository to insert into
+    }
+
+    $batchA->refresh();
+    expect($batchA->repository_id)->toBe($repoA->id) // untouched, not stolen
+        ->and(Batch::withoutGlobalScope(RepositoryScope::class)->where('batch_number', 50)->count())->toBe(1);
 });
 
 test('re-importing batch 50 with the owning repository_code updates that repo\'s row (idempotent)', function () {

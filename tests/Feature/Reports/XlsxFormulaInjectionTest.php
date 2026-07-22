@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 use App\Exports\GenericReportExport;
 use Illuminate\Support\Collection;
+use Illuminate\Support\Facades\Storage;
 use Maatwebsite\Excel\Facades\Excel;
 use PhpOffice\PhpSpreadsheet\IOFactory;
 
@@ -38,15 +39,20 @@ it('neutralises formula-leading cells in the XLSX export, leaving normal text in
         foreach (['A2', 'A3', 'A4', 'A5', 'A6'] as $coord) {
             expect($sheet->getCell($coord)->isFormula())->toBeFalse("cell {$coord} became a live formula");
         }
-        // Dangerous ones are prefixed with a single quote (literal text).
+        // Dangerous ones are prefixed with a single quote — and stay that exact
+        // literal text (isFormula() === false alone wouldn't prove that).
         expect($sheet->getCell('A2')->getValue())->toBe("'=1+1")
-            ->and($sheet->getCell('A3')->getValue())->toBe("'+2");
+            ->and($sheet->getCell('A3')->getValue())->toBe("'+2")
+            ->and($sheet->getCell('A4')->getValue())->toBe("'-3")
+            ->and($sheet->getCell('A5')->getValue())->toBe("'@SUM(A1:A2)")
+            ->and($sheet->getCell('A6')->getValue())->toBe("'\t=danger");
         // Legitimate values are untouched.
         expect($sheet->getCell('A7')->getValue())->toBe('harmless text')
             ->and($sheet->getCell('A8')->getValue())->toBe('a=b (not leading)')
             ->and($sheet->getCell('A9')->getValue())->toBe('R642/001');
     } finally {
-        // nosemgrep: php.lang.security.unlink-use.unlink-use -- $file is a test-controlled storage_path()/uniqid() temp file, never user input.
-        @unlink($file);
+        // Delete via the same Laravel disk Excel::store() wrote to, not a raw
+        // filesystem path (avoids the Semgrep unlink-use finding at source).
+        Storage::disk('local')->delete(basename($file));
     }
 });
