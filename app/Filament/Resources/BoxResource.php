@@ -10,6 +10,7 @@ use App\Filament\Support\CreatorColumn;
 use App\Filament\Support\SearchableSelects;
 use App\Models\Batch;
 use App\Models\Box;
+use App\Models\Location;
 use App\Models\Lookup\BarcodeStatus;
 use App\Models\Lookup\BoxType;
 use App\Support\CustomFields\CustomFieldSchema;
@@ -944,15 +945,48 @@ class BoxResource extends Resource
                                 ->maxLength(255),
                         ])
                         ->action(function (Collection $records, array $data): void {
+                            // Server-side guard mirroring the form filter AND the
+                            // per-row MoveBoxToLocationAction: a forged submit
+                            // carrying an inactive / soft-deleted / missing location
+                            // id must be rejected before any box is touched, so a
+                            // bulk relocate can never land boxes on a disabled
+                            // location.
+                            $location = null;
+                            if (filled($data['location_id'] ?? null)) {
+                                /** @var Location|null $location */
+                                $location = Location::withoutGlobalScopes()->find((int) $data['location_id']);
+                                if ($location === null || $location->trashed() || ! $location->is_active) {
+                                    Notification::make()
+                                        ->title('Cannot relocate — target location not found, deleted or inactive')
+                                        ->danger()
+                                        ->send();
+
+                                    return;
+                                }
+                            }
+
                             // Review finding: count what actually changed so the
                             // notification is honest — a submit that leaves every
-                            // field blank must not report success.
+                            // field blank must not report success. $skipped counts
+                            // boxes withheld by the cross-repository tenant guard.
                             $changed = 0;
-                            $records->each(function (Box $record) use ($data, &$changed): void {
+                            $skipped = 0;
+                            $records->each(function (Box $record) use ($data, $location, &$changed, &$skipped): void {
                                 $update = [];
 
-                                if (filled($data['location_id'] ?? null)) {
-                                    $update['location_id'] = $data['location_id'];
+                                if ($location !== null) {
+                                    // Tenant isolation: a repository-scoped location
+                                    // may only be assigned to a box in the SAME
+                                    // repository (global locations go anywhere).
+                                    // Mirrors MoveBoxToLocationAction's guard.
+                                    if ($location->repository_id !== null
+                                        && (int) $location->repository_id !== (int) $record->customFieldRepositoryId()) {
+                                        $skipped++;
+
+                                        return;
+                                    }
+
+                                    $update['location_id'] = $location->getKey();
                                 }
 
                                 if (! empty($data['set_perm_out'])) {
@@ -978,7 +1012,9 @@ class BoxResource extends Resource
                             if ($changed === 0) {
                                 Notification::make()
                                     ->title('No boxes changed')
-                                    ->body('Every field was left blank, so nothing was updated.')
+                                    ->body($skipped > 0
+                                        ? $skipped . ' ' . ($skipped === 1 ? 'box belongs' : 'boxes belong') . ' to a different repository than the target location.'
+                                        : 'Every field was left blank, so nothing was updated.')
                                     ->warning()
                                     ->send();
 
@@ -987,6 +1023,9 @@ class BoxResource extends Resource
 
                             Notification::make()
                                 ->title($changed . ' ' . ($changed === 1 ? 'box' : 'boxes') . ' relocated')
+                                ->body($skipped > 0
+                                    ? $skipped . ' skipped (different repository than the target location).'
+                                    : null)
                                 ->success()
                                 ->send();
                         })
