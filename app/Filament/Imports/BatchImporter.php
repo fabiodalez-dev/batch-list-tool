@@ -104,11 +104,34 @@ class BatchImporter extends Importer
             return new Batch;
         }
 
+        // The DB unique key is (batch_number, repository_id) — each repository
+        // may own its own Batch 50, etc. Match within the SAME repository the
+        // row targets (its repository_code, else the importing user's default),
+        // otherwise re-importing batch N for repo B would match repo A's row and
+        // silently reassign (steal) it on save.
+        $repositoryId = null;
+        $repoCode = $this->data['repository_code'] ?? null;
+        if ($repoCode !== null && trim((string) $repoCode) !== '') {
+            $resolved = EntityResolver::resolveRepository(trim((string) $repoCode));
+            $repositoryId = $resolved['repository_id'] ?? null;
+        }
+        $repositoryId ??= auth()->user()?->default_repository_id;
+
+        // No repository determinable (neither repository_code nor a user default
+        // — the likely profile of a cross-tenant super_admin): we CANNOT match on
+        // batch_number alone across every repository, or we reintroduce the very
+        // cross-tenant steal this fix prevents. Treat it as a new record; the
+        // insert then fails cleanly on the NOT NULL repository_id instead.
+        if ($repositoryId === null) {
+            return new Batch;
+        }
+
         /** @var Batch|null $record */
         $record = Batch::query()
             ->withoutGlobalScope(RepositoryScope::class)
             ->withTrashed()
             ->where('batch_number', (int) $number)
+            ->where('repository_id', $repositoryId)
             ->first();
 
         if ($record === null) {

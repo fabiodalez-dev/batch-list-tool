@@ -99,13 +99,41 @@ final class GenericReportExport implements FromCollection, ShouldAutoSize, WithH
         }
 
         if (is_array($value)) {
-            return json_encode($value, JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES);
+            // json_encode() returns false on failure (e.g. malformed UTF-8 or a
+            // resource in the array); with strict_types that would be a TypeError
+            // in neutraliseFormula(?string). Degrade to an empty cell instead of
+            // crashing the whole export.
+            $json = json_encode($value, JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES);
+
+            return self::neutraliseFormula($json === false ? null : $json);
         }
 
         if (is_object($value) && method_exists($value, '__toString')) {
-            return (string) $value;
+            return self::neutraliseFormula((string) $value);
+        }
+
+        if (is_string($value)) {
+            return self::neutraliseFormula($value);
         }
 
         return $value;
+    }
+
+    /**
+     * Formula-injection defence for XLSX cells. maatwebsite/PhpSpreadsheet
+     * writes a string that starts with '=' (or +, -, @) as a LIVE formula, so
+     * an attacker-controlled value imported into e.g. a document note or
+     * identifier ("=HYPERLINK(...)", "=cmd|'/c calc'!A1") would execute when
+     * the operator opens the exported report. Prefixing a single quote makes
+     * the spreadsheet treat the cell as literal text — the same defence the
+     * CSV exporter already applies (ReportRenderer::sanitizeCsvCell).
+     */
+    protected static function neutraliseFormula(?string $value): ?string
+    {
+        if ($value === null || $value === '') {
+            return $value;
+        }
+
+        return preg_match('/^[=+\-@\t\r]/', $value) === 1 ? "'" . $value : $value;
     }
 }

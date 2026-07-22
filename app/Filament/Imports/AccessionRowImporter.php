@@ -154,6 +154,15 @@ class AccessionRowImporter extends Importer
     protected bool $rowSavepointOpen = false;
 
     /**
+     * spl_object_id() of the row currently being processed. Tracked so that
+     * when a row fails at save() (afterSave() never runs to drain its stash),
+     * the NEXT row can flush the abandoned entries before PHP reuses the freed
+     * object id for its fresh record and inherits stale authorship/box/custom
+     * -field data. Mirrors the existing $rowSavepointOpen defence.
+     */
+    protected ?int $pendingRowKey = null;
+
+    /**
      * Repository id resolved once per row from the 'Repository' column (or
      * the user's default). Set in resolveRecord() so resolveAccessionBatchBox()
      * can reuse the same value without a second DB round-trip (FINDING 1).
@@ -279,24 +288,42 @@ class AccessionRowImporter extends Importer
     {
         /** @var Document $record */
         $record = $this->record;
+        $key = spl_object_id($record);
+
+        // Defensive: a PRIOR row may have failed at save(), so its afterSave()
+        // never ran to drain the stash. Flush that abandoned row now — before
+        // this fresh record (which may share the recycled object id) reads it.
+        if ($this->pendingRowKey !== null && $this->pendingRowKey !== $key) {
+            $this->clearRowStash($this->pendingRowKey);
+        }
+        $this->pendingRowKey = $key;
 
         // Open a savepoint around ALL cascade writes (Authority/Accession/Batch/Box).
         // If the cascade throws (ValidationException for row errors, or any other
         // Throwable), the DB::transaction() rolls back before Filament's chunk
         // handler sees the exception — no orphan entities are ever committed.
-        DB::transaction(function () use ($record): void {
-            // 1. Authorities (multi, DECISION 3)
-            $this->resolveAuthorities($record);
+        try {
+            DB::transaction(function () use ($record): void {
+                // 1. Authorities (multi, DECISION 3)
+                $this->resolveAuthorities($record);
 
-            // 2. Accession → 3. Batch (N:N) → 4. Box
-            $this->resolveAccessionBatchBox($record);
+                // 2. Accession → 3. Batch (N:N) → 4. Box
+                $this->resolveAccessionBatchBox($record);
 
-            // 4b. FB1-GAP-1 — Practice must already exist (client: "If not an
-            // option - error to create it first"). Validated AFTER the cascade
-            // so a bad Repository code surfaces its own error first; a throw
-            // here still rolls back every cascade write above.
-            $this->validatePracticeExists($record);
-        });
+                // 4b. FB1-GAP-1 — Practice must already exist (client: "If not an
+                // option - error to create it first"). Validated AFTER the cascade
+                // so a bad Repository code surfaces its own error first; a throw
+                // here still rolls back every cascade write above.
+                $this->validatePracticeExists($record);
+            });
+        } catch (\Throwable $e) {
+            // Cascade rolled back by DB::transaction; also drop this row's stash
+            // so the next row can't inherit its half-populated state.
+            $this->clearRowStash($key);
+            $this->pendingRowKey = null;
+
+            throw $e;
+        }
 
         // 5. Auto-generate document identifier if not supplied (DECISION 4)
         $this->ensureDocumentIdentifier($record);
@@ -340,6 +367,10 @@ class AccessionRowImporter extends Importer
                 DB::rollBack();
                 $this->rowSavepointOpen = false;
             }
+            if ($this->pendingRowKey !== null) {
+                $this->clearRowStash($this->pendingRowKey);
+                $this->pendingRowKey = null;
+            }
 
             throw $e;
         }
@@ -348,6 +379,7 @@ class AccessionRowImporter extends Importer
             DB::commit();
             $this->rowSavepointOpen = false;
         }
+        $this->pendingRowKey = null;
     }
 
     public static function getCompletedNotificationBody(Import $import): string
@@ -1374,5 +1406,22 @@ class AccessionRowImporter extends Importer
         }
 
         return $columns;
+    }
+
+    /**
+     * Drop every per-row stash entry keyed to $key. Called whenever a row is
+     * abandoned (cascade throw, or a save() that afterSave() never got to
+     * drain) so a later row can't inherit this row's stale authors, box,
+     * missing-notary flag or custom-field values after PHP recycles the freed
+     * spl_object_id.
+     */
+    private function clearRowStash(int $key): void
+    {
+        unset(
+            static::$rowAuthorityStash[$key],
+            static::$rowAccessionStash[$key],
+            static::$rowMissingNotaryStash[$key],
+            static::$rowCustomFieldStash[$key],
+        );
     }
 }

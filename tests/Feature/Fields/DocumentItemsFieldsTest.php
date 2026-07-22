@@ -83,6 +83,7 @@ it('itemises from a real Excel sheet with reference and description columns', fu
             ->and($items[0]->description)->toBe('Deed of sale')
             ->and($items[1]->reference)->toBe('F-2');
     } finally {
+        // nosemgrep: php.lang.security.unlink-use.unlink-use -- $path is a test-controlled temp file, never user input.
         @unlink($path);
     }
 });
