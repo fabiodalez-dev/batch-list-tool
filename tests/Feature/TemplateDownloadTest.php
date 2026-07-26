@@ -2,9 +2,14 @@
 
 declare(strict_types=1);
 
+use App\Filament\Imports\AccessionRowImporter;
+use App\Filament\Imports\AuthorityImporter;
 use App\Filament\Imports\BatchImporter;
 use App\Filament\Imports\BoxImporter;
+use App\Filament\Imports\DocumentImporter;
+use App\Filament\Imports\LocationImporter;
 use App\Filament\Imports\SeriesImporter;
+use App\Filament\Imports\VolumeImporter;
 use App\Models\Authority;
 use App\Models\Batch;
 use App\Models\Box;
@@ -238,33 +243,42 @@ test('Series template headers start at Identifier (no leading blank column)', fu
     expect($generated[1])->toBe('Standard title in English (Plural)');
 });
 
-test('Series template has no blank header and every required importer column maps to one of its headers', function () {
+test('no template has a blank header, and every required importer column maps to one of its headers', function (string $entity, string $importer) {
     $this->actingAs(tpl_admin());
 
-    $generated = tpl_renderAndParse(TemplateGenerator::download('series'))['headers'];
+    $generated = tpl_renderAndParse(TemplateGenerator::download($entity))['headers'];
 
-    // Client-reported bug: the template must NOT contain an empty header cell.
-    expect($generated)->not->toContain('');
+    // Client-reported bug (Series): a template must NOT contain an empty header
+    // cell — an unlabelled column confuses operators and never maps to anything.
+    expect($generated)->not->toContain('', "template '{$entity}' contains a blank header");
 
     // Contract: the template's headers must let the wizard's guesser resolve
-    // every required-mapping SeriesImporter column (code + title), otherwise a
-    // freshly-downloaded-then-filled template would fail to import.
+    // every required-mapping importer column, otherwise a freshly-downloaded-
+    // then-filled template would fail to import.
     $norm = fn (string $s): string => strtolower(trim($s));
     $headerSet = array_map($norm, $generated);
 
-    foreach (SeriesImporter::getColumns() as $column) {
-        // Both code (requiredMapping) and title (requiredMappingForNewRecordsOnly)
-        // must be resolvable from the template so a fresh download-then-fill imports.
+    foreach ($importer::getColumns() as $column) {
+        // Cover both requiredMapping and requiredMappingForNewRecordsOnly —
+        // both must be resolvable for a fresh download-then-fill to import.
         if (! $column->isMappingRequired() && ! $column->isMappingRequiredForNewRecordsOnly()) {
             continue;
         }
         $guesses = array_map($norm, array_filter([$column->getName(), ...$column->getGuesses()]));
-        $matched = array_intersect($guesses, $headerSet);
-        expect($matched)->not->toBeEmpty(
-            "required column '{$column->getName()}' has no matching header in the Series template"
+        expect(array_intersect($guesses, $headerSet))->not->toBeEmpty(
+            "required column '{$column->getName()}' has no matching header in the '{$entity}' template"
         );
     }
-});
+})->with([
+    'authority' => ['authority', AuthorityImporter::class],
+    'series' => ['series', SeriesImporter::class],
+    'batch' => ['batch', BatchImporter::class],
+    'box' => ['box', BoxImporter::class],
+    'location' => ['location', LocationImporter::class],
+    'document' => ['document', DocumentImporter::class],
+    'volume' => ['volume', VolumeImporter::class],
+    'accession' => ['accession', AccessionRowImporter::class],
+]);
 
 test('Document template preserves the duplicated provenance headers verbatim', function () {
     $this->actingAs(tpl_admin());
