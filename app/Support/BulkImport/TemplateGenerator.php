@@ -76,8 +76,14 @@ final class TemplateGenerator
     ];
 
     /** @var array<int, string> */
+    // NB: no leading blank column. The original Series_Sample.xlsx used an
+    // unlabelled column A as a "label" column, and we used to mirror that with
+    // a stray '' header — but it only confused operators (the client reported
+    // "the template has a blank first column") and never mapped to anything,
+    // since the importer resolves columns by header NAME, not position. The
+    // real first column is Identifier, matching what operators actually fill in.
     public const SERIES_HEADERS = [
-        '', 'Identifier', 'Standard title in English (Plural)',
+        'Identifier', 'Standard title in English (Plural)',
         'Level of description', 'Date of creation', 'Name of Inputter',
     ];
 

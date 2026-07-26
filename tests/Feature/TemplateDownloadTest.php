@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 use App\Filament\Imports\BatchImporter;
 use App\Filament\Imports\BoxImporter;
+use App\Filament\Imports\SeriesImporter;
 use App\Models\Authority;
 use App\Models\Batch;
 use App\Models\Box;
@@ -223,22 +224,46 @@ test('Authority template headers match Authorities_Sample.xlsx verbatim', functi
     expect($generated[8])->toBe('Creator Name');
 });
 
-test('Series template headers match Series_Sample.xlsx (trailing nulls trimmed)', function () {
+test('Series template headers start at Identifier (no leading blank column)', function () {
     $this->actingAs(tpl_admin());
 
     $generated = tpl_renderAndParse(TemplateGenerator::download('series'))['headers'];
 
-    // The Series sample had 26 columns but only 6 populated (the rest were
-    // stray NULLs from Excel's "touched" cells); the captured contract is the
-    // trimmed 6-column set.
+    // The 5-column contract the operator actually fills in. The former leading
+    // blank column A was dropped (client-reported confusion; it never mapped to
+    // anything since the importer resolves columns by header name).
     expect($generated)->toEqual(TemplateGenerator::SERIES_HEADERS);
-    expect(count($generated))->toBe(6);
-    // Column A is intentionally empty in the sample (the original file
-    // uses it as a label column with no header); we preserve that
-    // interior empty cell to keep column positions aligned.
-    expect($generated[0])->toBe('');
-    expect($generated[1])->toBe('Identifier');
-    expect($generated[2])->toBe('Standard title in English (Plural)');
+    expect(count($generated))->toBe(5);
+    expect($generated[0])->toBe('Identifier');
+    expect($generated[1])->toBe('Standard title in English (Plural)');
+});
+
+test('Series template has no blank header and every required importer column maps to one of its headers', function () {
+    $this->actingAs(tpl_admin());
+
+    $generated = tpl_renderAndParse(TemplateGenerator::download('series'))['headers'];
+
+    // Client-reported bug: the template must NOT contain an empty header cell.
+    expect($generated)->not->toContain('');
+
+    // Contract: the template's headers must let the wizard's guesser resolve
+    // every required-mapping SeriesImporter column (code + title), otherwise a
+    // freshly-downloaded-then-filled template would fail to import.
+    $norm = fn (string $s): string => strtolower(trim($s));
+    $headerSet = array_map($norm, $generated);
+
+    foreach (SeriesImporter::getColumns() as $column) {
+        // Both code (requiredMapping) and title (requiredMappingForNewRecordsOnly)
+        // must be resolvable from the template so a fresh download-then-fill imports.
+        if (! $column->isMappingRequired() && ! $column->isMappingRequiredForNewRecordsOnly()) {
+            continue;
+        }
+        $guesses = array_map($norm, array_filter([$column->getName(), ...$column->getGuesses()]));
+        $matched = array_intersect($guesses, $headerSet);
+        expect($matched)->not->toBeEmpty(
+            "required column '{$column->getName()}' has no matching header in the Series template"
+        );
+    }
 });
 
 test('Document template preserves the duplicated provenance headers verbatim', function () {
