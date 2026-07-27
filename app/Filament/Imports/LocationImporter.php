@@ -92,13 +92,22 @@ class LocationImporter extends Importer
                 })
                 ->rules(['required', 'string', 'in:' . implode(',', self::acceptedTypeCodes())]),
 
+            // parent_name / repository_code are VIRTUAL columns: they are not
+            // attributes on Location (the real columns are parent_id /
+            // repository_id). afterFill() resolves those ids from $this->data.
+            // The no-op fillRecordUsing stops Filament writing a phantom
+            // `parent_name` / `repository_code` attribute onto the model, which
+            // would otherwise blow up the INSERT ("no column named …") the
+            // moment an operator maps a Parent or Repository column.
             ImportColumn::make('parent_name')
                 ->label('Parent location name (blank for root)')
-                ->guess(['Parent', 'parent', 'Parent name', 'parent_name', 'Parent location']),
+                ->guess(['Parent', 'parent', 'Parent name', 'parent_name', 'Parent location'])
+                ->fillRecordUsing(function (): void {}),
 
             ImportColumn::make('repository_code')
                 ->label('Repository code (e.g. NRA)')
-                ->guess(['Repository', 'repository', 'Repo code', 'repository_code']),
+                ->guess(['Repository', 'repository', 'Repo code', 'repository_code'])
+                ->fillRecordUsing(function (): void {}),
 
             ImportColumn::make('code')
                 ->label('Short code')

@@ -62,11 +62,18 @@ trait LogsImportRows
         $raw = $e->getMessage();
 
         if ($e instanceof QueryException || stripos($raw, 'SQLSTATE') !== false) {
-            if (preg_match("/Duplicate entry '([^']*)' for key '([^']*)'/i", $raw, $m)) {
+            // Unique key — MySQL ("Duplicate entry 'X' for key 'Y'") + SQLite
+            // ("UNIQUE constraint failed: table.col").
+            if (preg_match("/Duplicate entry '([^']*)' for key/i", $raw, $m)) {
                 return "A record with this value already exists (duplicate '{$m[1]}'). Delete or update the existing one, or remove the duplicate row.";
             }
+            if (preg_match('/UNIQUE constraint failed:\s*([^\s(]+)/i', $raw, $m)) {
+                return "A record with this key already exists ({$m[1]}). Delete or update the existing one, or remove the duplicate row.";
+            }
+            // Missing required value — MySQL + SQLite ("NOT NULL constraint failed: table.col").
             if (preg_match("/Column '([^']+)' cannot be null/i", $raw, $m)
-                || preg_match("/Field '([^']+)' doesn't have a default value/i", $raw, $m)) {
+                || preg_match("/Field '([^']+)' doesn't have a default value/i", $raw, $m)
+                || preg_match('/NOT NULL constraint failed:\s*([^\s(]+)/i', $raw, $m)) {
                 return "A required value is missing for '{$m[1]}'. Fill that column and re-upload.";
             }
             if (preg_match("/Data too long for column '([^']+)'/i", $raw, $m)) {
