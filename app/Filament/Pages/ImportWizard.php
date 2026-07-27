@@ -712,11 +712,14 @@ class ImportWizard extends Page
 
         $this->preflightResult = null;
 
-        try {
-            $state = $this->form->getState();
-        } catch (Halt) {
-            return;
-        }
+        // Read the CURRENT wizard state WITHOUT validating the whole form.
+        // getState() would validate every step's fields — including the
+        // required "confirm" checkbox on the final Confirm step, which is still
+        // empty while the operator is on the Validate step — so it threw a Halt
+        // that this method silently swallowed, making the "Run validation"
+        // button appear dead and blocking the wizard. getRawState() reads the
+        // state the operator has entered so far without triggering validation.
+        $state = $this->form->getRawState();
 
         $type = (string) ($state['import_type'] ?? '');
         if (! array_key_exists($type, self::IMPORTERS)) {
@@ -779,9 +782,11 @@ class ImportWizard extends Page
         // bound Importer/record context we don't have at preflight time.
         $rulesByField = [];
         $labels = [];
+        $columnsByField = [];
         foreach ($importerClass::getColumns() as $column) {
             $name = $column->getName();
             $labels[$name] = (string) ($column->getLabel() ?? $name);
+            $columnsByField[$name] = $column;
 
             try {
                 $rules = $column->getDataValidationRules();
@@ -815,9 +820,25 @@ class ImportWizard extends Page
             $mapped = [];
             foreach ($row as $header => $value) {
                 $field = $headerToField[(string) $header] ?? null;
-                if ($field !== null) {
-                    $mapped[$field] = $value;
+                if ($field === null) {
+                    continue;
                 }
+                // Apply the column's cast (castStateUsing / boolean / array
+                // separator) BEFORE validating, exactly as the real importer
+                // does — otherwise the preflight validates the raw cell and
+                // reports FALSE errors for values the import would normalise
+                // into the valid set (e.g. "Notary" → INSTITUTION for an
+                // in:PERSON,INSTITUTION rule). Some casts need a bound importer
+                // context and may throw here; fall back to the raw value.
+                $cast = $value;
+                if (isset($columnsByField[$field])) {
+                    try {
+                        $cast = $columnsByField[$field]->castState($value);
+                    } catch (\Throwable) {
+                        $cast = $value;
+                    }
+                }
+                $mapped[$field] = $cast;
             }
 
             $validator = Validator::make($mapped, $rulesByField, [], $labels);

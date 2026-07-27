@@ -234,13 +234,15 @@ test('Series template headers start at Identifier (no leading blank column)', fu
 
     $generated = tpl_renderAndParse(TemplateGenerator::download('series'))['headers'];
 
-    // The 5-column contract the operator actually fills in. The former leading
-    // blank column A was dropped (client-reported confusion; it never mapped to
-    // anything since the importer resolves columns by header name).
+    // The contract the operator actually fills in. The former leading blank
+    // column A was dropped (client-reported confusion; it never mapped to
+    // anything since the importer resolves columns by header name). A trailing
+    // optional "Repository" column was added (client request 2026-07-27).
     expect($generated)->toEqual(TemplateGenerator::SERIES_HEADERS);
-    expect(count($generated))->toBe(5);
+    expect(count($generated))->toBe(6);
     expect($generated[0])->toBe('Identifier');
     expect($generated[1])->toBe('Standard title in English (Plural)');
+    expect($generated)->toContain('Repository');
 });
 
 test('no template has a blank header, and every required importer column maps to one of its headers', function (string $entity, string $importer) {
