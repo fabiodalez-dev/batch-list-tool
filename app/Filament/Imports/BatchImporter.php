@@ -142,7 +142,10 @@ class BatchImporter extends Importer
         // previously deleted: restore + update it (idempotent un-delete) and
         // never treat it as a skippable duplicate — they clearly want it back.
         if ($record->trashed()) {
-            $record->restore();
+            // Defer the un-delete to saveRecord() (resolveRecord runs before
+            // validateData) so a row that fails validation doesn't leave the
+            // batch restored — see SeriesImporter for the full rationale.
+            $record->{$record->getDeletedAtColumn()} = null;
 
             return $record;
         }

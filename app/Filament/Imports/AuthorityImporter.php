@@ -151,8 +151,11 @@ class AuthorityImporter extends Importer
             return new Authority;
         }
 
+        // Defer the un-delete to saveRecord() (resolveRecord runs before
+        // validateData) so a row that fails validation doesn't leave the
+        // record restored — see SeriesImporter for the full rationale.
         if ($record->trashed()) {
-            $record->restore();
+            $record->{$record->getDeletedAtColumn()} = null;
 
             return $record;
         }

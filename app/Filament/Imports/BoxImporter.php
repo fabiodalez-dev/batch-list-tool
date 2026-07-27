@@ -131,7 +131,10 @@ class BoxImporter extends Importer
                 // that would collide with the (soft-deleted) unique barcode
                 // (NAF Feedback-1 comment #3 — re-import not working).
                 if ($existing->trashed()) {
-                    $existing->restore();
+                    // Defer the un-delete to saveRecord() (resolveRecord runs
+                    // before validateData) so a row that fails validation
+                    // doesn't leave the box restored — see SeriesImporter.
+                    $existing->{$existing->getDeletedAtColumn()} = null;
 
                     return $existing;
                 }

@@ -217,7 +217,10 @@ class DocumentImporter extends Importer
             return $record;
         }
 
-        $q = Document::query()
+        // Match withTrashed so re-importing a document the operator previously
+        // soft-deleted restores it instead of INSERTing a row that collides on
+        // the unique catalogue_identifier / barcode. Mirrors the other importers.
+        $q = Document::withTrashed()
             ->withoutGlobalScope(RepositoryScope::class)
             ->where('identifier', trim((string) $identifier));
         if ($repoId !== null) {
@@ -227,6 +230,15 @@ class DocumentImporter extends Importer
         $record = $q->first() ?? new Document;
         // BUG-05: stash repo id so the static batch_number closure can use it.
         self::$rowRepositoryStash[spl_object_id($record)] = $repoId !== null ? (int) $repoId : null;
+
+        // Defer the un-delete to saveRecord() (resolveRecord runs before
+        // validateData) so a row that fails validation can't leave the
+        // document restored — see SeriesImporter for the full rationale.
+        if ($record->exists && $record->trashed()) {
+            $record->{$record->getDeletedAtColumn()} = null;
+
+            return $record;
+        }
 
         $this->skipIfDuplicate($record);
 

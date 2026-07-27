@@ -229,8 +229,11 @@ class LocationImporter extends Importer
             return new Location;
         }
 
+        // Defer the un-delete to saveRecord() (resolveRecord runs before
+        // validateData) so a row that fails validation doesn't leave the
+        // location restored — see SeriesImporter for the full rationale.
         if ($existing->trashed()) {
-            $existing->restore();
+            $existing->{$existing->getDeletedAtColumn()} = null;
 
             return $existing;
         }
