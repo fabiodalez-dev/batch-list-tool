@@ -40,11 +40,12 @@ it('TemplateGenerator: headersFor("authority") returns the in-repo legacy contra
         ->and($headers[0])->toBe('Identifier');
 });
 
-it('TemplateGenerator: headersFor("series") returns the 5-column contract starting at Identifier', function () {
+it('TemplateGenerator: headersFor("series") starts at Identifier and includes the optional Repository column', function () {
     $headers = TemplateGenerator::headersFor('series');
     expect($headers)->toEqual(TemplateGenerator::SERIES_HEADERS)
-        ->and($headers)->toHaveCount(5)
-        ->and($headers[0])->toBe('Identifier');
+        ->and($headers)->toHaveCount(6)
+        ->and($headers[0])->toBe('Identifier')
+        ->and($headers)->toContain('Repository');
 });
 
 it('TemplateGenerator: headersFor("document") preserves the duplicated provenance headers', function () {

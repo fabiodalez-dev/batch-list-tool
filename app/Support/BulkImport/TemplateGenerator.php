@@ -85,6 +85,9 @@ final class TemplateGenerator
     public const SERIES_HEADERS = [
         'Identifier', 'Standard title in English (Plural)',
         'Level of description', 'Date of creation', 'Name of Inputter',
+        // Optional: archive code to assign the series to a specific Repository.
+        // Leave blank for a GLOBAL series (visible to every repository).
+        'Repository',
     ];
 
     /** @var array<int, string> */

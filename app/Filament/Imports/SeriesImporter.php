@@ -6,6 +6,7 @@ namespace App\Filament\Imports;
 
 use App\Filament\Imports\Concerns\SkipsExistingRows;
 use App\Models\Series;
+use App\Support\BulkImport\EntityResolver;
 use Filament\Actions\Imports\ImportColumn;
 use Filament\Actions\Imports\Importer;
 use Filament\Actions\Imports\Models\Import;
@@ -98,6 +99,24 @@ class SeriesImporter extends Importer
                 ->guess(['Is active', 'Active', 'is_active'])
                 ->boolean()
                 ->rules(['nullable', 'boolean']),
+
+            // Optional Repository column (client request 2026-07-27): assign the
+            // series to a specific archive. Blank → GLOBAL series (repository_id
+            // null, visible to every repository) — the historical default, so
+            // existing files keep working unchanged. Mirrors BatchImporter /
+            // LocationImporter's repository_code column.
+            ImportColumn::make('repository_code')
+                ->label('Repository code')
+                ->guess(['Repository', 'Repo', 'repository_code', 'Tenant'])
+                ->fillRecordUsing(function (Series $record, ?string $state): void {
+                    if ($state === null || trim($state) === '') {
+                        return;
+                    }
+                    $res = EntityResolver::resolveRepository($state);
+                    if ($res !== null) {
+                        $record->repository_id = $res['repository_id'];
+                    }
+                }),
         ];
     }
 

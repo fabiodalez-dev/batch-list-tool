@@ -712,11 +712,14 @@ class ImportWizard extends Page
 
         $this->preflightResult = null;
 
-        try {
-            $state = $this->form->getState();
-        } catch (Halt) {
-            return;
-        }
+        // Read the CURRENT wizard state WITHOUT validating the whole form.
+        // getState() would validate every step's fields — including the
+        // required "confirm" checkbox on the final Confirm step, which is still
+        // empty while the operator is on the Validate step — so it threw a Halt
+        // that this method silently swallowed, making the "Run validation"
+        // button appear dead and blocking the wizard. getRawState() reads the
+        // state the operator has entered so far without triggering validation.
+        $state = $this->form->getRawState();
 
         $type = (string) ($state['import_type'] ?? '');
         if (! array_key_exists($type, self::IMPORTERS)) {
