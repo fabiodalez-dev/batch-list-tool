@@ -3,15 +3,23 @@
 declare(strict_types=1);
 
 use App\Filament\Imports\AuthorityImporter;
+use App\Filament\Imports\BoxImporter;
 use App\Filament\Imports\LocationImporter;
 use App\Filament\Imports\SeriesImporter;
 use App\Models\Authority;
+use App\Models\Batch;
+use App\Models\Box;
 use App\Models\Location;
+use App\Models\Repository;
+use App\Models\Scopes\RepositoryScope;
+use App\Models\Scopes\ThroughBatchRepositoryScope;
 use App\Models\Series;
 use App\Models\User;
+use App\Support\BulkImport\EntityResolver;
 use Filament\Actions\Imports\Importer;
 use Filament\Actions\Imports\Models\Import;
 use Illuminate\Foundation\Testing\RefreshDatabase;
+use Illuminate\Validation\ValidationException;
 use Spatie\Permission\Models\Role;
 
 /**
@@ -121,4 +129,66 @@ test('Location: re-importing a soft-deleted location restores it instead of coll
     expect($fresh)->toHaveCount(1)
         ->and($fresh->first()->trashed())->toBeFalse()
         ->and($fresh->first()->id)->toBe($location->id);
+});
+
+test('Box: re-importing a soft-deleted box (by barcode) restores it instead of colliding', function () {
+    $repo = Repository::factory()->create(['code' => 'BXR']);
+    $u = rrs_admin($repo->id);
+    $this->actingAs($u);
+
+    $batch = Batch::withoutGlobalScope(RepositoryScope::class)->create([
+        'batch_number' => 7,
+        'repository_id' => $repo->id,
+        'type' => 'MAIN_COLLECTION',
+        'is_active' => true,
+    ]);
+    $box = Box::factory()->create([
+        'batch_id' => $batch->id,
+        'barcode' => 'BC-RRS-1',
+        'box_number' => 'BOX-RRS-1',
+        'box_type' => 'RAS',
+    ]);
+    $box->delete();
+
+    EntityResolver::flushMemo();
+    rrs_import(BoxImporter::class, [
+        'box_number' => 'BOX-RRS-1',
+        'box_type' => 'RAS',
+        'batch_number' => 7,
+        'barcode' => 'BC-RRS-1',
+    ], $u->id);
+
+    $fresh = Box::withoutGlobalScope(ThroughBatchRepositoryScope::class)
+        ->withTrashed()->where('barcode', 'BC-RRS-1')->get();
+    expect($fresh)->toHaveCount(1)
+        ->and($fresh->first()->trashed())->toBeFalse()
+        ->and($fresh->first()->id)->toBe($box->id);
+});
+
+test('deferred un-delete: a soft-deleted row that FAILS validation on re-import stays trashed', function () {
+    // Pins the CodeRabbit finding: resolveRecord() runs BEFORE validateData(),
+    // so the un-delete must NOT be persisted until saveRecord(). A row that
+    // matches a trashed record but then fails validation must leave it deleted.
+    $u = rrs_admin();
+    $this->actingAs($u);
+
+    $series = Series::create(['code' => 'RWL', 'title' => 'Old title', 'is_active' => true]);
+    $series->delete();
+
+    // title exceeds max:255 → validateData() throws AFTER resolveRecord() has
+    // set deleted_at=null in memory. saveRecord() never runs.
+    $tooLong = str_repeat('x', 300);
+
+    try {
+        rrs_import(SeriesImporter::class, ['code' => 'RWL', 'title' => $tooLong], $u->id);
+        $this->fail('expected a ValidationException');
+    } catch (ValidationException) {
+        // expected
+    }
+
+    // The DB row must still be soft-deleted — no half-applied restore.
+    $row = Series::withTrashed()->where('code', 'RWL')->first();
+    expect($row)->not->toBeNull()
+        ->and($row->trashed())->toBeTrue()
+        ->and($row->title)->toBe('Old title');
 });

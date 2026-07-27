@@ -112,12 +112,22 @@ class VolumeImporter extends Importer
             $document = $docQuery->first();
 
             if ($document !== null) {
-                $existing = Volume::query()
+                // Match withTrashed so re-importing a volume the operator
+                // previously soft-deleted restores it instead of INSERTing a
+                // colliding row. Defer the un-delete to saveRecord() (see
+                // SeriesImporter) so a validation failure can't leave it restored.
+                $existing = Volume::withTrashed()
                     ->where('document_id', $document->getKey())
                     ->where('volume_number', $volumeNumber)
                     ->first();
 
                 if ($existing !== null) {
+                    if (method_exists($existing, 'trashed') && $existing->trashed()) {
+                        $existing->{$existing->getDeletedAtColumn()} = null;
+
+                        return $existing;
+                    }
+
                     $this->skipIfDuplicate($existing);
 
                     return $existing;

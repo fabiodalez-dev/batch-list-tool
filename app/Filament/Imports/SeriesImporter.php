@@ -126,10 +126,13 @@ class SeriesImporter extends Importer
         }
 
         // A soft-deleted match means the operator is re-importing a row they
-        // previously deleted: restore + update it and never treat it as a
-        // skippable duplicate — they clearly want it back.
+        // previously deleted: un-delete + update it and never treat it as a
+        // skippable duplicate — they clearly want it back. Defer the un-delete
+        // to saveRecord() (set deleted_at in memory, don't call restore()):
+        // resolveRecord() runs BEFORE validateData(), so an immediate restore()
+        // would persist the un-delete even for a row that then fails validation.
         if ($record->trashed()) {
-            $record->restore();
+            $record->{$record->getDeletedAtColumn()} = null;
 
             return $record;
         }
