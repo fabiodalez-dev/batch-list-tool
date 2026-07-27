@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace App\Filament\Imports;
 
+use App\Filament\Imports\Concerns\LogsImportRows;
 use App\Filament\Imports\Concerns\SkipsExistingRows;
 use App\Models\Series;
 use App\Support\BulkImport\EntityResolver;
@@ -28,6 +29,7 @@ use Filament\Actions\Imports\Models\Import;
  */
 class SeriesImporter extends Importer
 {
+    use LogsImportRows;
     use SkipsExistingRows;
 
     protected static ?string $model = Series::class;

@@ -73,6 +73,17 @@ return [
             'replace_placeholders' => true,
         ],
 
+        // Dedicated, verbose channel for the bulk-import subsystem so a row that
+        // fails (and the REAL DB/validation error behind it) is easy to find in
+        // storage/logs/import-YYYY-MM-DD.log without wading through app noise.
+        'import' => [
+            'driver' => 'daily',
+            'path' => storage_path('logs/import.log'),
+            'level' => env('IMPORT_LOG_LEVEL', 'debug'),
+            'days' => env('IMPORT_LOG_DAYS', 30),
+            'replace_placeholders' => true,
+        ],
+
         'slack' => [
             'driver' => 'slack',
             'url' => env('LOG_SLACK_WEBHOOK_URL'),

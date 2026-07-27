@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace App\Filament\Imports;
 
+use App\Filament\Imports\Concerns\LogsImportRows;
 use App\Filament\Imports\Concerns\SkipsExistingRows;
 use App\Models\Batch;
 use App\Models\CustomFieldDefinition;
@@ -34,6 +35,7 @@ use Illuminate\Database\Eloquent\Collection as EloquentCollection;
  */
 class BatchImporter extends Importer
 {
+    use LogsImportRows;
     use SkipsExistingRows;
 
     protected static ?string $model = Batch::class;
