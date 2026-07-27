@@ -112,9 +112,28 @@ class SeriesImporter extends Importer
             return new Series;
         }
 
-        $record = Series::query()
+        // `series.code` is GLOBALLY unique — the unique index counts
+        // soft-deleted rows too. Match withTrashed so that re-importing a code
+        // whose row was soft-deleted finds and RESTORES it (idempotent
+        // un-delete) instead of trying to INSERT a duplicate that violates
+        // series_code_unique. Mirrors BatchImporter's soft-delete handling.
+        $record = Series::withTrashed()
             ->whereRaw('LOWER(code) = ?', [mb_strtolower((string) $code)])
-            ->first() ?? new Series;
+            ->first();
+
+        if ($record === null) {
+            return new Series;
+        }
+
+        // A soft-deleted match means the operator is re-importing a row they
+        // previously deleted: restore + update it and never treat it as a
+        // skippable duplicate — they clearly want it back.
+        if ($record->trashed()) {
+            $record->restore();
+
+            return $record;
+        }
+
         $this->skipIfDuplicate($record);
 
         return $record;
