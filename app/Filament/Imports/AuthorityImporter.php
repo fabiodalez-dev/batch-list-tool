@@ -138,9 +138,25 @@ class AuthorityImporter extends Importer
      */
     public function resolveRecord(): ?Authority
     {
-        $record = Authority::query()
+        // `authorities.identifier` is globally unique — the unique index counts
+        // soft-deleted rows too. Match withTrashed so re-importing an identifier
+        // whose row was soft-deleted finds and RESTORES it instead of INSERTing a
+        // duplicate that violates the unique constraint. Mirrors SeriesImporter /
+        // BatchImporter's soft-delete handling.
+        $record = Authority::withTrashed()
             ->where('identifier', $this->data['identifier'] ?? null)
-            ->first() ?? new Authority;
+            ->first();
+
+        if ($record === null) {
+            return new Authority;
+        }
+
+        if ($record->trashed()) {
+            $record->restore();
+
+            return $record;
+        }
+
         $this->skipIfDuplicate($record);
 
         return $record;

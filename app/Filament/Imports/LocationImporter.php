@@ -215,16 +215,29 @@ class LocationImporter extends Importer
                 ->value('id');
         }
 
-        $existing = Location::query()
+        // Match withTrashed so re-importing a location the operator previously
+        // soft-deleted (same repository + parent + name) RESTORES it instead of
+        // INSERTing a row that collides on the (repository_id, code) unique index
+        // — the unique index counts soft-deleted rows. Mirrors the other importers.
+        $existing = Location::withTrashed()
             ->whereRaw('LOWER(name) = ?', [mb_strtolower($name)])
             ->where('repository_id', $repoId)
             ->where('parent_id', $parentId)
             ->first();
 
-        $record = $existing ?? new Location;
-        $this->skipIfDuplicate($record);
+        if ($existing === null) {
+            return new Location;
+        }
 
-        return $record;
+        if ($existing->trashed()) {
+            $existing->restore();
+
+            return $existing;
+        }
+
+        $this->skipIfDuplicate($existing);
+
+        return $existing;
     }
 
     public static function getCompletedNotificationBody(Import $import): string
