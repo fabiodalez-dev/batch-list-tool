@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace App\Filament\Imports;
 
+use App\Filament\Imports\Concerns\LogsImportRows;
 use App\Filament\Imports\Concerns\SkipsExistingRows;
 use App\Models\Authority;
 use App\Support\BulkImport\SpreadsheetParsers;
@@ -32,6 +33,7 @@ use Filament\Actions\Imports\Models\Import;
  */
 class AuthorityImporter extends Importer
 {
+    use LogsImportRows;
     use SkipsExistingRows;
 
     protected static ?string $model = Authority::class;
