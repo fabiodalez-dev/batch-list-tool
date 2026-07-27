@@ -2,6 +2,7 @@
 
 declare(strict_types=1);
 
+use App\Filament\Imports\AuthorityImporter;
 use App\Filament\Pages\ImportWizard;
 use App\Models\User;
 use Illuminate\Foundation\Testing\RefreshDatabase;
@@ -61,4 +62,26 @@ test('the whole-form getState() halts on the empty required confirm checkbox (th
     // checkbox on the Confirm step makes it throw — this is exactly why the old
     // runPreflight() (which used getState) died before it could validate rows.
     expect(fn () => $form->getState())->toThrow(ValidationException::class);
+});
+
+test('preflight applies the column cast before validating — no false error on values the import would normalise', function () {
+    // AuthorityImporter casts "Type of Entity" via normaliseEntityType() before
+    // the in:PERSON,INSTITUTION rule. The preflight must apply that cast too,
+    // otherwise a legitimate "Notary" row (which the real import normalises to
+    // INSTITUTION) would be falsely reported as invalid — the exact false error
+    // that showed up when running the example authority template through the
+    // wizard preflight.
+    $headers = ['Identifier', 'Type of Entity', 'Creator Surname'];
+    $rows = [
+        ['Identifier' => 'R1', 'Type of Entity' => 'Notary', 'Creator Surname' => 'Caruana'],
+        ['Identifier' => 'R2', 'Type of Entity' => 'PERSON', 'Creator Surname' => 'Borg'],
+    ];
+    $map = ImportWizard::guessColumnMap(AuthorityImporter::class, $headers);
+
+    $result = ImportWizard::validateRows(AuthorityImporter::class, $rows, $map);
+
+    // Both rows valid: "Notary" casts to INSTITUTION and passes the
+    // in:PERSON,INSTITUTION rule (before the fix it was falsely reported invalid).
+    expect($result['invalid'])->toBe(0)
+        ->and($result['valid'])->toBe(2);
 });

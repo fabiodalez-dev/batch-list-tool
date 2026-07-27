@@ -782,9 +782,11 @@ class ImportWizard extends Page
         // bound Importer/record context we don't have at preflight time.
         $rulesByField = [];
         $labels = [];
+        $columnsByField = [];
         foreach ($importerClass::getColumns() as $column) {
             $name = $column->getName();
             $labels[$name] = (string) ($column->getLabel() ?? $name);
+            $columnsByField[$name] = $column;
 
             try {
                 $rules = $column->getDataValidationRules();
@@ -818,9 +820,25 @@ class ImportWizard extends Page
             $mapped = [];
             foreach ($row as $header => $value) {
                 $field = $headerToField[(string) $header] ?? null;
-                if ($field !== null) {
-                    $mapped[$field] = $value;
+                if ($field === null) {
+                    continue;
                 }
+                // Apply the column's cast (castStateUsing / boolean / array
+                // separator) BEFORE validating, exactly as the real importer
+                // does — otherwise the preflight validates the raw cell and
+                // reports FALSE errors for values the import would normalise
+                // into the valid set (e.g. "Notary" → INSTITUTION for an
+                // in:PERSON,INSTITUTION rule). Some casts need a bound importer
+                // context and may throw here; fall back to the raw value.
+                $cast = $value;
+                if (isset($columnsByField[$field])) {
+                    try {
+                        $cast = $columnsByField[$field]->castState($value);
+                    } catch (\Throwable) {
+                        $cast = $value;
+                    }
+                }
+                $mapped[$field] = $cast;
             }
 
             $validator = Validator::make($mapped, $rulesByField, [], $labels);
