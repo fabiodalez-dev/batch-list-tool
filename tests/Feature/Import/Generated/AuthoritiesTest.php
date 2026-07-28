@@ -136,17 +136,48 @@ function at_loadXlsx(string $path): array
     return $rows;
 }
 
+/**
+ * The real 678-row production CSV, keyed by Identifier, cached for the
+ * whole test run. Individual tests pull one real client row from here and
+ * — only where an edge case demands a value the real file doesn't
+ * contain (an over-long field, a fractional numeric cell, a blank
+ * required field) — mutate just the single cell that edge case needs.
+ *
+ * @return array<string, array<string, string>>
+ */
+function at_prodRowsByIdentifier(): array
+{
+    static $rows = null;
+    if ($rows === null) {
+        $rows = [];
+        foreach (at_loadCsv(AT_PROD_CSV) as $row) {
+            $rows[$row['Identifier']] = $row;
+        }
+    }
+
+    return $rows;
+}
+
+/** One real row from the prod CSV, keyed by its Identifier. */
+function at_realRow(string $identifier): array
+{
+    return at_prodRowsByIdentifier()[$identifier];
+}
+
 // ─── Numeric coercion (the client's 533/678-row incident) ─────────────────
 
 test('an integer Alternative Identifier cell imports as a string, not rejected', function () {
     $u = at_admin();
     $this->actingAs($u);
 
-    $import = at_run(
-        [['Identifier' => 'R1', 'Alternative Identifier' => 511, 'Creator Surname' => 'Abela', 'Creator Name' => 'Antonio', 'Type of Entity' => 'Person']],
-        AT_COLUMN_MAP,
-        $u->id,
-    );
+    // Real row R1 (Abela, Antonio) has Alternative Identifier "511" as text
+    // from the CSV; PhpSpreadsheet reads a genuinely numeric Excel cell as
+    // a native PHP int, so cast the one real value to int to reproduce
+    // that path.
+    $row = at_realRow('R1');
+    $row['Alternative Identifier'] = (int) $row['Alternative Identifier'];
+
+    $import = at_run([$row], AT_COLUMN_MAP, $u->id);
 
     expect(at_failures($import))->toBe([]);
     $a = Authority::where('identifier', 'R1')->first();
@@ -159,11 +190,13 @@ test('a float Alternative Identifier cell (511.5) imports as a string, not rejec
     $u = at_admin();
     $this->actingAs($u);
 
-    $import = at_run(
-        [['Identifier' => 'R2', 'Alternative Identifier' => 511.5, 'Creator Surname' => 'Zammit', 'Creator Name' => 'Carmela', 'Type of Entity' => 'Person']],
-        AT_COLUMN_MAP,
-        $u->id,
-    );
+    // No row in the real file carries a fractional Alternative Identifier —
+    // start from real row R2 (Abela, Giovanni Andrea) and mutate only the
+    // one cell this edge case needs.
+    $row = at_realRow('R2');
+    $row['Alternative Identifier'] = 511.5;
+
+    $import = at_run([$row], AT_COLUMN_MAP, $u->id);
 
     expect(at_failures($import))->toBe([]);
     $a = Authority::where('identifier', 'R2')->first();
@@ -174,11 +207,10 @@ test('a whole-number float Alternative Identifier (511.0) does not grow a spurio
     $u = at_admin();
     $this->actingAs($u);
 
-    $import = at_run(
-        [['Identifier' => 'R3', 'Alternative Identifier' => 511.0, 'Creator Surname' => 'Abela', 'Creator Name' => 'Nicola', 'Type of Entity' => 'Person']],
-        AT_COLUMN_MAP,
-        $u->id,
-    );
+    $row = at_realRow('R3');
+    $row['Alternative Identifier'] = 511.0;
+
+    $import = at_run([$row], AT_COLUMN_MAP, $u->id);
 
     expect(at_failures($import))->toBe([]);
     expect(Authority::where('identifier', 'R3')->value('alternative_identifier'))->toBe('511');
@@ -240,18 +272,15 @@ test('re-importing the same identifier updates the existing row instead of dupli
     $u = at_admin();
     $this->actingAs($u);
 
-    at_run(
-        [['Identifier' => 'R10', 'Alternative Identifier' => '', 'Creator Surname' => 'Original', 'Creator Name' => 'Name', 'Type of Entity' => 'Person']],
-        AT_COLUMN_MAP,
-        $u->id,
-    );
+    // Real row R10 (Agius, Silvestro); only the surname is mutated between
+    // the two runs — that's the one cell this edge case needs, to prove
+    // the second import overwrote the first.
+    $row = at_realRow('R10');
+
+    at_run([array_merge($row, ['Creator Surname' => 'Original'])], AT_COLUMN_MAP, $u->id);
     expect(Authority::count())->toBe(1);
 
-    $import = at_run(
-        [['Identifier' => 'R10', 'Alternative Identifier' => '', 'Creator Surname' => 'Updated', 'Creator Name' => 'Name', 'Type of Entity' => 'Person']],
-        AT_COLUMN_MAP,
-        $u->id,
-    );
+    $import = at_run([array_merge($row, ['Creator Surname' => 'Updated'])], AT_COLUMN_MAP, $u->id);
 
     expect(at_failures($import))->toBe([])
         ->and(Authority::count())->toBe(1)
@@ -262,14 +291,12 @@ test('skip_duplicates option skips an already-existing identifier instead of upd
     $u = at_admin();
     $this->actingAs($u);
 
-    at_run(
-        [['Identifier' => 'R11', 'Alternative Identifier' => '', 'Creator Surname' => 'Keep Me', 'Creator Name' => 'Name', 'Type of Entity' => 'Person']],
-        AT_COLUMN_MAP,
-        $u->id,
-    );
+    $row = at_realRow('R11'); // real: Agius, Tommaso
+
+    at_run([array_merge($row, ['Creator Surname' => 'Keep Me'])], AT_COLUMN_MAP, $u->id);
 
     $import = at_run(
-        [['Identifier' => 'R11', 'Alternative Identifier' => '', 'Creator Surname' => 'Should Not Overwrite', 'Creator Name' => 'Name', 'Type of Entity' => 'Person']],
+        [array_merge($row, ['Creator Surname' => 'Should Not Overwrite'])],
         AT_COLUMN_MAP,
         $u->id,
         ['skip_duplicates' => true],
@@ -283,10 +310,12 @@ test('two rows with the SAME identifier in one batch do not crash — the second
     $u = at_admin();
     $this->actingAs($u);
 
+    $row = at_realRow('R12'); // real: Albano, Andrea
+
     $import = at_run(
         [
-            ['Identifier' => 'R12', 'Alternative Identifier' => '', 'Creator Surname' => 'First', 'Creator Name' => 'Name', 'Type of Entity' => 'Person'],
-            ['Identifier' => 'R12', 'Alternative Identifier' => '', 'Creator Surname' => 'Second', 'Creator Name' => 'Name', 'Type of Entity' => 'Person'],
+            array_merge($row, ['Creator Surname' => 'First']),
+            array_merge($row, ['Creator Surname' => 'Second']),
         ],
         AT_COLUMN_MAP,
         $u->id,
@@ -307,11 +336,11 @@ test('re-importing an identifier whose row was soft-deleted RESTORES it instead 
     expect(Authority::count())->toBe(0)
         ->and(Authority::withTrashed()->count())->toBe(1);
 
-    $import = at_run(
-        [['Identifier' => 'R20', 'Alternative Identifier' => '', 'Creator Surname' => 'Restored', 'Creator Name' => 'Antonio', 'Type of Entity' => 'Person']],
-        AT_COLUMN_MAP,
-        $u->id,
-    );
+    // Real row R20 (Allegritto, Vincenzo); surname mutated to prove the
+    // restore actually re-saved the row.
+    $row = array_merge(at_realRow('R20'), ['Creator Surname' => 'Restored']);
+
+    $import = at_run([$row], AT_COLUMN_MAP, $u->id);
 
     expect(at_failures($import))->toBe([])
         ->and(Authority::count())->toBe(1)
@@ -326,11 +355,14 @@ test('a dirty batch mixing live, soft-deleted and brand-new authorities imports 
     Authority::create(['identifier' => 'R30', 'surname' => 'Live', 'entity_type' => 'PERSON']); // live
     Authority::create(['identifier' => 'R31', 'surname' => 'Gone', 'entity_type' => 'PERSON'])->delete(); // trashed
 
+    // Real rows R30 (Attard, Pietro), R31 (Attard, Simone), R32 (Axisa,
+    // Bartolomeo); surnames mutated only to prove which import path each
+    // row went through (update / restore / insert).
     $import = at_run(
         [
-            ['Identifier' => 'R30', 'Alternative Identifier' => '', 'Creator Surname' => 'Live Updated', 'Creator Name' => '', 'Type of Entity' => 'Person'],
-            ['Identifier' => 'R31', 'Alternative Identifier' => '', 'Creator Surname' => 'Restored', 'Creator Name' => '', 'Type of Entity' => 'Person'],
-            ['Identifier' => 'R32', 'Alternative Identifier' => '', 'Creator Surname' => 'Brand New', 'Creator Name' => '', 'Type of Entity' => 'Person'],
+            array_merge(at_realRow('R30'), ['Creator Surname' => 'Live Updated']),
+            array_merge(at_realRow('R31'), ['Creator Surname' => 'Restored']),
+            array_merge(at_realRow('R32'), ['Creator Surname' => 'Brand New']),
         ],
         AT_COLUMN_MAP,
         $u->id,
@@ -349,12 +381,13 @@ test('an over-long identifier (>32 chars) fails validation cleanly instead of cr
     $u = at_admin();
     $this->actingAs($u);
 
+    // No real identifier is over 32 chars (the client's file already
+    // passed validation) — start from real row R1 and mutate only the
+    // Identifier cell this edge case needs.
     $longId = str_repeat('X', 33);
-    $import = at_run(
-        [['Identifier' => $longId, 'Alternative Identifier' => '', 'Creator Surname' => 'Someone', 'Creator Name' => '', 'Type of Entity' => 'Person']],
-        AT_COLUMN_MAP,
-        $u->id,
-    );
+    $row = array_merge(at_realRow('R1'), ['Identifier' => $longId]);
+
+    $import = at_run([$row], AT_COLUMN_MAP, $u->id);
 
     expect(at_failures($import))->toHaveCount(1)
         ->and(Authority::where('identifier', $longId)->exists())->toBeFalse();
@@ -365,11 +398,9 @@ test('an over-long surname (>255 chars) fails validation cleanly instead of cras
     $this->actingAs($u);
 
     $longSurname = str_repeat('S', 256);
-    $import = at_run(
-        [['Identifier' => 'R40', 'Alternative Identifier' => '', 'Creator Surname' => $longSurname, 'Creator Name' => '', 'Type of Entity' => 'Person']],
-        AT_COLUMN_MAP,
-        $u->id,
-    );
+    $row = array_merge(at_realRow('R40'), ['Creator Surname' => $longSurname]); // real: Azzupard, Giovanni
+
+    $import = at_run([$row], AT_COLUMN_MAP, $u->id);
 
     expect(at_failures($import))->toHaveCount(1)
         ->and(Authority::where('identifier', 'R40')->exists())->toBeFalse();
@@ -380,11 +411,9 @@ test('an over-long Alternative Identifier (>32 chars) fails validation cleanly i
     $this->actingAs($u);
 
     $longAlt = str_repeat('9', 33);
-    $import = at_run(
-        [['Identifier' => 'R41', 'Alternative Identifier' => $longAlt, 'Creator Surname' => 'Someone', 'Creator Name' => '', 'Type of Entity' => 'Person']],
-        AT_COLUMN_MAP,
-        $u->id,
-    );
+    $row = array_merge(at_realRow('R41'), ['Alternative Identifier' => $longAlt]); // real: Azzopardi, Giovanni Battista
+
+    $import = at_run([$row], AT_COLUMN_MAP, $u->id);
 
     expect(at_failures($import))->toHaveCount(1)
         ->and(Authority::where('identifier', 'R41')->exists())->toBeFalse();
@@ -396,11 +425,9 @@ test('a row with a blank required Creator Surname fails validation and is NOT si
     $u = at_admin();
     $this->actingAs($u);
 
-    $import = at_run(
-        [['Identifier' => 'R50', 'Alternative Identifier' => '', 'Creator Surname' => '', 'Creator Name' => 'Antonio', 'Type of Entity' => 'Person']],
-        AT_COLUMN_MAP,
-        $u->id,
-    );
+    $row = array_merge(at_realRow('R50'), ['Creator Surname' => '']); // real: Bartolo, Gabriele
+
+    $import = at_run([$row], AT_COLUMN_MAP, $u->id);
 
     expect(at_failures($import))->toHaveCount(1)
         ->and(Authority::where('identifier', 'R50')->exists())->toBeFalse();
@@ -410,11 +437,9 @@ test('a row with a blank Identifier fails validation and is NOT silently importe
     $u = at_admin();
     $this->actingAs($u);
 
-    $import = at_run(
-        [['Identifier' => '', 'Alternative Identifier' => '', 'Creator Surname' => 'Someone', 'Creator Name' => '', 'Type of Entity' => 'Person']],
-        AT_COLUMN_MAP,
-        $u->id,
-    );
+    $row = array_merge(at_realRow('R1'), ['Identifier' => '']);
+
+    $import = at_run([$row], AT_COLUMN_MAP, $u->id);
 
     expect(at_failures($import))->toHaveCount(1)
         ->and(Authority::count())->toBe(0);
@@ -426,11 +451,9 @@ test('entity_type "Person" (real CSV casing) normalises to PERSON', function () 
     $u = at_admin();
     $this->actingAs($u);
 
-    at_run(
-        [['Identifier' => 'R60', 'Alternative Identifier' => '', 'Creator Surname' => 'Abela', 'Creator Name' => '', 'Type of Entity' => 'Person']],
-        AT_COLUMN_MAP,
-        $u->id,
-    );
+    // Real row R60 (Bonavia, Giuseppe) — every row in the prod CSV carries
+    // "Person" in this exact casing.
+    at_run([at_realRow('R60')], AT_COLUMN_MAP, $u->id);
 
     expect(Authority::where('identifier', 'R60')->value('entity_type'))->toBe('PERSON');
 });
@@ -439,14 +462,13 @@ test('entity_type "Notary" (real NAF example file value) normalises to INSTITUTI
     $u = at_admin();
     $this->actingAs($u);
 
-    at_run(
-        [['Identifier' => 'R61', 'Alternative Identifier' => '', 'Creator Surname' => 'Farrugia', 'Creator Name' => 'Antonio', 'Type of Entity' => 'Notary']],
-        AT_COLUMN_MAP,
-        $u->id,
-    );
+    // The prod CSV has no "Notary" rows — the NAF example file does: real
+    // row R646 (Farrugia, Antonio).
+    $rows = at_loadXlsx(AT_NAF_EXAMPLE_XLSX);
+    at_run([$rows[0]], AT_COLUMN_MAP, $u->id);
 
-    expect(Authority::where('identifier', 'R61')->value('entity_type'))->toBe('INSTITUTION');
-});
+    expect(Authority::where('identifier', 'R646')->value('entity_type'))->toBe('INSTITUTION');
+})->skip(fn () => ! is_file(AT_NAF_EXAMPLE_XLSX), 'NAF example file not present');
 
 // ─── practice_dates_active / NTG / maiden surname / name suffix ───────────
 
@@ -454,13 +476,10 @@ test('a "1607-1629" Private Practice Dates Active cell splits into practice_date
     $u = at_admin();
     $this->actingAs($u);
 
-    at_run(
-        [['Identifier' => 'R70', 'Alternative Identifier' => '', 'Creator Surname' => 'Abela', 'Creator Name' => 'Antonio', 'Type of Entity' => 'Person', 'Private Practice Dates Active' => '1607-1629']],
-        AT_COLUMN_MAP,
-        $u->id,
-    );
+    // Real row R1 (Abela, Antonio) carries "1607-1629" verbatim.
+    at_run([at_realRow('R1')], AT_COLUMN_MAP, $u->id);
 
-    $a = Authority::where('identifier', 'R70')->first();
+    $a = Authority::where('identifier', 'R1')->first();
     expect($a->practice_dates_start)->toBe(1607)
         ->and($a->practice_dates_end)->toBe(1629);
 });
@@ -469,39 +488,33 @@ test('NTG Dates Active (real NAF example row 2) is appended into notes', functio
     $u = at_admin();
     $this->actingAs($u);
 
-    at_run(
-        [['Identifier' => 'R71', 'Alternative Identifier' => '', 'Creator Surname' => 'Grech', 'Creator Name' => 'Carmela', 'Type of Entity' => 'Notary', 'NTG Dates Active' => '1885-1890']],
-        AT_COLUMN_MAP,
-        $u->id,
-    );
+    // Real row R647 (Grech, Carmela) in the NAF example file carries NTG
+    // Dates Active "1885-1890".
+    $rows = at_loadXlsx(AT_NAF_EXAMPLE_XLSX);
+    at_run([$rows[1]], AT_COLUMN_MAP, $u->id);
 
-    expect(Authority::where('identifier', 'R71')->value('notes'))->toContain('NTG dates: 1885-1890');
-});
+    expect(Authority::where('identifier', 'R647')->value('notes'))->toContain('NTG dates: 1885-1890');
+})->skip(fn () => ! is_file(AT_NAF_EXAMPLE_XLSX), 'NAF example file not present');
 
 test('Maiden Surname (real NAF example row 2) is appended into notes', function () {
     $u = at_admin();
     $this->actingAs($u);
 
-    at_run(
-        [['Identifier' => 'R72', 'Alternative Identifier' => '', 'Creator Surname' => 'Grech', 'Creator Name' => 'Carmela', 'Type of Entity' => 'Notary', 'Maiden Surname' => 'Zammit']],
-        AT_COLUMN_MAP,
-        $u->id,
-    );
+    // Same real row R647 (Grech, Carmela) — Maiden Surname "Zammit".
+    $rows = at_loadXlsx(AT_NAF_EXAMPLE_XLSX);
+    at_run([$rows[1]], AT_COLUMN_MAP, $u->id);
 
-    expect(Authority::where('identifier', 'R72')->value('notes'))->toContain('Maiden surname: Zammit');
-});
+    expect(Authority::where('identifier', 'R647')->value('notes'))->toContain('Maiden surname: Zammit');
+})->skip(fn () => ! is_file(AT_NAF_EXAMPLE_XLSX), 'NAF example file not present');
 
 test('Name Suffix is appended onto given_names', function () {
     $u = at_admin();
     $this->actingAs($u);
 
-    at_run(
-        [['Identifier' => 'R73', 'Alternative Identifier' => '', 'Creator Surname' => 'Abela', 'Creator Name' => 'Antonio', 'Type of Entity' => 'Person', 'Name Suffix' => 'Jr.']],
-        AT_COLUMN_MAP,
-        $u->id,
-    );
+    // Real row R83 (Borg, Salvatore) carries Name Suffix "Senior".
+    at_run([at_realRow('R83')], AT_COLUMN_MAP, $u->id);
 
-    expect(Authority::where('identifier', 'R73')->value('given_names'))->toBe('Antonio Jr.');
+    expect(Authority::where('identifier', 'R83')->value('given_names'))->toBe('Salvatore Senior');
 });
 
 // ─── Whitespace ─────────────────────────────────────────────────────────────
@@ -510,15 +523,17 @@ test('whitespace-padded identifier and surname are trimmed before matching/savin
     $u = at_admin();
     $this->actingAs($u);
 
-    at_run(
-        [['Identifier' => '  R80  ', 'Alternative Identifier' => '', 'Creator Surname' => '  Abela  ', 'Creator Name' => '', 'Type of Entity' => 'Person']],
-        AT_COLUMN_MAP,
-        $u->id,
-    );
+    // No real row has whitespace padding — start from real row R80 (Borg,
+    // Emmanuele) and mutate only the two cells this edge case needs.
+    $row = at_realRow('R80');
+    $row['Identifier'] = '  R80  ';
+    $row['Creator Surname'] = '  ' . $row['Creator Surname'] . '  ';
+
+    at_run([$row], AT_COLUMN_MAP, $u->id);
 
     $a = Authority::where('identifier', 'R80')->first();
     expect($a)->not->toBeNull()
-        ->and($a->surname)->toBe('Abela');
+        ->and($a->surname)->toBe('Borg');
 });
 
 // ─── Real NAF example file, end to end ─────────────────────────────────────

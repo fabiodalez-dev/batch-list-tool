@@ -16,6 +16,7 @@ use App\Support\CustomFields\CustomFieldResolver;
 use Filament\Actions\Imports\Models\Import;
 use HayderHatem\FilamentExcelImport\Actions\Imports\Jobs\ImportExcel;
 use Illuminate\Foundation\Testing\RefreshDatabase;
+use PhpOffice\PhpSpreadsheet\IOFactory;
 use Spatie\Permission\Models\Role;
 
 /**
@@ -138,6 +139,39 @@ const VT_MAP = [
     'notes' => 'notes',
 ];
 
+const VT_SAMPLE = __DIR__ . '/../../../../nra/outbox/2026-07-22_NAF_import_examples/example_volume_import.xlsx';
+
+/**
+ * Read the real client-facing template ("Data" sheet) into header-keyed rows,
+ * exactly as the wizard/streaming path receives them from PhpSpreadsheet.
+ * Row 0 is document_identifier=R642/001, volume_number=1 (notes '');
+ * Row 1 is the same document, volume_number=2, with a populated notes cell.
+ *
+ * @return array{0: list<string>, 1: list<array<string, mixed>>}
+ */
+function vt_readSample(): array
+{
+    $reader = IOFactory::createReaderForFile(VT_SAMPLE);
+    $reader->setReadDataOnly(true);
+    $sheet = $reader->load(VT_SAMPLE)->getSheetByName('Data');
+    $raw = array_values(array_filter(
+        $sheet->toArray(null, true, false, false),
+        fn (array $r): bool => count(array_filter($r, fn ($c) => $c !== null && $c !== '')) > 0,
+    ));
+
+    $headers = array_map(fn ($h): string => (string) $h, $raw[0]);
+    $rows = [];
+    foreach (array_slice($raw, 1) as $r) {
+        $row = [];
+        foreach ($headers as $i => $h) {
+            $row[$h] = $r[$i] ?? null;
+        }
+        $rows[] = $row;
+    }
+
+    return [$headers, $rows];
+}
+
 // ─── 1. Real sample rows import cleanly end to end ────────────────────────
 
 test('the real sample file rows (two volumes of R642/001) import cleanly via the streaming path', function () {
@@ -147,10 +181,9 @@ test('the real sample file rows (two volumes of R642/001) import cleanly via the
     $series = vt_series();
     vt_document($repo->id, $series->id, 'R642/001');
 
-    $import = vt_run([
-        ['document_identifier' => 'R642/001', 'volume_number' => '1', 'dates_start' => '1870-01-01', 'dates_end' => '1870-12-31', 'notes' => ''],
-        ['document_identifier' => 'R642/001', 'volume_number' => '2', 'dates_start' => '1871-01-01', 'dates_end' => '1871-12-31', 'notes' => 'Second volume of the same register'],
-    ], VT_MAP, $u->id);
+    [, $rows] = vt_readSample();
+
+    $import = vt_run($rows, VT_MAP, $u->id);
 
     expect(vt_failures($import))->toBe([]);
     expect(Volume::query()->count())->toBe(2);
@@ -168,11 +201,13 @@ test('an integer volume_number cell (Excel numeric column) imports as its string
     $u = vt_user($repo->id);
     $this->actingAs($u);
     $series = vt_series();
-    vt_document($repo->id, $series->id, 'NUM-DOC-1');
+    vt_document($repo->id, $series->id, 'R642/001');
 
-    $import = vt_run([
-        ['document_identifier' => 'NUM-DOC-1', 'volume_number' => 3, 'dates_start' => null, 'dates_end' => null, 'notes' => null],
-    ], VT_MAP, $u->id);
+    [, $rows] = vt_readSample();
+    $row = $rows[0];
+    $row['volume_number'] = 3; // real row's text cell mutated to an Excel numeric-typed cell
+
+    $import = vt_run([$row], VT_MAP, $u->id);
 
     expect(vt_failures($import))->toBe([]);
     expect(Volume::query()->where('volume_number', '3')->exists())->toBeTrue();
@@ -187,9 +222,11 @@ test('a numeric document_identifier cell resolves the parent document (numeric i
     $series = vt_series();
     $doc = vt_document($repo->id, $series->id, '9001');
 
-    $import = vt_run([
-        ['document_identifier' => 9001, 'volume_number' => '1', 'dates_start' => null, 'dates_end' => null, 'notes' => null],
-    ], VT_MAP, $u->id);
+    [, $rows] = vt_readSample();
+    $row = $rows[0];
+    $row['document_identifier'] = 9001; // real row's identifier cell mutated to a numeric Excel-typed cell
+
+    $import = vt_run([$row], VT_MAP, $u->id);
 
     expect(vt_failures($import))->toBe([]);
     expect(Volume::query()->where('document_id', $doc->id)->exists())->toBeTrue();
@@ -202,15 +239,17 @@ test('streaming re-import of a soft-deleted volume (document_id, volume_number) 
     $u = vt_user($repo->id);
     $this->actingAs($u);
     $series = vt_series();
-    $doc = vt_document($repo->id, $series->id, 'SD-DOC-1');
+    $doc = vt_document($repo->id, $series->id, 'R642/001');
 
     Volume::create(['document_id' => $doc->id, 'volume_number' => '1', 'notes' => 'old'])->delete();
     expect(Volume::count())->toBe(0)
         ->and(Volume::withTrashed()->count())->toBe(1);
 
-    $import = vt_run([
-        ['document_identifier' => 'SD-DOC-1', 'volume_number' => '1', 'dates_start' => null, 'dates_end' => null, 'notes' => 'restored'],
-    ], VT_MAP, $u->id);
+    [, $rows] = vt_readSample();
+    $row = $rows[0]; // document_identifier=R642/001, volume_number=1 — matches the soft-deleted key
+    $row['notes'] = 'restored';
+
+    $import = vt_run([$row], VT_MAP, $u->id);
 
     expect(vt_failures($import))->toBe([]);
     expect(Volume::count())->toBe(1)
@@ -225,16 +264,24 @@ test('a mix of live, soft-deleted and new volumes for the same document import c
     $u = vt_user($repo->id);
     $this->actingAs($u);
     $series = vt_series();
-    $doc = vt_document($repo->id, $series->id, 'MIX-DOC-1');
+    $doc = vt_document($repo->id, $series->id, 'R642/001');
 
     Volume::create(['document_id' => $doc->id, 'volume_number' => 'LIVE', 'notes' => 'already here']);
     Volume::create(['document_id' => $doc->id, 'volume_number' => 'GONE', 'notes' => 'deleted'])->delete();
 
-    $import = vt_run([
-        ['document_identifier' => 'MIX-DOC-1', 'volume_number' => 'LIVE', 'dates_start' => null, 'dates_end' => null, 'notes' => 'updated'],
-        ['document_identifier' => 'MIX-DOC-1', 'volume_number' => 'GONE', 'dates_start' => null, 'dates_end' => null, 'notes' => 'restored'],
-        ['document_identifier' => 'MIX-DOC-1', 'volume_number' => 'NEW', 'dates_start' => null, 'dates_end' => null, 'notes' => 'fresh'],
-    ], VT_MAP, $u->id);
+    [, $rows] = vt_readSample();
+    $base = $rows[0]; // document_identifier=R642/001, dates from the real row
+    $rowLive = $base;
+    $rowLive['volume_number'] = 'LIVE';
+    $rowLive['notes'] = 'updated';
+    $rowGone = $base;
+    $rowGone['volume_number'] = 'GONE';
+    $rowGone['notes'] = 'restored';
+    $rowNew = $base;
+    $rowNew['volume_number'] = 'NEW';
+    $rowNew['notes'] = 'fresh';
+
+    $import = vt_run([$rowLive, $rowGone, $rowNew], VT_MAP, $u->id);
 
     expect(vt_failures($import))->toBe([]);
     expect(Volume::where('document_id', $doc->id)->count())->toBe(3)
@@ -250,9 +297,11 @@ test('a row missing document_identifier fails with a clear required-field messag
     $u = vt_user($repo->id);
     $this->actingAs($u);
 
-    $import = vt_run([
-        ['document_identifier' => '', 'volume_number' => '1', 'dates_start' => null, 'dates_end' => null, 'notes' => null],
-    ], VT_MAP, $u->id);
+    [, $rows] = vt_readSample();
+    $row = $rows[0];
+    $row['document_identifier'] = '';
+
+    $import = vt_run([$row], VT_MAP, $u->id);
 
     $failures = vt_failures($import);
     expect($failures)->toHaveCount(1)
@@ -268,9 +317,11 @@ test('an unresolvable document_identifier fails with a clear message, not generi
     $u = vt_user($repo->id);
     $this->actingAs($u);
 
-    $import = vt_run([
-        ['document_identifier' => 'NO-SUCH-DOC-XYZ', 'volume_number' => '1', 'dates_start' => null, 'dates_end' => null, 'notes' => null],
-    ], VT_MAP, $u->id);
+    [, $rows] = vt_readSample();
+    $row = $rows[0];
+    $row['document_identifier'] = 'NO-SUCH-DOC-XYZ'; // deliberately unresolvable — cannot come from real data
+
+    $import = vt_run([$row], VT_MAP, $u->id);
 
     $failures = vt_failures($import);
     expect($failures)->toHaveCount(1)
@@ -288,11 +339,11 @@ test('a document belonging to another repository is not resolved — no cross-te
     $userA = vt_user($repoA->id);
     $this->actingAs($userA);
     $series = vt_series();
-    vt_document($repoB->id, $series->id, 'XTEN-DOC-1');
+    vt_document($repoB->id, $series->id, 'R642/001');
 
-    $import = vt_run([
-        ['document_identifier' => 'XTEN-DOC-1', 'volume_number' => '1', 'dates_start' => null, 'dates_end' => null, 'notes' => null],
-    ], VT_MAP, $userA->id);
+    [, $rows] = vt_readSample();
+
+    $import = vt_run([$rows[0]], VT_MAP, $userA->id);
 
     $failures = vt_failures($import);
     expect($failures)->toHaveCount(1)
@@ -307,12 +358,14 @@ test('skip_duplicates against an existing (document, volume_number) surfaces a c
     $u = vt_user($repo->id);
     $this->actingAs($u);
     $series = vt_series();
-    $doc = vt_document($repo->id, $series->id, 'SKIP-DOC-1');
+    $doc = vt_document($repo->id, $series->id, 'R642/001');
     Volume::create(['document_id' => $doc->id, 'volume_number' => '1', 'notes' => 'here']);
 
-    $import = vt_run([
-        ['document_identifier' => 'SKIP-DOC-1', 'volume_number' => '1', 'dates_start' => null, 'dates_end' => null, 'notes' => 'again'],
-    ], VT_MAP, $u->id, ['skip_duplicates' => true]);
+    [, $rows] = vt_readSample();
+    $row = $rows[0];
+    $row['notes'] = 'again';
+
+    $import = vt_run([$row], VT_MAP, $u->id, ['skip_duplicates' => true]);
 
     $failures = vt_failures($import);
     expect($failures)->toHaveCount(1)
@@ -328,12 +381,15 @@ test('duplicate rows for the same (document, volume_number) within one file do n
     $u = vt_user($repo->id);
     $this->actingAs($u);
     $series = vt_series();
-    $doc = vt_document($repo->id, $series->id, 'DUPFILE-DOC-1');
+    $doc = vt_document($repo->id, $series->id, 'R642/001');
 
-    $import = vt_run([
-        ['document_identifier' => 'DUPFILE-DOC-1', 'volume_number' => '1', 'dates_start' => null, 'dates_end' => null, 'notes' => 'first'],
-        ['document_identifier' => 'DUPFILE-DOC-1', 'volume_number' => '1', 'dates_start' => null, 'dates_end' => null, 'notes' => 'second'],
-    ], VT_MAP, $u->id);
+    [, $rows] = vt_readSample();
+    $rowA = $rows[0];
+    $rowA['notes'] = 'first';
+    $rowB = $rows[0];
+    $rowB['notes'] = 'second';
+
+    $import = vt_run([$rowA, $rowB], VT_MAP, $u->id);
 
     expect(vt_failures($import))->toBe([]);
     expect(Volume::where('document_id', $doc->id)->where('volume_number', '1')->count())->toBe(1)
@@ -347,14 +403,16 @@ test('a European day-first date (31/05/2023) parses correctly for dates_start', 
     $u = vt_user($repo->id);
     $this->actingAs($u);
     $series = vt_series();
-    vt_document($repo->id, $series->id, 'EUDATE-DOC-1');
+    vt_document($repo->id, $series->id, 'R642/001');
 
-    $import = vt_run([
-        ['document_identifier' => 'EUDATE-DOC-1', 'volume_number' => '1', 'dates_start' => '31/05/2023', 'dates_end' => null, 'notes' => null],
-    ], VT_MAP, $u->id);
+    [, $rows] = vt_readSample();
+    $row = $rows[0];
+    $row['dates_start'] = '31/05/2023'; // real row's dates_start cell mutated to a day-first format
+
+    $import = vt_run([$row], VT_MAP, $u->id);
 
     expect(vt_failures($import))->toBe([]);
-    $v = Volume::where('document_id', Document::withoutGlobalScope(RepositoryScope::class)->where('identifier', 'EUDATE-DOC-1')->first()->id)->first();
+    $v = Volume::where('document_id', Document::withoutGlobalScope(RepositoryScope::class)->where('identifier', 'R642/001')->first()->id)->first();
     expect($v->dates_start?->format('Y-m-d'))->toBe('2023-05-31');
 });
 
@@ -365,11 +423,13 @@ test('an unparseable date string does not fail the row — it is stored as null'
     $u = vt_user($repo->id);
     $this->actingAs($u);
     $series = vt_series();
-    $doc = vt_document($repo->id, $series->id, 'BADDATE-DOC-1');
+    $doc = vt_document($repo->id, $series->id, 'R642/001');
 
-    $import = vt_run([
-        ['document_identifier' => 'BADDATE-DOC-1', 'volume_number' => '1', 'dates_start' => 'not a date at all !!', 'dates_end' => null, 'notes' => null],
-    ], VT_MAP, $u->id);
+    [, $rows] = vt_readSample();
+    $row = $rows[0];
+    $row['dates_start'] = 'not a date at all !!';
+
+    $import = vt_run([$row], VT_MAP, $u->id);
 
     expect(vt_failures($import))->toBe([]);
     $v = Volume::where('document_id', $doc->id)->first();
@@ -384,7 +444,7 @@ test('a volume custom field (by label header) persists via EAV over the streamin
     $u = vt_user($repo->id);
     $this->actingAs($u);
     $series = vt_series();
-    $doc = vt_document($repo->id, $series->id, 'CF-DOC-1');
+    $doc = vt_document($repo->id, $series->id, 'R642/001');
 
     CustomFieldDefinition::create([
         'repository_id' => $repo->id,
@@ -398,9 +458,11 @@ test('a volume custom field (by label header) persists via EAV over the streamin
     ]);
 
     $map = VT_MAP + ['custom_field_condition' => 'Condition'];
-    $import = vt_run([
-        ['document_identifier' => 'CF-DOC-1', 'volume_number' => '1', 'dates_start' => null, 'dates_end' => null, 'notes' => null, 'Condition' => 'Fragile'],
-    ], $map, $u->id);
+    [, $rows] = vt_readSample();
+    $row = $rows[0];
+    $row['Condition'] = 'Fragile'; // extra header, not present in the real template
+
+    $import = vt_run([$row], $map, $u->id);
 
     expect(vt_failures($import))->toBe([]);
     $v = Volume::where('document_id', $doc->id)->first();
@@ -424,13 +486,16 @@ test('BUG: a blank volume_number cell fails the row at the DB layer even though 
     $u = vt_user($repo->id);
     $this->actingAs($u);
     $series = vt_series();
-    vt_document($repo->id, $series->id, 'BLANKVOL-DOC-1');
+    vt_document($repo->id, $series->id, 'R642/001');
 
     // A genuinely blank cell arrives as null from PhpSpreadsheet (setReadEmptyCells
     // false, getValue() on an empty cell) — exactly like the real streaming path.
-    $import = vt_run([
-        ['document_identifier' => 'BLANKVOL-DOC-1', 'volume_number' => null, 'dates_start' => null, 'dates_end' => null, 'notes' => 'no volume number given'],
-    ], VT_MAP, $u->id);
+    [, $rows] = vt_readSample();
+    $row = $rows[0];
+    $row['volume_number'] = null;
+    $row['notes'] = 'no volume number given';
+
+    $import = vt_run([$row], VT_MAP, $u->id);
 
     // volume_number's ImportColumn rule is ['nullable', 'string', 'max:64'] — the
     // importer's OWN validation contract says this is optional. But the volumes
@@ -455,9 +520,12 @@ test('a volume_number with surrounding whitespace still re-imports idempotently 
     $u = vt_user($repo->id);
     $this->actingAs($u);
     $series = vt_series();
-    $doc = vt_document($repo->id, $series->id, 'WSVOL-DOC-1');
+    $doc = vt_document($repo->id, $series->id, 'R642/001');
 
-    $row = ['document_identifier' => 'WSVOL-DOC-1', 'volume_number' => ' 1 ', 'dates_start' => null, 'dates_end' => null, 'notes' => 'run'];
+    [, $rows] = vt_readSample();
+    $row = $rows[0];
+    $row['volume_number'] = ' ' . $row['volume_number'] . ' '; // real '1' cell padded with whitespace
+    $row['notes'] = 'run';
 
     $import1 = vt_run([$row], VT_MAP, $u->id);
     expect(vt_failures($import1))->toBe([]);
@@ -479,16 +547,18 @@ test('a very long notes value imports without failure (text column has no practi
     $u = vt_user($repo->id);
     $this->actingAs($u);
     $series = vt_series();
-    $doc = vt_document($repo->id, $series->id, 'LONGNOTE-DOC-1');
+    $doc = vt_document($repo->id, $series->id, 'R642/001');
 
     // Filament's default ImportColumn::castStateItem() trims every string cell
     // (see vendor/filament/actions/src/Imports/ImportColumn.php) — so the
     // trailing space from str_repeat's last unit is expected to disappear.
     $longNote = trim(str_repeat('Provenance detail. ', 500)); // ~9500 chars
 
-    $import = vt_run([
-        ['document_identifier' => 'LONGNOTE-DOC-1', 'volume_number' => '1', 'dates_start' => null, 'dates_end' => null, 'notes' => $longNote . ' '],
-    ], VT_MAP, $u->id);
+    [, $rows] = vt_readSample();
+    $row = $rows[0];
+    $row['notes'] = $longNote . ' ';
+
+    $import = vt_run([$row], VT_MAP, $u->id);
 
     expect(vt_failures($import))->toBe([]);
     expect(Volume::where('document_id', $doc->id)->value('notes'))->toBe($longNote);
@@ -501,11 +571,13 @@ test('a float volume_number cell (e.g. 2.5) imports as its literal string form',
     $u = vt_user($repo->id);
     $this->actingAs($u);
     $series = vt_series();
-    vt_document($repo->id, $series->id, 'FLOATVOL-DOC-1');
+    vt_document($repo->id, $series->id, 'R642/001');
 
-    $import = vt_run([
-        ['document_identifier' => 'FLOATVOL-DOC-1', 'volume_number' => 2.5, 'dates_start' => null, 'dates_end' => null, 'notes' => null],
-    ], VT_MAP, $u->id);
+    [, $rows] = vt_readSample();
+    $row = $rows[0];
+    $row['volume_number'] = 2.5; // real cell mutated to a float Excel-typed cell
+
+    $import = vt_run([$row], VT_MAP, $u->id);
 
     expect(vt_failures($import))->toBe([]);
     expect(Volume::query()->where('volume_number', '2.5')->exists())->toBeTrue();
@@ -518,11 +590,13 @@ test('a differently-cased document_identifier does not resolve the document (cas
     $u = vt_user($repo->id);
     $this->actingAs($u);
     $series = vt_series();
-    vt_document($repo->id, $series->id, 'CASE-Doc-1');
+    vt_document($repo->id, $series->id, 'R642/001');
 
-    $import = vt_run([
-        ['document_identifier' => 'case-doc-1', 'volume_number' => '1', 'dates_start' => null, 'dates_end' => null, 'notes' => null],
-    ], VT_MAP, $u->id);
+    [, $rows] = vt_readSample();
+    $row = $rows[0];
+    $row['document_identifier'] = strtolower($row['document_identifier']); // real 'R642/001' lower-cased to 'r642/001'
+
+    $import = vt_run([$row], VT_MAP, $u->id);
 
     $failures = vt_failures($import);
     expect($failures)->toHaveCount(1)

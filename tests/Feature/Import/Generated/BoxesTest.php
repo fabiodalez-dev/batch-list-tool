@@ -245,6 +245,10 @@ test('control: mapping the ACTUAL barcode as the parent reference resolves and i
 // ═══════════════════════════════════════════════════════════════════════
 // B — batch_number FK: must pre-exist. BUG: an unresolved batch_number
 //     silently leaves batch_id NULL instead of failing the row.
+//
+// All rows below are the real template's RAS row (box_number "1", barcode
+// "AC54609", batch_number "46"), with only the one cell the edge case
+// needs mutated.
 // ═══════════════════════════════════════════════════════════════════════
 
 test('BUG: a batch_number with no matching Batch silently inserts the box with batch_id=NULL (no failure reported)', function () {
@@ -254,9 +258,13 @@ test('BUG: a batch_number with no matching Batch silently inserts the box with b
     // Deliberately do NOT create batch 999 — this is the dirty/real-world
     // scenario of a typo'd or not-yet-created batch number.
 
+    [, $rows] = bxt_readSample();
+    $row = $rows[0];
+    $row['batch_number'] = '999';
+
     $import = bxt_run(
-        [['Box No' => 'ORPHAN-1', 'Box Type' => 'RAS', 'Batch Number' => '999', 'Barcode' => 'BC-ORPHAN-1']],
-        ['box_number' => 'Box No', 'box_type' => 'Box Type', 'batch_number' => 'Batch Number', 'barcode' => 'Barcode'],
+        [$row],
+        ['box_number' => 'box_number', 'box_type' => 'box_type', 'batch_number' => 'batch_number', 'barcode' => 'barcode'],
         $u->id,
     );
 
@@ -267,7 +275,7 @@ test('BUG: a batch_number with no matching Batch silently inserts the box with b
     // migration: ->nullable()->constrained()->nullOnDelete()), so no SQL
     // constraint ever fires and the row silently succeeds with no batch link.
     expect(bxt_failures($import))->toBe([]);
-    $box = Box::withoutGlobalScope(ThroughBatchRepositoryScope::class)->where('barcode', 'BC-ORPHAN-1')->first();
+    $box = Box::withoutGlobalScope(ThroughBatchRepositoryScope::class)->where('barcode', 'AC54609')->first();
     expect($box)->not->toBeNull()
         ->and($box->batch_id)->toBeNull();
 });
@@ -279,14 +287,18 @@ test('BUG: a FORBIDDEN batch_number (34/36) also silently inserts the box with b
 
     expect(Batch::FORBIDDEN_NUMBERS)->toContain(34);
 
+    [, $rows] = bxt_readSample();
+    $row = $rows[0];
+    $row['batch_number'] = '34';
+
     $import = bxt_run(
-        [['Box No' => 'FORBIDDEN-1', 'Box Type' => 'RAS', 'Batch Number' => '34', 'Barcode' => 'BC-FORBIDDEN-1']],
-        ['box_number' => 'Box No', 'box_type' => 'Box Type', 'batch_number' => 'Batch Number', 'barcode' => 'Barcode'],
+        [$row],
+        ['box_number' => 'box_number', 'box_type' => 'box_type', 'batch_number' => 'batch_number', 'barcode' => 'barcode'],
         $u->id,
     );
 
     expect(bxt_failures($import))->toBe([]);
-    $box = Box::withoutGlobalScope(ThroughBatchRepositoryScope::class)->where('barcode', 'BC-FORBIDDEN-1')->first();
+    $box = Box::withoutGlobalScope(ThroughBatchRepositoryScope::class)->where('barcode', 'AC54609')->first();
     expect($box)->not->toBeNull()
         ->and($box->batch_id)->toBeNull();
 });
@@ -297,17 +309,19 @@ test('control: an existing batch_number resolves to the correct batch_id', funct
     $this->actingAs($u);
 
     $batch = Batch::withoutGlobalScope(RepositoryScope::class)->create([
-        'batch_number' => 7, 'repository_id' => $repo->id, 'type' => 'MAIN_COLLECTION', 'is_active' => true,
+        'batch_number' => 46, 'repository_id' => $repo->id, 'type' => 'MAIN_COLLECTION', 'is_active' => true,
     ]);
 
+    [, $rows] = bxt_readSample();
+
     $import = bxt_run(
-        [['Box No' => 'B7-1', 'Box Type' => 'RAS', 'Batch Number' => '7', 'Barcode' => 'BC-B7-1']],
-        ['box_number' => 'Box No', 'box_type' => 'Box Type', 'batch_number' => 'Batch Number', 'barcode' => 'Barcode'],
+        [$rows[0]],
+        ['box_number' => 'box_number', 'box_type' => 'box_type', 'batch_number' => 'batch_number', 'barcode' => 'barcode'],
         $u->id,
     );
 
     expect(bxt_failures($import))->toBe([]);
-    $box = Box::withoutGlobalScope(ThroughBatchRepositoryScope::class)->where('barcode', 'BC-B7-1')->first();
+    $box = Box::withoutGlobalScope(ThroughBatchRepositoryScope::class)->where('barcode', 'AC54609')->first();
     expect($box->batch_id)->toBe($batch->id);
 });
 
@@ -317,19 +331,21 @@ test('a batch_number belonging to a DIFFERENT repository does not link (tenant s
     $u = bxt_admin($repoA->id);
     $this->actingAs($u);
 
-    // Batch 8 exists, but in repository B, not the importing user's repo A.
+    // Batch 46 exists, but in repository B, not the importing user's repo A.
     Batch::withoutGlobalScope(RepositoryScope::class)->create([
-        'batch_number' => 8, 'repository_id' => $repoB->id, 'type' => 'MAIN_COLLECTION', 'is_active' => true,
+        'batch_number' => 46, 'repository_id' => $repoB->id, 'type' => 'MAIN_COLLECTION', 'is_active' => true,
     ]);
 
+    [, $rows] = bxt_readSample();
+
     $import = bxt_run(
-        [['Box No' => 'CROSS-1', 'Box Type' => 'RAS', 'Batch Number' => '8', 'Barcode' => 'BC-CROSS-1']],
-        ['box_number' => 'Box No', 'box_type' => 'Box Type', 'batch_number' => 'Batch Number', 'barcode' => 'Barcode'],
+        [$rows[0]],
+        ['box_number' => 'box_number', 'box_type' => 'box_type', 'batch_number' => 'batch_number', 'barcode' => 'barcode'],
         $u->id,
     );
 
     expect(bxt_failures($import))->toBe([]);
-    $box = Box::withoutGlobalScope(ThroughBatchRepositoryScope::class)->where('barcode', 'BC-CROSS-1')->first();
+    $box = Box::withoutGlobalScope(ThroughBatchRepositoryScope::class)->where('barcode', 'AC54609')->first();
     expect($box)->not->toBeNull()
         ->and($box->batch_id)->toBeNull();
 });
@@ -343,14 +359,18 @@ test('batch_number arriving as a float from Excel (46.0) resolves the same as th
         'batch_number' => 46, 'repository_id' => $repo->id, 'type' => 'MAIN_COLLECTION', 'is_active' => true,
     ]);
 
+    [, $rows] = bxt_readSample();
+    $row = $rows[0];
+    $row['batch_number'] = 46.0; // Excel numeric cell, not the string "46"
+
     $import = bxt_run(
-        [['Box No' => 'B46-1', 'Box Type' => 'RAS', 'Batch Number' => 46.0, 'Barcode' => 'BC-B46-1']],
-        ['box_number' => 'Box No', 'box_type' => 'Box Type', 'batch_number' => 'Batch Number', 'barcode' => 'Barcode'],
+        [$row],
+        ['box_number' => 'box_number', 'box_type' => 'box_type', 'batch_number' => 'batch_number', 'barcode' => 'barcode'],
         $u->id,
     );
 
     expect(bxt_failures($import))->toBe([]);
-    $box = Box::withoutGlobalScope(ThroughBatchRepositoryScope::class)->where('barcode', 'BC-B46-1')->first();
+    $box = Box::withoutGlobalScope(ThroughBatchRepositoryScope::class)->where('barcode', 'AC54609')->first();
     expect($box->batch_id)->toBe($batch->id);
 });
 
@@ -364,16 +384,20 @@ test('a RAS box without a barcode fails validation with a clear reason', functio
     $this->actingAs($u);
 
     Batch::withoutGlobalScope(RepositoryScope::class)->create([
-        'batch_number' => 1, 'repository_id' => $repo->id, 'type' => 'MAIN_COLLECTION', 'is_active' => true,
+        'batch_number' => 46, 'repository_id' => $repo->id, 'type' => 'MAIN_COLLECTION', 'is_active' => true,
     ]);
+
+    [, $rows] = bxt_readSample();
+    $row = $rows[0]; // real RAS row, with the one barcode cell blanked out
+    $row['barcode'] = '';
 
     // The vendor Importer only runs a column's ->rules() when that column is
     // present in the columnMap (Importer::getValidationRules() skips blank
     // mappings entirely) — so "barcode" must be explicitly mapped (to a
     // blank cell) for the required_if:box_type,RAS rule to have a chance to run.
     $import = bxt_run(
-        [['Box No' => 'RAS-NOBC', 'Box Type' => 'RAS', 'Batch Number' => '1', 'Barcode' => '']],
-        ['box_number' => 'Box No', 'box_type' => 'Box Type', 'batch_number' => 'Batch Number', 'barcode' => 'Barcode'],
+        [$row],
+        ['box_number' => 'box_number', 'box_type' => 'box_type', 'batch_number' => 'batch_number', 'barcode' => 'barcode'],
         $u->id,
     );
 
@@ -381,7 +405,7 @@ test('a RAS box without a barcode fails validation with a clear reason', functio
     expect($failures)->toHaveCount(1)
         ->and($failures[0])->not->toContain('generic_validation')
         ->and(strtolower($failures[0]))->toContain('barcode');
-    expect(Box::withoutGlobalScope(ThroughBatchRepositoryScope::class)->where('box_number', 'RAS-NOBC')->exists())->toBeFalse();
+    expect(Box::withoutGlobalScope(ThroughBatchRepositoryScope::class)->where('box_number', '1')->exists())->toBeFalse();
 });
 
 test('a RAS box WITH a barcode imports successfully', function () {
@@ -390,17 +414,19 @@ test('a RAS box WITH a barcode imports successfully', function () {
     $this->actingAs($u);
 
     Batch::withoutGlobalScope(RepositoryScope::class)->create([
-        'batch_number' => 1, 'repository_id' => $repo->id, 'type' => 'MAIN_COLLECTION', 'is_active' => true,
+        'batch_number' => 46, 'repository_id' => $repo->id, 'type' => 'MAIN_COLLECTION', 'is_active' => true,
     ]);
 
+    [, $rows] = bxt_readSample();
+
     $import = bxt_run(
-        [['Box No' => 'RAS-BC', 'Box Type' => 'RAS', 'Batch Number' => '1', 'Barcode' => 'BC-RAS-1']],
-        ['box_number' => 'Box No', 'box_type' => 'Box Type', 'batch_number' => 'Batch Number', 'barcode' => 'Barcode'],
+        [$rows[0]],
+        ['box_number' => 'box_number', 'box_type' => 'box_type', 'batch_number' => 'batch_number', 'barcode' => 'barcode'],
         $u->id,
     );
 
     expect(bxt_failures($import))->toBe([]);
-    expect(Box::withoutGlobalScope(ThroughBatchRepositoryScope::class)->where('barcode', 'BC-RAS-1')->exists())->toBeTrue();
+    expect(Box::withoutGlobalScope(ThroughBatchRepositoryScope::class)->where('barcode', 'AC54609')->exists())->toBeTrue();
 });
 
 test('an NRA box without a barcode imports successfully when it has a parent + location', function () {
@@ -416,14 +442,26 @@ test('an NRA box without a barcode imports successfully when it has a parent + l
         'name' => 'Room X', 'code' => 'RX', 'type' => 'room', 'is_active' => true, 'repository_id' => $repo->id, 'parent_id' => null,
     ]);
 
+    [, $rows] = bxt_readSample();
+    // Row 1 is the real template's NRA row (box_number "NRA1", no barcode).
+    // Its real "parent_box_number" cell holds "1" (the RAS row's box_number,
+    // not a barcode — see the BUG test above), so it is rewritten here to
+    // the only reference the importer can actually resolve: the parent's
+    // barcode. "Location" is likewise rewritten from the sample's free-text
+    // "Archive Room 1" to a real location code.
+    $row = $rows[1];
+    $row['batch_number'] = (string) $batch->batch_number;
+    $row['parent_box_number'] = 'BC-PARENT-1';
+    $row['Location'] = 'RX';
+
     $import = bxt_run(
-        [['Box No' => 'NRA-1', 'Box Type' => 'NRA', 'Batch Number' => '1', 'Parent' => 'BC-PARENT-1', 'Loc' => 'RX']],
-        ['box_number' => 'Box No', 'box_type' => 'Box Type', 'batch_number' => 'Batch Number', 'parent_barcode' => 'Parent', 'location' => 'Loc'],
+        [$row],
+        ['box_number' => 'box_number', 'box_type' => 'box_type', 'batch_number' => 'batch_number', 'parent_barcode' => 'parent_box_number', 'location' => 'Location'],
         $u->id,
     );
 
     expect(bxt_failures($import))->toBe([]);
-    $box = Box::withoutGlobalScope(ThroughBatchRepositoryScope::class)->where('box_number', 'NRA-1')->first();
+    $box = Box::withoutGlobalScope(ThroughBatchRepositoryScope::class)->where('box_number', 'NRA1')->first();
     expect($box)->not->toBeNull()
         ->and($box->barcode)->toBeNull()
         ->and($box->parent_box_id)->toBe($parent->id);
@@ -442,14 +480,24 @@ test('an IN_SITU box without a barcode imports successfully when it has a parent
         'name' => 'Room Y', 'code' => 'RY', 'type' => 'room', 'is_active' => true, 'repository_id' => $repo->id, 'parent_id' => null,
     ]);
 
+    // The real template has no IN_SITU row, so start from its NRA row and
+    // mutate only the box_type cell to exercise this box type — plus the
+    // same parent/location rewrite as the NRA test above.
+    [, $rows] = bxt_readSample();
+    $row = $rows[1];
+    $row['box_type'] = 'IN_SITU';
+    $row['batch_number'] = (string) $batch->batch_number;
+    $row['parent_box_number'] = 'BC-PARENT-2';
+    $row['Location'] = 'RY';
+
     $import = bxt_run(
-        [['Box No' => 'IS-1', 'Box Type' => 'IN_SITU', 'Batch Number' => '1', 'Parent' => 'BC-PARENT-2', 'Loc' => 'RY']],
-        ['box_number' => 'Box No', 'box_type' => 'Box Type', 'batch_number' => 'Batch Number', 'parent_barcode' => 'Parent', 'location' => 'Loc'],
+        [$row],
+        ['box_number' => 'box_number', 'box_type' => 'box_type', 'batch_number' => 'batch_number', 'parent_barcode' => 'parent_box_number', 'location' => 'Location'],
         $u->id,
     );
 
     expect(bxt_failures($import))->toBe([]);
-    expect(Box::withoutGlobalScope(ThroughBatchRepositoryScope::class)->where('box_number', 'IS-1')->where('barcode', null)->exists())->toBeTrue();
+    expect(Box::withoutGlobalScope(ThroughBatchRepositoryScope::class)->where('box_number', 'NRA1')->where('barcode', null)->exists())->toBeTrue();
 });
 
 test('a MAV box (legacy) without a barcode and without a parent imports successfully', function () {
@@ -457,18 +505,26 @@ test('a MAV box (legacy) without a barcode and without a parent imports successf
     $u = bxt_admin($repo->id);
     $this->actingAs($u);
 
-    Batch::withoutGlobalScope(RepositoryScope::class)->create([
+    $batch = Batch::withoutGlobalScope(RepositoryScope::class)->create([
         'batch_number' => 1, 'repository_id' => $repo->id, 'type' => 'MAIN_COLLECTION', 'is_active' => true,
     ]);
 
+    // The real template has no MAV row, so start from its NRA row (already
+    // barcode-less and parent-less once parent_barcode/barcode are simply
+    // not mapped) and mutate only the box_type + batch_number cells.
+    [, $rows] = bxt_readSample();
+    $row = $rows[1];
+    $row['box_type'] = 'MAV';
+    $row['batch_number'] = (string) $batch->batch_number;
+
     $import = bxt_run(
-        [['Box No' => 'MAV-1', 'Box Type' => 'MAV', 'Batch Number' => '1']],
-        ['box_number' => 'Box No', 'box_type' => 'Box Type', 'batch_number' => 'Batch Number'],
+        [$row],
+        ['box_number' => 'box_number', 'box_type' => 'box_type', 'batch_number' => 'batch_number'],
         $u->id,
     );
 
     expect(bxt_failures($import))->toBe([]);
-    $box = Box::withoutGlobalScope(ThroughBatchRepositoryScope::class)->where('box_number', 'MAV-1')->first();
+    $box = Box::withoutGlobalScope(ThroughBatchRepositoryScope::class)->where('box_number', 'NRA1')->first();
     expect($box)->not->toBeNull()
         ->and($box->is_legacy)->toBeTrue()
         ->and($box->barcode)->toBeNull();
@@ -479,18 +535,25 @@ test('an STVC box (legacy) without a barcode and without a parent imports succes
     $u = bxt_admin($repo->id);
     $this->actingAs($u);
 
-    Batch::withoutGlobalScope(RepositoryScope::class)->create([
+    $batch = Batch::withoutGlobalScope(RepositoryScope::class)->create([
         'batch_number' => 1, 'repository_id' => $repo->id, 'type' => 'MAIN_COLLECTION', 'is_active' => true,
     ]);
 
+    // The real template has no STVC row either — same NRA-row base, only
+    // box_type + batch_number mutated.
+    [, $rows] = bxt_readSample();
+    $row = $rows[1];
+    $row['box_type'] = 'STVC';
+    $row['batch_number'] = (string) $batch->batch_number;
+
     $import = bxt_run(
-        [['Box No' => 'STVC-1', 'Box Type' => 'STVC', 'Batch Number' => '1']],
-        ['box_number' => 'Box No', 'box_type' => 'Box Type', 'batch_number' => 'Batch Number'],
+        [$row],
+        ['box_number' => 'box_number', 'box_type' => 'box_type', 'batch_number' => 'batch_number'],
         $u->id,
     );
 
     expect(bxt_failures($import))->toBe([]);
-    $box = Box::withoutGlobalScope(ThroughBatchRepositoryScope::class)->where('box_number', 'STVC-1')->first();
+    $box = Box::withoutGlobalScope(ThroughBatchRepositoryScope::class)->where('box_number', 'NRA1')->first();
     expect($box)->not->toBeNull()
         ->and($box->is_legacy)->toBeTrue();
 });
@@ -506,17 +569,21 @@ test('barcode_status "IN" imports and is stored verbatim', function () {
     $this->actingAs($u);
 
     Batch::withoutGlobalScope(RepositoryScope::class)->create([
-        'batch_number' => 1, 'repository_id' => $repo->id, 'type' => 'MAIN_COLLECTION', 'is_active' => true,
+        'batch_number' => 46, 'repository_id' => $repo->id, 'type' => 'MAIN_COLLECTION', 'is_active' => true,
     ]);
 
+    // The real RAS row's barcode_status cell is already "IN" — no mutation
+    // needed.
+    [, $rows] = bxt_readSample();
+
     $import = bxt_run(
-        [['Box No' => 'ST-IN', 'Box Type' => 'RAS', 'Batch Number' => '1', 'Barcode' => 'BC-ST-IN', 'Status' => 'IN']],
-        ['box_number' => 'Box No', 'box_type' => 'Box Type', 'batch_number' => 'Batch Number', 'barcode' => 'Barcode', 'barcode_status' => 'Status'],
+        [$rows[0]],
+        ['box_number' => 'box_number', 'box_type' => 'box_type', 'batch_number' => 'batch_number', 'barcode' => 'barcode', 'barcode_status' => 'barcode_status'],
         $u->id,
     );
 
     expect(bxt_failures($import))->toBe([]);
-    $box = Box::withoutGlobalScope(ThroughBatchRepositoryScope::class)->where('barcode', 'BC-ST-IN')->first();
+    $box = Box::withoutGlobalScope(ThroughBatchRepositoryScope::class)->where('barcode', 'AC54609')->first();
     expect($box->barcode_status)->toBe('IN');
 });
 
@@ -526,13 +593,17 @@ test('BUG: an unrecognised barcode_status value is silently coerced to NULL and 
     $this->actingAs($u);
 
     Batch::withoutGlobalScope(RepositoryScope::class)->create([
-        'batch_number' => 1, 'repository_id' => $repo->id, 'type' => 'MAIN_COLLECTION', 'is_active' => true,
+        'batch_number' => 46, 'repository_id' => $repo->id, 'type' => 'MAIN_COLLECTION', 'is_active' => true,
     ]);
 
     // A realistic operator typo/free-text value that is NOT one of IN/OUT/PERM_OUT.
+    [, $rows] = bxt_readSample();
+    $row = $rows[0];
+    $row['barcode_status'] = 'OUT FOR REPAIR';
+
     $import = bxt_run(
-        [['Box No' => 'ST-BAD', 'Box Type' => 'RAS', 'Batch Number' => '1', 'Barcode' => 'BC-ST-BAD', 'Status' => 'OUT FOR REPAIR']],
-        ['box_number' => 'Box No', 'box_type' => 'Box Type', 'batch_number' => 'Batch Number', 'barcode' => 'Barcode', 'barcode_status' => 'Status'],
+        [$row],
+        ['box_number' => 'box_number', 'box_type' => 'box_type', 'batch_number' => 'batch_number', 'barcode' => 'barcode', 'barcode_status' => 'barcode_status'],
         $u->id,
     );
 
@@ -552,7 +623,7 @@ test('BUG: an unrecognised barcode_status value is silently coerced to NULL and 
         ->and($failures[0])->not->toContain('generic_validation')
         ->and(strtolower($failures[0]))->toContain('required')
         ->and(strtolower($failures[0]))->not->toContain('out for repair');
-    expect(Box::withoutGlobalScope(ThroughBatchRepositoryScope::class)->where('barcode', 'BC-ST-BAD')->exists())->toBeFalse();
+    expect(Box::withoutGlobalScope(ThroughBatchRepositoryScope::class)->where('barcode', 'AC54609')->exists())->toBeFalse();
 });
 
 test('barcode_status PERM_OUT without a disinfestation_date fails with a clear reason', function () {
@@ -561,19 +632,25 @@ test('barcode_status PERM_OUT without a disinfestation_date fails with a clear r
     $this->actingAs($u);
 
     Batch::withoutGlobalScope(RepositoryScope::class)->create([
-        'batch_number' => 1, 'repository_id' => $repo->id, 'type' => 'MAIN_COLLECTION', 'is_active' => true,
+        'batch_number' => 46, 'repository_id' => $repo->id, 'type' => 'MAIN_COLLECTION', 'is_active' => true,
     ]);
 
+    // The real RAS row's disinfestation_date cell is already blank — only
+    // barcode_status needs mutating to PERM_OUT.
+    [, $rows] = bxt_readSample();
+    $row = $rows[0];
+    $row['barcode_status'] = 'PERM_OUT';
+
     $import = bxt_run(
-        [['Box No' => 'PO-NODATE', 'Box Type' => 'RAS', 'Batch Number' => '1', 'Barcode' => 'BC-PO-NODATE', 'Status' => 'PERM_OUT']],
-        ['box_number' => 'Box No', 'box_type' => 'Box Type', 'batch_number' => 'Batch Number', 'barcode' => 'Barcode', 'barcode_status' => 'Status'],
+        [$row],
+        ['box_number' => 'box_number', 'box_type' => 'box_type', 'batch_number' => 'batch_number', 'barcode' => 'barcode', 'barcode_status' => 'barcode_status'],
         $u->id,
     );
 
     $failures = bxt_failures($import);
     expect($failures)->toHaveCount(1)
         ->and(strtolower($failures[0]))->toContain('disinfestation');
-    expect(Box::withoutGlobalScope(ThroughBatchRepositoryScope::class)->where('barcode', 'BC-PO-NODATE')->exists())->toBeFalse();
+    expect(Box::withoutGlobalScope(ThroughBatchRepositoryScope::class)->where('barcode', 'AC54609')->exists())->toBeFalse();
 });
 
 test('barcode_status PERM_OUT with a disinfestation_date but no Location fails with a clear reason (new record)', function () {
@@ -582,19 +659,25 @@ test('barcode_status PERM_OUT with a disinfestation_date but no Location fails w
     $this->actingAs($u);
 
     Batch::withoutGlobalScope(RepositoryScope::class)->create([
-        'batch_number' => 1, 'repository_id' => $repo->id, 'type' => 'MAIN_COLLECTION', 'is_active' => true,
+        'batch_number' => 46, 'repository_id' => $repo->id, 'type' => 'MAIN_COLLECTION', 'is_active' => true,
     ]);
 
+    [, $rows] = bxt_readSample();
+    $row = $rows[0];
+    $row['barcode_status'] = 'PERM_OUT';
+    $row['disinfestation_date'] = '2026-01-15';
+    // Location cell is left blank, as in the real row.
+
     $import = bxt_run(
-        [['Box No' => 'PO-NOLOC', 'Box Type' => 'RAS', 'Batch Number' => '1', 'Barcode' => 'BC-PO-NOLOC', 'Status' => 'PERM_OUT', 'DDate' => '2026-01-15']],
-        ['box_number' => 'Box No', 'box_type' => 'Box Type', 'batch_number' => 'Batch Number', 'barcode' => 'Barcode', 'barcode_status' => 'Status', 'disinfestation_date' => 'DDate'],
+        [$row],
+        ['box_number' => 'box_number', 'box_type' => 'box_type', 'batch_number' => 'batch_number', 'barcode' => 'barcode', 'barcode_status' => 'barcode_status', 'disinfestation_date' => 'disinfestation_date'],
         $u->id,
     );
 
     $failures = bxt_failures($import);
     expect($failures)->toHaveCount(1)
         ->and(strtolower($failures[0]))->toContain('location');
-    expect(Box::withoutGlobalScope(ThroughBatchRepositoryScope::class)->where('barcode', 'BC-PO-NOLOC')->exists())->toBeFalse();
+    expect(Box::withoutGlobalScope(ThroughBatchRepositoryScope::class)->where('barcode', 'AC54609')->exists())->toBeFalse();
 });
 
 test('barcode_status PERM_OUT with disinfestation_date AND Location imports successfully', function () {
@@ -603,20 +686,26 @@ test('barcode_status PERM_OUT with disinfestation_date AND Location imports succ
     $this->actingAs($u);
 
     Batch::withoutGlobalScope(RepositoryScope::class)->create([
-        'batch_number' => 1, 'repository_id' => $repo->id, 'type' => 'MAIN_COLLECTION', 'is_active' => true,
+        'batch_number' => 46, 'repository_id' => $repo->id, 'type' => 'MAIN_COLLECTION', 'is_active' => true,
     ]);
     Location::withoutGlobalScope(RepositoryScope::class)->create([
         'name' => 'NRA Vault', 'code' => 'NRAV', 'type' => 'room', 'is_active' => true, 'repository_id' => $repo->id, 'parent_id' => null,
     ]);
 
+    [, $rows] = bxt_readSample();
+    $row = $rows[0];
+    $row['barcode_status'] = 'PERM_OUT';
+    $row['disinfestation_date'] = '2026-01-15';
+    $row['Location'] = 'NRAV';
+
     $import = bxt_run(
-        [['Box No' => 'PO-OK', 'Box Type' => 'RAS', 'Batch Number' => '1', 'Barcode' => 'BC-PO-OK', 'Status' => 'PERM_OUT', 'DDate' => '2026-01-15', 'Loc' => 'NRAV']],
-        ['box_number' => 'Box No', 'box_type' => 'Box Type', 'batch_number' => 'Batch Number', 'barcode' => 'Barcode', 'barcode_status' => 'Status', 'disinfestation_date' => 'DDate', 'location' => 'Loc'],
+        [$row],
+        ['box_number' => 'box_number', 'box_type' => 'box_type', 'batch_number' => 'batch_number', 'barcode' => 'barcode', 'barcode_status' => 'barcode_status', 'disinfestation_date' => 'disinfestation_date', 'location' => 'Location'],
         $u->id,
     );
 
     expect(bxt_failures($import))->toBe([]);
-    $box = Box::withoutGlobalScope(ThroughBatchRepositoryScope::class)->where('barcode', 'BC-PO-OK')->first();
+    $box = Box::withoutGlobalScope(ThroughBatchRepositoryScope::class)->where('barcode', 'AC54609')->first();
     expect($box)->not->toBeNull()
         ->and($box->barcode_status)->toBe('PERM_OUT')
         ->and($box->disinfestation_date?->format('Y-m-d'))->toBe('2026-01-15')
@@ -633,17 +722,21 @@ test('a purely numeric box_number cell (Excel int) imports as its string form', 
     $this->actingAs($u);
 
     Batch::withoutGlobalScope(RepositoryScope::class)->create([
-        'batch_number' => 1, 'repository_id' => $repo->id, 'type' => 'MAIN_COLLECTION', 'is_active' => true,
+        'batch_number' => 46, 'repository_id' => $repo->id, 'type' => 'MAIN_COLLECTION', 'is_active' => true,
     ]);
 
+    [, $rows] = bxt_readSample();
+    $row = $rows[0];
+    $row['box_number'] = 100; // Excel numeric cell, not the string "1"
+
     $import = bxt_run(
-        [['Box No' => 100, 'Box Type' => 'RAS', 'Batch Number' => '1', 'Barcode' => 'BC-100']],
-        ['box_number' => 'Box No', 'box_type' => 'Box Type', 'batch_number' => 'Batch Number', 'barcode' => 'Barcode'],
+        [$row],
+        ['box_number' => 'box_number', 'box_type' => 'box_type', 'batch_number' => 'batch_number', 'barcode' => 'barcode'],
         $u->id,
     );
 
     expect(bxt_failures($import))->toBe([]);
-    $box = Box::withoutGlobalScope(ThroughBatchRepositoryScope::class)->where('barcode', 'BC-100')->first();
+    $box = Box::withoutGlobalScope(ThroughBatchRepositoryScope::class)->where('barcode', 'AC54609')->first();
     expect($box->box_number)->toBe('100');
 });
 
@@ -653,18 +746,24 @@ test('duplicate box_number values across different batches do not collide (only 
     $this->actingAs($u);
 
     Batch::withoutGlobalScope(RepositoryScope::class)->create([
-        'batch_number' => 1, 'repository_id' => $repo->id, 'type' => 'MAIN_COLLECTION', 'is_active' => true,
+        'batch_number' => 46, 'repository_id' => $repo->id, 'type' => 'MAIN_COLLECTION', 'is_active' => true,
     ]);
     Batch::withoutGlobalScope(RepositoryScope::class)->create([
-        'batch_number' => 2, 'repository_id' => $repo->id, 'type' => 'MAIN_COLLECTION', 'is_active' => true,
+        'batch_number' => 47, 'repository_id' => $repo->id, 'type' => 'MAIN_COLLECTION', 'is_active' => true,
     ]);
 
+    // Two copies of the real RAS row (box_number "1" in both, matching the
+    // template verbatim), each sent to a different batch/barcode — the one
+    // pair of cells this edge case needs mutated on the second copy.
+    [, $rows] = bxt_readSample();
+    $rowA = $rows[0];
+    $rowB = $rows[0];
+    $rowB['batch_number'] = '47';
+    $rowB['barcode'] = 'BC-DUP-B';
+
     $import = bxt_run(
-        [
-            ['Box No' => '1', 'Box Type' => 'RAS', 'Batch Number' => '1', 'Barcode' => 'BC-DUP-A'],
-            ['Box No' => '1', 'Box Type' => 'RAS', 'Batch Number' => '2', 'Barcode' => 'BC-DUP-B'],
-        ],
-        ['box_number' => 'Box No', 'box_type' => 'Box Type', 'batch_number' => 'Batch Number', 'barcode' => 'Barcode'],
+        [$rowA, $rowB],
+        ['box_number' => 'box_number', 'box_type' => 'box_type', 'batch_number' => 'batch_number', 'barcode' => 'barcode'],
         $u->id,
     );
 
@@ -682,19 +781,23 @@ test('seal_number imports and records a seal-number history entry', function () 
     $this->actingAs($u);
 
     Batch::withoutGlobalScope(RepositoryScope::class)->create([
-        'batch_number' => 1, 'repository_id' => $repo->id, 'type' => 'MAIN_COLLECTION', 'is_active' => true,
+        'batch_number' => 46, 'repository_id' => $repo->id, 'type' => 'MAIN_COLLECTION', 'is_active' => true,
     ]);
 
+    // The real RAS row's "Seal Number" cell is already "S-1001" — no
+    // mutation needed.
+    [, $rows] = bxt_readSample();
+
     $import = bxt_run(
-        [['Box No' => 'SEAL-1', 'Box Type' => 'RAS', 'Batch Number' => '1', 'Barcode' => 'BC-SEAL-1', 'Seal' => 'S-9001']],
-        ['box_number' => 'Box No', 'box_type' => 'Box Type', 'batch_number' => 'Batch Number', 'barcode' => 'Barcode', 'seal_number' => 'Seal'],
+        [$rows[0]],
+        ['box_number' => 'box_number', 'box_type' => 'box_type', 'batch_number' => 'batch_number', 'barcode' => 'barcode', 'seal_number' => 'Seal Number'],
         $u->id,
     );
 
     expect(bxt_failures($import))->toBe([]);
-    $box = Box::withoutGlobalScope(ThroughBatchRepositoryScope::class)->where('barcode', 'BC-SEAL-1')->first();
-    expect($box->seal_number)->toBe('S-9001');
-    expect(BoxSealNumberHistory::where('box_id', $box->id)->where('new_value', 'S-9001')->exists())->toBeTrue();
+    $box = Box::withoutGlobalScope(ThroughBatchRepositoryScope::class)->where('barcode', 'AC54609')->first();
+    expect($box->seal_number)->toBe('S-1001');
+    expect(BoxSealNumberHistory::where('box_id', $box->id)->where('new_value', 'S-1001')->exists())->toBeTrue();
 });
 
 test('an unknown Location code fails validation with a clear "unknown location" reason', function () {
@@ -702,20 +805,29 @@ test('an unknown Location code fails validation with a clear "unknown location" 
     $u = bxt_admin($repo->id);
     $this->actingAs($u);
 
-    Batch::withoutGlobalScope(RepositoryScope::class)->create([
+    $batch = Batch::withoutGlobalScope(RepositoryScope::class)->create([
         'batch_number' => 1, 'repository_id' => $repo->id, 'type' => 'MAIN_COLLECTION', 'is_active' => true,
     ]);
 
+    // The real template's own NRA row's "Location" cell is the free-text
+    // "Archive Room 1" — a genuinely unresolvable value (not a location
+    // `code`), exactly the scenario the "BUG: mapping parent_box_number"
+    // test above documents. Only batch_number is mutated (Importer requires
+    // it to be mapped for new records); Location is used verbatim.
+    [, $rows] = bxt_readSample();
+    $row = $rows[1];
+    $row['batch_number'] = (string) $batch->batch_number;
+
     $import = bxt_run(
-        [['Box No' => 'LOC-BAD', 'Box Type' => 'RAS', 'Batch Number' => '1', 'Barcode' => 'BC-LOC-BAD', 'Loc' => 'DOES-NOT-EXIST']],
-        ['box_number' => 'Box No', 'box_type' => 'Box Type', 'batch_number' => 'Batch Number', 'barcode' => 'Barcode', 'location' => 'Loc'],
+        [$row],
+        ['box_number' => 'box_number', 'box_type' => 'box_type', 'batch_number' => 'batch_number', 'barcode' => 'barcode', 'location' => 'Location'],
         $u->id,
     );
 
     $failures = bxt_failures($import);
     expect($failures)->toHaveCount(1)
         ->and(strtolower($failures[0]))->toContain('unknown location');
-    expect(Box::withoutGlobalScope(ThroughBatchRepositoryScope::class)->where('barcode', 'BC-LOC-BAD')->exists())->toBeFalse();
+    expect(Box::withoutGlobalScope(ThroughBatchRepositoryScope::class)->where('box_number', 'NRA1')->exists())->toBeFalse();
 });
 
 // ═══════════════════════════════════════════════════════════════════════
@@ -728,7 +840,7 @@ test('the importer has no destroyed_at/destroyed_reason column: such a header ma
     $this->actingAs($u);
 
     Batch::withoutGlobalScope(RepositoryScope::class)->create([
-        'batch_number' => 1, 'repository_id' => $repo->id, 'type' => 'MAIN_COLLECTION', 'is_active' => true,
+        'batch_number' => 46, 'repository_id' => $repo->id, 'type' => 'MAIN_COLLECTION', 'is_active' => true,
     ]);
 
     $names = array_map(fn ($c) => $c->getName(), BoxImporter::getColumns());
@@ -737,14 +849,16 @@ test('the importer has no destroyed_at/destroyed_reason column: such a header ma
 
     // No columnMap entry exists for destroyed_at, so it is simply impossible
     // to map — the row imports as a normal, non-destroyed box.
+    [, $rows] = bxt_readSample();
+
     $import = bxt_run(
-        [['Box No' => 'DESTR-1', 'Box Type' => 'RAS', 'Batch Number' => '1', 'Barcode' => 'BC-DESTR-1']],
-        ['box_number' => 'Box No', 'box_type' => 'Box Type', 'batch_number' => 'Batch Number', 'barcode' => 'Barcode'],
+        [$rows[0]],
+        ['box_number' => 'box_number', 'box_type' => 'box_type', 'batch_number' => 'batch_number', 'barcode' => 'barcode'],
         $u->id,
     );
 
     expect(bxt_failures($import))->toBe([]);
-    $box = Box::withoutGlobalScope(ThroughBatchRepositoryScope::class)->where('barcode', 'BC-DESTR-1')->first();
+    $box = Box::withoutGlobalScope(ThroughBatchRepositoryScope::class)->where('barcode', 'AC54609')->first();
     expect($box->destroyed_at)->toBeNull();
 });
 

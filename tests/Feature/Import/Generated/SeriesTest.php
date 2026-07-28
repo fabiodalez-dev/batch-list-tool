@@ -222,7 +222,7 @@ test('repository_code resolves case-insensitively ("nra" matches seeded "NRA")',
     $this->actingAs($u);
 
     $import = srt_run(
-        [['Identifier' => 'R', 'Title' => 'Register Copies', 'Repository' => 'nra']],
+        [['Identifier' => 'R', 'Title' => 'Register Copies (Registro)', 'Repository' => 'nra']],
         ['code' => 'Identifier', 'title' => 'Title', 'repository_code' => 'Repository'],
         $u->id,
     );
@@ -239,7 +239,7 @@ test('an unresolvable repository_code does not fail the row and leaves repositor
 
     // No Repository exists at all — "NRA" from the real prod file cannot resolve.
     $import = srt_run(
-        [['Identifier' => 'R', 'Title' => 'Register Copies', 'Repository' => 'NRA']],
+        [['Identifier' => 'R', 'Title' => 'Register Copies (Registro)', 'Repository' => 'NRA']],
         ['code' => 'Identifier', 'title' => 'Title', 'repository_code' => 'Repository'],
         $u->id,
     );
@@ -256,7 +256,7 @@ test('a blank repository_code produces a GLOBAL series (repository_id null) even
     $this->actingAs($u);
 
     $import = srt_run(
-        [['Identifier' => 'R', 'Title' => 'Register Copies', 'Repository' => '']],
+        [['Identifier' => 'R', 'Title' => 'Register Copies (Registro)', 'Repository' => '']],
         ['code' => 'Identifier', 'title' => 'Title', 'repository_code' => 'Repository'],
         $u->id,
     );
@@ -315,7 +315,7 @@ test('restoring a soft-deleted series never violates the unique code index', fun
     Series::create(['code' => 'R', 'title' => 'old', 'is_active' => true])->delete();
 
     $import = srt_run(
-        [['Identifier' => 'R', 'Title' => 'Register Copies']],
+        [['Identifier' => 'R', 'Title' => 'Register Copies (Registro)']],
         ['code' => 'Identifier', 'title' => 'Title'],
         $u->id,
     );
@@ -729,7 +729,7 @@ test('a GLOBAL series (repository_id null) imported from the real file is not ex
     $this->actingAs($u);
 
     srt_run(
-        [['Identifier' => 'R', 'Title' => 'Register Copies']], // no repository_code mapped → GLOBAL
+        [['Identifier' => 'R', 'Title' => 'Register Copies (Registro)']], // no repository_code mapped → GLOBAL
         ['code' => 'Identifier', 'title' => 'Title'],
         $u->id,
     );
@@ -741,7 +741,7 @@ test('a GLOBAL series (repository_id null) imported from the real file is not ex
     // The shared Series select (used across Document/Batch forms) queries
     // Series unscoped by repository — a GLOBAL row must still be found.
     $results = SearchableSelects::seriesSearchResults('R');
-    expect($results)->toContain('R — Register Copies');
+    expect($results)->toContain('R — Register Copies (Registro)');
 });
 
 // ─── 30. Re-running the exact same real prod file twice is fully idempotent ─

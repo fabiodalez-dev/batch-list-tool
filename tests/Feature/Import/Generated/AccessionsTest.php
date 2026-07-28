@@ -100,6 +100,38 @@ function axc_seedSeries(): void
     Series::firstOrCreate(['code' => 'RWL'], ['title' => 'Registers of Wills', 'is_wills_series' => true, 'is_active' => true]);
 }
 
+const AXC_EX_XLSX = __DIR__ . '/../../../../nra/outbox/2026-07-22_NAF_import_examples/example_accession_import.xlsx';
+const AXC_BLF_XLSX = __DIR__ . '/../../../../nra/inbox/2026-06-06_NAF_sam_abela_accession.xlsx';
+
+/**
+ * Read a range of DATA rows from a real client xlsx file through the REAL
+ * vendor production algorithm — HayderHatem\...\ImportExcel::readExcelRowsFromFile()
+ * — via reflection (it's `protected`), so these fixtures come from the
+ * *actual* code path the streaming "Import Excel" button runs, not a
+ * hand-typed re-implementation of the file's content that could silently
+ * drift from what the client's file really contains.
+ *
+ * @return array<int, array<string, mixed>>
+ */
+function axc_realRows(string $filePath, int $startRow, int $endRow, int $headerOffset = 0, int $activeSheet = 0): array
+{
+    $job = new ImportExcel(
+        importId: 0,
+        rows: null,
+        startRow: null,
+        endRow: null,
+        columnMap: [],
+        options: ['headerOffset' => $headerOffset, 'activeSheet' => $activeSheet],
+    );
+    $method = new ReflectionMethod($job, 'readExcelRowsFromFile');
+    $method->setAccessible(true);
+
+    /** @var array<int, array<string, mixed>> $rows */
+    $rows = $method->invoke($job, $filePath, $startRow, $endRow);
+
+    return $rows;
+}
+
 // ─── Column map for nra/outbox/.../example_accession_import.xlsx ("Data" sheet) ──
 // Headers match the importer's own column LABELS verbatim.
 const AXC_EX_MAP = [
@@ -128,63 +160,16 @@ const AXC_EX_MAP = [
     'notes' => 'Note',
 ];
 
-// Two real rows straight out of the "Data" sheet (row 1 & row 2).
+// Two real rows read live from the "Data" sheet (excel row 2 & row 3, i.e.
+// the first two data rows after the header) through the real vendor reader.
 function axc_exRow1(array $overrides = []): array
 {
-    return array_merge([
-        'Authority Identifier' => '642',
-        'Authority Name' => 'Vincenzo',
-        'Authority Surname' => 'Caruana',
-        'Accession Number' => 'ACC-2026-01',
-        'Accession Title' => 'Caruana accession',
-        'Accession Type' => 'NA',
-        'Repository' => 'NRA',
-        'Batch Number' => '46',
-        'Box No' => '1',
-        'Box Barcode' => 'AC54609',
-        'Box Status' => 'IN',
-        'Current Box Type' => 'RAS',
-        'Document Identifier' => 'R642/001',
-        'Document Type' => 'Register Volume',
-        'Series' => 'REG',
-        'Volume No' => '1',
-        'Part Number' => '1',
-        'Practice' => '',
-        'Dates' => '1870',
-        'Deeds' => '',
-        'No of Acts' => '250',
-        'Pages/Folios' => '300 folios',
-        'Note' => 'First register volume',
-    ], $overrides);
+    return array_merge(axc_realRows(AXC_EX_XLSX, 2, 2, 0, 0)[0], $overrides);
 }
 
 function axc_exRow2(array $overrides = []): array
 {
-    return array_merge([
-        'Authority Identifier' => '642',
-        'Authority Name' => 'Vincenzo',
-        'Authority Surname' => 'Caruana',
-        'Accession Number' => 'ACC-2026-01',
-        'Accession Title' => 'Caruana accession',
-        'Accession Type' => 'NA',
-        'Repository' => 'NRA',
-        'Batch Number' => '46',
-        'Box No' => '1',
-        'Box Barcode' => 'AC54609',
-        'Box Status' => 'IN',
-        'Current Box Type' => 'RAS',
-        'Document Identifier' => 'R642/002',
-        'Document Type' => 'Register Volume',
-        'Series' => 'REG',
-        'Volume No' => '2',
-        'Part Number' => '1',
-        'Practice' => '',
-        'Dates' => '1871',
-        'Deeds' => '',
-        'No of Acts' => '240',
-        'Pages/Folios' => '280 folios',
-        'Note' => '',
-    ], $overrides);
+    return array_merge(axc_realRows(AXC_EX_XLSX, 3, 3, 0, 0)[0], $overrides);
 }
 
 // ─── Column map for the "Batch list format" sheet of the sam_abela accession xlsx ──
@@ -212,56 +197,32 @@ const AXC_BLF_MAP = [
     'repository' => 'Repository',
 ];
 
-// Real rows lifted verbatim from nra/inbox/2026-06-06_NAF_sam_abela_accession.xlsx,
-// sheet "Batch list format" (row indices as dumped from the file).
+// Real rows read live from nra/inbox/2026-06-06_NAF_sam_abela_accession.xlsx,
+// sheet index 2 "Batch list format" (activeSheet=2), through the real vendor
+// reader. Excel row numbers below = data-row-index + 1 (header is row 1).
 function axc_blfRow1(): array
 {
-    // row idx 1 — Batch 46, Box 1, R642 Vincenzo Caruana.
-    return [
-        'Batch No' => '46', 'Box No' => '1', 'Barcode' => 'AC54609', 'Status' => 'IN',
-        'Identifier' => '642', 'Volume' => '', 'Part number' => '1', 'Practice' => '',
-        'Name' => 'Vincenzo', 'Surname' => 'Caruana', 'Dates' => '1870', 'Deeds' => '',
-        'Document Type' => 'Register Volume', 'Series' => 'REG', 'Current Box' => 'RAS',
-        'Note' => '', 'Accession Date' => '46118', 'Accession No' => '2026-001',
-        'Accession Title' => 'Notary Sam Abela Accession', 'Type' => 'NA', 'Repository' => 'NRA',
-    ];
+    // Excel row 2 — Batch 46, Box 1, R642 Vincenzo Caruana.
+    return axc_realRows(AXC_BLF_XLSX, 2, 2, 0, 2)[0];
 }
 
 function axc_blfRow2Box2(): array
 {
-    // row idx 5 — Batch 46, Box 2, same accession/authority, different barcode.
-    $r = axc_blfRow1();
-    $r['Box No'] = '2';
-    $r['Barcode'] = 'AC54605';
-    $r['Dates'] = '1857';
-
-    return $r;
+    // Excel row 6 — Batch 46, Box 2, same accession/authority, different barcode.
+    return axc_realRows(AXC_BLF_XLSX, 6, 6, 0, 2)[0];
 }
 
 function axc_blfRow643Box20(): array
 {
-    // row idx 86 — Batch 46, Box 20, a DIFFERENT real authority (R643 Paolo Vassallo).
-    return [
-        'Batch No' => '46', 'Box No' => '20', 'Barcode' => 'AC54760', 'Status' => 'IN',
-        'Identifier' => '643', 'Volume' => '', 'Part number' => '1', 'Practice' => '',
-        'Name' => 'Paolo', 'Surname' => 'Vassallo', 'Dates' => '1911', 'Deeds' => '',
-        'Document Type' => 'Register Volume', 'Series' => 'REG', 'Current Box' => 'RAS',
-        'Note' => '', 'Accession Date' => '46118', 'Accession No' => '2026-001',
-        'Accession Title' => 'Notary Sam Abela Accession', 'Type' => 'NA', 'Repository' => 'NRA',
-    ];
+    // Excel row 87 — Batch 46, Box 20, a DIFFERENT real authority (R643 Paolo Vassallo).
+    return axc_realRows(AXC_BLF_XLSX, 87, 87, 0, 2)[0];
 }
 
 function axc_blfWillsRow(array $overrides = []): array
 {
-    // last row of the file — Batch 50 (WILLS_BATCH), Box 34, R640 Francesco Catania.
-    return array_merge([
-        'Batch No' => '50', 'Box No' => '34', 'Barcode' => 'AC54614', 'Status' => 'IN',
-        'Identifier' => '640', 'Volume' => '', 'Part number' => '1', 'Practice' => '',
-        'Name' => 'Francesco', 'Surname' => 'Catania', 'Dates' => '1956 - 1959', 'Deeds' => '',
-        'Document Type' => 'Wills', 'Series' => 'RWL', 'Current Box' => 'RAS',
-        'Note' => 'SPINE SAYS VOL 1', 'Accession Date' => '46118', 'Accession No' => '2026-001',
-        'Accession Title' => 'Notary Sam Abela Accession', 'Type' => 'NA', 'Repository' => 'NRA',
-    ], $overrides);
+    // Excel row 201, the LAST data row of the file — Batch 50 (WILLS_BATCH),
+    // Box 34, R640 Francesco Catania.
+    return array_merge(axc_realRows(AXC_BLF_XLSX, 201, 201, 0, 2)[0], $overrides);
 }
 
 // ─────────────────────────────────────────────────────────────────────────
