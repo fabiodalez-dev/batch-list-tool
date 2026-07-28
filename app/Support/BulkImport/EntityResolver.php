@@ -283,18 +283,19 @@ final class EntityResolver
 
         $key = "batch:number:{$batchNumber}:" . ($repositoryId ?? '*');
         if (! array_key_exists($key, self::$memo)) {
-            $q = Batch::query()->withoutGlobalScope(RepositoryScope::class)
-                ->withTrashed() // see soft-deleted batches so we RESTORE, not collide
-                ->where('batch_number', $batchNumber);
-            if ($repositoryId !== null) {
-                $q->where('repository_id', $repositoryId);
-            }
-            $batch = $q->first();
-            if ($batch !== null && $batch->trashed()) {
-                // Re-import after a soft-delete: reuse the batch instead of the
-                // create branch below hitting the (batch_number, repository_id)
-                // unique index, which counts trashed rows and would crash the row.
-                $batch->restore();
+            $baseQuery = fn () => Batch::query()->withoutGlobalScope(RepositoryScope::class)
+                ->where('batch_number', $batchNumber)
+                ->when($repositoryId !== null, fn ($q) => $q->where('repository_id', $repositoryId));
+            // Prefer a LIVE batch; only fall back to — and restore — a
+            // soft-deleted one when no live batch exists. Restoring blindly could
+            // reactivate a trashed duplicate and leave two active rows for the
+            // same (batch_number, repository_id).
+            $batch = $baseQuery()->first();
+            if ($batch === null) {
+                $batch = $baseQuery()->onlyTrashed()->first();
+                if ($batch !== null) {
+                    $batch->restore();
+                }
             }
             self::$memo[$key] = $batch !== null
                 ? ['batch_id' => (int) $batch->id, 'batch_number' => $batchNumber]
@@ -381,17 +382,19 @@ final class EntityResolver
         if ($batchId !== null && $boxNumber !== null) {
             $key = "box:batch_number:{$batchId}|{$boxNumber}";
             if (! array_key_exists($key, self::$memo)) {
-                $box = Box::query()
-                    ->withTrashed() // see soft-deleted boxes so we RESTORE, not silently duplicate
+                // Prefer a LIVE box; only fall back to — and restore — a
+                // soft-deleted one when no live box exists. There is no unique
+                // index on (batch_id, box_number), so restoring blindly could
+                // leave two live rows for the same physical box.
+                $baseBox = fn () => Box::query()
                     ->where('batch_id', $batchId)
-                    ->where('box_number', $boxNumber)
-                    ->first();
-                if ($box !== null && $box->trashed()) {
-                    // Re-import after a soft-delete: reuse the box. There is no
-                    // unique index on (batch_id, box_number), so the create
-                    // branch below would otherwise INSERT a second LIVE row for
-                    // the same physical box instead of raising an error.
-                    $box->restore();
+                    ->where('box_number', $boxNumber);
+                $box = $baseBox()->first();
+                if ($box === null) {
+                    $box = $baseBox()->onlyTrashed()->first();
+                    if ($box !== null) {
+                        $box->restore();
+                    }
                 }
                 self::$memo[$key] = $box !== null
                     ? ['box_id' => (int) $box->id, 'batch_id' => (int) $box->batch_id]

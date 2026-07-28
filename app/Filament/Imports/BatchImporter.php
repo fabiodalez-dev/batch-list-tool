@@ -244,16 +244,19 @@ class BatchImporter extends Importer
             ImportColumn::make('is_active')
                 ->label('Is active?')
                 ->guess(['Active', 'is_active', 'Is active'])
-                ->fillRecordUsing(function (Batch $record, ?string $state): void {
+                ->boolean()
+                ->fillRecordUsing(function (Batch $record, mixed $state): void {
                     // A BLANK is_active cell must not overwrite an existing
                     // batch's value on re-import — otherwise an operator's manual
                     // deactivation is silently flipped back to active (the real
-                    // file leaves is_active blank for most rows). A new batch is
-                    // still defaulted to active by afterFill() when left null.
-                    if ($state === null || trim($state) === '') {
+                    // file leaves is_active blank for most rows). ->boolean()
+                    // casts the cell (incl. yes/no/on/off) BEFORE validation and
+                    // maps a blank one to null; a new batch is still defaulted to
+                    // active by afterFill() when left null.
+                    if ($state === null) {
                         return;
                     }
-                    $record->is_active = filter_var(trim($state), FILTER_VALIDATE_BOOLEAN);
+                    $record->is_active = (bool) $state;
                 })
                 ->rules(['nullable', 'boolean']),
 

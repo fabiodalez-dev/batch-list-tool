@@ -621,18 +621,19 @@ class AccessionRowImporter extends Importer
         // ─── Accession ────────────────────────────────────────────────────
         $accessionId = null;
         if ($accessionNumber !== null) {
-            $accQuery = Accession::withoutGlobalScope(RepositoryScope::class)
-                ->withTrashed() // see soft-deleted accessions so we RESTORE, not duplicate
-                ->where('accession_number', $accessionNumber);
-            if ($repoId !== null) {
-                $accQuery->where('repository_id', $repoId);
-            }
-            $accession = $accQuery->first();
-
-            if ($accession !== null && $accession->trashed()) {
-                // Re-import after a soft-delete: reuse the accession instead of
-                // creating a second, duplicate row for the same accession_number.
-                $accession->restore();
+            $accBase = fn () => Accession::withoutGlobalScope(RepositoryScope::class)
+                ->where('accession_number', $accessionNumber)
+                ->when($repoId !== null, fn ($q) => $q->where('repository_id', $repoId));
+            // Prefer a LIVE accession; fall back to — and restore — a soft-deleted
+            // one only when no live accession exists, so a trashed duplicate is
+            // never resurrected alongside a live record.
+            $accession = $accBase()->first();
+            if ($accession === null) {
+                $trashed = $accBase()->onlyTrashed()->first();
+                if ($trashed !== null) {
+                    $trashed->restore();
+                    $accession = $trashed;
+                }
             }
 
             if ($accession === null) {
@@ -784,16 +785,22 @@ class AccessionRowImporter extends Importer
             // Validate global barcode uniqueness when a barcode is provided
             // (DECISION C2 / Wave A rule A10).
             if ($boxBarcode !== null) {
+                // Prefer a LIVE box for this (globally unique) barcode; fall back
+                // to — and restore — a soft-deleted one only when no live box
+                // holds it, so the create branch never collides on the barcode.
                 $existingByBarcode = Box::withoutGlobalScope(ThroughBatchRepositoryScope::class)
-                    ->withTrashed() // see soft-deleted boxes so we RESTORE, not collide on the unique barcode
                     ->where('barcode', $boxBarcode)
                     ->first();
-                if ($existingByBarcode !== null) {
-                    if ($existingByBarcode->trashed()) {
-                        // Re-import after a soft-delete: reuse the box instead of
-                        // the create branch hitting the globally-unique barcode.
+                if ($existingByBarcode === null) {
+                    $existingByBarcode = Box::withoutGlobalScope(ThroughBatchRepositoryScope::class)
+                        ->onlyTrashed()
+                        ->where('barcode', $boxBarcode)
+                        ->first();
+                    if ($existingByBarcode !== null) {
                         $existingByBarcode->restore();
                     }
+                }
+                if ($existingByBarcode !== null) {
                     // FINDING 2 FIX — Barcode found: assert box_number consistency.
                     // A barcode uniquely identifies a physical box; the row's 'Box No'
                     // must match the box we found, otherwise the row's data is
