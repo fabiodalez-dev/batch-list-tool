@@ -24,6 +24,23 @@ use Illuminate\Support\Facades\Log;
  */
 trait LogsImportRows
 {
+    public function __invoke(array $data): void
+    {
+        // Excel numeric cells arrive as int/float on the streaming path; a plain
+        // `string` validation rule then rejects them ("… must be a string") — the
+        // exact reason 533 of the client's 678 authorities failed (their
+        // alternative_identifier was a number like 511). Coerce every numeric
+        // cell to a string up-front. Filament's boolean/numeric column casts
+        // re-parse strings, so nothing else changes.
+        foreach ($data as $key => $value) {
+            if (is_int($value) || is_float($value)) {
+                $data[$key] = (string) $value;
+            }
+        }
+
+        parent::__invoke($data);
+    }
+
     public function saveRecord(): void
     {
         $short = class_basename(static::class);
