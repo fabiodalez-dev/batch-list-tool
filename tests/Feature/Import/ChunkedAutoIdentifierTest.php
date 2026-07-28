@@ -180,6 +180,7 @@ test('Bug #22 (hardening): the WIZARD CSV path injects an ABSOLUTE __source_row 
         foreach (collect($batch->jobs)->flatten() as $job) {
             $rowsProp = (new ReflectionProperty($job, 'rows'))->getValue($job);
             /** @var array<int, array<string, mixed>> $decoded */
+            // nosemgrep: php.lang.security.unserialize-use.unserialize-use -- $rowsProp is the ImportCsv job payload this test just built via serialize(), never user input.
             $decoded = unserialize(base64_decode($rowsProp));
             foreach ($decoded as $row) {
                 $srcKeys[] = (int) $row[DocumentImporter::SOURCE_ROW_KEY];
