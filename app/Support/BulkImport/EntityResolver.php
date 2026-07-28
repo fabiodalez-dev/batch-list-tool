@@ -283,14 +283,22 @@ final class EntityResolver
 
         $key = "batch:number:{$batchNumber}:" . ($repositoryId ?? '*');
         if (! array_key_exists($key, self::$memo)) {
-            $q = Batch::query()->withoutGlobalScope(RepositoryScope::class)
-                ->where('batch_number', $batchNumber);
-            if ($repositoryId !== null) {
-                $q->where('repository_id', $repositoryId);
+            $baseQuery = fn () => Batch::query()->withoutGlobalScope(RepositoryScope::class)
+                ->where('batch_number', $batchNumber)
+                ->when($repositoryId !== null, fn ($q) => $q->where('repository_id', $repositoryId));
+            // Prefer a LIVE batch; only fall back to — and restore — a
+            // soft-deleted one when no live batch exists. Restoring blindly could
+            // reactivate a trashed duplicate and leave two active rows for the
+            // same (batch_number, repository_id).
+            $batch = $baseQuery()->first();
+            if ($batch === null) {
+                $batch = $baseQuery()->onlyTrashed()->first();
+                if ($batch !== null) {
+                    $batch->restore();
+                }
             }
-            $id = $q->value('id');
-            self::$memo[$key] = $id !== null
-                ? ['batch_id' => (int) $id, 'batch_number' => $batchNumber]
+            self::$memo[$key] = $batch !== null
+                ? ['batch_id' => (int) $batch->id, 'batch_number' => $batchNumber]
                 : null;
         }
 
@@ -374,12 +382,22 @@ final class EntityResolver
         if ($batchId !== null && $boxNumber !== null) {
             $key = "box:batch_number:{$batchId}|{$boxNumber}";
             if (! array_key_exists($key, self::$memo)) {
-                $row = Box::query()
+                // Prefer a LIVE box; only fall back to — and restore — a
+                // soft-deleted one when no live box exists. There is no unique
+                // index on (batch_id, box_number), so restoring blindly could
+                // leave two live rows for the same physical box.
+                $baseBox = fn () => Box::query()
                     ->where('batch_id', $batchId)
-                    ->where('box_number', $boxNumber)
-                    ->first(['id', 'batch_id']);
-                self::$memo[$key] = $row !== null
-                    ? ['box_id' => (int) $row->id, 'batch_id' => (int) $row->batch_id]
+                    ->where('box_number', $boxNumber);
+                $box = $baseBox()->first();
+                if ($box === null) {
+                    $box = $baseBox()->onlyTrashed()->first();
+                    if ($box !== null) {
+                        $box->restore();
+                    }
+                }
+                self::$memo[$key] = $box !== null
+                    ? ['box_id' => (int) $box->id, 'batch_id' => (int) $box->batch_id]
                     : null;
             }
 

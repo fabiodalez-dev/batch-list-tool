@@ -421,7 +421,6 @@ test('skip_duplicates=false (default) updates an already-live batch description 
 // ─── CONFIRMED product-defect probe: is_active silently reset on re-import ────
 
 test('BUG PROBE: re-importing a manually-deactivated batch must NOT silently reactivate it', function () {
-    $this->markTestSkipped('WAVE 2: re-importing a batch reactivates one an operator manually deactivated — re-import edge case, fix pending (not a first-migration blocker).');
     $repo = Repository::factory()->create(['code' => 'NRA']);
     $u = bt_admin($repo->id);
     $this->actingAs($u);

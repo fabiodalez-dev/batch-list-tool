@@ -621,12 +621,20 @@ class AccessionRowImporter extends Importer
         // ─── Accession ────────────────────────────────────────────────────
         $accessionId = null;
         if ($accessionNumber !== null) {
-            $accQuery = Accession::withoutGlobalScope(RepositoryScope::class)
-                ->where('accession_number', $accessionNumber);
-            if ($repoId !== null) {
-                $accQuery->where('repository_id', $repoId);
+            $accBase = fn () => Accession::withoutGlobalScope(RepositoryScope::class)
+                ->where('accession_number', $accessionNumber)
+                ->when($repoId !== null, fn ($q) => $q->where('repository_id', $repoId));
+            // Prefer a LIVE accession; fall back to — and restore — a soft-deleted
+            // one only when no live accession exists, so a trashed duplicate is
+            // never resurrected alongside a live record.
+            $accession = $accBase()->first();
+            if ($accession === null) {
+                $trashed = $accBase()->onlyTrashed()->first();
+                if ($trashed !== null) {
+                    $trashed->restore();
+                    $accession = $trashed;
+                }
             }
-            $accession = $accQuery->first();
 
             if ($accession === null) {
                 // Create a new accession from this row's data.
@@ -777,9 +785,21 @@ class AccessionRowImporter extends Importer
             // Validate global barcode uniqueness when a barcode is provided
             // (DECISION C2 / Wave A rule A10).
             if ($boxBarcode !== null) {
+                // Prefer a LIVE box for this (globally unique) barcode; fall back
+                // to — and restore — a soft-deleted one only when no live box
+                // holds it, so the create branch never collides on the barcode.
                 $existingByBarcode = Box::withoutGlobalScope(ThroughBatchRepositoryScope::class)
                     ->where('barcode', $boxBarcode)
-                    ->first(['id', 'batch_id', 'box_number']);
+                    ->first();
+                if ($existingByBarcode === null) {
+                    $existingByBarcode = Box::withoutGlobalScope(ThroughBatchRepositoryScope::class)
+                        ->onlyTrashed()
+                        ->where('barcode', $boxBarcode)
+                        ->first();
+                    if ($existingByBarcode !== null) {
+                        $existingByBarcode->restore();
+                    }
+                }
                 if ($existingByBarcode !== null) {
                     // FINDING 2 FIX — Barcode found: assert box_number consistency.
                     // A barcode uniquely identifies a physical box; the row's 'Box No'

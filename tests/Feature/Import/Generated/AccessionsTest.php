@@ -647,7 +647,6 @@ test('a soft-deleted Document with the same identifier is restored on re-import,
 });
 
 test('a soft-deleted parent Accession with the same accession_number is reused, not duplicated, on re-import', function () {
-    $this->markTestSkipped('WAVE 2: EntityResolver::resolveAccession() create-branch is blind to soft-deleted rows — re-import after soft-delete duplicates. Fix pending (not a first-migration blocker).');
     $repo = Repository::factory()->create(['code' => 'NRA']);
     $u = axc_admin($repo->id);
     $this->actingAs($u);
@@ -674,7 +673,6 @@ test('a soft-deleted parent Accession with the same accession_number is reused, 
 });
 
 test('a soft-deleted Batch with the same batch_number is reused, not left crashing the row, on re-import', function () {
-    $this->markTestSkipped('WAVE 2: EntityResolver::resolveBatch() create-branch is blind to soft-deleted rows — re-import after soft-delete collides. Fix pending (not a first-migration blocker).');
     $repo = Repository::factory()->create(['code' => 'NRA']);
     $u = axc_admin($repo->id);
     $this->actingAs($u);
@@ -697,7 +695,6 @@ test('a soft-deleted Batch with the same batch_number is reused, not left crashi
 });
 
 test('a soft-deleted Box with the same barcode is reused, not left crashing the row, on re-import', function () {
-    $this->markTestSkipped('WAVE 2: EntityResolver::resolveBox() create-branch is blind to soft-deleted rows — re-import after soft-delete collides. Fix pending (not a first-migration blocker).');
     $repo = Repository::factory()->create(['code' => 'NRA']);
     $u = axc_admin($repo->id);
     $this->actingAs($u);
