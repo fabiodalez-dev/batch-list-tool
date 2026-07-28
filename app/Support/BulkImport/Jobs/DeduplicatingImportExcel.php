@@ -124,7 +124,7 @@ class DeduplicatingImportExcel extends ImportExcel
             // distinct rows apart when their content is identical and their
             // absolute positions differ by an exact multiple of the chunk size.
             //
-            // The value is injected under DocumentImporter::SOURCE_ROW_KEY. The
+            // The value is injected under SpreadsheetHeaders::SOURCE_ROW_KEY. The
             // vendor handle() remaps each row through $this->columnMap BEFORE the
             // importer sees it (dropping any key not in the map), so we also add a
             // pass-through map entry for the reserved key. handle() calls this
@@ -132,7 +132,7 @@ class DeduplicatingImportExcel extends ImportExcel
             // columnMap here affects only the vendor remap loop, not the
             // already-built importer's own column map. Empty (data-less) rows are
             // still skipped: $hasData is decided from the sheet cells alone.
-            $this->columnMap[DocumentImporter::SOURCE_ROW_KEY] = DocumentImporter::SOURCE_ROW_KEY;
+            $this->columnMap[SpreadsheetHeaders::SOURCE_ROW_KEY] = SpreadsheetHeaders::SOURCE_ROW_KEY;
 
             $rows = [];
             $highestColumn = $worksheet->getHighestDataColumn();
@@ -157,7 +157,7 @@ class DeduplicatingImportExcel extends ImportExcel
                 }
 
                 if ($hasData) {
-                    $rowData[DocumentImporter::SOURCE_ROW_KEY] = (string) $rowIndex;
+                    $rowData[SpreadsheetHeaders::SOURCE_ROW_KEY] = (string) $rowIndex;
                     $rows[] = $rowData;
                 }
             }

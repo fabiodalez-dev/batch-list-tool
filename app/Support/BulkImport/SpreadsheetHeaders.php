@@ -37,6 +37,15 @@ use HayderHatem\FilamentExcelImport\Actions\Imports\Jobs\ImportExcel;
 final class SpreadsheetHeaders
 {
     /**
+     * Reserved row key under which a reader injects the ABSOLUTE source-row
+     * position of a row (used by importers that need a stable per-row key across
+     * the 100-row chunking the import jobs do). Lives on this domain-neutral
+     * reading utility so the generic {@see Jobs\DeduplicatingImportExcel} reader
+     * does not have to depend on any one importer's domain class.
+     */
+    public const SOURCE_ROW_KEY = '__source_row';
+
+    /**
      * Turn a positional list of raw header cell values into a positional list
      * of DISTINCT row keys.
      *
@@ -91,9 +100,21 @@ final class SpreadsheetHeaders
             }
 
             $count = ($seen[$name] ?? 0) + 1;
-            $seen[$name] = $count;
+            $candidate = $count === 1 ? $name : $name . ' (' . $count . ')';
 
-            $keys[$position] = $count === 1 ? $name : $name . ' (' . $count . ')';
+            // Guard the docblock's "DISTINCT keys" contract even against a sheet
+            // that ALSO carries a literal header already equal to a generated
+            // suffix (e.g. a real "Foo (2)" column alongside duplicated "Foo"):
+            // keep bumping the counter until the key is genuinely unused, so a
+            // suffixed duplicate can never silently clobber a literal column —
+            // the exact Bug #4 failure mode this class exists to remove.
+            while (in_array($candidate, $keys, true)) {
+                $count++;
+                $candidate = $name . ' (' . $count . ')';
+            }
+
+            $seen[$name] = $count;
+            $keys[$position] = $candidate;
             $position++;
         }
 

@@ -3,6 +3,7 @@
 declare(strict_types=1);
 
 use App\Filament\Imports\DocumentImporter;
+use App\Filament\Pages\ImportWizard;
 use App\Models\Document;
 use App\Models\Repository;
 use App\Models\Scopes\RepositoryScope;
@@ -12,6 +13,7 @@ use App\Support\BulkImport\EntityResolver;
 use App\Support\BulkImport\Jobs\DeduplicatingImportExcel;
 use Filament\Actions\Imports\Models\Import;
 use Illuminate\Foundation\Testing\RefreshDatabase;
+use Illuminate\Support\Facades\Bus;
 use Illuminate\Support\Facades\DB;
 use PhpOffice\PhpSpreadsheet\Spreadsheet;
 use PhpOffice\PhpSpreadsheet\Writer\Xlsx;
@@ -149,6 +151,47 @@ test('Bug #22 (hardening): two DISTINCT blank-identifier rows at the SAME chunk-
 
     // nosemgrep: php.lang.security.unlink-use.unlink-use -- test-controlled temp path.
     @unlink($path);
+});
+
+test('Bug #22 (hardening): the WIZARD CSV path injects an ABSOLUTE __source_row across the 100-row chunk boundary', function () {
+    // The wizard (ImportWizard::dispatchImportBatch) chunks via array_chunk(100)
+    // and dispatches one ImportCsv per chunk — a fresh importer each — so a
+    // chunk-LOCAL counter would restart at 0 in chunk 2. This proves the wizard
+    // injects the ABSOLUTE pre-chunk index instead, so the same collision the
+    // streaming test guards against cannot happen on the wizard path either.
+    $repo = Repository::factory()->create(['code' => 'CHK3']);
+    Series::firstOrCreate(['code' => 'REG'], ['title' => 'Registers', 'is_active' => true]);
+    $u = chunkaid_admin($repo->id);
+    $this->actingAs($u);
+
+    Bus::fake();
+
+    // 102 identical rows → two ImportCsv chunks (absolute 0-99 and 100-101).
+    $rows = array_fill(0, 102, ['Series' => 'REG: Registers Private Practice']);
+
+    $wizard = new ImportWizard;
+    $dispatch = new ReflectionMethod($wizard, 'dispatchImportBatch');
+    $dispatch->setAccessible(true);
+    $dispatch->invoke($wizard, DocumentImporter::class, 'w.csv', '/tmp/w.csv', $rows, ['series' => 'Series'], []);
+
+    // Collect every row's injected __source_row across ALL batched ImportCsv jobs.
+    $srcKeys = [];
+    Bus::assertBatched(function ($batch) use (&$srcKeys): bool {
+        foreach (collect($batch->jobs)->flatten() as $job) {
+            $rowsProp = (new ReflectionProperty($job, 'rows'))->getValue($job);
+            /** @var array<int, array<string, mixed>> $decoded */
+            $decoded = unserialize(base64_decode($rowsProp));
+            foreach ($decoded as $row) {
+                $srcKeys[] = (int) $row[DocumentImporter::SOURCE_ROW_KEY];
+            }
+        }
+
+        return true;
+    });
+
+    sort($srcKeys);
+    // Contiguous 0..101 across BOTH chunks — never a chunk-local reset to 0.
+    expect($srcKeys)->toBe(range(0, 101));
 });
 
 test('Bug #22 (hardening): re-importing the SAME multi-chunk sequence keeps the document count stable (idempotent across chunks)', function () {

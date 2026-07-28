@@ -15,6 +15,7 @@ use App\Models\Repository;
 use App\Models\Scopes\RepositoryScope;
 use App\Support\BulkImport\EntityResolver;
 use App\Support\BulkImport\Jobs\DeduplicatingImportExcel;
+use App\Support\BulkImport\SpreadsheetHeaders;
 use App\Support\BulkImport\SpreadsheetParsers;
 use App\Support\CustomFields\CustomFieldResolver;
 use Filament\Actions\Imports\Exceptions\RowImportFailedException;
@@ -99,7 +100,7 @@ class DocumentImporter extends Importer
      * ignored by validation/casting; it is stripped from the content fingerprint
      * in {@see buildAutoIdentifier()}.
      */
-    public const SOURCE_ROW_KEY = '__source_row';
+    public const SOURCE_ROW_KEY = SpreadsheetHeaders::SOURCE_ROW_KEY;
 
     protected static ?string $model = Document::class;
 
