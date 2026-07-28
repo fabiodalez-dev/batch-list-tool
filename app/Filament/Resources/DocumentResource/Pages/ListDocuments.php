@@ -10,6 +10,7 @@ use App\Filament\Imports\DocumentImporter;
 use App\Filament\Resources\DocumentResource;
 use App\Models\CustomFieldDefinition;
 use App\Models\Document;
+use App\Support\BulkImport\Jobs\DeduplicatingImportExcel;
 use App\Support\BulkImport\TemplateGenerator;
 use App\Support\CustomFields\CustomFieldCsv;
 use App\Support\CustomFields\CustomFieldResolver;
@@ -150,6 +151,15 @@ class ListDocuments extends ListRecords
             // policy. See {@see DocumentImporter} for the column declarations.
             FullImportAction::make()
                 ->importer(DocumentImporter::class)
+                // Bug #4 — the legacy batch-list layout repeats header strings
+                // ("Barcode (IN)", "Status 1", "Disinfestation Date") at
+                // different physical columns. The stock streaming job keys each
+                // row by header name, so the later duplicate silently overwrites
+                // the earlier (data-bearing) column and barcode_in/status_1/
+                // disinfestation_date arrive blank. This job de-duplicates the
+                // headers by position before assembling the row so every column
+                // survives with a distinct key. See DeduplicatingImportExcel.
+                ->job(DeduplicatingImportExcel::class)
                 ->label('Import Excel / CSV')
                 ->icon('heroicon-o-arrow-up-tray')
                 ->color('gray')

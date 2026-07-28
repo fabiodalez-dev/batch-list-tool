@@ -14,6 +14,8 @@ use App\Filament\Imports\LocationImporter;
 use App\Filament\Imports\SeriesImporter;
 use App\Models\ImportProfile;
 use App\Models\User;
+use App\Support\BulkImport\Jobs\DeduplicatingImportExcel;
+use App\Support\BulkImport\SpreadsheetHeaders;
 use App\Support\BulkImport\TemplateGenerator;
 use Filament\Actions\Action as FilamentAction;
 use Filament\Actions\Imports\Events\ImportCompleted;
@@ -588,6 +590,10 @@ class ImportWizard extends Page
                 foreach ($rows as $row) {
                     $rawData = $row->getAttribute('data');
                     $data = is_array($rawData) ? $rawData : (array) json_decode((string) $rawData, true);
+                    // Bug #22 (hardening) — the reserved absolute-row key is an
+                    // internal identity aid injected before dispatch, not operator
+                    // data; keep it out of the failed-rows export.
+                    unset($data[DocumentImporter::SOURCE_ROW_KEY]);
                     if ($first) {
                         // Headers (operator-supplied column names from the
                         // uploaded xlsx) ALSO need the sanitiser — a
@@ -1913,16 +1919,43 @@ class ImportWizard extends Page
     }
 
     /**
+     * Read the materialised CSV into a header list plus header-keyed rows.
+     *
+     * Bug #4 — we deliberately do NOT use league/csv's header mode
+     * (`setHeaderOffset(0)` + `getRecords()`), because it keys each record by
+     * header name and so COLLAPSES the legacy batch-list's repeated columns
+     * ("Barcode (IN)", "Status 1", "Disinfestation Date") — the later duplicate
+     * silently overwrites the earlier, data-bearing one. Instead we read
+     * positionally and re-key each row through {@see SpreadsheetHeaders::dedupe()},
+     * so the first occurrence keeps its exact name (column-map guesses still
+     * resolve to the data-bearing column) while later occurrences get a distinct
+     * "` (n)`" suffix instead of clobbering it. This mirrors the streaming path's
+     * {@see DeduplicatingImportExcel} exactly.
+     *
      * @return array{0:array<int, string>, 1:array<int, array<string, string>>}
      */
     protected function readCsvForImport(string $csvAbsPath): array
     {
         $reader = Reader::createFromPath($csvAbsPath, 'r');
-        $reader->setHeaderOffset(0);
-        $headers = $reader->getHeader();
-        $rows = [];
+        // No header offset — read every record positionally so repeated headers
+        // are preserved rather than collapsed.
+        $records = [];
         foreach ($reader->getRecords() as $record) {
-            $rows[] = array_map(static fn ($v) => (string) ($v ?? ''), $record);
+            $records[] = array_values($record);
+        }
+
+        $rawHeaders = array_map(static fn ($v): string => (string) ($v ?? ''), $records[0] ?? []);
+        $headerKeys = SpreadsheetHeaders::dedupe($rawHeaders);
+        /** @var array<int, string> $headers */
+        $headers = array_map(static fn ($k): string => (string) $k, $headerKeys);
+
+        $rows = [];
+        foreach (array_slice($records, 1) as $record) {
+            $row = [];
+            foreach ($headers as $i => $key) {
+                $row[$key] = (string) ($record[$i] ?? '');
+            }
+            $rows[] = $row;
         }
 
         return [$headers, $rows];
@@ -1965,6 +1998,22 @@ class ImportWizard extends Page
         $importer = $import->getImporter($cleanColumnMap, $options);
 
         $chunkSize = 100;
+
+        // Bug #22 (hardening) — the DocumentImporter derives a deterministic auto
+        // identifier for blank-identifier rows from the row's source position, but
+        // its per-instance counter is chunk-LOCAL (a fresh importer per chunk), so
+        // two distinct rows one chunk-size apart would collide and over-merge.
+        // Thread the ABSOLUTE row offset (chunkIndex * chunkSize + localIndex)
+        // under the reserved key the importer reads; it is not a mapped column, so
+        // the stock ImportCsv job passes it straight through and remapData keeps it.
+        if ($importerClass === DocumentImporter::class) {
+            $rows = array_values($rows);
+            foreach ($rows as $i => $row) {
+                $row[DocumentImporter::SOURCE_ROW_KEY] = (string) $i;
+                $rows[$i] = $row;
+            }
+        }
+
         $chunks = array_chunk($rows, $chunkSize);
 
         $jobs = collect($chunks)->map(fn (array $chunk): object => app(ImportCsv::class, [
