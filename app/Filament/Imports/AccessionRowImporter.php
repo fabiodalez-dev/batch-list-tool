@@ -622,11 +622,18 @@ class AccessionRowImporter extends Importer
         $accessionId = null;
         if ($accessionNumber !== null) {
             $accQuery = Accession::withoutGlobalScope(RepositoryScope::class)
+                ->withTrashed() // see soft-deleted accessions so we RESTORE, not duplicate
                 ->where('accession_number', $accessionNumber);
             if ($repoId !== null) {
                 $accQuery->where('repository_id', $repoId);
             }
             $accession = $accQuery->first();
+
+            if ($accession !== null && $accession->trashed()) {
+                // Re-import after a soft-delete: reuse the accession instead of
+                // creating a second, duplicate row for the same accession_number.
+                $accession->restore();
+            }
 
             if ($accession === null) {
                 // Create a new accession from this row's data.
@@ -778,9 +785,15 @@ class AccessionRowImporter extends Importer
             // (DECISION C2 / Wave A rule A10).
             if ($boxBarcode !== null) {
                 $existingByBarcode = Box::withoutGlobalScope(ThroughBatchRepositoryScope::class)
+                    ->withTrashed() // see soft-deleted boxes so we RESTORE, not collide on the unique barcode
                     ->where('barcode', $boxBarcode)
-                    ->first(['id', 'batch_id', 'box_number']);
+                    ->first();
                 if ($existingByBarcode !== null) {
+                    if ($existingByBarcode->trashed()) {
+                        // Re-import after a soft-delete: reuse the box instead of
+                        // the create branch hitting the globally-unique barcode.
+                        $existingByBarcode->restore();
+                    }
                     // FINDING 2 FIX — Barcode found: assert box_number consistency.
                     // A barcode uniquely identifies a physical box; the row's 'Box No'
                     // must match the box we found, otherwise the row's data is

@@ -467,47 +467,34 @@ test('a forbidden batch number (34) is rejected with a clear message; no batch o
         ->and(Document::withoutGlobalScope(RepositoryScope::class)->where('catalogue_identifier', 'DOC-9')->exists())->toBeFalse();
 });
 
-test('DIRTY DB: a soft-deleted batch sharing (batch_number, repository_id) makes the create-branch collide and raises an opaque error instead of restoring it', function () {
+test('REGRESSION (bug #13): a soft-deleted batch sharing (batch_number, repository_id) is RESTORED on re-import, not collided', function () {
     $repo = Repository::factory()->create(['code' => 'DGT3']);
     dgt_series('REG');
     $u = dgt_admin($repo->id);
     $this->actingAs($u);
 
-    // Dirty state: batch 12 already exists in this repo, but soft-deleted —
-    // exactly the state the client's real DB was left in after prior cleanups
-    // (see the Series/Location/Authority precedents already covered by
-    // DirtyDatabaseImportTest — Batch has NO equivalent restore path).
+    // Real client values (Series REG + a RAS Batch number that appears in the
+    // client's document file), isolated to the batch-resolution path. Dirty
+    // state: that batch already exists in this repo but soft-deleted — the state
+    // the client's DB was left in after prior cleanups.
+    $batchNo = 19; // RAS Batch 1 of the client's example_document_import.xlsx first row
     Batch::withoutGlobalScope(RepositoryScope::class)->create([
-        'batch_number' => 12, 'repository_id' => $repo->id, 'type' => 'MAIN_COLLECTION', 'is_active' => true,
+        'batch_number' => $batchNo, 'repository_id' => $repo->id, 'type' => 'MAIN_COLLECTION', 'is_active' => true,
     ])->delete();
 
     $import = dgt_run(
-        [['Series' => 'REG', 'Catalogue Identifier' => 'DOC-10', 'RAS Batch 1' => '12']],
+        [['Series' => 'REG', 'Catalogue Identifier' => 'R642/001', 'RAS Batch 1' => (string) $batchNo]],
         ['series' => 'Series', 'catalogue_identifier' => 'Catalogue Identifier', 'batch_number' => 'RAS Batch 1'],
         $u->id,
     );
 
-    $failures = dgt_failures($import);
-    expect($failures)->toHaveCount(1);
-
-    // This assertion is the confirmed BUG: EntityResolver::resolveBatch()'s
-    // create branch does not look at trashed rows, so firstOrCreate() tries to
-    // INSERT a second (batch_number=12, repository_id=$repo->id) row and hits
-    // the real unique index — but that QueryException is thrown from inside
-    // the batch_number column's fillRecordUsing() closure, which runs during
-    // Filament's fillRecord() step, BEFORE DocumentImporter/LogsImportRows's
-    // saveRecord() wrapper ever gets a chance to humanise it. The raw error
-    // therefore reaches the vendor's OWN fallback (which only recognises
-    // Postgres-style messages), which masks any SQLSTATE-bearing message as
-    // the opaque, untranslated "generic_validation" key.
-    expect($failures[0])->toContain('generic_validation');
-
-    // And the soft-deleted batch was never restored — it is still the ONE
-    // trashed row it always was; the create-attempt simply failed instead.
-    expect(Batch::withoutGlobalScope(RepositoryScope::class)->withTrashed()->where('batch_number', 12)->where('repository_id', $repo->id)->count())
-        ->toBe(1);
-    expect(Batch::withoutGlobalScope(RepositoryScope::class)->where('batch_number', 12)->where('repository_id', $repo->id)->exists())
-        ->toBeFalse();
+    // The soft-deleted batch is REUSED (restored), not left colliding on the
+    // (batch_number, repository_id) unique index — the row imports cleanly.
+    expect(dgt_failures($import))->toBe([]);
+    expect(Batch::withoutGlobalScope(RepositoryScope::class)->withTrashed()->where('batch_number', $batchNo)->where('repository_id', $repo->id)->count())
+        ->toBe(1); // reused, not duplicated
+    expect(Batch::withoutGlobalScope(RepositoryScope::class)->where('batch_number', $batchNo)->where('repository_id', $repo->id)->exists())
+        ->toBeTrue(); // now live again
 });
 
 // ════════════════════════════════════════════════════════════════════════
@@ -577,7 +564,7 @@ test('B5: a box whose batch differs from the document\'s own batch fails the row
     expect(Document::withoutGlobalScope(RepositoryScope::class)->count())->toBe($docsBefore);
 });
 
-test('DIRTY DB: a soft-deleted box sharing (batch_id, box_number) is NOT restored — a second live box is silently created', function () {
+test('REGRESSION (bug #14): a soft-deleted box sharing (batch_id, box_number) is RESTORED on re-import, not duplicated', function () {
     $repo = Repository::factory()->create(['code' => 'DGT6']);
     dgt_series('REG');
     $u = dgt_admin($repo->id);
@@ -594,16 +581,13 @@ test('DIRTY DB: a soft-deleted box sharing (batch_id, box_number) is NOT restore
 
     expect(dgt_failures($import))->toBe([]);
 
-    // Confirmed BUG: EntityResolver::resolveBox()'s create branch (batch_id +
-    // box_number path) does not look at trashed rows either, and — unlike
-    // Batch — there is no unique index on (batch_id, box_number) to even
-    // raise an error. So re-importing a document that references a
-    // previously soft-deleted box silently creates a SECOND live box row
-    // with the exact same (batch_id, box_number) instead of restoring the
-    // original — an operator now sees the SAME physical box duplicated.
+    // EntityResolver::resolveBox()'s (batch_id, box_number) branch now looks at
+    // trashed rows and RESTORES the soft-deleted box. There is no unique index
+    // on (batch_id, box_number), so without this it would silently INSERT a
+    // SECOND live row for the same physical box. Exactly ONE live row must exist.
     $liveBoxes = Box::withoutGlobalScope(ThroughBatchRepositoryScope::class)
         ->where('batch_id', $batch->id)->where('box_number', 'DUPBOX')->whereNull('deleted_at')->get();
-    expect($liveBoxes)->toHaveCount(1); // <- fails: 2 live rows exist (dup)
+    expect($liveBoxes)->toHaveCount(1); // restored, not duplicated
 });
 
 // ════════════════════════════════════════════════════════════════════════
@@ -754,7 +738,7 @@ test('a row that fails inside saveRecord() leaks DocumentImporter\'s per-row sav
 // ════════════════════════════════════════════════════════════════════════
 
 test('Bug #22: a blank identifier + blank catalogue_identifier gets a deterministic AUTO id, and re-importing the identical row updates (not duplicates)', function () {
-    $this->markTestSkipped('WAVE 2: DocumentImporter re-import dedup on auto-generated identifier creates a duplicate — data-integrity bug, fix pending (client has not imported Documents yet).');
+    $this->markTestSkipped('WAVE 2 — needs a design decision, not a mechanical fix. A fully-blank-identifier row has NO stable identity, so the only re-import dedup key is a content fingerprint (sha1 of the mapped row). But that fingerprint is identical for two GENUINELY DISTINCT rows whose mapped columns match — deduping on it silently MERGES them (proven: a real 25-row file collapsed to 23). Correctly distinguishing "same row re-imported" from "two identical-content rows in one file" requires a stable per-row source key (e.g. a source row number), which is a schema/RFQ decision. Leaving the safer current behaviour (no over-merge) until then.');
     $repo = Repository::factory()->create(['code' => 'DGT9']);
     dgt_series('REG');
     $u = dgt_admin($repo->id);

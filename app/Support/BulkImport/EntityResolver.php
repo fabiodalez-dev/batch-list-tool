@@ -284,13 +284,20 @@ final class EntityResolver
         $key = "batch:number:{$batchNumber}:" . ($repositoryId ?? '*');
         if (! array_key_exists($key, self::$memo)) {
             $q = Batch::query()->withoutGlobalScope(RepositoryScope::class)
+                ->withTrashed() // see soft-deleted batches so we RESTORE, not collide
                 ->where('batch_number', $batchNumber);
             if ($repositoryId !== null) {
                 $q->where('repository_id', $repositoryId);
             }
-            $id = $q->value('id');
-            self::$memo[$key] = $id !== null
-                ? ['batch_id' => (int) $id, 'batch_number' => $batchNumber]
+            $batch = $q->first();
+            if ($batch !== null && $batch->trashed()) {
+                // Re-import after a soft-delete: reuse the batch instead of the
+                // create branch below hitting the (batch_number, repository_id)
+                // unique index, which counts trashed rows and would crash the row.
+                $batch->restore();
+            }
+            self::$memo[$key] = $batch !== null
+                ? ['batch_id' => (int) $batch->id, 'batch_number' => $batchNumber]
                 : null;
         }
 
@@ -374,12 +381,20 @@ final class EntityResolver
         if ($batchId !== null && $boxNumber !== null) {
             $key = "box:batch_number:{$batchId}|{$boxNumber}";
             if (! array_key_exists($key, self::$memo)) {
-                $row = Box::query()
+                $box = Box::query()
+                    ->withTrashed() // see soft-deleted boxes so we RESTORE, not silently duplicate
                     ->where('batch_id', $batchId)
                     ->where('box_number', $boxNumber)
-                    ->first(['id', 'batch_id']);
-                self::$memo[$key] = $row !== null
-                    ? ['box_id' => (int) $row->id, 'batch_id' => (int) $row->batch_id]
+                    ->first();
+                if ($box !== null && $box->trashed()) {
+                    // Re-import after a soft-delete: reuse the box. There is no
+                    // unique index on (batch_id, box_number), so the create
+                    // branch below would otherwise INSERT a second LIVE row for
+                    // the same physical box instead of raising an error.
+                    $box->restore();
+                }
+                self::$memo[$key] = $box !== null
+                    ? ['box_id' => (int) $box->id, 'batch_id' => (int) $box->batch_id]
                     : null;
             }
 
