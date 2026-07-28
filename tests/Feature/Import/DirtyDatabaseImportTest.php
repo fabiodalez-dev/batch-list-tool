@@ -371,6 +371,23 @@ test('a numeric cell in a string column (alternative_identifier = 511) imports, 
     expect(Authority::where('identifier', 'R1')->value('alternative_identifier'))->toBe('511');
 });
 
+test('a FLOAT cell in a string column imports as its string form (is_float branch)', function () {
+    $u = ddi_admin();
+    $this->actingAs($u);
+
+    // A decimal cell arrives as a genuine float — exercises the is_float() arm
+    // of the numeric-cell coercion, not just is_int().
+    $import = ddi_run(
+        AuthorityImporter::class,
+        [['Identifier' => 'R2', 'Alt' => 511.5, 'Type of Entity' => 'Person', 'Creator Surname' => 'Borg']],
+        ['identifier' => 'Identifier', 'alternative_identifier' => 'Alt', 'entity_type' => 'Type of Entity', 'surname' => 'Creator Surname'],
+        $u->id,
+    );
+
+    expect(ddi_failures($import))->toBe([]);
+    expect(Authority::where('identifier', 'R2')->value('alternative_identifier'))->toBe('511.5');
+});
+
 test('numeric box_number / barcode cells import cleanly (streaming, dirty DB)', function () {
     $repo = Repository::factory()->create(['code' => 'DDN']);
     $u = ddi_admin($repo->id);
