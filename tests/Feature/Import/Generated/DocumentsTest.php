@@ -13,6 +13,8 @@ use App\Models\Scopes\ThroughBatchRepositoryScope;
 use App\Models\Series;
 use App\Models\User;
 use App\Support\BulkImport\EntityResolver;
+use App\Support\BulkImport\Jobs\DeduplicatingImportExcel;
+use App\Support\BulkImport\SpreadsheetHeaders;
 use Filament\Actions\Imports\Models\Import;
 use HayderHatem\FilamentExcelImport\Actions\Imports\Jobs\ImportExcel;
 use Illuminate\Foundation\Testing\RefreshDatabase;
@@ -110,14 +112,43 @@ function dgt_failures(Import $import): array
 }
 
 /**
- * Read a range of DATA rows from a real xlsx file through the REAL vendor
- * production algorithm — HayderHatem\...\ImportExcel::readExcelRowsFromFile()
- * — via reflection (it's `protected`), so the test exercises the *actual*
- * code path the streaming button runs, not a re-implementation of it.
+ * Read a range of DATA rows from a real xlsx file through the REAL production
+ * read path the streaming "Import Excel / CSV" button now dispatches —
+ * {@see DeduplicatingImportExcel::readExcelRowsFromFile()} — via reflection
+ * (it's `protected`). This is the vendor reader with the Bug #4 fix layered on
+ * top (repeated headers de-duplicated by physical position), so the test
+ * exercises the *actual* code path in production, not a re-implementation.
  *
  * @return array<int, array<string, mixed>>
  */
 function dgt_realRows(string $filePath, int $startRow, int $endRow, int $headerOffset = 0, int $activeSheet = 0): array
+{
+    $job = new DeduplicatingImportExcel(
+        importId: 0,
+        rows: null,
+        startRow: null,
+        endRow: null,
+        columnMap: [],
+        options: ['headerOffset' => $headerOffset, 'activeSheet' => $activeSheet],
+    );
+    $method = new ReflectionMethod($job, 'readExcelRowsFromFile');
+    $method->setAccessible(true);
+
+    /** @var array<int, array<string, mixed>> $rows */
+    $rows = $method->invoke($job, $filePath, $startRow, $endRow);
+
+    return $rows;
+}
+
+/**
+ * The UNFIXED vendor reader — keeps the pre-Bug #4 behaviour (rows keyed by
+ * header string, so repeated columns collapse). Retained so the flagship tests
+ * can assert the fix by CONTRAST: the vendor path still loses the data, ours
+ * recovers it.
+ *
+ * @return array<int, array<string, mixed>>
+ */
+function dgt_vendorRows(string $filePath, int $startRow, int $endRow, int $headerOffset = 0, int $activeSheet = 0): array
 {
     $job = new ImportExcel(
         importId: 0,
@@ -312,12 +343,15 @@ const DGT_ROW_R520R178 = [
 ];
 
 // ════════════════════════════════════════════════════════════════════════
-//  FLAGSHIP — duplicate-header columns silently collapse to blank on the
-//  REAL production read path (both the shipped template AND the client's
-//  actual live 5MB working file share this header layout).
+//  FLAGSHIP — Bug #4: duplicate-header columns USED to collapse to blank on
+//  the production read path (both the shipped template AND the client's actual
+//  live 5MB working file share this legacy layout, repeating "Barcode (IN)",
+//  "Status 1" and "Disinfestation Date" at different physical columns). The
+//  DeduplicatingImportExcel job now de-duplicates them BY POSITION, so the
+//  first (data-bearing) occurrence keeps its header verbatim and survives.
 // ════════════════════════════════════════════════════════════════════════
 
-test('the REAL vendor row-reader collapses duplicate "Status 1"/"Barcode (IN)"/"Disinfestation Date" headers to blank on the shipped example template', function () {
+test('Bug #4: the de-duplicating reader RECOVERS the first-occurrence data the vendor reader collapses, on the shipped example template', function () {
     if (! is_file(DGT_EXAMPLE_XLSX)) {
         $this->markTestSkipped('client sample not present (nra/outbox is untracked)');
     }
@@ -329,41 +363,51 @@ test('the REAL vendor row-reader collapses duplicate "Status 1"/"Barcode (IN)"/"
         ->and(array_count_values($headers)['Barcode (IN)'] ?? 0)->toBe(2)
         ->and(array_count_values($headers)['Disinfestation Date'] ?? 0)->toBe(3);
 
+    // CONTRAST — the UNFIXED vendor reader keys the row by header string, so
+    // the LAST physical column with each duplicated name (blank) overwrites
+    // the FIRST (which holds the real "AA18049" / "IN" / "2026-01-15"). The
+    // data is unrecoverable on that path.
+    $vendor = dgt_vendorRows(DGT_EXAMPLE_XLSX, 2, 2);
+    expect($vendor[0]['Barcode (IN)'])->toBe('')
+        ->and($vendor[0]['Status 1'])->toBe('')
+        ->and($vendor[0]['Disinfestation Date'])->toBe('');
+
+    // FIX — the de-duplicating reader keeps the FIRST occurrence's key verbatim
+    // (so existing column-map guesses still resolve to it) and suffixes the
+    // later duplicates, so the real data survives under the plain header key.
     $rows = dgt_realRows(DGT_EXAMPLE_XLSX, 2, 2);
     expect($rows)->toHaveCount(1);
-
-    // The FIRST physical occurrence of each duplicated header carries real
-    // data ("AA18049" / "IN" / "2026-01-15" — confirmed by direct cell
-    // inspection of the source file). Because PHP's associative row array can
-    // only hold ONE value per header STRING, the LAST physical column with
-    // the same header name always wins — and in this row it is blank. The
-    // real data is unrecoverable: no columnMap choice can select "the first
-    // occurrence" because the row array never kept it.
-    expect($rows[0]['Barcode (IN)'])->toBe('')
-        ->and($rows[0]['Status 1'])->toBe('')
-        ->and($rows[0]['Disinfestation Date'])->toBe('');
+    expect($rows[0]['Barcode (IN)'])->toBe('AA18049')
+        ->and($rows[0]['Status 1'])->toBe('IN')
+        ->and($rows[0]['Disinfestation Date'])->toBe('2026-01-15');
+    // The later duplicate columns are still present, just under distinct
+    // occurrence-suffixed keys — they no longer clobber the first.
+    expect($rows[0])->toHaveKeys(['Barcode (IN) (2)', 'Status 1 (2)', 'Disinfestation Date (2)', 'Disinfestation Date (3)']);
 });
 
-test('the REAL vendor row-reader loses the same duplicate-header data on the client\'s own live ~5MB batch list', function () {
+test('Bug #4: the de-duplicating reader recovers the first-occurrence Barcode (IN) on the client\'s own live ~5MB batch list', function () {
     if (! is_file(DGT_BATCHLIST_XLSX)) {
         $this->markTestSkipped('client sample not present (nra/inbox is untracked)');
     }
 
+    // CONTRAST — the vendor reader loses it (the trailing duplicate columns
+    // were never written, so PhpSpreadsheet hands back null/'' and that
+    // overwrites the real first-occurrence value on the header-keyed path).
+    $vendor = dgt_vendorRows(DGT_BATCHLIST_XLSX, 2, 2);
+    expect($vendor[0]['Barcode (IN)'])->toBeEmpty();
+
+    // FIX — row 1 of the client's OWN live file carries Barcode (IN) = "AA40822"
+    // in the FIRST physical occurrence (confirmed by direct cell inspection);
+    // the de-duplicating reader now delivers it intact.
     $rows = dgt_realRows(DGT_BATCHLIST_XLSX, 2, 2);
     expect($rows)->toHaveCount(1);
-
-    // Row 1 of the client's OWN live file: Barcode (IN) = "AA40822" and
-    // Disinfestation Date = a real Excel serial date in the FIRST physical
-    // occurrence of each header (confirmed by direct cell inspection), both
-    // followed by blank duplicate columns later in the row. (This file's
-    // trailing duplicate cells were never written at all, so PhpSpreadsheet
-    // hands back `null` rather than `''` for them — either way the real
-    // value from the first occurrence is gone.)
-    expect($rows[0]['Barcode (IN)'])->toBeEmpty()
-        ->and($rows[0]['Disinfestation Date'])->toBeEmpty();
+    expect($rows[0]['Barcode (IN)'])->toBe('AA40822');
+    // Its first "Disinfestation Date" occurrence carries a real Excel serial
+    // date (a numeric cell) — no longer blanked by the trailing duplicates.
+    expect($rows[0]['Disinfestation Date'])->not->toBeEmpty();
 });
 
-test('the duplicate-header collapse reaches the saved Document: barcode_in/disinfestation_date are silently dropped end-to-end', function () {
+test('Bug #4: the recovered duplicate-header data reaches the saved Document end-to-end (barcode_in / disinfestation_date)', function () {
     if (! is_file(DGT_EXAMPLE_XLSX)) {
         $this->markTestSkipped('client sample not present (nra/outbox is untracked)');
     }
@@ -375,8 +419,8 @@ test('the duplicate-header collapse reaches the saved Document: barcode_in/disin
     $headers = dgt_headers(DGT_EXAMPLE_XLSX);
     $columnMap = dgt_columnMap($headers);
     // The importer's own guess lists resolve unambiguously to these headers
-    // for the shipped template — confirms the columnMap under test matches
-    // what the real "Import Excel / CSV" modal would auto-select.
+    // for the shipped template — and, crucially, to the FIRST occurrence
+    // (whose key the de-dup keeps verbatim), which is where the data lives.
     expect($columnMap)->toMatchArray([
         'barcode_in' => 'Barcode (IN)',
         'status_1' => 'Status 1',
@@ -386,7 +430,7 @@ test('the duplicate-header collapse reaches the saved Document: barcode_in/disin
     // The auto-guessed map also picks up 'torre' => 'Torre' — a SEPARATE
     // confirmed bug (blank Torre cells reject the row outright, see the
     // dedicated test below) that would otherwise mask the finding under
-    // test here. Drop it so this test isolates the duplicate-header defect.
+    // test here. Drop it so this test isolates the duplicate-header fix.
     unset($columnMap['torre']);
 
     $rows = dgt_realRows(DGT_EXAMPLE_XLSX, 2, 2);
@@ -396,12 +440,32 @@ test('the duplicate-header collapse reaches the saved Document: barcode_in/disin
     $doc = Document::withoutGlobalScope(RepositoryScope::class)->where('catalogue_identifier', 'R642/001')->first();
     expect($doc)->not->toBeNull();
 
-    // The source row visibly carries "AA18049" / "2026-01-15" in the FIRST
-    // physical "Barcode (IN)" / "Disinfestation Date" column — but the saved
-    // document ends up with neither, because the row never reached the
-    // importer with that data (see the two tests above).
-    expect($doc->barcode_in)->toBeNull()
-        ->and($doc->disinfestation_date)->toBeNull();
+    // The source row carries "AA18049" / "2026-01-15" in the FIRST physical
+    // "Barcode (IN)" / "Disinfestation Date" column — and now the saved
+    // document carries them too, because the de-duplicating reader preserved
+    // the first occurrence all the way through to persistence.
+    expect($doc->barcode_in)->toBe('AA18049')
+        ->and($doc->disinfestation_date?->format('Y-m-d'))->toBe('2026-01-15');
+});
+
+test('Bug #4: SpreadsheetHeaders::dedupe keeps the first occurrence verbatim and suffixes the rest, position-preserving', function () {
+    // Exactly the legacy shape: repeated names interleaved with unique ones,
+    // plus a trailing null (vendor keys those by numeric position) and an
+    // empty header (left collapsing — carries no import data).
+    $raw = ['Identifier', 'Barcode (IN)', 'Status 1', 'Barcode (IN)', 'Status 1', 'Disinfestation Date', 'Disinfestation Date', 'Disinfestation Date', null, ''];
+
+    expect(SpreadsheetHeaders::dedupe($raw))->toBe([
+        'Identifier',
+        'Barcode (IN)',
+        'Status 1',
+        'Barcode (IN) (2)',
+        'Status 1 (2)',
+        'Disinfestation Date',
+        'Disinfestation Date (2)',
+        'Disinfestation Date (3)',
+        8,   // null header → keyed by its physical position, already unique
+        '',  // empty header → left as-is (no import data ever maps to it)
+    ]);
 });
 
 // ════════════════════════════════════════════════════════════════════════
@@ -903,25 +967,95 @@ test('a row that fails inside saveRecord() leaks DocumentImporter\'s per-row sav
 //  Bug #22 — auto-generated identifier when blank
 // ════════════════════════════════════════════════════════════════════════
 
-test('Bug #22: a blank identifier + blank catalogue_identifier gets a deterministic AUTO id, and re-importing the identical row updates (not duplicates)', function () {
-    $this->markTestSkipped('WAVE 2 — needs a design decision, not a mechanical fix. A fully-blank-identifier row has NO stable identity, so the only re-import dedup key is a content fingerprint (sha1 of the mapped row). But that fingerprint is identical for two GENUINELY DISTINCT rows whose mapped columns match — deduping on it silently MERGES them (proven: a real 25-row file collapsed to 23). Correctly distinguishing "same row re-imported" from "two identical-content rows in one file" requires a stable per-row source key (e.g. a source row number), which is a schema/RFQ decision. Leaving the safer current behaviour (no over-merge) until then.');
+test('Bug #22 (b): two DISTINCT blank-identifier rows with byte-identical mapped content stay TWO documents — source position disambiguates, no over-merge', function () {
     $repo = Repository::factory()->create(['code' => 'DGT9']);
     dgt_series('REG');
     $u = dgt_admin($repo->id);
     $this->actingAs($u);
 
-    $row = ['Series' => 'REG', 'Practice' => 'Test Practice', 'Note' => 'first pass'];
-    $columnMap = ['series' => 'Series', 'practice' => 'Practice', 'notes' => 'Note'];
+    // Two rows carrying NEITHER an Identifier NOR a Catalogue Identifier (the
+    // dominant shape of the client's real batch list — ~92% of rows), whose
+    // mapped content is BYTE-IDENTICAL. Series is the client's real legacy
+    // "CODE: Title" form. A pure content fingerprint collapses these two
+    // genuinely distinct documents into one (PROVEN regression: a real 25-row
+    // file dropped to 23). Their distinct SOURCE POSITIONS must keep them apart.
+    $row = ['Series' => 'REG: Registers Private Practice'];
+    $columnMap = ['series' => 'Series'];
+
+    $import = dgt_run([$row, $row], $columnMap, $u->id);
+
+    expect(dgt_failures($import))->toBe([]);
+    // NOT merged to 1 — the whole point of the fix.
+    expect(Document::withoutGlobalScope(RepositoryScope::class)->count())->toBe(2);
+    $ids = Document::withoutGlobalScope(RepositoryScope::class)->pluck('identifier');
+    expect($ids)->toHaveCount(2)
+        ->and($ids->unique()->values())->toHaveCount(2)                    // two DISTINCT auto ids
+        ->and($ids->every(fn ($i): bool => filled($i) && $i !== 'AUTO-'))->toBeTrue();
+});
+
+test('Bug #22 (a): re-importing the IDENTICAL blank-identifier row updates in place — one document, not a duplicate', function () {
+    $repo = Repository::factory()->create(['code' => 'DGT9b']);
+    dgt_series('REG');
+    $u = dgt_admin($repo->id);
+    $this->actingAs($u);
+
+    // Blank Identifier + blank Catalogue Identifier (real legacy Series form,
+    // real free-text Note). "The same row" for an identity-less row means
+    // byte-identical mapped content: first pass INSERTs, a second pass of the
+    // IDENTICAL row must MATCH (via the deterministic position-derived auto id)
+    // and update in place — the same document, never a duplicate.
+    $row = ['Series' => 'REG: Registers Private Practice', 'Note' => 'first pass'];
+    $columnMap = ['series' => 'Series', 'notes' => 'Note'];
 
     dgt_run([$row], $columnMap, $u->id);
     expect(Document::withoutGlobalScope(RepositoryScope::class)->count())->toBe(1);
+    $first = Document::withoutGlobalScope(RepositoryScope::class)->first();
+    expect($first->identifier)->not->toBeEmpty()
+        ->and($first->identifier)->not->toBe('AUTO-')
+        ->and($first->notes)->toBe('first pass');
 
-    // Re-import the EXACT same row again.
+    // Re-import the IDENTICAL single row: same source position + same content →
+    // same auto id → resolveRecord() matches the existing document → UPDATE.
     dgt_run([$row], $columnMap, $u->id);
     expect(Document::withoutGlobalScope(RepositoryScope::class)->count())->toBe(1); // still 1, not 2
-    $doc = Document::withoutGlobalScope(RepositoryScope::class)->first();
-    expect($doc->identifier)->not->toBeEmpty()
-        ->and($doc->identifier)->not->toBe('AUTO-');
+    $second = Document::withoutGlobalScope(RepositoryScope::class)->first();
+    expect($second->id)->toBe($first->id)                 // matched, not a new row
+        ->and($second->identifier)->toBe($first->identifier); // stable auto id across runs
+});
+
+test('Bug #22 (c): a real multi-row slice of the client\'s own ~5MB batch list re-imported TWICE keeps the same document count (idempotent on real blank-identifier data)', function () {
+    if (! is_file(DGT_BATCHLIST_XLSX)) {
+        $this->markTestSkipped('client sample not present (nra/inbox is untracked)');
+    }
+
+    $repo = Repository::factory()->create(['code' => 'NRA22']);
+    dgt_series('REG');
+    dgt_series('RWL', wills: true);
+    dgt_series('IDX');
+    $u = dgt_admin($repo->id);
+    $this->actingAs($u);
+
+    $headers = dgt_headers(DGT_BATCHLIST_XLSX);
+    $columnMap = dgt_columnMap($headers);
+    // Isolate from the separately-confirmed 'torre' NOT NULL bug (its own test)
+    // so re-import idempotency is what THIS test measures.
+    unset($columnMap['torre']);
+
+    $rows = dgt_realRows(DGT_BATCHLIST_XLSX, 2, 26);
+    expect($rows)->toHaveCount(25);
+
+    // The overwhelming majority of these real rows carry NEITHER an Identifier
+    // NOR a Catalogue Identifier, so they exercise the blank+blank auto-id path.
+    $firstImport = dgt_run($rows, $columnMap, $u->id);
+    $countAfterFirst = Document::withoutGlobalScope(RepositoryScope::class)->count();
+    expect($countAfterFirst)->toBe($firstImport->successful_rows)
+        ->and($countAfterFirst)->toBeGreaterThan(0);
+
+    // Re-import the SAME slice: every row replays at the same source position
+    // with the same content → same auto id → each row UPDATES in place. The
+    // count must NOT grow — proving idempotency on real production data.
+    dgt_run($rows, $columnMap, $u->id);
+    expect(Document::withoutGlobalScope(RepositoryScope::class)->count())->toBe($countAfterFirst);
 });
 
 test('Bug #22: a blank identifier with a catalogue_identifier present falls back to it, and re-import matches the same document', function () {

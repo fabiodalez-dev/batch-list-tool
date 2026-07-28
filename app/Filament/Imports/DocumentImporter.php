@@ -6,14 +6,15 @@ namespace App\Filament\Imports;
 
 use App\Filament\Imports\Concerns\LogsImportRows;
 use App\Filament\Imports\Concerns\SkipsExistingRows;
+use App\Filament\Pages\ImportWizard;
 use App\Models\Authority;
 use App\Models\Box;
 use App\Models\CustomFieldDefinition;
 use App\Models\Document;
 use App\Models\Repository;
 use App\Models\Scopes\RepositoryScope;
-use App\Models\Series;
 use App\Support\BulkImport\EntityResolver;
+use App\Support\BulkImport\Jobs\DeduplicatingImportExcel;
 use App\Support\BulkImport\SpreadsheetParsers;
 use App\Support\CustomFields\CustomFieldResolver;
 use Filament\Actions\Imports\Exceptions\RowImportFailedException;
@@ -74,6 +75,31 @@ class DocumentImporter extends Importer
      * authority names legitimately contain commas ("Buttigieg, John").
      */
     public const SEMICOLON_DELIMITER = ';';
+
+    /**
+     * Bug #22 (hardening) — reserved row key carrying the ABSOLUTE source-row
+     * position of the row being imported.
+     *
+     * Both production paths chunk at 100 rows and spin up a FRESH importer per
+     * chunk, so {@see $rowSequence} (a per-instance counter) restarts at 0 in
+     * every chunk — it is chunk-LOCAL, not absolute. Two genuinely distinct
+     * blank-identifier rows whose mapped content is byte-identical AND whose
+     * absolute positions differ by an exact multiple of the chunk size therefore
+     * land at the SAME chunk-local position → the SAME auto identifier → the
+     * second silently UPDATES the first (two distinct documents wrongly merge).
+     *
+     * The two readers inject the row's absolute position under this key so
+     * {@see resolveRecord()} can key the auto identifier on it instead of the
+     * chunk-local counter:
+     *   - streaming ({@see DeduplicatingImportExcel})
+     *     threads the absolute sheet row number (`$rowIndex`);
+     *   - the wizard ({@see ImportWizard::dispatchImportBatch()})
+     *     threads `chunkIndex * chunkSize + localIndex`.
+     * The key is NOT an ImportColumn, so it survives remapData untouched and is
+     * ignored by validation/casting; it is stripped from the content fingerprint
+     * in {@see buildAutoIdentifier()}.
+     */
+    public const SOURCE_ROW_KEY = '__source_row';
 
     protected static ?string $model = Document::class;
 
@@ -152,6 +178,30 @@ class DocumentImporter extends Importer
     protected bool $rowSavepointOpen = false;
 
     /**
+     * Bug #22 — the current row's 0-based position within this import run.
+     *
+     * Advanced once per {@see resolveRecord()} (which the base importer calls
+     * exactly once per source row), this is the STABLE per-row key a
+     * fully-blank-identifier row is missing: two
+     * genuinely DISTINCT rows in one file occupy different positions (so they
+     * never collapse into one, even when their mapped content is byte-identical),
+     * while re-importing the SAME file replays the rows in the same order and
+     * reproduces the same position for each — keeping the auto identifier
+     * idempotent so a re-import UPDATES each row in place instead of duplicating.
+     *
+     * Scope note: this counter is per importer instance and therefore
+     * chunk-LOCAL — both production paths chunk at 100 rows and build a fresh
+     * importer per chunk, so it restarts at 0 in every chunk. That is a genuine
+     * over-merge hazard (see {@see SOURCE_ROW_KEY}); it is used ONLY as a fallback
+     * for callers that do not thread an absolute position (e.g. narrow unit tests
+     * that invoke the importer over a single in-memory chunk). Production reads
+     * inject the ABSOLUTE row position under {@see SOURCE_ROW_KEY}, which
+     * {@see currentRowSequence()} prefers, so the auto identifier is keyed on the
+     * absolute — not chunk-local — source position.
+     */
+    protected int $rowSequence = -1;
+
+    /**
      * BUG-05: Repository id resolved once per import from the authenticated
      * user's default_repository_id. Set in resolveRecord() and reused by the
      * batch_number fillRecordUsing closure so batch resolution is always
@@ -174,6 +224,17 @@ class DocumentImporter extends Importer
     protected static array $autoIdCodeMemo = [];
 
     /**
+     * Bug #22 — the auto identifier computed for a blank-identifier row in
+     * {@see resolveRecord()}, stashed so {@see afterFill()} stamps the EXACT
+     * same value onto the record (resolveRecord already used it as the match
+     * key, so recomputing must not risk drift). Keyed by `spl_object_id` of the
+     * record, drained in {@see persistRowSideEffects()}.
+     *
+     * @var array<int, string>
+     */
+    protected static array $rowAutoIdentifierStash = [];
+
+    /**
      * @return array<ImportColumn>
      */
     public static function getColumns(): array
@@ -194,6 +255,13 @@ class DocumentImporter extends Importer
      */
     public function resolveRecord(): ?Document
     {
+        // Bug #22 — advance the row's source position. resolveRecord() is called
+        // exactly once per source row by the base importer (chained through
+        // LogsImportRows::__invoke), so this is a faithful 0-based row counter
+        // WITHOUT overriding __invoke (which would shadow the trait's numeric →
+        // string coercion). See {@see $rowSequence} for how it is used.
+        $this->rowSequence++;
+
         $identifier = $this->data['identifier'] ?? null;
 
         $user = auth()->user();
@@ -204,19 +272,33 @@ class DocumentImporter extends Importer
         // auto-generated code). Match on that natural key here so RE-IMPORTING a
         // blank-identifier row with a Catalogue Identifier updates the existing
         // document instead of colliding on the unique (identifier, repository_id)
-        // key. Rows with neither key are genuinely new each time.
+        // key.
         if (($identifier === null || trim((string) $identifier) === '')
             && ! empty($this->data['catalogue_identifier'])
         ) {
             $identifier = trim((string) $this->data['catalogue_identifier']);
         }
 
+        // Bug #22 — a row with NEITHER an Identifier NOR a Catalogue Identifier
+        // has no natural key (this is the DOMINANT shape of the client's real
+        // batch list — ~92% of rows). Derive a STABLE per-row key from the row's
+        // ABSOLUTE source position ({@see currentRowSequence()}) folded with its
+        // mapped content,
+        // and match on it here. This is what makes the blank-identifier re-import
+        // idempotent: the same source row reproduces the same auto identifier on
+        // every run (so it UPDATES in place, no duplicate), while two distinct
+        // rows in one file get different positions (so they never merge — even
+        // when their mapped content is byte-identical). A random tail broke the
+        // first property; a pure content fingerprint broke the second (it
+        // over-merged genuinely distinct rows). afterFill() stamps the SAME value.
+        $autoIdentifier = null;
         if ($identifier === null || trim((string) $identifier) === '') {
-            $record = new Document;
-            // BUG-05: stash repo id so the static batch_number closure can use it.
-            self::$rowRepositoryStash[spl_object_id($record)] = $repoId !== null ? (int) $repoId : null;
-
-            return $record;
+            $autoIdentifier = $this->buildAutoIdentifier(
+                $this->data,
+                $repoId !== null ? (int) $repoId : null,
+                $this->currentRowSequence(),
+            );
+            $identifier = $autoIdentifier;
         }
 
         // Match withTrashed so re-importing a document the operator previously
@@ -232,6 +314,11 @@ class DocumentImporter extends Importer
         $record = $q->first() ?? new Document;
         // BUG-05: stash repo id so the static batch_number closure can use it.
         self::$rowRepositoryStash[spl_object_id($record)] = $repoId !== null ? (int) $repoId : null;
+        // Bug #22 — remember the computed auto id so afterFill() stamps the exact
+        // same value that was just used as the match key (no recomputation drift).
+        if ($autoIdentifier !== null) {
+            self::$rowAutoIdentifierStash[spl_object_id($record)] = $autoIdentifier;
+        }
 
         // Defer the un-delete to saveRecord() (resolveRecord runs before
         // validateData) so a row that fails validation can't leave the
@@ -283,12 +370,13 @@ class DocumentImporter extends Importer
             $record->identifier = $record->catalogue_identifier;
         }
 
-        // Bug #22 — still blank? Auto-create an identifier from the row's
-        // Repository / Series / Document Type so a mass upload by Series does not
-        // require pre-assigned R-codes. A short uuid tail keeps it collision-free
-        // (documents.identifier is indexed).
+        // Bug #22 — still blank? Stamp the auto identifier resolveRecord() already
+        // computed (and matched on) for this row. Falling back to a fresh build
+        // only if the stash is somehow missing keeps a single source of truth so
+        // the stamped value can never drift from the value used to find the record.
         if (empty($record->identifier) || $record->identifier === 'AUTO-') {
-            $record->identifier = $this->generateDocumentIdentifier($record);
+            $record->identifier = self::$rowAutoIdentifierStash[spl_object_id($record)]
+                ?? $this->generateDocumentIdentifier($record);
         }
 
         // Task 8 (B5) — resolve the current box now that the document's batch
@@ -482,36 +570,99 @@ class DocumentImporter extends Importer
     }
 
     /**
-     * Bug #22 — build an auto identifier from Repository / Series / Document Type,
-     * with a short uuid tail for uniqueness (documents.identifier is indexed).
+     * Bug #22 — fallback wrapper around {@see buildAutoIdentifier()} used only if
+     * {@see resolveRecord()}'s stash is somehow missing in afterFill(). Resolves
+     * the row's repository id the same way (repository_id is only stamped by
+     * BelongsToRepository on save, so during afterFill() it is still null — read
+     * it from the per-row stash / acting user's default instead).
      */
     protected function generateDocumentIdentifier(Document $record): string
     {
-        // Review finding: repository_id is stamped by BelongsToRepository on the
-        // `creating` event (i.e. at save) — during afterFill() the record's
-        // repository_id is still null, so read it from the per-row stash
-        // (set in resolveRecord) or the acting user's default instead, otherwise
-        // the Repository code is silently always dropped from the identifier.
         $repoId = $record->repository_id
             ?? (self::$rowRepositoryStash[spl_object_id($record)] ?? null)
             ?? auth()->user()?->default_repository_id;
 
+        return $this->buildAutoIdentifier(
+            $this->data,
+            $repoId !== null ? (int) $repoId : null,
+            $this->currentRowSequence(),
+        );
+    }
+
+    /**
+     * Bug #22 (hardening) — the ABSOLUTE source-row position to key the auto
+     * identifier on. Prefers the value the reader threaded under
+     * {@see SOURCE_ROW_KEY} (absolute across the whole file), falling back to the
+     * chunk-local {@see $rowSequence} counter only when no reader injected one
+     * (e.g. a unit test that drives a single in-memory chunk directly). Reading
+     * it from {@see $this->originalData} as well as {@see $this->data} is
+     * belt-and-braces: remapData keeps unmapped keys, but the vendor streaming
+     * job pre-remaps by columnMap, so the key can arrive via either.
+     */
+    protected function currentRowSequence(): int
+    {
+        $source = $this->data[self::SOURCE_ROW_KEY]
+            ?? ($this->originalData[self::SOURCE_ROW_KEY] ?? null);
+
+        return is_numeric($source) ? (int) $source : $this->rowSequence;
+    }
+
+    /**
+     * Bug #22 — build a STABLE auto identifier for a blank-identifier row.
+     *
+     * Shape: a human-readable `Repository-Series-Type` prefix (so an operator can
+     * eyeball which import a code came from) plus a deterministic tail.
+     *
+     * The tail is the load-bearing part: `sha1(sourcePosition | mappedContent)`.
+     *   - The source POSITION disambiguates two genuinely distinct rows whose
+     *     mapped content is byte-identical (common in the real batch list, where
+     *     the distinguishing columns — barcode/box — are often unmapped or lost
+     *     to the duplicate-header collapse) so they never merge into one.
+     *   - The CONTENT keeps two rows that happen to share a chunk-local position
+     *     across different streaming chunks apart unless they are also identical.
+     * Together they make a re-import of the SAME file reproduce the SAME id per
+     * row (idempotent update) while distinct rows stay distinct.
+     *
+     * Called from BOTH {@see resolveRecord()} (as the match key, before the
+     * record is filled — hence the prefix is derived from the raw mapped $data,
+     * not the resolved FK ids) and, as a fallback, {@see generateDocumentIdentifier()}.
+     *
+     * @param array<string, mixed> $data the remapped+cast row (importer columns)
+     */
+    protected function buildAutoIdentifier(array $data, ?int $repoId, int $sequence): string
+    {
+        $seriesRaw = $data['series'] ?? null;
+        // Series arrives raw here (FK resolution happens later in fill), e.g.
+        // "REG: Registers Private Practice" or "REG" — take the code before ":".
+        $seriesCode = is_string($seriesRaw) && trim($seriesRaw) !== ''
+            ? strtoupper(trim(explode(':', $seriesRaw, 2)[0]))
+            : null;
+
+        $typeRaw = $data['document_type'] ?? null;
+        $typeCode = is_string($typeRaw) && trim($typeRaw) !== ''
+            ? strtoupper(substr((string) preg_replace('/[^A-Za-z0-9]/', '', $typeRaw), 0, 3))
+            : null;
+
         $parts = array_filter([
-            $this->lookupRelatedCode(Repository::class, $repoId !== null ? (int) $repoId : null),
-            $this->lookupRelatedCode(Series::class, $record->series_id),
-            $record->document_type
-                ? strtoupper(substr((string) preg_replace('/[^A-Za-z0-9]/', '', (string) $record->document_type), 0, 3))
-                : null,
+            $this->lookupRelatedCode(Repository::class, $repoId),
+            $seriesCode,
+            $typeCode,
         ]);
         $prefix = $parts !== [] ? implode('-', $parts) : 'DOC';
 
-        // Review finding: a random uuid tail made RE-IMPORTING the same sheet
-        // non-idempotent — blank-identifier rows got a new id every run, so
-        // resolveRecord() never matched and duplicated every document. Derive
-        // the tail deterministically from the parsed row so an identical row
-        // yields an identical identifier (resolveRecord then matches + updates),
-        // while distinct rows stay distinct.
-        $tail = strtoupper(substr(sha1((string) (json_encode($this->data) ?: spl_object_id($record))), 0, 8));
+        // Fingerprint the MAPPED CONTENT only — strip the reserved absolute-row
+        // key ({@see SOURCE_ROW_KEY}) so the content hash means "the row's data",
+        // with the absolute position carried explicitly by $sequence. (Leaving it
+        // in would fold the position into the hash twice; harmless, but muddies
+        // the two orthogonal identity dimensions.)
+        $content = $data;
+        unset($content[self::SOURCE_ROW_KEY]);
+
+        $tail = strtoupper(substr(
+            sha1($sequence . '|' . (json_encode($content) ?: (string) $sequence)),
+            0,
+            12,
+        ));
 
         return $prefix . '-' . $tail;
     }
@@ -1045,6 +1196,8 @@ class DocumentImporter extends Importer
 
         // BUG-05: clean up the repository stash for this row.
         unset(self::$rowRepositoryStash[$key]);
+        // Bug #22: drain the auto-identifier stash for this row.
+        unset(self::$rowAutoIdentifierStash[$key]);
 
         $ids = self::$rowAuthorityStash[$key] ?? [];
         // Drain the stash for this row so a future row reusing the same
