@@ -325,45 +325,14 @@ class Location extends Model implements AuditableContract
          * Running before saving() so the path/depth recomputation sees the
          * correct in-memory state.
          */
-        static::creating(function (Location $location): void {
-            if ($location->code !== null && $location->code !== '') {
-                return; // Code was supplied explicitly — do not overwrite.
-            }
-
-            $prefix = strtoupper(substr((string) ($location->type ?? 'LOC'), 0, 4));
-            $repoSuffix = $location->repository_id !== null ? (string) $location->repository_id : '0';
-
-            // Count existing locations of the same type+repo to derive a candidate
-            // counter. We loop (max 100) to skip any already-taken codes.
-            $attempt = 0;
-            $counter = self::query()
-                ->withoutGlobalScopes()
-                ->when(
-                    $location->repository_id !== null,
-                    fn ($q) => $q->where('repository_id', $location->repository_id),
-                    fn ($q) => $q->whereNull('repository_id'),
-                )
-                ->count() + 1;
-
-            do {
-                $candidate = "{$prefix}-{$repoSuffix}-{$counter}";
-                $exists = self::query()
-                    ->withoutGlobalScopes()
-                    ->where('code', $candidate)
-                    ->when(
-                        $location->repository_id !== null,
-                        fn ($q) => $q->where('repository_id', $location->repository_id),
-                        fn ($q) => $q->whereNull('repository_id'),
-                    )
-                    ->exists();
-                $counter++;
-                $attempt++;
-            } while ($exists && $attempt < 100);
-
-            $location->code = $candidate;
-        });
-
         static::saving(function (Location $location): void {
+            // Auto-generate a unique `code` when blank — on CREATE, and ALSO when
+            // an import UPDATES a pre-existing code-less location (e.g. the seeded
+            // default "Archive 1" / "Cataloguing" rows the import matches by name).
+            // That update path is exactly why some locations were left without an
+            // identifier: the old hook only fired on `creating`. Runs before
+            // recomputePath so path/depth see the final in-memory state.
+            self::assignAutoCodeIfBlank($location);
             self::recomputePath($location);
         });
 
@@ -393,6 +362,49 @@ class Location extends Model implements AuditableContract
      *
      * @throws \DomainException when the resulting depth would exceed MAX_DEPTH.
      */
+    /**
+     * Assign a unique `code` when the location has none.
+     * Pattern: <type_prefix>-<repo_id>-<incrementing_counter> (e.g. "ROOM-3-7",
+     * "MUSEUM-1-2"); uniqueness scoped to repository_id, loop caps at 100 tries.
+     * No-op when a code is already present — never overwrites an explicit code.
+     */
+    private static function assignAutoCodeIfBlank(Location $location): void
+    {
+        if ($location->code !== null && $location->code !== '') {
+            return;
+        }
+
+        $prefix = strtoupper(substr((string) ($location->type ?? 'LOC'), 0, 4));
+        $repoSuffix = $location->repository_id !== null ? (string) $location->repository_id : '0';
+
+        $attempt = 0;
+        $counter = self::query()
+            ->withoutGlobalScopes()
+            ->when(
+                $location->repository_id !== null,
+                fn ($q) => $q->where('repository_id', $location->repository_id),
+                fn ($q) => $q->whereNull('repository_id'),
+            )
+            ->count() + 1;
+
+        do {
+            $candidate = "{$prefix}-{$repoSuffix}-{$counter}";
+            $exists = self::query()
+                ->withoutGlobalScopes()
+                ->where('code', $candidate)
+                ->when(
+                    $location->repository_id !== null,
+                    fn ($q) => $q->where('repository_id', $location->repository_id),
+                    fn ($q) => $q->whereNull('repository_id'),
+                )
+                ->exists();
+            $counter++;
+            $attempt++;
+        } while ($exists && $attempt < 100);
+
+        $location->code = $candidate;
+    }
+
     private static function recomputePath(Location $location): void
     {
         if (empty($location->parent_id)) {

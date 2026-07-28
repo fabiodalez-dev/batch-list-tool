@@ -681,3 +681,31 @@ test('a numeric sort_order cell (native int from Excel) imports cleanly', functi
     expect(loc_failures($import))->toBe([]);
     expect(Location::where('name', 'Numeric Sort Room')->value('sort_order'))->toBe(5);
 });
+
+test('REGRESSION (bug D): importing a row that UPDATES a pre-existing code-less location assigns it a code', function () {
+    // Mirrors production: seeded default locations ("Archive 1", "Cataloguing")
+    // existed with a NULL code; the import matches them by name and used to
+    // leave them without an identifier because auto-code only fired on create.
+    $repo = Repository::factory()->create(['code' => 'NRA']);
+    $u = loc_admin($repo->id);
+    $this->actingAs($u);
+
+    $seeded = Location::withoutGlobalScopes()->create([
+        'name' => 'Cataloguing', 'type' => 'room', 'repository_id' => $repo->id, 'code' => null,
+    ]);
+    // A pre-existing default really can lack a code (it was created before the
+    // save-hook backfill); force it back to null to reproduce that exact state.
+    Location::withoutGlobalScopes()->whereKey($seeded->id)->update(['code' => null]);
+    expect(Location::withoutGlobalScopes()->whereKey($seeded->id)->value('code'))->toBeNull();
+
+    $import = loc_run(
+        [['name' => 'Cataloguing', 'type' => 'room', 'parent_name' => '', 'repository_code' => 'NRA', 'code' => '', 'notes' => 'updated', 'sort_order' => '', 'is_active' => '']],
+        loc_columnMap(),
+        $u->id,
+    );
+
+    expect(loc_failures($import))->toBe([]);
+    // The same row was UPDATED (not duplicated) AND now carries an auto code.
+    expect(Location::withoutGlobalScopes()->where('name', 'Cataloguing')->count())->toBe(1);
+    expect(Location::withoutGlobalScopes()->where('name', 'Cataloguing')->value('code'))->not->toBeNull();
+});
