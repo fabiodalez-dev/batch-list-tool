@@ -44,6 +44,16 @@ trait BelongsToRepository
             // refine `$model` (typed as the abstract `Model`) to the concrete
             // consumer class to know `repository_id` exists — every Eloquent
             // model accepts arbitrary attribute names through these methods.
+            // A model may declare that repository_id = NULL is a first-class
+            // "global / shared by every repository" state (e.g. Location). When
+            // the caller has EXPLICITLY set repository_id to null on such a
+            // model, that is a deliberate choice — do not auto-stamp a default
+            // over it. Models that don't opt in keep the old behaviour, where
+            // NULL just means "not decided yet" and defaulting is correct.
+            if (self::callerChoseGlobalRepository($model)) {
+                return;
+            }
+
             if (method_exists($user, 'hasAnyRole') && $user->hasAnyRole(['super_admin', 'admin'])) {
                 if (empty($model->getAttribute('repository_id')) && ! empty($user->default_repository_id)) {
                     $model->setAttribute('repository_id', $user->default_repository_id);
@@ -79,5 +89,30 @@ trait BelongsToRepository
     public function repository(): BelongsTo
     {
         return $this->belongsTo(Repository::class);
+    }
+
+    /**
+     * Whether repository_id = NULL is a valid "global / shared" state for this
+     * model (opt-in). Consumers that support global records override this and
+     * return true; the default is false so mandatory-tenant models are
+     * unaffected.
+     */
+    public function allowsGlobalRepository(): bool
+    {
+        return false;
+    }
+
+    /**
+     * True when the caller has DELIBERATELY set repository_id to null on a model
+     * that supports global records — i.e. an intentional global, which the
+     * creating hook must not overwrite with a default. Distinguishes "explicit
+     * null" (key present, value null) from "not provided" (key absent).
+     */
+    private static function callerChoseGlobalRepository(Model $model): bool
+    {
+        return method_exists($model, 'allowsGlobalRepository')
+            && $model->allowsGlobalRepository()
+            && array_key_exists('repository_id', $model->getAttributes())
+            && $model->getAttribute('repository_id') === null;
     }
 }

@@ -4,9 +4,11 @@ declare(strict_types=1);
 
 namespace App\Filament\Imports\Concerns;
 
+use App\Support\Audit\ImportAwareUserResolver;
 use Filament\Actions\Imports\Exceptions\RowImportFailedException;
 use Illuminate\Database\QueryException;
 use Illuminate\Support\Facades\Log;
+use OwenIt\Auditing\AuditableObserver;
 
 /**
  * Verbose, operator-facing logging for every import row + REAL error surfacing.
@@ -47,6 +49,33 @@ trait LogsImportRows
 
         Log::channel('import')->debug("{$short}: saving row", $this->importLogContext());
 
+        // Make the imported record auditable + attributed to the operator who
+        // launched the import — so the resources' "Inputter" column is populated
+        // instead of blank. Three things are needed, all scoped tightly to this
+        // one save and reverted afterwards:
+        //   1. the OwenIt observer must be attached (owen-it skips attaching it
+        //      at boot in a console/queue process where audit.console is false);
+        //   2. audit.console must be true at write time (owen-it's gate);
+        //   3. the audit user resolver must return the import's user (the queue
+        //      worker has no authenticated guard).
+        // Guard keyed on the CONTAINER (not a process-static): owen-it registers
+        // the observer at boot, and the app re-boots per queue:work run (and per
+        // test), so the "already attached" flag must reset when the observer
+        // registration does. A process-static would wrongly skip re-attaching
+        // after a reboot, silently losing auditing again.
+        $model = $this->record;
+        if ($model !== null) {
+            $guardKey = 'import.audit_observer.' . $model::class;
+            if (! app()->bound($guardKey)) {
+                $model::observe(AuditableObserver::class);
+                app()->instance($guardKey, true);
+            }
+        }
+
+        $previousConsole = config('audit.console');
+        config(['audit.console' => true]);
+        ImportAwareUserResolver::$importActor = $this->import->user;
+
         try {
             parent::saveRecord();
         } catch (\Throwable $e) {
@@ -61,6 +90,9 @@ trait LogsImportRows
             // Re-throw a clean, short message so the vendor importer does NOT
             // mask it as generic_validation — the operator sees the real reason.
             throw new RowImportFailedException($human);
+        } finally {
+            ImportAwareUserResolver::$importActor = null;
+            config(['audit.console' => $previousConsole]);
         }
 
         Log::channel('import')->info("{$short}: row saved", [
@@ -82,10 +114,21 @@ trait LogsImportRows
             // Unique key — MySQL ("Duplicate entry 'X' for key 'Y'") + SQLite
             // ("UNIQUE constraint failed: table.col").
             if (preg_match("/Duplicate entry '([^']*)' for key/i", $raw, $m)) {
-                return "A record with this value already exists (duplicate '{$m[1]}'). Delete or update the existing one, or remove the duplicate row.";
+                // Truncate the offending VALUE: a long duplicate (e.g. a 120-char
+                // catalogue identifier) would push the whole message past the
+                // vendor's 200-char mask threshold and get re-masked as generic.
+                $value = self::shorten($m[1], 60);
+
+                return "A record with this value already exists (duplicate '{$value}'). Delete or update the existing one, or remove the duplicate row.";
             }
-            if (preg_match('/UNIQUE constraint failed:\s*([^\s(]+)/i', $raw, $m)) {
-                return "A record with this key already exists ({$m[1]}). Delete or update the existing one, or remove the duplicate row.";
+            // Capture the FULL comma-separated column list — SQLite composite
+            // indexes read "table.a, table.b"; the old regex stopped at the
+            // first whitespace and dropped every column after the first, hiding
+            // the operator-actionable one (e.g. "code" in (repository_id, code)).
+            if (preg_match('/UNIQUE constraint failed:\s*([^(]+)/i', $raw, $m)) {
+                $columns = self::shorten(trim($m[1]), 80);
+
+                return "A record with this key already exists ({$columns}). Delete or update the existing one, or remove the duplicate row.";
             }
             // Missing required value — MySQL + SQLite ("NOT NULL constraint failed: table.col").
             if (preg_match("/Column '([^']+)' cannot be null/i", $raw, $m)
@@ -119,5 +162,14 @@ trait LogsImportRows
             'import_id' => $this->import->getKey(),
             'row' => $this->data,
         ];
+    }
+
+    /**
+     * Ellipsize an interpolated value so a humanised message stays well under
+     * the vendor's 200-char generic-validation mask threshold.
+     */
+    private static function shorten(string $value, int $max): string
+    {
+        return mb_strlen($value) > $max ? mb_substr($value, 0, $max - 1) . '…' : $value;
     }
 }

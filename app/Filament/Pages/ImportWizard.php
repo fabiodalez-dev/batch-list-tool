@@ -407,6 +407,15 @@ class ImportWizard extends Page
     {
         abort_unless(static::canAccess(), 403);
 
+        // The 'file' FileUpload uses storeFiles(false) (see its definition), so
+        // getState() returns the raw TemporaryUploadedFile instead of moving it
+        // to disk and dehydrating it to a plain string path. That is what makes
+        // this method work at all: without storeFiles(false) the instanceof check
+        // below could never pass (every submit was rejected "No file uploaded")
+        // AND Filament would leave an orphan copy of every upload under
+        // storage/app/imports. getState() also enforces the required "confirm"
+        // checkbox on the final step (it throws Halt when that is unticked, which
+        // is why materialiseCsv runs only AFTER it — no orphan CSV on a halt).
         try {
             $state = $this->form->getState();
         } catch (Halt) {
@@ -1018,7 +1027,7 @@ class ImportWizard extends Page
                         'accessions' => 'Primary path for new accessions and mass batch-list import. One row per document; every ancestor is resolved or created automatically. Depends on: Series (must pre-exist).',
                         'series' => 'Depends on: nothing — import this first.',
                         'authorities' => 'Depends on: nothing.',
-                        'locations' => 'Depends on: at least one Repository. Parents must be imported before their children (re-run after fixing order if parent not found).',
+                        'locations' => 'Depends on: at least one Repository AND a matching Location Type — the "type" column must be one of the configured location types (built-in ones like room / shelf / showcase always work). Parents must be imported before their children (re-run after fixing order if parent not found).',
                         'batches' => 'Depends on: at least one Repository.',
                         'boxes' => 'Depends on: at least one Batch.',
                         'documents' => 'Depends on: Series + Authorities + Batches + Boxes.',
@@ -1177,6 +1186,13 @@ class ImportWizard extends Page
                         'text/plain',
                     ])
                     ->maxSize(50 * 1024)
+                    // storeFiles(false): keep the upload as a raw
+                    // TemporaryUploadedFile instead of persisting it. startImport()
+                    // materialises its OWN CSV under imports/ (referenced by
+                    // Import::file_path); letting Filament ALSO persist the raw
+                    // upload would leave a second, unreferenced orphan copy on disk
+                    // AND dehydrate the value to a string, breaking startImport().
+                    ->storeFiles(false)
                     ->disk('local')
                     ->directory('imports')
                     ->visibility('private')

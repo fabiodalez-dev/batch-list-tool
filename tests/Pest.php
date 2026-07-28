@@ -32,6 +32,19 @@ uses(TestCase::class)
 uses(TestCase::class)
     ->in('Compliance');
 
+// The generated import regression suite drives the REAL client files (Series,
+// Authorities, Locations, Batches, plus the example templates). Those live under
+// nra/, which is intentionally untracked (client data must not reach any git
+// remote). Where nra/ is absent — CI, a fresh checkout — skip the whole suite
+// cleanly instead of failing on missing fixtures (mirrors RealSampleImportTest).
+uses()
+    ->beforeEach(function () {
+        if (! is_dir(base_path('nra'))) {
+            $this->markTestSkipped('client import fixtures (nra/) are untracked and absent in this environment');
+        }
+    })
+    ->in('Feature/Import/Generated');
+
 // Browser (E2E) tests use a real headless Chromium via Pest's Playwright
 // engine. RefreshDatabase is bound here so every E2E scenario starts from a
 // clean, migrated schema and seeds only the data it needs.
