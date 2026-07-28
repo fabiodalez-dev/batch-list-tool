@@ -555,13 +555,13 @@ test('runPreflight leaves the uploaded file as a live TemporaryUploadedFile afte
  * unconditionally rejected with "No file uploaded — go back to step 3.",
  * and no Import row / job batch is ever created.
  *
- * runPreflight() does NOT have this bug: it deliberately reads
- * getRawState() (a fix already shipped for a *different* Halt-related
- * bug), which does not trigger dehydration, so the file survives as a
- * TemporaryUploadedFile. The contrast is proven directly below.
+ * THE FIX: the 'file' FileUpload now uses storeFiles(false), so getState()
+ * no longer dehydrates the upload — it returns the raw TemporaryUploadedFile
+ * (and Filament no longer leaves an orphan copy under storage/app/imports).
+ * The tests below prove the wizard now dispatches a real submission end to end.
  * ════════════════════════════════════════════════════════════════════ */
 
-test('CRITICAL: form->getState() itself converts the uploaded file into a plain string, in place', function () {
+test('REGRESSION (bug #5): with storeFiles(false), getState() returns the raw TemporaryUploadedFile, not a string', function () {
     $this->actingAs(wiz_admin());
 
     $component = Livewire::test(ImportWizard::class)
@@ -573,10 +573,13 @@ test('CRITICAL: form->getState() itself converts the uploaded file into a plain 
     $beforeFile = is_array($beforeRaw) ? reset($beforeRaw) : $beforeRaw;
     expect($beforeFile)->toBeInstanceOf(TemporaryUploadedFile::class);
 
+    // storeFiles(false) stops FileUpload's dehydration from moving the upload to
+    // disk and replacing it with a string path — so startImport() can still read
+    // a real TemporaryUploadedFile from getState() (this is the fix).
     $state = $component->instance()->form->getState();
 
-    expect($state['file'])->toBeString()
-        ->and($state['file'])->not->toBeEmpty();
+    $stateFile = is_array($state['file']) ? reset($state['file']) : $state['file'];
+    expect($stateFile)->toBeInstanceOf(TemporaryUploadedFile::class);
 });
 
 test('REGRESSION (bug #5): startImport() dispatches a fully valid real submission from the real button handler', function () {

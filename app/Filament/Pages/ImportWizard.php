@@ -407,20 +407,22 @@ class ImportWizard extends Page
     {
         abort_unless(static::canAccess(), 403);
 
-        // Read the uploaded file from the RAW (un-dehydrated) state and
-        // materialise it BEFORE the validated getState() call below. Filament's
-        // FileUpload registers a beforeStateDehydrated hook that EVERY
-        // getState() runs: it moves the temp upload to disk, deletes the
-        // Livewire temp file, and replaces the 'file' value with a plain STRING
-        // path. If we read the file from getState() (as this method used to),
-        // `$file instanceof TemporaryUploadedFile` can NEVER be true — so every
-        // valid submission was rejected with "No file uploaded" and no import
-        // ever ran. runPreflight() already reads getRawState() for the very same
-        // reason; startImport() must do it too, and grab the temp file's bytes
-        // (materialiseCsv) before getState() moves it out from under us.
-        $rawState = $this->form->getRawState();
+        // The 'file' FileUpload uses storeFiles(false) (see its definition), so
+        // getState() returns the raw TemporaryUploadedFile instead of moving it
+        // to disk and dehydrating it to a plain string path. That is what makes
+        // this method work at all: without storeFiles(false) the instanceof check
+        // below could never pass (every submit was rejected "No file uploaded")
+        // AND Filament would leave an orphan copy of every upload under
+        // storage/app/imports. getState() also enforces the required "confirm"
+        // checkbox on the final step (it throws Halt when that is unticked, which
+        // is why materialiseCsv runs only AFTER it — no orphan CSV on a halt).
+        try {
+            $state = $this->form->getState();
+        } catch (Halt) {
+            return;
+        }
 
-        $type = (string) ($rawState['import_type'] ?? '');
+        $type = (string) ($state['import_type'] ?? '');
         if (! array_key_exists($type, self::IMPORTERS)) {
             $this->notifyDanger('Pick a type in step 1 first.');
 
@@ -428,7 +430,7 @@ class ImportWizard extends Page
         }
 
         /** @var TemporaryUploadedFile|array<TemporaryUploadedFile>|null $file */
-        $file = $rawState['file'] ?? null;
+        $file = $state['file'] ?? null;
         if (is_array($file)) {
             $file = reset($file) ?: null;
         }
@@ -438,25 +440,11 @@ class ImportWizard extends Page
             return;
         }
 
-        // Capture the original name now; getState() below moves/deletes the
-        // temp file, after which only the file's metadata remains readable.
-        $originalName = $file->getClientOriginalName();
-
         try {
-            $csvPath = $this->materialiseCsv($file, (int) ($rawState['sheet'] ?? 0));
+            $csvPath = $this->materialiseCsv($file, (int) ($state['sheet'] ?? 0));
         } catch (\Throwable $e) {
             $this->notifyDanger('Could not read the file: ' . $e->getMessage());
 
-            return;
-        }
-
-        // Now validate the rest of the form — this is what enforces the required
-        // "confirm" checkbox on the final step. Its returned 'file' value is the
-        // already-persisted string path, which we ignore (we kept the real
-        // upload above).
-        try {
-            $state = $this->form->getState();
-        } catch (Halt) {
             return;
         }
 
@@ -1198,6 +1186,13 @@ class ImportWizard extends Page
                         'text/plain',
                     ])
                     ->maxSize(50 * 1024)
+                    // storeFiles(false): keep the upload as a raw
+                    // TemporaryUploadedFile instead of persisting it. startImport()
+                    // materialises its OWN CSV under imports/ (referenced by
+                    // Import::file_path); letting Filament ALSO persist the raw
+                    // upload would leave a second, unreferenced orphan copy on disk
+                    // AND dehydrate the value to a string, breaking startImport().
+                    ->storeFiles(false)
                     ->disk('local')
                     ->directory('imports')
                     ->visibility('private')
