@@ -202,6 +202,7 @@ test('readCsvForImport returns zero rows for a header-only CSV (the precondition
     expect($headers)->toBe(['Identifier', 'Title'])
         ->and($rows)->toBe([]);
 
+    // nosemgrep: php.lang.security.unlink-use.unlink-use -- $path is a test-controlled sys_get_temp_dir()+uniqid() file, never user input.
     @unlink($path);
 });
 
