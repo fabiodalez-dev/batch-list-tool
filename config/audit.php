@@ -1,10 +1,10 @@
 <?php
 
+use App\Support\Audit\ImportAwareUserResolver;
 use OwenIt\Auditing\Models\Audit;
 use OwenIt\Auditing\Resolvers\IpAddressResolver;
 use OwenIt\Auditing\Resolvers\UrlResolver;
 use OwenIt\Auditing\Resolvers\UserAgentResolver;
-use OwenIt\Auditing\Resolvers\UserResolver;
 
 return [
 
@@ -36,7 +36,7 @@ return [
             'web',
             'api',
         ],
-        'resolver' => UserResolver::class,
+        'resolver' => ImportAwareUserResolver::class,
     ],
 
     /*

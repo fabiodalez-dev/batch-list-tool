@@ -60,7 +60,9 @@ class LocationImporter extends Importer
                 ->label('Location name')
                 ->requiredMapping()
                 ->guess(['Name', 'name', 'Location', 'Location name'])
-                ->rules(['required', 'string', 'max:191']),
+                // max:100 matches the locations.name column; a looser rule let
+                // over-length names through to a raw DB truncation/error.
+                ->rules(['required', 'string', 'max:100']),
 
             ImportColumn::make('type')
                 ->label('Type (' . implode('|', self::acceptedTypeCodes()) . ')')
@@ -112,7 +114,8 @@ class LocationImporter extends Importer
             ImportColumn::make('code')
                 ->label('Short code')
                 ->guess(['Code', 'code', 'Short code'])
-                ->rules(['nullable', 'string', 'max:64']),
+                // max:32 matches the locations.code column (was 64 — too loose).
+                ->rules(['nullable', 'string', 'max:32']),
 
             ImportColumn::make('notes')
                 ->label('Notes')
@@ -155,6 +158,14 @@ class LocationImporter extends Importer
                 ]);
             }
             $record->repository_id = (int) $repository->getKey();
+        } else {
+            // Blank repository_code = a GLOBAL location shared by every
+            // repository (verbatim from the template's own "READ ME" sheet).
+            // Set NULL *explicitly* so the BelongsToRepository trait recognises
+            // an intentional global and does NOT auto-stamp the importing
+            // admin's default_repository_id over it (that silent overwrite was
+            // the bug — the "shared" Conservation Lab ended up scoped to NRA).
+            $record->repository_id = null;
         }
 
         $parentName = trim((string) ($this->data['parent_name'] ?? ''));

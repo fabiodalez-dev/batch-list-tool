@@ -101,6 +101,17 @@ class Location extends Model implements AuditableContract
     ];
 
     /**
+     * A Location is allowed to be GLOBAL (repository_id = null) — a location
+     * shared by every repository, e.g. an off-site Conservation Lab. Opting in
+     * stops the BelongsToRepository creating-hook from stamping the importing
+     * admin's default repository over an intentional null.
+     */
+    public function allowsGlobalRepository(): bool
+    {
+        return true;
+    }
+
+    /**
      * Helper: returns the ancestor ids encoded in $this->path, as ints.
      * "7/12" → [7, 12]. Returns [] for root nodes.
      *

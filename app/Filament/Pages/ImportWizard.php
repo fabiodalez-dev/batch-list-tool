@@ -407,13 +407,20 @@ class ImportWizard extends Page
     {
         abort_unless(static::canAccess(), 403);
 
-        try {
-            $state = $this->form->getState();
-        } catch (Halt) {
-            return;
-        }
+        // Read the uploaded file from the RAW (un-dehydrated) state and
+        // materialise it BEFORE the validated getState() call below. Filament's
+        // FileUpload registers a beforeStateDehydrated hook that EVERY
+        // getState() runs: it moves the temp upload to disk, deletes the
+        // Livewire temp file, and replaces the 'file' value with a plain STRING
+        // path. If we read the file from getState() (as this method used to),
+        // `$file instanceof TemporaryUploadedFile` can NEVER be true — so every
+        // valid submission was rejected with "No file uploaded" and no import
+        // ever ran. runPreflight() already reads getRawState() for the very same
+        // reason; startImport() must do it too, and grab the temp file's bytes
+        // (materialiseCsv) before getState() moves it out from under us.
+        $rawState = $this->form->getRawState();
 
-        $type = (string) ($state['import_type'] ?? '');
+        $type = (string) ($rawState['import_type'] ?? '');
         if (! array_key_exists($type, self::IMPORTERS)) {
             $this->notifyDanger('Pick a type in step 1 first.');
 
@@ -421,7 +428,7 @@ class ImportWizard extends Page
         }
 
         /** @var TemporaryUploadedFile|array<TemporaryUploadedFile>|null $file */
-        $file = $state['file'] ?? null;
+        $file = $rawState['file'] ?? null;
         if (is_array($file)) {
             $file = reset($file) ?: null;
         }
@@ -431,11 +438,25 @@ class ImportWizard extends Page
             return;
         }
 
+        // Capture the original name now; getState() below moves/deletes the
+        // temp file, after which only the file's metadata remains readable.
+        $originalName = $file->getClientOriginalName();
+
         try {
-            $csvPath = $this->materialiseCsv($file, (int) ($state['sheet'] ?? 0));
+            $csvPath = $this->materialiseCsv($file, (int) ($rawState['sheet'] ?? 0));
         } catch (\Throwable $e) {
             $this->notifyDanger('Could not read the file: ' . $e->getMessage());
 
+            return;
+        }
+
+        // Now validate the rest of the form — this is what enforces the required
+        // "confirm" checkbox on the final step. Its returned 'file' value is the
+        // already-persisted string path, which we ignore (we kept the real
+        // upload above).
+        try {
+            $state = $this->form->getState();
+        } catch (Halt) {
             return;
         }
 
@@ -1018,7 +1039,7 @@ class ImportWizard extends Page
                         'accessions' => 'Primary path for new accessions and mass batch-list import. One row per document; every ancestor is resolved or created automatically. Depends on: Series (must pre-exist).',
                         'series' => 'Depends on: nothing — import this first.',
                         'authorities' => 'Depends on: nothing.',
-                        'locations' => 'Depends on: at least one Repository. Parents must be imported before their children (re-run after fixing order if parent not found).',
+                        'locations' => 'Depends on: at least one Repository AND a matching Location Type — the "type" column must be one of the configured location types (built-in ones like room / shelf / showcase always work). Parents must be imported before their children (re-run after fixing order if parent not found).',
                         'batches' => 'Depends on: at least one Repository.',
                         'boxes' => 'Depends on: at least one Batch.',
                         'documents' => 'Depends on: Series + Authorities + Batches + Boxes.',
