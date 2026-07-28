@@ -351,3 +351,43 @@ test('streaming re-import of a soft-deleted box (by barcode) restores it (dirty 
     expect($all)->toHaveCount(1)
         ->and($all->first()->trashed())->toBeFalse();
 });
+
+// ─── Numeric Excel cells in text columns (the 533/678 authority failures) ────
+
+test('a numeric cell in a string column (alternative_identifier = 511) imports, not "must be a string"', function () {
+    $u = ddi_admin();
+    $this->actingAs($u);
+
+    // 511 is a genuine INT, exactly as PhpSpreadsheet hands a numeric cell to
+    // the streaming importer — the client's file had numeric alternative ids.
+    $import = ddi_run(
+        AuthorityImporter::class,
+        [['Identifier' => 'R1', 'Alt' => 511, 'Type of Entity' => 'Person', 'Creator Surname' => 'Abela']],
+        ['identifier' => 'Identifier', 'alternative_identifier' => 'Alt', 'entity_type' => 'Type of Entity', 'surname' => 'Creator Surname'],
+        $u->id,
+    );
+
+    expect(ddi_failures($import))->toBe([]);   // NOT "must be a string"
+    expect(Authority::where('identifier', 'R1')->value('alternative_identifier'))->toBe('511');
+});
+
+test('numeric box_number / barcode cells import cleanly (streaming, dirty DB)', function () {
+    $repo = Repository::factory()->create(['code' => 'DDN']);
+    $u = ddi_admin($repo->id);
+    $this->actingAs($u);
+
+    Batch::withoutGlobalScope(RepositoryScope::class)->create([
+        'batch_number' => 3, 'repository_id' => $repo->id, 'type' => 'MAIN_COLLECTION', 'is_active' => true,
+    ]);
+
+    // box_number and barcode arrive as numbers from Excel.
+    $import = ddi_run(
+        BoxImporter::class,
+        [['Box No' => 42, 'Box Type' => 'RAS', 'Batch Number' => 3, 'Barcode' => 99887766]],
+        ['box_number' => 'Box No', 'box_type' => 'Box Type', 'batch_number' => 'Batch Number', 'barcode' => 'Barcode'],
+        $u->id,
+    );
+
+    expect(ddi_failures($import))->toBe([]);
+    expect(Box::withoutGlobalScope(ThroughBatchRepositoryScope::class)->where('barcode', '99887766')->exists())->toBeTrue();
+});
