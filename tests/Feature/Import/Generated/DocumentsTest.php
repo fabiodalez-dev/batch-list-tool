@@ -463,8 +463,37 @@ test('Bug #4: SpreadsheetHeaders::dedupe keeps the first occurrence verbatim and
         'Disinfestation Date',
         'Disinfestation Date (2)',
         'Disinfestation Date (3)',
-        8,   // null header → keyed by its physical position, already unique
-        '',  // empty header → left as-is (no import data ever maps to it)
+        '__col_8', // null header → a NON-numeric unique key (an int would clash with a numeric-string header)
+        '',        // empty header → left as-is (no import data ever maps to it)
+    ]);
+});
+
+test('Bug #4: dedupe keeps numeric-string and null-position keys from colliding as PHP array keys', function () {
+    // PHP normalises the string array key "1" to the int 1, so a header literally
+    // named "1" and a null header at position 1 would BOTH key on int 1 — the
+    // null (no data) silently clobbering the "1" column. dedupe must keep them
+    // distinct in the representation arrays actually use.
+    $keys = SpreadsheetHeaders::dedupe(['1', null]);
+
+    expect($keys[0])->toBe('1')
+        ->and($keys[1])->not->toBe(1)
+        ->and($keys[1])->not->toBe('1');
+
+    // Proof they no longer collide once used as row keys: both survive.
+    $row = [];
+    $row[$keys[0]] = 'data-for-header-1';
+    $row[$keys[1]] = 'data-for-null-col';
+    expect($row)->toHaveCount(2);
+});
+
+test('Bug #4: dedupe never renames a LITERAL "Foo (2)" — only generated suffixes are bumped', function () {
+    // "Foo" is duplicated AND a real column is literally called "Foo (2)". The
+    // generated suffix for the duplicate must skip the literal, and the literal
+    // itself must be preserved verbatim (not renamed).
+    expect(SpreadsheetHeaders::dedupe(['Foo', 'Foo', 'Foo (2)']))->toBe([
+        'Foo',
+        'Foo (3)', // generated for the duplicate, skips the reserved literal below
+        'Foo (2)', // literal column, preserved verbatim
     ]);
 });
 

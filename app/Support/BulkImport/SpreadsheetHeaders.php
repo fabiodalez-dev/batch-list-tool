@@ -58,8 +58,10 @@ final class SpreadsheetHeaders
      *   - The 2nd, 3rd, … occurrence of that same string becomes
      *     `"{header} (2)"`, `"{header} (3)"`, … — distinct keys that survive
      *     row assembly instead of overwriting the first.
-     *   - `null` headers mirror the vendor's `$headers[$i] ?? $i` fallback:
-     *     they key by their integer position (already unique — no suffix).
+     *   - `null` headers (no data, mapped by nobody) get a guaranteed NON-numeric
+     *     unique key (`__col_<pos>`). An integer position — the vendor's fallback —
+     *     would collide with a numeric-string header like "1", since PHP stores
+     *     the string key "1" under the int key 1.
      *   - Empty-string headers are left as `''` (they carry no data and no
      *     importer maps them; suffixing them would only manufacture odd keys).
      *
@@ -67,23 +69,51 @@ final class SpreadsheetHeaders
      * returned unchanged.
      *
      * @param array<int, string|int|float|bool|null> $headers raw header row, in physical column order
-     * @return array<int, string|int> the de-duplicated key for each column position
+     * @return array<int, string> the de-duplicated key for each column position (always a
+     *                            string, so no key can numerically collide with another)
      */
     public static function dedupe(array $headers): array
     {
-        /** @var array<string, int> $seen occurrence count keyed by a stable signature */
-        $seen = [];
-        /** @var array<int, string|int> $keys */
-        $keys = [];
+        $list = array_values($headers);
 
-        $position = 0;
-        foreach ($headers as $raw) {
-            // Mirror the vendor keying: a null header falls back to its numeric
-            // column index (which is inherently unique), everything else is the
-            // header cast to string.
+        // Pass 1 — reserve every LITERAL (first-occurrence, non-empty) header up
+        // front. A generated "name (n)" suffix for a DUPLICATE must then avoid
+        // every literal, INCLUDING a real column literally called "name (n)" that
+        // appears LATER: only generated suffixes are ever bumped, never literals.
+        // $used is an associative set keyed by an effective-key signature — O(1)
+        // lookups (no O(n^2) in_array) AND it accounts for PHP array-key
+        // normalisation (see keySignature()).
+        $used = [];
+        $firstSeenAt = [];
+        foreach ($list as $pos => $raw) {
             if ($raw === null) {
-                $keys[$position] = $position;
-                $position++;
+                continue;
+            }
+            $name = is_string($raw) ? $raw : (string) $raw;
+            if ($name === '' || array_key_exists($name, $firstSeenAt)) {
+                continue;
+            }
+            $firstSeenAt[$name] = $pos;
+            $used[self::keySignature($name)] = true;
+        }
+
+        // Pass 2 — assign a distinct effective key to every physical column.
+        $occurrence = [];
+        /** @var array<int, string> $keys */
+        $keys = [];
+        foreach ($list as $pos => $raw) {
+            if ($raw === null) {
+                // A null header carries no import data and is mapped by nobody.
+                // Give it a guaranteed NON-numeric, unique key: the vendor's
+                // integer-index fallback would collide with a numeric-string
+                // header ("1"), because PHP normalises the string key "1" to the
+                // int key 1 — silently clobbering the data-bearing column.
+                $key = '__col_' . $pos;
+                while (isset($used[self::keySignature($key)])) {
+                    $key .= '_';
+                }
+                $used[self::keySignature($key)] = true;
+                $keys[$pos] = $key;
 
                 continue;
             }
@@ -91,33 +121,48 @@ final class SpreadsheetHeaders
             $name = is_string($raw) ? $raw : (string) $raw;
 
             if ($name === '') {
-                // Empty headers carry no import data — leave them collapsing,
-                // exactly as before, rather than inventing " (2)" keys.
-                $keys[$position] = '';
-                $position++;
+                // Empty headers carry no data — leave them collapsing, as before.
+                $keys[$pos] = '';
 
                 continue;
             }
 
-            $count = ($seen[$name] ?? 0) + 1;
-            $candidate = $count === 1 ? $name : $name . ' (' . $count . ')';
+            if ($firstSeenAt[$name] === $pos) {
+                // First occurrence keeps the exact header (already reserved) so
+                // existing column-map guesses still resolve to the data column.
+                $keys[$pos] = $name;
 
-            // Guard the docblock's "DISTINCT keys" contract even against a sheet
-            // that ALSO carries a literal header already equal to a generated
-            // suffix (e.g. a real "Foo (2)" column alongside duplicated "Foo"):
-            // keep bumping the counter until the key is genuinely unused, so a
-            // suffixed duplicate can never silently clobber a literal column —
-            // the exact Bug #4 failure mode this class exists to remove.
-            while (in_array($candidate, $keys, true)) {
-                $count++;
-                $candidate = $name . ' (' . $count . ')';
+                continue;
             }
 
-            $seen[$name] = $count;
-            $keys[$position] = $candidate;
-            $position++;
+            // 2nd+ occurrence — generate "name (n)" avoiding every reserved
+            // literal AND every key already generated.
+            $n = ($occurrence[$name] ?? 1) + 1;
+            do {
+                $candidate = $name . ' (' . $n . ')';
+                $n++;
+            } while (isset($used[self::keySignature($candidate)]));
+            $occurrence[$name] = $n - 1;
+            $used[self::keySignature($candidate)] = true;
+            $keys[$pos] = $candidate;
         }
 
         return $keys;
+    }
+
+    /**
+     * Signature that mirrors PHP array-key normalisation: a canonical decimal
+     * integer string ("1") is stored by PHP under the int key (1), so "1" and 1
+     * must count as the SAME key when a row is assembled. Everything else keeps
+     * its own string identity. The `(string) (int)` round-trip guards against
+     * out-of-range integer strings (which PHP leaves as strings).
+     */
+    private static function keySignature(string $key): string
+    {
+        if ($key !== '' && preg_match('/^-?(0|[1-9]\d*)$/', $key) === 1 && (string) (int) $key === $key) {
+            return 'i:' . (int) $key;
+        }
+
+        return 's:' . $key;
     }
 }
