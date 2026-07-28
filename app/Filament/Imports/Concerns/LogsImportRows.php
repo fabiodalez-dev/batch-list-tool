@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace App\Filament\Imports\Concerns;
 
 use App\Support\Audit\ImportAwareUserResolver;
+use App\Support\BulkImport\EntityResolver;
 use Filament\Actions\Imports\Exceptions\RowImportFailedException;
 use Illuminate\Database\QueryException;
 use Illuminate\Support\Facades\Log;
@@ -73,10 +74,15 @@ trait LogsImportRows
         }
 
         $previousConsole = config('audit.console');
-        config(['audit.console' => true]);
-        ImportAwareUserResolver::$importActor = $this->import->user;
 
         try {
+            // Mutate INSIDE the try so the finally ALWAYS reverts these, even if
+            // resolving $this->import->user throws (e.g. a relation/DB error) —
+            // otherwise a stuck audit.console / dangling actor would leak into
+            // later, unrelated saves in the same queue worker.
+            config(['audit.console' => true]);
+            ImportAwareUserResolver::$importActor = $this->import->user;
+
             parent::saveRecord();
         } catch (\Throwable $e) {
             $human = self::humaniseImportError($e);
@@ -86,6 +92,12 @@ trait LogsImportRows
                 'exception' => $e::class,
                 'raw_message' => $e->getMessage(),
             ]);
+
+            // The vendor rolls this row's transaction back on failure, undoing any
+            // soft-deleted parent (batch/box/accession) a resolver just restore()d
+            // for THIS row. Flush the resolver memo so the next row does a fresh
+            // lookup instead of reusing a now-rolled-back "restored" resolution.
+            EntityResolver::flushMemo();
 
             // Re-throw a clean, short message so the vendor importer does NOT
             // mask it as generic_validation — the operator sees the real reason.
