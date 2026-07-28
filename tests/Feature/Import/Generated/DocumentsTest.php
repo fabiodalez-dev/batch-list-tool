@@ -195,6 +195,123 @@ function dgt_series(string $code, bool $wills = false): Series
 }
 
 // ════════════════════════════════════════════════════════════════════════
+//  Real-value anchors for the narrow single-field tests below. These are
+//  NOT full streamed rows (those tests build minimal columnMaps on purpose,
+//  isolating one FK/behaviour at a time) — but every cell VALUE here is
+//  copied verbatim from direct inspection of the client's own real files, so
+//  the narrow tests exercise real content instead of invented strings. Where
+//  a test's edge case does not occur anywhere in the real files (e.g. an
+//  unknown series code, a forbidden batch number, a blank disinfestation
+//  date on a PERM_OUT row), the test mutates exactly the one cell the edge
+//  case needs — see the inline comment at each call site.
+// ════════════════════════════════════════════════════════════════════════
+
+/**
+ * The ONE real data row of the shipped example_document_import.xlsx
+ * template (verified via direct cell inspection: Identifier=R642,
+ * Catalogue Identifier=R642/001, Creator="Caruana, Vincenzo", Series=REG,
+ * RAS Batch 1=19, RAS Box 1=98, Torre=blank — a perfectly ordinary row).
+ */
+const DGT_EXAMPLE_ROW = [
+    'RAS Batch 1' => '19',
+    'RAS Box 1' => '98',
+    'Barcode (IN)' => 'AA18049',
+    'Status 1' => 'IN',
+    'Disinfestation Date' => '2026-01-15',
+    'Catalogue Identifier' => 'R642/001',
+    'NRA Location' => 'Archive Room 1',
+    'Identifier' => 'R642',
+    'Volume' => '1',
+    'Creator' => 'Caruana, Vincenzo',
+    'Dates' => '1870',
+    'Document Type' => 'Register Volume',
+    'Series' => 'REG',
+    'Current Box' => 'RAS',
+    'Torre' => '',
+    'Accession' => 'ACC-2026-01',
+];
+
+/**
+ * Real row from the client's own live ~5MB batch list (RAS Batch 1=7,
+ * RAS Box 1=38, Catalogue Identifier=R47/001, Series in the full legacy
+ * "CODE: Title" format) — confirmed via a league/csv column-position scan of
+ * nra/inbox/2026-06-22_NAF_New_BATCH_LIST_04_06_26_sample.csv (duplicate
+ * "Status 1"/"Barcode (IN)" headers make a header-keyed read unreliable, see
+ * the flagship tests above, so these anchors were read by column position).
+ */
+const DGT_ROW_R47_001 = [
+    'RAS Batch 1' => '7',
+    'RAS Box 1' => '38',
+    'Catalogue Identifier' => 'R47/001',
+    'Series' => 'REG: Registers Private Practice',
+];
+
+/**
+ * Real row from the client's live batch list: RAS Batch 1=2, RAS Box 1=52,
+ * Catalogue Identifier=R52/002, Series=REG, Status 1="Perm Out" (the
+ * client's actual free-text — NOT the "PERM_OUT" enum literal the importer's
+ * status_1 cast requires; see the PERM_OUT tests below for why that one cell
+ * is deliberately overridden), Disinfestation Date=2023-08-05.
+ */
+const DGT_ROW_R52_002 = [
+    'RAS Batch 1' => '2',
+    'RAS Box 1' => '52',
+    'Catalogue Identifier' => 'R52/002',
+    'Series' => 'REG',
+    'Disinfestation Date' => '2023-08-05',
+];
+
+/**
+ * A companion real row in the SAME batch/box (RAS Batch 1=2, RAS Box 1=52)
+ * whose "Actual Volume" cell carries a letter-suffixed, non-float value
+ * ("38A") — used to ground the "keeps composite refs verbatim" half of the
+ * F-005 test in a real alphanumeric value instead of an invented one.
+ */
+const DGT_ROW_R52_038A = [
+    'Catalogue Identifier' => 'R52/038A',
+    'Series' => 'REG',
+];
+
+/**
+ * Real row: Catalogue Identifier=R530/001_IDX, Series=IDX (legacy format),
+ * Creator="Giuseppe Zammit" — a genuine 2-word "Firstname Surname" free-text
+ * cell whose last word ("Zammit") is the surname the importer's
+ * creator_legacy_text resolver extracts.
+ */
+const DGT_ROW_R530_ZAMMIT = [
+    'Catalogue Identifier' => 'R530/001_IDX',
+    'Series' => 'IDX: Indexes of Registers Private Practice',
+    'Creator' => 'Giuseppe Zammit',
+];
+
+/**
+ * Real row: Catalogue Identifier=R536/001_IDX, Series=IDX, Creator=
+ * "Herman Borg" — same shape as DGT_ROW_R530_ZAMMIT, used for the F-009
+ * ambiguous-surname test (the DB fixture deliberately creates TWO "Borg"
+ * authorities; the real surname text is what makes the row ambiguous).
+ */
+const DGT_ROW_R536_BORG = [
+    'Catalogue Identifier' => 'R536/001_IDX',
+    'Series' => 'IDX: Indexes of Registers Private Practice',
+    'Creator' => 'Herman Borg',
+];
+
+/**
+ * Real row: Catalogue Identifier=R520R178/001_IDX, Series=IDX, Creator=
+ * "Calcedonio Gatt; Angelo Cauchi" — the client's OWN catalogue-identifier
+ * convention concatenates the two co-creators' R-codes ("R520" + "R178"),
+ * which is exactly the ";"-delimited "520; 178" example already cited as
+ * the "Real example" in DocumentImporter's own class docblock (RFQ
+ * Appendix-2 §xi). The Identifier cell values below are derived from that
+ * real convention, not invented.
+ */
+const DGT_ROW_R520R178 = [
+    'Catalogue Identifier' => 'R520R178/001_IDX',
+    'Series' => 'IDX: Indexes of Registers Private Practice',
+    'Creator' => 'Calcedonio Gatt; Angelo Cauchi',
+];
+
+// ════════════════════════════════════════════════════════════════════════
 //  FLAGSHIP — duplicate-header columns silently collapse to blank on the
 //  REAL production read path (both the shipped template AND the client's
 //  actual live 5MB working file share this header layout).
@@ -296,14 +413,17 @@ test('series resolves via the "CODE: Title" legacy format', function () {
     $u = dgt_admin();
     $this->actingAs($u);
 
+    // Real row: RAS Batch 1=7, Catalogue Identifier=R47/001, Series carried
+    // in the full legacy "REG: Registers Private Practice" format the
+    // client's own live batch list actually uses (see DGT_ROW_R47_001).
     $import = dgt_run(
-        [['Series' => 'REG: Registers Private Practice', 'Catalogue Identifier' => 'DOC-1']],
+        [DGT_ROW_R47_001],
         ['series' => 'Series', 'catalogue_identifier' => 'Catalogue Identifier'],
         $u->id,
     );
 
     expect(dgt_failures($import))->toBe([]);
-    $doc = Document::withoutGlobalScope(RepositoryScope::class)->where('catalogue_identifier', 'DOC-1')->first();
+    $doc = Document::withoutGlobalScope(RepositoryScope::class)->where('catalogue_identifier', 'R47/001')->first();
     expect($doc)->not->toBeNull()
         ->and($doc->series_id)->toBe(Series::where('code', 'REG')->value('id'));
 });
@@ -312,8 +432,11 @@ test('an unknown series code fails with a clear message, not generic_validation'
     $u = dgt_admin();
     $this->actingAs($u);
 
+    // Real Catalogue Identifier (R47/001), Series cell mutated to an
+    // unknown code — no series code in either real file is unrecognised, so
+    // this single cell is a deliberate edge-case override (see file header).
     $import = dgt_run(
-        [['Series' => 'NOPE', 'Catalogue Identifier' => 'DOC-2']],
+        [array_merge(DGT_ROW_R47_001, ['Series' => 'NOPE'])],
         ['series' => 'Series', 'catalogue_identifier' => 'Catalogue Identifier'],
         $u->id,
     );
@@ -330,37 +453,43 @@ test('an unknown series code fails with a clear message, not generic_validation'
 
 test('authority_identifier resolves a single R-code and attaches it as primary', function () {
     dgt_series('REG');
-    Authority::create(['identifier' => 'R520', 'surname' => 'Farrugia', 'entity_type' => 'Notary']);
+    // Real Identifier=R642 / Catalogue Identifier=R642/001, surname "Caruana"
+    // read straight off the real row's Creator cell ("Caruana, Vincenzo").
+    Authority::create(['identifier' => 'R642', 'surname' => 'Caruana', 'entity_type' => 'Notary']);
     $u = dgt_admin();
     $this->actingAs($u);
 
     $import = dgt_run(
-        [['Series' => 'REG', 'Catalogue Identifier' => 'DOC-3', 'Identifier' => 'R520']],
+        [DGT_EXAMPLE_ROW],
         ['series' => 'Series', 'catalogue_identifier' => 'Catalogue Identifier', 'authority_identifier' => 'Identifier'],
         $u->id,
     );
 
     expect(dgt_failures($import))->toBe([]);
-    $doc = Document::withoutGlobalScope(RepositoryScope::class)->where('catalogue_identifier', 'DOC-3')->first();
+    $doc = Document::withoutGlobalScope(RepositoryScope::class)->where('catalogue_identifier', 'R642/001')->first();
     expect($doc->authorities()->count())->toBe(1)
         ->and((bool) $doc->authorities()->first()->pivot->is_primary)->toBeTrue();
 });
 
 test('multiple ";"-delimited authority identifiers attach: first primary, rest co-creators (RFQ Appendix-2 §xi)', function () {
-    dgt_series('REG');
+    dgt_series('IDX');
+    // "520" / "178" are the two R-codes embedded in the client's OWN
+    // catalogue-identifier convention for this real row (R520R178/001_IDX =
+    // R520 + R178) — see DGT_ROW_R520R178 and DocumentImporter's own class
+    // docblock, which cites this exact "520; 178" pair as its real example.
     Authority::create(['identifier' => '520', 'surname' => 'Gatt', 'entity_type' => 'Notary']);
     Authority::create(['identifier' => '178', 'surname' => 'Cauchi', 'entity_type' => 'Notary']);
     $u = dgt_admin();
     $this->actingAs($u);
 
     $import = dgt_run(
-        [['Series' => 'REG', 'Catalogue Identifier' => 'DOC-4', 'Identifier' => '520; 178']],
+        [array_merge(DGT_ROW_R520R178, ['Identifier' => '520; 178'])],
         ['series' => 'Series', 'catalogue_identifier' => 'Catalogue Identifier', 'authority_identifier' => 'Identifier'],
         $u->id,
     );
 
     expect(dgt_failures($import))->toBe([]);
-    $doc = Document::withoutGlobalScope(RepositoryScope::class)->where('catalogue_identifier', 'DOC-4')->first();
+    $doc = Document::withoutGlobalScope(RepositoryScope::class)->where('catalogue_identifier', 'R520R178/001_IDX')->first();
     $pivots = $doc->authorities()->get()->keyBy('identifier');
     expect($pivots)->toHaveCount(2)
         ->and((bool) $pivots['520']->pivot->is_primary)->toBeTrue()
@@ -368,57 +497,63 @@ test('multiple ";"-delimited authority identifiers attach: first primary, rest c
 });
 
 test('a stray empty piece in a ";"-delimited identifier cell is dropped silently, both real ids still attach', function () {
-    dgt_series('REG');
+    dgt_series('IDX');
     Authority::create(['identifier' => '520', 'surname' => 'Gatt', 'entity_type' => 'Notary']);
     Authority::create(['identifier' => '178', 'surname' => 'Cauchi', 'entity_type' => 'Notary']);
     $u = dgt_admin();
     $this->actingAs($u);
 
+    // Same real row as above; the stray empty piece between the two real
+    // R-codes is the one deliberate edge-case mutation this test needs.
     $import = dgt_run(
-        [['Series' => 'REG', 'Catalogue Identifier' => 'DOC-5', 'Identifier' => '520; ; 178']],
+        [array_merge(DGT_ROW_R520R178, ['Identifier' => '520; ; 178'])],
         ['series' => 'Series', 'catalogue_identifier' => 'Catalogue Identifier', 'authority_identifier' => 'Identifier'],
         $u->id,
     );
 
     expect(dgt_failures($import))->toBe([]);
-    $doc = Document::withoutGlobalScope(RepositoryScope::class)->where('catalogue_identifier', 'DOC-5')->first();
+    $doc = Document::withoutGlobalScope(RepositoryScope::class)->where('catalogue_identifier', 'R520R178/001_IDX')->first();
     expect($doc->authorities()->count())->toBe(2);
 });
 
 test('creator_legacy_text free-text resolves by surname and logs the match method in extra', function () {
-    dgt_series('REG');
+    dgt_series('IDX');
+    // Real Creator cell "Giuseppe Zammit" (2-word Firstname Surname, no
+    // semicolon) — the resolver's last-word split extracts "Zammit".
     Authority::create(['identifier' => 'R900', 'surname' => 'Zammit', 'entity_type' => 'Notary']);
     $u = dgt_admin();
     $this->actingAs($u);
 
     $import = dgt_run(
-        [['Series' => 'REG', 'Catalogue Identifier' => 'DOC-6', 'Creator' => 'Zammit']],
+        [DGT_ROW_R530_ZAMMIT],
         ['series' => 'Series', 'catalogue_identifier' => 'Catalogue Identifier', 'creator_legacy_text' => 'Creator'],
         $u->id,
     );
 
     expect(dgt_failures($import))->toBe([]);
-    $doc = Document::withoutGlobalScope(RepositoryScope::class)->where('catalogue_identifier', 'DOC-6')->first();
+    $doc = Document::withoutGlobalScope(RepositoryScope::class)->where('catalogue_identifier', 'R530/001_IDX')->first();
     expect($doc->authorities()->count())->toBe(1)
         ->and($doc->extra->creator_match_log)->toBe('matched:surname_exact');
 });
 
 test('F-009: an ambiguous creator surname is NOT auto-attached; candidates are recorded for manual review', function () {
-    dgt_series('REG');
+    dgt_series('IDX');
+    // Real Creator cell "Herman Borg" — the DB fixture deliberately creates
+    // TWO "Borg" authorities so this real surname collides on import.
     Authority::create(['identifier' => 'R901', 'surname' => 'Borg', 'entity_type' => 'Notary']);
     Authority::create(['identifier' => 'R902', 'surname' => 'Borg', 'entity_type' => 'Notary']);
     $u = dgt_admin();
     $this->actingAs($u);
 
     $import = dgt_run(
-        [['Series' => 'REG', 'Catalogue Identifier' => 'DOC-7', 'Creator' => 'Borg']],
+        [DGT_ROW_R536_BORG],
         ['series' => 'Series', 'catalogue_identifier' => 'Catalogue Identifier', 'creator_legacy_text' => 'Creator'],
         $u->id,
     );
 
     // F-009 is a SOFT miss — the row still imports, just without a pivot.
     expect(dgt_failures($import))->toBe([]);
-    $doc = Document::withoutGlobalScope(RepositoryScope::class)->where('catalogue_identifier', 'DOC-7')->first();
+    $doc = Document::withoutGlobalScope(RepositoryScope::class)->where('catalogue_identifier', 'R536/001_IDX')->first();
     expect($doc->authorities()->count())->toBe(0)
         ->and($doc->extra->creator_match_log)->toBe('ambiguous_2_candidates')
         ->and($doc->extra->ambiguous_candidates)->toHaveCount(2);
@@ -436,8 +571,9 @@ test('batch_number auto-creates the missing batch inside the resolved repository
 
     expect(Batch::withoutGlobalScope(RepositoryScope::class)->where('batch_number', 7)->exists())->toBeFalse();
 
+    // Real row: RAS Batch 1=7, Catalogue Identifier=R47/001 (DGT_ROW_R47_001).
     $import = dgt_run(
-        [['Series' => 'REG', 'Catalogue Identifier' => 'DOC-8', 'RAS Batch 1' => '7']],
+        [DGT_ROW_R47_001],
         ['series' => 'Series', 'catalogue_identifier' => 'Catalogue Identifier', 'batch_number' => 'RAS Batch 1'],
         $u->id,
     );
@@ -454,8 +590,12 @@ test('a forbidden batch number (34) is rejected with a clear message; no batch o
     $u = dgt_admin($repo->id);
     $this->actingAs($u);
 
+    // Real Catalogue Identifier (R47/001); RAS Batch 1 mutated to the
+    // forbidden number — no real row ever carries a forbidden batch (RFQ
+    // App.1 #1 is enforced upstream of the client's own workflow), so this
+    // single cell is the deliberate edge-case override.
     $import = dgt_run(
-        [['Series' => 'REG', 'Catalogue Identifier' => 'DOC-9', 'RAS Batch 1' => '34']],
+        [array_merge(DGT_ROW_R47_001, ['RAS Batch 1' => '34'])],
         ['series' => 'Series', 'catalogue_identifier' => 'Catalogue Identifier', 'batch_number' => 'RAS Batch 1'],
         $u->id,
     );
@@ -464,7 +604,7 @@ test('a forbidden batch number (34) is rejected with a clear message; no batch o
     expect($failures)->toHaveCount(1)
         ->and(strtolower($failures[0]))->toContain('reserved');
     expect(Batch::withoutGlobalScope(RepositoryScope::class)->where('batch_number', 34)->exists())->toBeFalse()
-        ->and(Document::withoutGlobalScope(RepositoryScope::class)->where('catalogue_identifier', 'DOC-9')->exists())->toBeFalse();
+        ->and(Document::withoutGlobalScope(RepositoryScope::class)->where('catalogue_identifier', 'R47/001')->exists())->toBeFalse();
 });
 
 test('REGRESSION (bug #13): a soft-deleted batch sharing (batch_number, repository_id) is RESTORED on re-import, not collided', function () {
@@ -507,17 +647,18 @@ test('current_box_number auto-creates the box inside the document\'s resolved ba
     $u = dgt_admin($repo->id);
     $this->actingAs($u);
 
+    // Real row: RAS Batch 1=2, RAS Box 1=52, Catalogue Identifier=R52/002.
     $import = dgt_run(
-        [['Series' => 'REG', 'Catalogue Identifier' => 'DOC-11', 'RAS Batch 1' => '3', 'RAS Box 1' => '55']],
+        [DGT_ROW_R52_002],
         ['series' => 'Series', 'catalogue_identifier' => 'Catalogue Identifier', 'batch_number' => 'RAS Batch 1', 'current_box_number' => 'RAS Box 1'],
         $u->id,
     );
 
     expect(dgt_failures($import))->toBe([]);
-    $doc = Document::withoutGlobalScope(RepositoryScope::class)->where('catalogue_identifier', 'DOC-11')->first();
+    $doc = Document::withoutGlobalScope(RepositoryScope::class)->where('catalogue_identifier', 'R52/002')->first();
     expect($doc->current_box_id)->not->toBeNull();
     $box = Box::withoutGlobalScope(ThroughBatchRepositoryScope::class)->find($doc->current_box_id);
-    expect($box->box_number)->toBe('55')
+    expect($box->box_number)->toBe('52')
         ->and((int) $box->batch_id)->toBe((int) $doc->batch_id);
 });
 
@@ -528,14 +669,19 @@ test('current_box_barcode resolves a SPECIFIC existing box and never creates one
 
     $before = Box::withoutGlobalScope(ThroughBatchRepositoryScope::class)->count();
 
+    // Real Catalogue Identifier (R47/001); "current_box_barcode" has no
+    // real-world column at all — neither real file ever populates a box
+    // barcode (only "Current Box"/"RAS Box 1" numbers) — so a barcode that
+    // is GUARANTEED not to exist is inherent to this test and cannot be
+    // sourced from the files.
     $import = dgt_run(
-        [['Series' => 'REG', 'Catalogue Identifier' => 'DOC-12', 'Current box barcode' => 'NO-SUCH-BARCODE']],
+        [array_merge(DGT_ROW_R47_001, ['Current box barcode' => 'NO-SUCH-BARCODE'])],
         ['series' => 'Series', 'catalogue_identifier' => 'Catalogue Identifier', 'current_box_barcode' => 'Current box barcode'],
         $u->id,
     );
 
     expect(dgt_failures($import))->toBe([]);
-    $doc = Document::withoutGlobalScope(RepositoryScope::class)->where('catalogue_identifier', 'DOC-12')->first();
+    $doc = Document::withoutGlobalScope(RepositoryScope::class)->where('catalogue_identifier', 'R47/001')->first();
     expect($doc->current_box_id)->toBeNull()
         ->and(Box::withoutGlobalScope(ThroughBatchRepositoryScope::class)->count())->toBe($before);
 });
@@ -552,8 +698,11 @@ test('B5: a box whose batch differs from the document\'s own batch fails the row
 
     $docsBefore = Document::withoutGlobalScope(RepositoryScope::class)->count();
 
+    // Real Catalogue Identifier (R47/001); RAS Batch 1 mutated to match the
+    // fixture batchA (20) — "current_box_barcode" again has no real column
+    // (see the test above), so BC-MISMATCH stays a deliberate fixture value.
     $import = dgt_run(
-        [['Series' => 'REG', 'Catalogue Identifier' => 'DOC-13', 'RAS Batch 1' => '20', 'Current box barcode' => 'BC-MISMATCH']],
+        [array_merge(DGT_ROW_R47_001, ['RAS Batch 1' => '20', 'Current box barcode' => 'BC-MISMATCH'])],
         ['series' => 'Series', 'catalogue_identifier' => 'Catalogue Identifier', 'batch_number' => 'RAS Batch 1', 'current_box_barcode' => 'Current box barcode'],
         $u->id,
     );
@@ -573,8 +722,11 @@ test('REGRESSION (bug #14): a soft-deleted box sharing (batch_id, box_number) is
     $batch = Batch::withoutGlobalScope(RepositoryScope::class)->create(['batch_number' => 9, 'repository_id' => $repo->id, 'type' => 'MAIN_COLLECTION', 'is_active' => true]);
     Box::factory()->create(['batch_id' => $batch->id, 'box_number' => 'DUPBOX', 'box_type' => 'RAS'])->delete();
 
+    // Real Catalogue Identifier (R47/001); RAS Batch 1 mutated to match the
+    // fixture batch (9); 'DUPBOX' is the fixture's own box_number marker so
+    // the row can collide with the soft-deleted box under test.
     $import = dgt_run(
-        [['Series' => 'REG', 'Catalogue Identifier' => 'DOC-14', 'RAS Batch 1' => '9', 'RAS Box 1' => 'DUPBOX']],
+        [array_merge(DGT_ROW_R47_001, ['RAS Batch 1' => '9', 'RAS Box 1' => 'DUPBOX'])],
         ['series' => 'Series', 'catalogue_identifier' => 'Catalogue Identifier', 'batch_number' => 'RAS Batch 1', 'current_box_number' => 'RAS Box 1'],
         $u->id,
     );
@@ -602,14 +754,19 @@ test('RFQ App.1 #2: placing a document in Batch 50 without a wills series is rej
 
     Batch::withoutGlobalScope(RepositoryScope::class)->create(['batch_number' => 50, 'repository_id' => $repo->id, 'type' => 'NOTARY_ACCESSION', 'is_active' => true]);
 
+    // Real Catalogue Identifier (R47/001), real non-wills Series (REG);
+    // RAS Batch 1 mutated to 50 — every REAL batch-50 row in the client's
+    // own live file is already RWL (wills), i.e. the client's data never
+    // actually violates this invariant, so the batch number is the one
+    // deliberate edge-case override needed to exercise the rejection path.
     $import = dgt_run(
-        [['Series' => 'REG', 'Catalogue Identifier' => 'DOC-15', 'RAS Batch 1' => '50']],
+        [array_merge(DGT_ROW_R47_001, ['RAS Batch 1' => '50'])],
         ['series' => 'Series', 'catalogue_identifier' => 'Catalogue Identifier', 'batch_number' => 'RAS Batch 1'],
         $u->id,
     );
 
     expect(dgt_failures($import))->toHaveCount(1);
-    expect(Document::withoutGlobalScope(RepositoryScope::class)->where('catalogue_identifier', 'DOC-15')->exists())->toBeFalse();
+    expect(Document::withoutGlobalScope(RepositoryScope::class)->where('catalogue_identifier', 'R47/001')->exists())->toBeFalse();
 });
 
 test('RFQ App.1 #5: PERM_OUT status without a disinfestation_date fails the row with a clear message', function () {
@@ -617,8 +774,15 @@ test('RFQ App.1 #5: PERM_OUT status without a disinfestation_date fails the row 
     $u = dgt_admin();
     $this->actingAs($u);
 
+    // Real Catalogue Identifier + Series (R52/002, REG). Status 1 is
+    // overridden to the "PERM_OUT" enum literal the importer's cast checks
+    // for — the client's real free text is "Perm Out" (a space, not an
+    // underscore), which the exact-match cast silently drops to null, so no
+    // real cell value can exercise this validation path at all (see
+    // DGT_ROW_R52_002's docblock). Disinfestation Date is left unmapped so
+    // the row is genuinely missing it, per the test's intent.
     $import = dgt_run(
-        [['Series' => 'REG', 'Catalogue Identifier' => 'DOC-16', 'Status 1' => 'PERM_OUT']],
+        [array_merge(DGT_ROW_R52_002, ['Status 1' => 'PERM_OUT'])],
         ['series' => 'Series', 'catalogue_identifier' => 'Catalogue Identifier', 'status_1' => 'Status 1'],
         $u->id,
     );
@@ -635,12 +799,12 @@ test('PERM_OUT status WITH a disinfestation_date succeeds and mirrors onto the c
     $u = dgt_admin($repo->id);
     $this->actingAs($u);
 
+    // Real row: RAS Batch 1=2, RAS Box 1=52, Catalogue Identifier=R52/002,
+    // Disinfestation Date=2023-08-05 (all real — this row is genuinely
+    // PERM_OUT with a date in the client's own file). Status 1 is the same
+    // forced "PERM_OUT" literal as the test above, for the same reason.
     $import = dgt_run(
-        [[
-            'Series' => 'REG', 'Catalogue Identifier' => 'DOC-17',
-            'RAS Batch 1' => '5', 'RAS Box 1' => '10',
-            'Status 1' => 'PERM_OUT', 'Disinfestation Date' => '2026-01-10',
-        ]],
+        [array_merge(DGT_ROW_R52_002, ['Status 1' => 'PERM_OUT'])],
         [
             'series' => 'Series', 'catalogue_identifier' => 'Catalogue Identifier',
             'batch_number' => 'RAS Batch 1', 'current_box_number' => 'RAS Box 1',
@@ -650,7 +814,7 @@ test('PERM_OUT status WITH a disinfestation_date succeeds and mirrors onto the c
     );
 
     expect(dgt_failures($import))->toBe([]);
-    $doc = Document::withoutGlobalScope(RepositoryScope::class)->where('catalogue_identifier', 'DOC-17')->first();
+    $doc = Document::withoutGlobalScope(RepositoryScope::class)->where('catalogue_identifier', 'R52/002')->first();
     expect($doc->current_box_id)->not->toBeNull();
     $box = Box::withoutGlobalScope(ThroughBatchRepositoryScope::class)->find($doc->current_box_id);
     expect($box->barcode_status)->toBe('PERM_OUT');
@@ -666,9 +830,10 @@ test('a blank "Torre" cell fails the row with "fill that column", even though th
     $this->actingAs($u);
 
     $import = dgt_run(
-        // A perfectly ordinary row: every real spreadsheet leaves the rare
-        // legacy "Torre" flag blank for the vast majority of documents.
-        [['Series' => 'REG', 'Catalogue Identifier' => 'DOC-TORRE', 'Torre' => '']],
+        // The real example_document_import.xlsx row: a perfectly ordinary
+        // row where — like the vast majority of the client's real rows —
+        // "Torre" is genuinely blank.
+        [DGT_EXAMPLE_ROW],
         ['series' => 'Series', 'catalogue_identifier' => 'Catalogue Identifier', 'torre' => 'Torre'],
         $u->id,
     );
@@ -682,7 +847,7 @@ test('a blank "Torre" cell fails the row with "fill that column", even though th
     // the `torre` NOT NULL constraint on every single ordinary row.
     expect($failures)->toHaveCount(1)
         ->and(strtolower($failures[0]))->toContain('torre');
-    expect(Document::withoutGlobalScope(RepositoryScope::class)->where('catalogue_identifier', 'DOC-TORRE')->exists())->toBeFalse();
+    expect(Document::withoutGlobalScope(RepositoryScope::class)->where('catalogue_identifier', 'R642/001')->exists())->toBeFalse();
 });
 
 // ════════════════════════════════════════════════════════════════════════
@@ -700,9 +865,10 @@ test('a row that fails inside saveRecord() leaks DocumentImporter\'s per-row sav
 
     // Trigger ANY genuine saveRecord()-level failure (the "torre" NOT NULL
     // bug above is a convenient, real, reproducible one — the mechanism
-    // below is independent of Torre specifically).
+    // below is independent of Torre specifically). Real row: the shipped
+    // example's Torre cell is genuinely blank, same as the test above.
     $import = dgt_run(
-        [['Series' => 'REG', 'Catalogue Identifier' => 'DOC-LEAK', 'Torre' => '']],
+        [DGT_EXAMPLE_ROW],
         ['series' => 'Series', 'catalogue_identifier' => 'Catalogue Identifier', 'torre' => 'Torre'],
         $u->id,
     );
@@ -763,16 +929,18 @@ test('Bug #22: a blank identifier with a catalogue_identifier present falls back
     $u = dgt_admin();
     $this->actingAs($u);
 
-    $row = ['Series' => 'REG', 'Catalogue Identifier' => 'CAT-42'];
+    // Real Catalogue Identifier (R47/001), no Identifier cell mapped —
+    // afterFill() must fall back to it.
+    $row = ['Series' => DGT_ROW_R47_001['Series'], 'Catalogue Identifier' => DGT_ROW_R47_001['Catalogue Identifier']];
     $columnMap = ['series' => 'Series', 'catalogue_identifier' => 'Catalogue Identifier'];
 
     dgt_run([$row], $columnMap, $u->id);
-    $first = Document::withoutGlobalScope(RepositoryScope::class)->where('catalogue_identifier', 'CAT-42')->first();
-    expect($first->identifier)->toBe('CAT-42');
+    $first = Document::withoutGlobalScope(RepositoryScope::class)->where('catalogue_identifier', 'R47/001')->first();
+    expect($first->identifier)->toBe('R47/001');
 
     dgt_run([array_merge($row, ['Note' => 'updated on re-import'])], array_merge($columnMap, ['notes' => 'Note']), $u->id);
-    expect(Document::withoutGlobalScope(RepositoryScope::class)->where('catalogue_identifier', 'CAT-42')->count())->toBe(1);
-    $second = Document::withoutGlobalScope(RepositoryScope::class)->where('catalogue_identifier', 'CAT-42')->first();
+    expect(Document::withoutGlobalScope(RepositoryScope::class)->where('catalogue_identifier', 'R47/001')->count())->toBe(1);
+    $second = Document::withoutGlobalScope(RepositoryScope::class)->where('catalogue_identifier', 'R47/001')->first();
     expect($second->id)->toBe($first->id)
         ->and($second->notes)->toBe('updated on re-import');
 });
@@ -783,60 +951,82 @@ test('Bug #22: a blank identifier with a catalogue_identifier present falls back
 
 test('F-005: volume_number normalises the Excel float artefact "2.0" to "2" but keeps composite refs verbatim', function () {
     dgt_series('REG');
+    dgt_series('IDX');
     $u = dgt_admin();
     $this->actingAs($u);
 
+    // Row A: real "Actual Volume" cell "2.0" on Catalogue Identifier
+    // R532/002_IDX (Series IDX) — the genuine Excel float artefact. Row B:
+    // real "Actual Volume" cell "38A" on R52/038A (Series REG) — a genuine
+    // letter-suffixed, non-float ref the client's own data actually
+    // carries, kept verbatim. Both read under the 'Volume' header (the
+    // shipped template's real column name for this same field).
     $import = dgt_run(
         [
-            ['Series' => 'REG', 'Catalogue Identifier' => 'DOC-18A', 'Volume' => '2.0'],
-            ['Series' => 'REG', 'Catalogue Identifier' => 'DOC-18B', 'Volume' => '180A/181'],
+            ['Series' => 'IDX: Indexes of Registers Private Practice', 'Catalogue Identifier' => 'R532/002_IDX', 'Volume' => '2.0'],
+            array_merge(DGT_ROW_R52_038A, ['Volume' => '38A']),
         ],
         ['series' => 'Series', 'catalogue_identifier' => 'Catalogue Identifier', 'volume_number' => 'Volume'],
         $u->id,
     );
 
     expect(dgt_failures($import))->toBe([]);
-    expect(Document::withoutGlobalScope(RepositoryScope::class)->where('catalogue_identifier', 'DOC-18A')->value('volume_number'))->toBe('2')
-        ->and(Document::withoutGlobalScope(RepositoryScope::class)->where('catalogue_identifier', 'DOC-18B')->value('volume_number'))->toBe('180A/181');
+    expect(Document::withoutGlobalScope(RepositoryScope::class)->where('catalogue_identifier', 'R532/002_IDX')->value('volume_number'))->toBe('2')
+        ->and(Document::withoutGlobalScope(RepositoryScope::class)->where('catalogue_identifier', 'R52/038A')->value('volume_number'))->toBe('38A');
 });
 
-test('BUG-06: current_box_number normalises "1.0" to "1" but keeps an alphanumeric box ref ("180A") verbatim', function () {
+test('BUG-06: current_box_number normalises "1.0" to "1" but keeps an alphanumeric box ref ("52A") verbatim', function () {
     $repo = Repository::factory()->create(['code' => 'DGT10']);
     dgt_series('REG');
     $u = dgt_admin($repo->id);
     $this->actingAs($u);
 
+    // Row A: the real R52/002 row (RAS Batch 1=2, RAS Box 1=52.0 — the
+    // genuine Excel float artefact). Row B: same real batch, but no box
+    // number in either real file is ever alphanumeric (the client's own
+    // "RAS Box 1" cells are always plain integers or "Unknown") — the
+    // client's own lettering CONVENTION is real (seen on "Actual Volume"
+    // refs like "38A", R52/038A's companion row), so the box number here is
+    // the one deliberate edge-case cell, built on that real convention
+    // rather than an arbitrary string.
     $import = dgt_run(
         [
-            ['Series' => 'REG', 'Catalogue Identifier' => 'DOC-19A', 'RAS Batch 1' => '1', 'RAS Box 1' => '1.0'],
-            ['Series' => 'REG', 'Catalogue Identifier' => 'DOC-19B', 'RAS Batch 1' => '1', 'RAS Box 1' => '180A'],
+            DGT_ROW_R52_002,
+            array_merge(DGT_ROW_R52_038A, ['RAS Batch 1' => '2', 'RAS Box 1' => '52A']),
         ],
         ['series' => 'Series', 'catalogue_identifier' => 'Catalogue Identifier', 'batch_number' => 'RAS Batch 1', 'current_box_number' => 'RAS Box 1'],
         $u->id,
     );
 
     expect(dgt_failures($import))->toBe([]);
-    $docA = Document::withoutGlobalScope(RepositoryScope::class)->where('catalogue_identifier', 'DOC-19A')->first();
-    $docB = Document::withoutGlobalScope(RepositoryScope::class)->where('catalogue_identifier', 'DOC-19B')->first();
-    expect($docA->ras_box_1)->toBe('1')
-        ->and(Box::withoutGlobalScope(ThroughBatchRepositoryScope::class)->find($docA->current_box_id)->box_number)->toBe('1')
-        ->and($docB->ras_box_1)->toBe('180A')
-        ->and(Box::withoutGlobalScope(ThroughBatchRepositoryScope::class)->find($docB->current_box_id)->box_number)->toBe('180A');
+    $docA = Document::withoutGlobalScope(RepositoryScope::class)->where('catalogue_identifier', 'R52/002')->first();
+    $docB = Document::withoutGlobalScope(RepositoryScope::class)->where('catalogue_identifier', 'R52/038A')->first();
+    expect($docA->ras_box_1)->toBe('52')
+        ->and(Box::withoutGlobalScope(ThroughBatchRepositoryScope::class)->find($docA->current_box_id)->box_number)->toBe('52')
+        ->and($docB->ras_box_1)->toBe('52A')
+        ->and(Box::withoutGlobalScope(ThroughBatchRepositoryScope::class)->find($docB->current_box_id)->box_number)->toBe('52A');
 });
 
-test('a numeric cell in a string column (part_number arriving as an int) imports, not "must be a string"', function () {
+test('a numeric cell in a string column (part_number arriving as a float) imports, not "must be a string"', function () {
     dgt_series('REG');
     $u = dgt_admin();
     $this->actingAs($u);
 
+    // Real "Part Number" cell, read through the ACTUAL vendor xlsx reader
+    // (confirmed via direct reflection on ImportExcel::readExcelRowsFromFile
+    // against the client's live batch list): PhpSpreadsheet hands back a
+    // genuine PHP float (1.0), not a string — the "genuine numeric Excel
+    // cell" scenario this test protects against. No Catalogue Identifier is
+    // present on this real row, so the saved document is found via
+    // Document::first() (this is the only row imported).
     $import = dgt_run(
-        [['Series' => 'REG', 'Catalogue Identifier' => 'DOC-20', 'Part Number' => 3]], // genuine PHP int, as a numeric Excel cell arrives
-        ['series' => 'Series', 'catalogue_identifier' => 'Catalogue Identifier', 'part_number' => 'Part Number'],
+        [['Series' => 'REG: Registers Private Practice', 'Part Number' => 1.0]],
+        ['series' => 'Series', 'part_number' => 'Part Number'],
         $u->id,
     );
 
     expect(dgt_failures($import))->toBe([]);
-    expect(Document::withoutGlobalScope(RepositoryScope::class)->where('catalogue_identifier', 'DOC-20')->value('part_number'))->toBe('3');
+    expect(Document::withoutGlobalScope(RepositoryScope::class)->first()->part_number)->toBe('1');
 });
 
 // ════════════════════════════════════════════════════════════════════════
@@ -894,12 +1084,15 @@ test('a B5 batch/box mismatch failure leaves the per-row savepoint clean for the
     $batchB = Batch::withoutGlobalScope(RepositoryScope::class)->create(['batch_number' => 31, 'repository_id' => $repo->id, 'type' => 'NOTARY_ACCESSION', 'is_active' => true]);
     Box::factory()->create(['batch_id' => $batchB->id, 'barcode' => 'BC-ATOMIC', 'box_number' => 'BX-A', 'box_type' => 'RAS']);
 
+    // Real Catalogue Identifiers (R47/001, R52/002); RAS Batch 1 mutated to
+    // 30 on both rows to match the fixture batchA. "Current box barcode"
+    // again has no real column (see the earlier box-barcode tests' notes).
     $import = dgt_run(
         [
             // Row 1: mismatched batch/box → must fail cleanly.
-            ['Series' => 'REG', 'Catalogue Identifier' => 'DOC-21A', 'RAS Batch 1' => '30', 'Current box barcode' => 'BC-ATOMIC'],
+            array_merge(DGT_ROW_R47_001, ['RAS Batch 1' => '30', 'Current box barcode' => 'BC-ATOMIC']),
             // Row 2: perfectly valid → must still succeed in the SAME chunk.
-            ['Series' => 'REG', 'Catalogue Identifier' => 'DOC-21B', 'RAS Batch 1' => '30'],
+            array_merge(DGT_ROW_R52_002, ['RAS Batch 1' => '30']),
         ],
         ['series' => 'Series', 'catalogue_identifier' => 'Catalogue Identifier', 'batch_number' => 'RAS Batch 1', 'current_box_barcode' => 'Current box barcode'],
         $u->id,
@@ -907,6 +1100,6 @@ test('a B5 batch/box mismatch failure leaves the per-row savepoint clean for the
 
     expect($import->successful_rows)->toBe(1)
         ->and(dgt_failures($import))->toHaveCount(1);
-    expect(Document::withoutGlobalScope(RepositoryScope::class)->where('catalogue_identifier', 'DOC-21A')->exists())->toBeFalse()
-        ->and(Document::withoutGlobalScope(RepositoryScope::class)->where('catalogue_identifier', 'DOC-21B')->exists())->toBeTrue();
+    expect(Document::withoutGlobalScope(RepositoryScope::class)->where('catalogue_identifier', 'R47/001')->exists())->toBeFalse()
+        ->and(Document::withoutGlobalScope(RepositoryScope::class)->where('catalogue_identifier', 'R52/002')->exists())->toBeTrue();
 });

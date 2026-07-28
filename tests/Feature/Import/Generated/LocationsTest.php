@@ -25,6 +25,14 @@ use Spatie\Permission\Models\Role;
  * INSERT bug), type validation against active location_types UNION
  * Location::TYPES, blank repository_code => global, auto-generated code,
  * parent resolution order/scoping.
+ *
+ * Rows below come from the real production CSV wherever possible (via
+ * loc_realRow()/loc_realRows()) — the client's actual name/type/repository_code
+ * combinations. Where a test needs a value the CSV genuinely never contains
+ * (a missing parent, an unknown repository code, a custom/alias/invalid type,
+ * an explicit code, an update-pass note) a real row is used as the base and
+ * only the one or two cells the scenario needs are mutated — never a whole
+ * hand-authored row.
  */
 uses(RefreshDatabase::class);
 
@@ -99,6 +107,43 @@ function loc_columnMap(): array
     ];
 }
 
+/**
+ * All 29 rows of the real production CSV, keyed by their real "name" cell,
+ * exactly as the client's spreadsheet left them (headers === loc_columnMap()
+ * values, so a row is directly usable as-is).
+ *
+ * @return array<string, array<string, string>>
+ */
+function loc_realRows(): array
+{
+    $csv = array_map('str_getcsv', file(LOC_PROD_CSV));
+    $headers = array_map(fn ($h) => trim((string) $h), $csv[0]);
+    $dataRows = array_slice($csv, 1);
+
+    $rows = [];
+    foreach ($dataRows as $row) {
+        $keyed = [];
+        foreach ($headers as $i => $header) {
+            $keyed[$header] = $row[$i] ?? '';
+        }
+        $rows[$keyed['name']] = $keyed;
+    }
+
+    return $rows;
+}
+
+/**
+ * One real row from the prod CSV, by its real "name" cell. Callers mutate
+ * only the specific cell(s) their edge case needs, keeping everything else
+ * exactly as the client uploaded it.
+ *
+ * @return array<string, string>
+ */
+function loc_realRow(string $name): array
+{
+    return loc_realRows()[$name];
+}
+
 // ─── Phantom-attribute INSERT bug (parent_name / repository_code) ───────────
 
 test('a row that maps repository_code does not blow up the INSERT with a phantom column', function () {
@@ -106,11 +151,9 @@ test('a row that maps repository_code does not blow up the INSERT with a phantom
     $u = loc_admin($repo->id);
     $this->actingAs($u);
 
-    $import = loc_run(
-        [['name' => 'Archive 1', 'type' => 'Repository', 'parent_name' => '', 'repository_code' => 'NRA', 'code' => '', 'notes' => '', 'sort_order' => '', 'is_active' => '']],
-        loc_columnMap(),
-        $u->id,
-    );
+    // Real row: "Archive 1","Repository","","NRA","","","","" — maps
+    // repository_code exactly like every root row in the client's file.
+    $import = loc_run([loc_realRow('Archive 1')], loc_columnMap(), $u->id);
 
     expect(loc_failures($import))->toBe([]);
     $loc = Location::where('name', 'Archive 1')->first();
@@ -125,14 +168,15 @@ test('a row that maps BOTH parent_name and repository_code does not blow up the 
 
     $parent = Location::create(['name' => 'Cataloguing', 'type' => 'room', 'repository_id' => $repo->id, 'is_active' => true]);
 
-    $import = loc_run(
-        [['name' => 'Shelf A', 'type' => 'shelf', 'parent_name' => 'Cataloguing', 'repository_code' => 'NRA', 'code' => '', 'notes' => '', 'sort_order' => '', 'is_active' => '']],
-        loc_columnMap(),
-        $u->id,
-    );
+    // Real row, only parent_name mutated — the client's file never nests
+    // locations, so a parent link is the one cell this scenario needs.
+    $row = loc_realRow('Mould Room');
+    $row['parent_name'] = 'Cataloguing';
+
+    $import = loc_run([$row], loc_columnMap(), $u->id);
 
     expect(loc_failures($import))->toBe([]);
-    $loc = Location::where('name', 'Shelf A')->first();
+    $loc = Location::where('name', 'Mould Room')->first();
     expect($loc)->not->toBeNull()
         ->and($loc->parent_id)->toBe($parent->id)
         ->and($loc->repository_id)->toBe($repo->id);
@@ -144,42 +188,48 @@ test('a legacy alias type ("archive") is normalised to the canonical "repository
     $u = loc_admin();
     $this->actingAs($u);
 
-    $import = loc_run(
-        [['name' => 'Big Archive', 'type' => 'archive', 'parent_name' => '', 'repository_code' => '', 'code' => '', 'notes' => '', 'sort_order' => '', 'is_active' => '']],
-        loc_columnMap(),
-        $u->id,
-    );
+    // The client's file always writes the canonical "Repository", never the
+    // legacy alias spelling — mutate the type cell (and blank repository_code,
+    // since this test intentionally runs without a Repository fixture) to
+    // exercise the alias path.
+    $row = loc_realRow('Archive 1');
+    $row['type'] = 'archive';
+    $row['repository_code'] = '';
+
+    $import = loc_run([$row], loc_columnMap(), $u->id);
 
     expect(loc_failures($import))->toBe([]);
-    expect(Location::where('name', 'Big Archive')->value('type'))->toBe('repository');
+    expect(Location::where('name', 'Archive 1')->value('type'))->toBe('repository');
 });
 
 test('a legacy alias type ("vetrina") is normalised to the canonical "showcase"', function () {
     $u = loc_admin();
     $this->actingAs($u);
 
-    $import = loc_run(
-        [['name' => 'Vetrina 1', 'type' => 'vetrina', 'parent_name' => '', 'repository_code' => '', 'code' => '', 'notes' => '', 'sort_order' => '', 'is_active' => '']],
-        loc_columnMap(),
-        $u->id,
-    );
+    $row = loc_realRow('Showcase 1');
+    $row['type'] = 'vetrina';
+    $row['repository_code'] = '';
+
+    $import = loc_run([$row], loc_columnMap(), $u->id);
 
     expect(loc_failures($import))->toBe([]);
-    expect(Location::where('name', 'Vetrina 1')->value('type'))->toBe('showcase');
+    expect(Location::where('name', 'Showcase 1')->value('type'))->toBe('showcase');
 });
 
 test('uppercase type value from the real CSV ("Repository") is accepted case-insensitively', function () {
     $u = loc_admin();
     $this->actingAs($u);
 
-    $import = loc_run(
-        [['name' => 'Archive 99', 'type' => 'Repository', 'parent_name' => '', 'repository_code' => '', 'code' => '', 'notes' => '', 'sort_order' => '', 'is_active' => '']],
-        loc_columnMap(),
-        $u->id,
-    );
+    // Real row, type cell left exactly as the client wrote it ("Repository");
+    // only repository_code is blanked because this test runs without a
+    // Repository fixture.
+    $row = loc_realRow('Archive 1');
+    $row['repository_code'] = '';
+
+    $import = loc_run([$row], loc_columnMap(), $u->id);
 
     expect(loc_failures($import))->toBe([]);
-    expect(Location::where('name', 'Archive 99')->value('type'))->toBe('repository');
+    expect(Location::where('name', 'Archive 1')->value('type'))->toBe('repository');
 });
 
 test('a legacy type ("shelf") not in the canonical lookup still imports via the Location::TYPES union', function () {
@@ -188,15 +238,16 @@ test('a legacy type ("shelf") not in the canonical lookup still imports via the 
 
     // location_types seeds only room/museum/repository. 'shelf' is legacy
     // (still in Location::TYPES const) and must still be accepted per the
-    // acceptedTypeCodes() UNION documented on LocationImporter.
-    $import = loc_run(
-        [['name' => 'Old Shelf', 'type' => 'shelf', 'parent_name' => '', 'repository_code' => '', 'code' => '', 'notes' => '', 'sort_order' => '', 'is_active' => '']],
-        loc_columnMap(),
-        $u->id,
-    );
+    // acceptedTypeCodes() UNION documented on LocationImporter. The client's
+    // file never uses 'shelf', so mutate the type cell of a real row.
+    $row = loc_realRow('Cataloguing');
+    $row['type'] = 'shelf';
+    $row['repository_code'] = '';
+
+    $import = loc_run([$row], loc_columnMap(), $u->id);
 
     expect(loc_failures($import))->toBe([]);
-    expect(Location::where('name', 'Old Shelf')->value('type'))->toBe('shelf');
+    expect(Location::where('name', 'Cataloguing')->value('type'))->toBe('shelf');
 });
 
 test('a custom ACTIVE location_types row not in Location::TYPES const is accepted', function () {
@@ -205,14 +256,14 @@ test('a custom ACTIVE location_types row not in Location::TYPES const is accepte
 
     LocationType::create(['code' => 'vault', 'label' => 'Vault', 'sort_order' => 10, 'is_active' => true]);
 
-    $import = loc_run(
-        [['name' => 'Vault 1', 'type' => 'vault', 'parent_name' => '', 'repository_code' => '', 'code' => '', 'notes' => '', 'sort_order' => '', 'is_active' => '']],
-        loc_columnMap(),
-        $u->id,
-    );
+    $row = loc_realRow('Conservation');
+    $row['type'] = 'vault';
+    $row['repository_code'] = '';
+
+    $import = loc_run([$row], loc_columnMap(), $u->id);
 
     expect(loc_failures($import))->toBe([]);
-    expect(Location::where('name', 'Vault 1')->value('type'))->toBe('vault');
+    expect(Location::where('name', 'Conservation')->value('type'))->toBe('vault');
 });
 
 test('an INACTIVE custom location_types row (not in Location::TYPES) is REJECTED', function () {
@@ -221,32 +272,32 @@ test('an INACTIVE custom location_types row (not in Location::TYPES) is REJECTED
 
     LocationType::create(['code' => 'crate', 'label' => 'Crate', 'sort_order' => 11, 'is_active' => false]);
 
-    $import = loc_run(
-        [['name' => 'Crate 1', 'type' => 'crate', 'parent_name' => '', 'repository_code' => '', 'code' => '', 'notes' => '', 'sort_order' => '', 'is_active' => '']],
-        loc_columnMap(),
-        $u->id,
-    );
+    $row = loc_realRow('Mould Room');
+    $row['type'] = 'crate';
+    $row['repository_code'] = '';
+
+    $import = loc_run([$row], loc_columnMap(), $u->id);
 
     $failures = loc_failures($import);
     expect($failures)->toHaveCount(1);
-    expect(Location::where('name', 'Crate 1')->exists())->toBeFalse();
+    expect(Location::where('name', 'Mould Room')->exists())->toBeFalse();
 });
 
 test('a completely invalid type value is rejected with a clear error', function () {
     $u = loc_admin();
     $this->actingAs($u);
 
-    $import = loc_run(
-        [['name' => 'Mystery', 'type' => 'spaceship', 'parent_name' => '', 'repository_code' => '', 'code' => '', 'notes' => '', 'sort_order' => '', 'is_active' => '']],
-        loc_columnMap(),
-        $u->id,
-    );
+    $row = loc_realRow('Old Mould Room');
+    $row['type'] = 'spaceship';
+    $row['repository_code'] = '';
+
+    $import = loc_run([$row], loc_columnMap(), $u->id);
 
     $failures = loc_failures($import);
     expect($failures)->toHaveCount(1)
         ->and($failures[0])->not->toContain('generic_validation')
         ->and(strtolower($failures[0]))->toContain('type');
-    expect(Location::where('name', 'Mystery')->exists())->toBeFalse();
+    expect(Location::where('name', 'Old Mould Room')->exists())->toBeFalse();
 });
 
 // ─── blank repository_code => global (repository_id NULL) ───────────────────
@@ -255,14 +306,15 @@ test('blank repository_code makes the location global (repository_id NULL)', fun
     $u = loc_admin();
     $this->actingAs($u);
 
-    $import = loc_run(
-        [['name' => 'Conservation Lab', 'type' => 'room', 'parent_name' => '', 'repository_code' => '', 'code' => '', 'notes' => 'shared', 'sort_order' => '', 'is_active' => '']],
-        loc_columnMap(),
-        $u->id,
-    );
+    // Every root row in the client's file is scoped to "NRA" — blank it out
+    // to exercise the global-location path.
+    $row = loc_realRow('Conservation');
+    $row['repository_code'] = '';
+
+    $import = loc_run([$row], loc_columnMap(), $u->id);
 
     expect(loc_failures($import))->toBe([]);
-    $loc = Location::where('name', 'Conservation Lab')->first();
+    $loc = Location::where('name', 'Conservation')->first();
     expect($loc)->not->toBeNull()
         ->and($loc->repository_id)->toBeNull();
 });
@@ -271,16 +323,15 @@ test('an unknown repository_code is rejected with a clear "not found" error', fu
     $u = loc_admin();
     $this->actingAs($u);
 
-    $import = loc_run(
-        [['name' => 'Somewhere', 'type' => 'room', 'parent_name' => '', 'repository_code' => 'GHOST', 'code' => '', 'notes' => '', 'sort_order' => '', 'is_active' => '']],
-        loc_columnMap(),
-        $u->id,
-    );
+    $row = loc_realRow('Cabinet');
+    $row['repository_code'] = 'GHOST';
+
+    $import = loc_run([$row], loc_columnMap(), $u->id);
 
     $failures = loc_failures($import);
     expect($failures)->toHaveCount(1)
         ->and(strtolower($failures[0]))->toContain('not found');
-    expect(Location::where('name', 'Somewhere')->exists())->toBeFalse();
+    expect(Location::where('name', 'Cabinet')->exists())->toBeFalse();
 });
 
 test('repository_code is resolved case-insensitively with surrounding whitespace', function () {
@@ -288,14 +339,13 @@ test('repository_code is resolved case-insensitively with surrounding whitespace
     $u = loc_admin($repo->id);
     $this->actingAs($u);
 
-    $import = loc_run(
-        [['name' => 'Messy Repo Code', 'type' => 'room', 'parent_name' => '', 'repository_code' => '  nra  ', 'code' => '', 'notes' => '', 'sort_order' => '', 'is_active' => '']],
-        loc_columnMap(),
-        $u->id,
-    );
+    $row = loc_realRow('Mounted');
+    $row['repository_code'] = '  nra  ';
+
+    $import = loc_run([$row], loc_columnMap(), $u->id);
 
     expect(loc_failures($import))->toBe([]);
-    expect(Location::where('name', 'Messy Repo Code')->value('repository_id'))->toBe($repo->id);
+    expect(Location::where('name', 'Mounted')->value('repository_id'))->toBe($repo->id);
 });
 
 // ─── Auto-generated code when blank ──────────────────────────────────────────
@@ -305,14 +355,12 @@ test('a blank code column auto-generates a TYPE-REPO-N code', function () {
     $u = loc_admin($repo->id);
     $this->actingAs($u);
 
-    $import = loc_run(
-        [['name' => 'Auto Room', 'type' => 'room', 'parent_name' => '', 'repository_code' => 'NRA', 'code' => '', 'notes' => '', 'sort_order' => '', 'is_active' => '']],
-        loc_columnMap(),
-        $u->id,
-    );
+    // Real row, entirely unmodified — every row in the client's file has a
+    // blank code cell, exactly what this scenario needs.
+    $import = loc_run([loc_realRow('Cataloguing')], loc_columnMap(), $u->id);
 
     expect(loc_failures($import))->toBe([]);
-    $code = Location::where('name', 'Auto Room')->value('code');
+    $code = Location::where('name', 'Cataloguing')->value('code');
     expect($code)->not->toBeNull()
         ->and($code)->toStartWith('ROOM-' . $repo->id . '-');
 });
@@ -321,14 +369,13 @@ test('a blank code column on a GLOBAL location auto-generates with the "0" repo 
     $u = loc_admin();
     $this->actingAs($u);
 
-    $import = loc_run(
-        [['name' => 'Global Room', 'type' => 'room', 'parent_name' => '', 'repository_code' => '', 'code' => '', 'notes' => '', 'sort_order' => '', 'is_active' => '']],
-        loc_columnMap(),
-        $u->id,
-    );
+    $row = loc_realRow('Conservation');
+    $row['repository_code'] = '';
+
+    $import = loc_run([$row], loc_columnMap(), $u->id);
 
     expect(loc_failures($import))->toBe([]);
-    $code = Location::where('name', 'Global Room')->value('code');
+    $code = Location::where('name', 'Conservation')->value('code');
     expect($code)->toStartWith('ROOM-0-');
 });
 
@@ -337,14 +384,15 @@ test('an explicitly supplied code is NOT overwritten by auto-generation', functi
     $u = loc_admin($repo->id);
     $this->actingAs($u);
 
-    $import = loc_run(
-        [['name' => 'Explicit Code Room', 'type' => 'room', 'parent_name' => '', 'repository_code' => 'NRA', 'code' => 'MY-CODE-1', 'notes' => '', 'sort_order' => '', 'is_active' => '']],
-        loc_columnMap(),
-        $u->id,
-    );
+    // The client's file never carries an explicit code — mutate just the
+    // code cell of a real row to supply one.
+    $row = loc_realRow('Mould Room');
+    $row['code'] = 'MY-CODE-1';
+
+    $import = loc_run([$row], loc_columnMap(), $u->id);
 
     expect(loc_failures($import))->toBe([]);
-    expect(Location::where('name', 'Explicit Code Room')->value('code'))->toBe('MY-CODE-1');
+    expect(Location::where('name', 'Mould Room')->value('code'))->toBe('MY-CODE-1');
 });
 
 // ─── Parent resolution: order, missing parent, two-pass re-run ──────────────
@@ -353,17 +401,17 @@ test('a row referencing a parent that does not exist yet fails with a clear mess
     $u = loc_admin();
     $this->actingAs($u);
 
-    $import = loc_run(
-        [['name' => 'Orphan Shelf', 'type' => 'shelf', 'parent_name' => 'Nonexistent Room', 'repository_code' => '', 'code' => '', 'notes' => '', 'sort_order' => '', 'is_active' => '']],
-        loc_columnMap(),
-        $u->id,
-    );
+    $row = loc_realRow('Old Mould Room');
+    $row['parent_name'] = 'Nonexistent Room';
+    $row['repository_code'] = '';
+
+    $import = loc_run([$row], loc_columnMap(), $u->id);
 
     $failures = loc_failures($import);
     expect($failures)->toHaveCount(1)
         ->and(strtolower($failures[0]))->toContain('parent')
         ->and(strtolower($failures[0]))->toContain('not found');
-    expect(Location::where('name', 'Orphan Shelf')->exists())->toBeFalse();
+    expect(Location::where('name', 'Old Mould Room')->exists())->toBeFalse();
 });
 
 test('parent-before-child in the same file resolves parent_id correctly', function () {
@@ -371,19 +419,21 @@ test('parent-before-child in the same file resolves parent_id correctly', functi
     $u = loc_admin($repo->id);
     $this->actingAs($u);
 
+    // The client's file is flat (every parent_name blank) — pair two real
+    // rows and mutate only the child's parent_name to build a hierarchy.
+    $childRow = loc_realRow('Conservation');
+    $childRow['parent_name'] = 'Cataloguing';
+
     $import = loc_run(
-        [
-            ['name' => 'Room 3', 'type' => 'room', 'parent_name' => '', 'repository_code' => 'NRA', 'code' => '', 'notes' => '', 'sort_order' => '', 'is_active' => ''],
-            ['name' => 'Shelf B', 'type' => 'shelf', 'parent_name' => 'Room 3', 'repository_code' => 'NRA', 'code' => '', 'notes' => '', 'sort_order' => '', 'is_active' => ''],
-        ],
+        [loc_realRow('Cataloguing'), $childRow],
         loc_columnMap(),
         $u->id,
     );
 
     expect(loc_failures($import))->toBe([]);
-    $room = Location::where('name', 'Room 3')->first();
-    $shelf = Location::where('name', 'Shelf B')->first();
-    expect($shelf->parent_id)->toBe($room->id);
+    $room = Location::where('name', 'Cataloguing')->first();
+    $child = Location::where('name', 'Conservation')->first();
+    expect($child->parent_id)->toBe($room->id);
 });
 
 test('child-before-parent in the same file fails the child, but re-running (parent now present) resolves it', function () {
@@ -391,32 +441,28 @@ test('child-before-parent in the same file fails the child, but re-running (pare
     $u = loc_admin($repo->id);
     $this->actingAs($u);
 
+    $childRow = loc_realRow('Old Mould Room');
+    $childRow['parent_name'] = 'Mould Room';
+
     // Pass 1: child listed BEFORE its parent — Filament processes rows in
     // file order, so the child row fails.
     $import1 = loc_run(
-        [
-            ['name' => 'Shelf C', 'type' => 'shelf', 'parent_name' => 'Room 4', 'repository_code' => 'NRA', 'code' => '', 'notes' => '', 'sort_order' => '', 'is_active' => ''],
-            ['name' => 'Room 4', 'type' => 'room', 'parent_name' => '', 'repository_code' => 'NRA', 'code' => '', 'notes' => '', 'sort_order' => '', 'is_active' => ''],
-        ],
+        [$childRow, loc_realRow('Mould Room')],
         loc_columnMap(),
         $u->id,
     );
 
     expect(loc_failures($import1))->toHaveCount(1);
-    expect(Location::where('name', 'Room 4')->exists())->toBeTrue();
-    expect(Location::where('name', 'Shelf C')->exists())->toBeFalse();
+    expect(Location::where('name', 'Mould Room')->exists())->toBeTrue();
+    expect(Location::where('name', 'Old Mould Room')->exists())->toBeFalse();
 
     // Pass 2: re-run just the previously-failed row — parent now exists.
-    $import2 = loc_run(
-        [['name' => 'Shelf C', 'type' => 'shelf', 'parent_name' => 'Room 4', 'repository_code' => 'NRA', 'code' => '', 'notes' => '', 'sort_order' => '', 'is_active' => '']],
-        loc_columnMap(),
-        $u->id,
-    );
+    $import2 = loc_run([$childRow], loc_columnMap(), $u->id);
 
     expect(loc_failures($import2))->toBe([]);
-    $room = Location::where('name', 'Room 4')->first();
-    $shelf = Location::where('name', 'Shelf C')->first();
-    expect($shelf->parent_id)->toBe($room->id);
+    $room = Location::where('name', 'Mould Room')->first();
+    $child = Location::where('name', 'Old Mould Room')->first();
+    expect($child->parent_id)->toBe($room->id);
 });
 
 test('a repository-scoped child can adopt a GLOBAL parent', function () {
@@ -426,16 +472,15 @@ test('a repository-scoped child can adopt a GLOBAL parent', function () {
 
     $globalParent = Location::create(['name' => 'Conservation Lab', 'type' => 'room', 'repository_id' => null, 'is_active' => true]);
 
-    $import = loc_run(
-        [['name' => 'Bench 1', 'type' => 'shelf', 'parent_name' => 'Conservation Lab', 'repository_code' => 'NRA', 'code' => '', 'notes' => '', 'sort_order' => '', 'is_active' => '']],
-        loc_columnMap(),
-        $u->id,
-    );
+    $row = loc_realRow('Cabinet');
+    $row['parent_name'] = 'Conservation Lab';
+
+    $import = loc_run([$row], loc_columnMap(), $u->id);
 
     expect(loc_failures($import))->toBe([]);
-    $bench = Location::where('name', 'Bench 1')->first();
-    expect($bench->parent_id)->toBe($globalParent->id)
-        ->and($bench->repository_id)->toBe($repo->id);
+    $child = Location::where('name', 'Cabinet')->first();
+    expect($child->parent_id)->toBe($globalParent->id)
+        ->and($child->repository_id)->toBe($repo->id);
 });
 
 test('when the same name exists BOTH repo-scoped and global, the repo-scoped parent wins', function () {
@@ -452,14 +497,13 @@ test('when the same name exists BOTH repo-scoped and global, the repo-scoped par
     $globalRoom = Location::withoutEvents(fn () => Location::create(['name' => 'Shared Name Room', 'type' => 'room', 'repository_id' => null, 'is_active' => true]));
     $scopedRoom = Location::create(['name' => 'Shared Name Room', 'type' => 'room', 'repository_id' => $repo->id, 'is_active' => true]);
 
-    $import = loc_run(
-        [['name' => 'Child Of Scoped', 'type' => 'shelf', 'parent_name' => 'Shared Name Room', 'repository_code' => 'NRA', 'code' => '', 'notes' => '', 'sort_order' => '', 'is_active' => '']],
-        loc_columnMap(),
-        $u->id,
-    );
+    $row = loc_realRow('Mounted');
+    $row['parent_name'] = 'Shared Name Room';
+
+    $import = loc_run([$row], loc_columnMap(), $u->id);
 
     expect(loc_failures($import))->toBe([]);
-    $child = Location::where('name', 'Child Of Scoped')->first();
+    $child = Location::where('name', 'Mounted')->first();
     expect($child->parent_id)->toBe($scopedRoom->id)
         ->and($child->parent_id)->not->toBe($globalRoom->id);
 });
@@ -471,13 +515,14 @@ test('re-importing the same location updates it in place, no duplicate row', fun
     $u = loc_admin($repo->id);
     $this->actingAs($u);
 
-    $rows = [['name' => 'Cataloguing', 'type' => 'room', 'parent_name' => '', 'repository_code' => 'NRA', 'code' => '', 'notes' => 'first pass', 'sort_order' => '', 'is_active' => '']];
+    $row = loc_realRow('Cataloguing');
+    $row['notes'] = 'first pass';
 
-    loc_run($rows, loc_columnMap(), $u->id);
+    loc_run([$row], loc_columnMap(), $u->id);
     expect(Location::where('name', 'Cataloguing')->count())->toBe(1);
 
-    $rows[0]['notes'] = 'second pass — updated';
-    $import2 = loc_run($rows, loc_columnMap(), $u->id);
+    $row['notes'] = 'second pass — updated';
+    $import2 = loc_run([$row], loc_columnMap(), $u->id);
 
     expect(loc_failures($import2))->toBe([]);
     expect(Location::where('name', 'Cataloguing')->count())->toBe(1)
@@ -493,11 +538,7 @@ test('a soft-deleted location (same name/repo/parent) is RESTORED on re-import, 
     expect(Location::count())->toBe(0)
         ->and(Location::withTrashed()->count())->toBe(1);
 
-    $import = loc_run(
-        [['name' => 'Mould Room', 'type' => 'room', 'parent_name' => '', 'repository_code' => 'NRA', 'code' => '', 'notes' => '', 'sort_order' => '', 'is_active' => '']],
-        loc_columnMap(),
-        $u->id,
-    );
+    $import = loc_run([loc_realRow('Mould Room')], loc_columnMap(), $u->id);
 
     expect(loc_failures($import))->toBe([]);
     expect(Location::count())->toBe(1)
@@ -512,19 +553,17 @@ test('two locations with the SAME name under DIFFERENT parents are not merged (c
     $roomA = Location::create(['name' => 'Room A', 'type' => 'room', 'repository_id' => $repo->id, 'is_active' => true]);
     $roomB = Location::create(['name' => 'Room B', 'type' => 'room', 'repository_id' => $repo->id, 'is_active' => true]);
 
-    $import = loc_run(
-        [
-            ['name' => 'Shelf 1', 'type' => 'shelf', 'parent_name' => 'Room A', 'repository_code' => 'NRA', 'code' => '', 'notes' => '', 'sort_order' => '', 'is_active' => ''],
-            ['name' => 'Shelf 1', 'type' => 'shelf', 'parent_name' => 'Room B', 'repository_code' => 'NRA', 'code' => '', 'notes' => '', 'sort_order' => '', 'is_active' => ''],
-        ],
-        loc_columnMap(),
-        $u->id,
-    );
+    $rowA = loc_realRow('Cabinet');
+    $rowA['parent_name'] = 'Room A';
+    $rowB = loc_realRow('Cabinet');
+    $rowB['parent_name'] = 'Room B';
+
+    $import = loc_run([$rowA, $rowB], loc_columnMap(), $u->id);
 
     expect(loc_failures($import))->toBe([]);
-    expect(Location::where('name', 'Shelf 1')->count())->toBe(2);
-    $underA = Location::where('name', 'Shelf 1')->where('parent_id', $roomA->id)->first();
-    $underB = Location::where('name', 'Shelf 1')->where('parent_id', $roomB->id)->first();
+    expect(Location::where('name', 'Cabinet')->count())->toBe(2);
+    $underA = Location::where('name', 'Cabinet')->where('parent_id', $roomA->id)->first();
+    $underB = Location::where('name', 'Cabinet')->where('parent_id', $roomB->id)->first();
     expect($underA)->not->toBeNull()
         ->and($underB)->not->toBeNull()
         ->and($underA->id)->not->toBe($underB->id);
@@ -535,10 +574,10 @@ test('skip_duplicates against an existing live location surfaces a clear "alread
     $u = loc_admin($repo->id);
     $this->actingAs($u);
 
-    Location::create(['name' => 'Already Here', 'type' => 'room', 'repository_id' => $repo->id, 'is_active' => true]);
+    Location::create(['name' => 'Cabinet', 'type' => 'museum', 'repository_id' => $repo->id, 'is_active' => true]);
 
     $import = loc_run(
-        [['name' => 'Already Here', 'type' => 'room', 'parent_name' => '', 'repository_code' => 'NRA', 'code' => '', 'notes' => '', 'sort_order' => '', 'is_active' => '']],
+        [loc_realRow('Cabinet')],
         loc_columnMap(),
         $u->id,
         ['skip_duplicates' => true],
@@ -557,25 +596,12 @@ test('the real production CSV (29 rows) imports cleanly through the streaming pa
     $u = loc_admin($repo->id);
     $this->actingAs($u);
 
-    $csv = array_map('str_getcsv', file(LOC_PROD_CSV));
-    $headers = array_map(fn ($h) => trim((string) $h), $csv[0]);
-    $dataRows = array_slice($csv, 1);
+    $rows = array_values(loc_realRows());
 
-    $rows = [];
-    foreach ($dataRows as $row) {
-        $keyed = [];
-        foreach ($headers as $i => $header) {
-            $keyed[$header] = $row[$i] ?? '';
-        }
-        $rows[] = $keyed;
-    }
-
-    $columnMap = array_combine($headers, $headers);
-
-    $import = loc_run($rows, $columnMap, $u->id);
+    $import = loc_run($rows, loc_columnMap(), $u->id);
 
     expect(loc_failures($import))->toBe([]);
-    expect(Location::count())->toBe(count($dataRows));
+    expect(Location::count())->toBe(count($rows));
     expect(Location::where('name', 'Archive 1')->value('type'))->toBe('repository')
         ->and(Location::where('name', 'Showcase 1')->value('type'))->toBe('museum')
         ->and(Location::where('name', 'Cataloguing')->value('type'))->toBe('room')
@@ -656,18 +682,27 @@ test('a blank is_active column defaults the new location to active', function ()
     $u = loc_admin();
     $this->actingAs($u);
 
-    $import = loc_run(
-        [['name' => 'Default Active Room', 'type' => 'room', 'parent_name' => '', 'repository_code' => '', 'code' => '', 'notes' => '', 'sort_order' => '', 'is_active' => '']],
-        loc_columnMap(),
-        $u->id,
-    );
+    // Every row in the client's file has a blank is_active cell — real row,
+    // repository_code only blanked because this test runs without a
+    // Repository fixture.
+    $row = loc_realRow('Archive 5');
+    $row['repository_code'] = '';
+
+    $import = loc_run([$row], loc_columnMap(), $u->id);
 
     expect(loc_failures($import))->toBe([]);
-    expect(Location::where('name', 'Default Active Room')->value('is_active'))->toBeTrue();
+    expect(Location::where('name', 'Archive 5')->value('is_active'))->toBeTrue();
 });
 
 // ─── Numeric Excel cells (sort_order arriving as int) ────────────────────────
 
+// LEFT SYNTHETIC — verified there is no real-file source for this exact
+// scenario: the prod CSV's sort_order cells are always blank strings, and
+// even the real xlsx sample's sort_order column stores its "1"/"2" values as
+// inlineStr cells (confirmed via PhpSpreadsheet's getCell()->getDataType()),
+// not native numeric cells — so no file in nra/ can produce the raw PHP int
+// state this test exercises (Filament's numeric() cast on an actual int,
+// vs. a numeric string). See "left_synthetic" note.
 test('a numeric sort_order cell (native int from Excel) imports cleanly', function () {
     $u = loc_admin();
     $this->actingAs($u);
@@ -698,11 +733,10 @@ test('REGRESSION (bug D): importing a row that UPDATES a pre-existing code-less 
     Location::withoutGlobalScopes()->whereKey($seeded->id)->update(['code' => null]);
     expect(Location::withoutGlobalScopes()->whereKey($seeded->id)->value('code'))->toBeNull();
 
-    $import = loc_run(
-        [['name' => 'Cataloguing', 'type' => 'room', 'parent_name' => '', 'repository_code' => 'NRA', 'code' => '', 'notes' => 'updated', 'sort_order' => '', 'is_active' => '']],
-        loc_columnMap(),
-        $u->id,
-    );
+    $row = loc_realRow('Cataloguing');
+    $row['notes'] = 'updated';
+
+    $import = loc_run([$row], loc_columnMap(), $u->id);
 
     expect(loc_failures($import))->toBe([]);
     // The same row was UPDATED (not duplicated) AND now carries an auto code.

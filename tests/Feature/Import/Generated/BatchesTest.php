@@ -467,11 +467,13 @@ test('negative batch_number "-5" fails validation cleanly, not masked as generic
     $u = bt_admin($repo->id);
     $this->actingAs($u);
 
-    $import = bt_run(
-        [['batch_number' => '-5', 'description' => 'x', 'type' => 'MAIN_COLLECTION', 'is_active' => '', 'repository_code' => 'NRA']],
-        BT_COLUMN_MAP,
-        $u->id,
-    );
+    // Real row 1 from the client's file, mutated only on batch_number: the
+    // real CSVs never contain a negative value, so this single cell is the
+    // one thing we have to fabricate to trigger the edge case.
+    $row = collect(bt_load_csv(BT_CSV_50))->first(fn ($r) => $r['batch_number'] === '1');
+    $row['batch_number'] = '-5';
+
+    $import = bt_run([$row], BT_COLUMN_MAP, $u->id);
 
     expect($import->getFailedRowsCount())->toBe(1);
     expect(bt_failures($import)[0])->not->toContain('generic_validation')->not->toContain('SQLSTATE');
@@ -482,11 +484,13 @@ test('zero batch_number "0" fails validation cleanly (min:1), not masked as gene
     $u = bt_admin($repo->id);
     $this->actingAs($u);
 
-    $import = bt_run(
-        [['batch_number' => '0', 'description' => 'x', 'type' => 'MAIN_COLLECTION', 'is_active' => '', 'repository_code' => 'NRA']],
-        BT_COLUMN_MAP,
-        $u->id,
-    );
+    // Real row 1 from the client's file, mutated only on batch_number: the
+    // real CSVs never contain a zero value, so this single cell is the one
+    // thing we have to fabricate to trigger the edge case.
+    $row = collect(bt_load_csv(BT_CSV_50))->first(fn ($r) => $r['batch_number'] === '1');
+    $row['batch_number'] = '0';
+
+    $import = bt_run([$row], BT_COLUMN_MAP, $u->id);
 
     expect($import->getFailedRowsCount())->toBe(1);
     expect(bt_failures($import)[0])->not->toContain('generic_validation')->not->toContain('SQLSTATE');
