@@ -10,6 +10,7 @@ use App\Filament\Imports\SeriesImporter;
 use App\Filament\Pages\ImportWizard;
 use App\Support\BulkImport\TemplateGenerator;
 use Illuminate\Foundation\Testing\RefreshDatabase;
+use Illuminate\Support\Facades\Log;
 
 /**
  * Template ↔ importer round-trip guard.
@@ -80,4 +81,27 @@ test('the Box template parent_box_number column maps to the parent barcode impor
     $map = ImportWizard::guessColumnMap(BoxImporter::class, $headers);
 
     expect($map['parent_barcode'] ?? null)->toBe('parent_box_number');
+});
+
+test('logUnrecognisedHeaders warns about spreadsheet columns the importer will not consume', function () {
+    Log::shouldReceive('channel')->with('import')->andReturnSelf();
+    Log::shouldReceive('warning')->once()->withArgs(function (string $message, array $context): bool {
+        return str_contains($message, 'not recognised')
+            && in_array('Totally Unknown Column', $context['ignored_columns'], true)
+            && ! in_array('Identifier', $context['ignored_columns'], true);
+    });
+
+    $headers = ['Identifier', 'Totally Unknown Column'];
+    $columnMap = ImportWizard::guessColumnMap(SeriesImporter::class, $headers);
+
+    ImportWizard::logUnrecognisedHeaders(SeriesImporter::class, $headers, $columnMap, 'test');
+});
+
+test('logUnrecognisedHeaders stays silent when every column is recognised', function () {
+    Log::shouldReceive('channel')->never();
+
+    $headers = TemplateGenerator::headersFor('batch');
+    $columnMap = ImportWizard::guessColumnMap(BatchImporter::class, $headers);
+
+    ImportWizard::logUnrecognisedHeaders(BatchImporter::class, $headers, $columnMap, 'test');
 });

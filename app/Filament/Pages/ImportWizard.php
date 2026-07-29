@@ -45,6 +45,7 @@ use Filament\Support\Exceptions\Halt;
 use Illuminate\Bus\PendingBatch;
 use Illuminate\Contracts\Validation\ValidationRule;
 use Illuminate\Support\Facades\Bus;
+use Illuminate\Support\Facades\Log;
 use Illuminate\Support\Facades\Storage;
 use Illuminate\Support\Facades\URL as UrlFacade;
 use Illuminate\Support\Facades\Validator;
@@ -506,6 +507,12 @@ class ImportWizard extends Page
             return;
         }
 
+        // Defensive diagnostic: record any spreadsheet column the importer does
+        // not consume, so a differently-shaped future file surfaces a clear
+        // "this column was ignored" line in the import log instead of silently
+        // dropping data. Does not block the import (extra columns are allowed).
+        self::logUnrecognisedHeaders($importerClass, $headers, $columnMap, 'wizard');
+
         try {
             $importId = $this->dispatchImportBatch(
                 importerClass: $importerClass,
@@ -698,6 +705,37 @@ class ImportWizard extends Page
         }
 
         return $missing;
+    }
+
+    /**
+     * Log (to the dedicated `import` channel) any spreadsheet header the importer
+     * will NOT consume — the columns whose data silently never reaches the model.
+     *
+     * Purely diagnostic and non-blocking: extra columns are always permitted, but
+     * a differently-shaped future sample (a renamed or added column the guesser
+     * does not know) then leaves a clear "ignored column" trail in
+     * storage/logs/import-*.log instead of dropping data unnoticed.
+     *
+     * @param array<int, string> $headers
+     * @param array<string, string|null> $columnMap column name => matched header
+     */
+    public static function logUnrecognisedHeaders(string $importerClass, array $headers, array $columnMap, string $context): void
+    {
+        $claimed = array_filter(array_values($columnMap), static fn ($h): bool => $h !== null && $h !== '');
+        $ignored = array_values(array_diff($headers, $claimed));
+
+        if ($ignored === []) {
+            return;
+        }
+
+        Log::channel('import')->warning(
+            'Import: spreadsheet columns not recognised by the importer — their data was NOT imported.',
+            [
+                'context' => $context,
+                'importer' => $importerClass,
+                'ignored_columns' => $ignored,
+            ],
+        );
     }
 
     /* ──────────────────────────────────────────────────────────────── */
