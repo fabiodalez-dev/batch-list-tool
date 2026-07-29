@@ -9,6 +9,7 @@ use App\Filament\Imports\LocationImporter;
 use App\Filament\Imports\SeriesImporter;
 use App\Filament\Pages\ImportWizard;
 use App\Support\BulkImport\TemplateGenerator;
+use App\Support\CustomFields\CustomFieldResolver;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Support\Facades\Log;
 
@@ -100,4 +101,29 @@ test('logUnrecognisedHeaders stays silent when every column is recognised', func
     $columnMap = ImportWizard::guessColumnMap(BatchImporter::class, $headers);
 
     ImportWizard::logUnrecognisedHeaders(BatchImporter::class, $headers, $columnMap, 'test');
+});
+
+test('the Download-template step has a hint for every tricky/known box column', function () {
+    $hints = ImportWizard::columnHints();
+    // The two that caused the client's confusion must be explained.
+    expect($hints)->toHaveKey('parent_box_number')
+        ->and($hints['parent_box_number'])->toContain('RAS')
+        ->and($hints)->toHaveKey('Location')
+        ->and($hints['Location'])->toContain('CODE');
+
+    // Every STATIC box template column that is not free-form has an explanation.
+    // Exclude the dynamic custom-field columns the template appends (their labels
+    // are operator-defined and cannot have a built-in hint), so the assertion is
+    // not coupled to whatever custom fields happen to be active.
+    $customFieldLabels = CustomFieldResolver::definitionsFor('box')
+        ->pluck('label')
+        ->all();
+    $noHintNeeded = array_merge(['notes'], $customFieldLabels);
+
+    foreach (TemplateGenerator::headersFor('box') as $h) {
+        if (in_array($h, $noHintNeeded, true)) {
+            continue;
+        }
+        expect($hints)->toHaveKey($h);
+    }
 });
