@@ -9,6 +9,7 @@ use App\Filament\Support\CreatorColumn;
 use App\Models\Location;
 use App\Models\LocationType;
 use App\Models\Repository;
+use Filament\Actions\BulkAction;
 use Filament\Actions\BulkActionGroup;
 use Filament\Actions\DeleteAction;
 use Filament\Actions\EditAction;
@@ -27,6 +28,7 @@ use Filament\Tables\Filters\TernaryFilter;
 use Filament\Tables\Filters\TrashedFilter;
 use Filament\Tables\Table;
 use Illuminate\Database\Eloquent\Builder;
+use Illuminate\Database\Eloquent\Collection;
 use Illuminate\Support\Facades\Schema as SchemaFacade;
 
 /**
@@ -376,10 +378,60 @@ class LocationResource extends Resource
             ])
             ->bulkActions([
                 BulkActionGroup::make([
-                    // No bulk-delete: enforcing the "no children, no
-                    // references" guard per-row inside a bulk action is too
-                    // surprising — admins should delete one Location at a
-                    // time and see WHY each deletion failed.
+                    // Bulk delete that RESPECTS the per-location guard (Charlene's
+                    // feedback: "I cannot bulk delete Locations"). It never force-
+                    // deletes: a location that still has child locations or is
+                    // referenced by Boxes/Documents is skipped and reported, and
+                    // only the safely-deletable ones are soft-deleted — so the
+                    // operator gets the bulk convenience without silently breaking
+                    // referential integrity.
+                    BulkAction::make('deleteDeletable')
+                        ->label('Delete selected')
+                        ->icon('heroicon-o-trash')
+                        ->color('danger')
+                        ->requiresConfirmation()
+                        ->modalHeading('Delete selected locations')
+                        ->modalDescription('Locations that still have child locations or are referenced by Boxes/Documents are skipped and reported — the rest are deleted.')
+                        ->authorize(fn (): bool => auth()->user()?->can('deleteAny', Location::class) ?? false)
+                        ->action(function (Collection $records): void {
+                            $deleted = 0;
+                            /** @var array<int, string> $skipped */
+                            $skipped = [];
+
+                            foreach ($records as $location) {
+                                if (! $location instanceof Location) {
+                                    continue;
+                                }
+                                if (auth()->user()?->can('delete', $location) !== true) {
+                                    $skipped[] = $location->name . ' (no permission)';
+
+                                    continue;
+                                }
+                                if ($location->hasChildren() || $location->isReferenced()) {
+                                    $skipped[] = $location->name;
+
+                                    continue;
+                                }
+                                $location->delete();
+                                $deleted++;
+                            }
+
+                            $notification = Notification::make();
+                            if ($deleted > 0 && $skipped === []) {
+                                $notification->success()
+                                    ->title($deleted . ' location(s) deleted.');
+                            } elseif ($deleted > 0) {
+                                $notification->warning()
+                                    ->title($deleted . ' deleted, ' . count($skipped) . ' skipped')
+                                    ->body('Skipped (still have children, are referenced by Boxes/Documents, or you lack permission): ' . implode(', ', $skipped));
+                            } else {
+                                $notification->danger()
+                                    ->title('No locations deleted')
+                                    ->body('Every selected location was skipped — each still has children, is referenced by Boxes/Documents, or you lack permission to delete it.');
+                            }
+                            $notification->send();
+                        })
+                        ->deselectRecordsAfterCompletion(),
                 ]),
             ]);
     }

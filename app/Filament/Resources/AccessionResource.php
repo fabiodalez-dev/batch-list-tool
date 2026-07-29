@@ -25,6 +25,7 @@ use Filament\Tables\Filters\SelectFilter;
 use Filament\Tables\Filters\TernaryFilter;
 use Filament\Tables\Table;
 use Illuminate\Database\Eloquent\Builder;
+use Illuminate\Support\Collection;
 use Illuminate\Support\HtmlString;
 
 class AccessionResource extends Resource
@@ -218,12 +219,7 @@ class AccessionResource extends Resource
                             ->label('Batches')
                             ->badge()
                             ->color('gray')
-                            ->state(fn (?Accession $record): string => $record?->batches->isEmpty() ?? true
-                                ? '—'
-                                : $record->batches
-                                    ->sortBy(fn ($b) => (float) $b->batch_number)
-                                    ->map(fn ($b) => (string) $b->batch_number)
-                                    ->join(', '))
+                            ->state(fn (?Accession $record): string => self::formatBatchesList($record?->batches))
                             ->placeholder('—'),
                         TextEntry::make('repository.code')
                             ->label('Repository')
@@ -346,12 +342,7 @@ class AccessionResource extends Resource
                 // (no single column to order by across the N:N) but togglable.
                 Tables\Columns\TextColumn::make('batches_list')
                     ->label('Batch Numbers')
-                    ->state(fn (Accession $record): string => $record->batches->isEmpty()
-                        ? '—'
-                        : $record->batches
-                            ->sortBy(fn ($b) => (float) $b->batch_number)
-                            ->map(fn ($b) => (string) $b->batch_number)
-                            ->join(', '))
+                    ->state(fn (Accession $record): string => self::formatBatchesList($record->batches))
                     ->toggleable(),
                 // A5 — sortable on repository name.
                 Tables\Columns\TextColumn::make('repository.name')
@@ -464,5 +455,25 @@ class AccessionResource extends Resource
             'view' => Pages\ViewAccession::route('/{record}'),
             'edit' => Pages\EditAccession::route('/{record}/edit'),
         ];
+    }
+
+    /**
+     * Render an accession's N:N batches as a comma-separated list of batch
+     * numbers, ordered numerically (non-numeric catch-all batches like "Unknown"
+     * sort first via the float cast). Shared by the infolist entry and the table
+     * column so the ordering rule lives in one place.
+     *
+     * @param Collection<int, Batch>|null $batches
+     */
+    private static function formatBatchesList(?Collection $batches): string
+    {
+        if ($batches === null || $batches->isEmpty()) {
+            return '—';
+        }
+
+        return $batches
+            ->sortBy(fn ($b) => (float) $b->batch_number)
+            ->map(fn ($b) => (string) $b->batch_number)
+            ->join(', ');
     }
 }
