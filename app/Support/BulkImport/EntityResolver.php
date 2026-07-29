@@ -423,6 +423,59 @@ final class EntityResolver
     }
 
     /**
+     * Resolve a parent RAS box by its BOX NUMBER within a repository.
+     *
+     * The client's box sheet references a child's parent RAS box by the parent's
+     * box_number (the `parent_box_number` column literally holds "1", the RAS
+     * box's number — not its barcode). box_number is only unique per batch, so a
+     * bare number is ambiguous across a repository's batches; we therefore scope
+     * to RAS boxes in the given repository and demand EXACTLY ONE match. This is
+     * deliberately conservative: a wrong parent link would violate the RFQ A1.3
+     * provenance guard, so anything but a single unambiguous RAS box is reported
+     * to the caller (never guessed).
+     *
+     * @return array{box_id:int,batch_id:int}|array{ambiguous:int}|null
+     *                                                                  - array{box_id,batch_id}: exactly one RAS box matched → link it
+     *                                                                  - array{ambiguous:count}: more than one RAS box has this number → caller
+     *                                                                  must fail the row with a clear message (barcode is required to disambiguate)
+     *                                                                  - null: no RAS box with this number in the repository
+     */
+    public static function resolveRasParentByBoxNumber(?string $boxNumber, ?int $repositoryId): ?array
+    {
+        $boxNumber = self::normaliseString($boxNumber);
+        if ($boxNumber === null || $repositoryId === null) {
+            return null;
+        }
+
+        $key = "ras_parent:number:{$repositoryId}|{$boxNumber}";
+        if (! array_key_exists($key, self::$memo)) {
+            $batchIds = Batch::query()
+                ->withoutGlobalScopes()
+                ->where('repository_id', $repositoryId)
+                ->pluck('id');
+
+            $matches = Box::query()
+                ->withoutGlobalScopes()
+                ->where('box_type', 'RAS')
+                ->where('box_number', $boxNumber)
+                ->whereIn('batch_id', $batchIds)
+                ->get(['id', 'batch_id']);
+
+            if ($matches->count() === 1) {
+                /** @var Box $box */
+                $box = $matches->first();
+                self::$memo[$key] = ['box_id' => (int) $box->id, 'batch_id' => (int) $box->batch_id];
+            } elseif ($matches->count() > 1) {
+                self::$memo[$key] = ['ambiguous' => $matches->count()];
+            } else {
+                self::$memo[$key] = null;
+            }
+        }
+
+        return self::$memo[$key];
+    }
+
+    /**
      * Resolve a Repository by its `code` (the tenant key, e.g. "NRA") or
      * `name`. Used by Authority/Series importers when the operator wants to
      * stamp imported rows into a specific tenant via an `additionalFormComponents`

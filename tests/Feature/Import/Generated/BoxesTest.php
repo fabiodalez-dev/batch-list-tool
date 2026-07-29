@@ -131,7 +131,7 @@ test('the real template exists with the expected headers (sanity)', function () 
         ->and($headers)->toContain('barcode');
 });
 
-test('BUG: the real template column "parent_box_number" is never auto-guessed onto any importer field', function () {
+test('the real template column "parent_box_number" auto-guesses onto the parent_barcode importer field', function () {
     // Mirrors the wizard's own guessing algorithm (RealSampleImportTest::rsi_columnMap).
     [$headers] = bxt_readSample();
     $normalise = fn (string $s): string => strtolower(trim(preg_replace('/[^a-z0-9]+/i', '_', $s) ?? '', '_'));
@@ -151,12 +151,13 @@ test('BUG: the real template column "parent_box_number" is never auto-guessed on
         }
     }
 
-    // "parent_box_number" never lands on parent_barcode (or anything else) —
-    // the wizard's auto-guess silently drops the parent link column entirely.
-    expect($map)->not->toHaveKey('parent_barcode');
+    // "parent_box_number" now lands on parent_barcode so the app's own template
+    // round-trips (feedback #8) instead of silently dropping the parent link.
+    expect($map)->toHaveKey('parent_barcode')
+        ->and($map['parent_barcode'])->toBe('parent_box_number');
 });
 
-test('BUG: mapping the real template parent_box_number column to parent_barcode cannot resolve the parent (box_number != barcode)', function () {
+test('the real template parent_box_number ("1") resolves the parent RAS box by its box number and imports the child', function () {
     $repo = Repository::factory()->create(['code' => 'BXA']);
     $u = bxt_admin($repo->id);
     $this->actingAs($u);
@@ -175,33 +176,67 @@ test('BUG: mapping the real template parent_box_number column to parent_barcode 
     expect($rows[0]['box_number'])->toBe('1')
         ->and($rows[1]['parent_box_number'])->toBe('1');
 
-    // Deliberately do NOT map "Location" here: mapping it would surface a
-    // SEPARATE failure (unknown location code, because the sample's free-text
-    // "Archive Room 1" is not a location `code`) that would mask the parent
-    // resolution failure this test targets. Column order matters: Filament
-    // fills columns left-to-right and a fillRecordUsing() exception on a
-    // LATER column pre-empts the parent_box_id check in afterFill().
+    // Map "Location" to the valid location code so the child (which requires a
+    // location) does not fail on that separate column.
+    $rows[1]['Location'] = 'AR1';
+
     $columnMap = [
         'box_type' => 'box_type',
         'box_number' => 'box_number',
         'batch_number' => 'batch_number',
         'barcode' => 'barcode',
         'barcode_status' => 'barcode_status',
-        'parent_barcode' => 'parent_box_number', // the only plausible mapping an operator has
+        'parent_barcode' => 'parent_box_number', // the client's own column, holding the parent's box number
+        'location' => 'Location',
+    ];
+
+    $import = bxt_run($rows, $columnMap, $u->id);
+
+    // Both rows import: the child resolves its parent by RAS box number "1".
+    expect(bxt_failures($import))->toBe([]);
+
+    $parent = Box::withoutGlobalScope(ThroughBatchRepositoryScope::class)->where('barcode', 'AC54609')->first();
+    $child = Box::withoutGlobalScope(ThroughBatchRepositoryScope::class)->where('box_number', 'NRA1')->first();
+    expect($parent)->not->toBeNull()
+        ->and($child)->not->toBeNull()
+        ->and($child->parent_box_id)->toBe($parent->id);
+});
+
+test('an AMBIGUOUS parent box number (same RAS number in two batches) fails with a clear message instead of guessing', function () {
+    $repo = Repository::factory()->create(['code' => 'BXAMB']);
+    $u = bxt_admin($repo->id);
+    $this->actingAs($u);
+
+    // Two batches in the same repo, each with a RAS box numbered "1".
+    foreach ([46, 47] as $n) {
+        $batch = Batch::withoutGlobalScope(RepositoryScope::class)->create([
+            'batch_number' => $n, 'repository_id' => $repo->id, 'type' => 'MAIN_COLLECTION', 'is_active' => true,
+        ]);
+        Box::withoutGlobalScope(ThroughBatchRepositoryScope::class)->create([
+            'box_type' => 'RAS', 'box_number' => '1', 'batch_id' => $batch->id, 'barcode' => "BC-{$n}",
+        ]);
+    }
+    Location::withoutGlobalScope(RepositoryScope::class)->create([
+        'name' => 'Room', 'code' => 'AR1', 'type' => 'room', 'is_active' => true, 'repository_id' => $repo->id, 'parent_id' => null,
+    ]);
+
+    // An NRA child whose parent_box_number "1" now matches TWO RAS boxes.
+    $rows = [[
+        'box_type' => 'NRA', 'box_number' => 'NRA9', 'batch_number' => '46',
+        'barcode' => '', 'barcode_status' => '', 'parent_box_number' => '1', 'Location' => 'AR1',
+    ]];
+    $columnMap = [
+        'box_type' => 'box_type', 'box_number' => 'box_number', 'batch_number' => 'batch_number',
+        'barcode' => 'barcode', 'barcode_status' => 'barcode_status',
+        'parent_barcode' => 'parent_box_number', 'location' => 'Location',
     ];
 
     $import = bxt_run($rows, $columnMap, $u->id);
 
     $failures = bxt_failures($import);
-    // Row 1 (RAS parent) succeeds; row 2 (NRA, box_number "NRA1") fails
-    // because "1" does not resolve as a BARCODE (parent_barcode only ever
-    // looks up by barcode — see EntityResolver::resolveBox()), even though
-    // the row unambiguously identifies its parent BY box_number, exactly as
-    // shown in the client-facing example template shipped alongside the app.
     expect($failures)->toHaveCount(1)
-        ->and(strtolower($failures[0]))->toContain('parent ras box');
-    expect(Box::withoutGlobalScope(ThroughBatchRepositoryScope::class)->where('box_type', 'RAS')->where('barcode', 'AC54609')->exists())->toBeTrue();
-    expect(Box::withoutGlobalScope(ThroughBatchRepositoryScope::class)->where('box_number', 'NRA1')->exists())->toBeFalse();
+        ->and(strtolower($failures[0]))->toContain('ambiguous');
+    expect(Box::withoutGlobalScope(ThroughBatchRepositoryScope::class)->where('box_number', 'NRA9')->exists())->toBeFalse();
 });
 
 test('control: mapping the ACTUAL barcode as the parent reference resolves and imports the real template rows', function () {

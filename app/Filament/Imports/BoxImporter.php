@@ -311,34 +311,24 @@ class BoxImporter extends Importer
 
             ImportColumn::make('parent_barcode')
                 ->label('Parent box barcode (for IN_SITU / NRA)')
-                ->guess(['Parent barcode', 'parent_barcode', 'Parent RAS barcode'])
+                // The generated Box template names this column `parent_box_number`
+                // (it holds the parent RAS box's BARCODE — the name is legacy).
+                // It MUST be in the guess list or the app's own template imports
+                // with the parent link silently dropped. The round-trip test
+                // (BoxTemplateRoundTripTest) guards this against future drift.
+                ->guess([
+                    'Parent barcode', 'parent_barcode', 'Parent RAS barcode',
+                    'parent_box_number', 'Parent box number', 'Parent Box Number',
+                ])
                 ->fillRecordUsing(function (Box $record, ?string $state): void {
-                    if ($state === null || trim($state) === '') {
-                        return;
-                    }
-                    // Barcodes are globally unique — resolveBox() is intentionally
-                    // unscoped (see BUG-09 fix). Its docblock delegates cross-tenant
-                    // validation to the caller (this closure).
-                    $res = EntityResolver::resolveBox(trim($state));
-                    if ($res === null) {
-                        // Unknown barcode — leave parent_box_id null; afterFill()
-                        // will reject IN_SITU/NRA rows with no parent.
+                    $state = $state !== null ? trim($state) : '';
+                    if ($state === '') {
                         return;
                     }
 
-                    // F030: validate that the parent box belongs to the same
-                    // repository as the row being imported. A parent RAS box from
-                    // another tenant must never be linked (cross-tenant contamination).
-                    // resolveBox() echoes back batch_id so we avoid a second query.
-                    $parentRepoId = Batch::query()
-                        ->withoutGlobalScopes()
-                        ->whereKey($res['batch_id'])
-                        ->value('repository_id');
-                    $parentRepoId = $parentRepoId !== null ? (int) $parentRepoId : null;
-
-                    // Derive the row's effective repository: use the batch already
-                    // resolved onto the record (batch_number fills before this column
-                    // in the column order), falling back to the stash from resolveRecord().
+                    // Derive the row's effective repository once: the batch already
+                    // resolved onto the record (batch_number fills before this
+                    // column), falling back to the stash from resolveRecord().
                     $rowRepoId = null;
                     if ($record->batch_id !== null) {
                         $raw = Batch::query()
@@ -349,8 +339,45 @@ class BoxImporter extends Importer
                     }
                     $rowRepoId ??= self::$rowRepositoryStash[spl_object_id($record)] ?? null;
 
-                    // Cross-tenant: both sides resolved non-null and they differ.
-                    if ($parentRepoId !== null && $rowRepoId !== null && $parentRepoId !== $rowRepoId) {
+                    // (1) Try the value as a BARCODE — globally unique, so
+                    // resolveBox() is intentionally unscoped (BUG-09). Cross-tenant
+                    // correctness is validated here.
+                    $res = EntityResolver::resolveBox($state);
+                    if ($res !== null) {
+                        $parentRepoId = Batch::query()
+                            ->withoutGlobalScopes()
+                            ->whereKey($res['batch_id'])
+                            ->value('repository_id');
+                        $parentRepoId = $parentRepoId !== null ? (int) $parentRepoId : null;
+
+                        if ($parentRepoId !== null && $rowRepoId !== null && $parentRepoId !== $rowRepoId) {
+                            unset(
+                                self::$rowRepositoryStash[spl_object_id($record)],
+                                self::$rowCustomFieldStash[spl_object_id($record)],
+                            );
+
+                            throw ValidationException::withMessages([
+                                'parent_barcode' => __(
+                                    'The parent box (barcode :barcode) belongs to a different repository and cannot be linked to this box.',
+                                    ['barcode' => $state],
+                                ),
+                            ]);
+                        }
+
+                        $record->parent_box_id = $res['box_id'];
+
+                        return;
+                    }
+
+                    // (2) Not a barcode → try the value as a parent RAS box's
+                    // BOX NUMBER within this row's repository. The client's sheet
+                    // references the parent this way (the `parent_box_number`
+                    // column holds "1", the RAS box's number). Scoped to RAS boxes
+                    // in the repository and demanding EXACTLY ONE match so a wrong
+                    // parent can never be linked (RFQ A1.3 provenance).
+                    $byNumber = EntityResolver::resolveRasParentByBoxNumber($state, $rowRepoId);
+
+                    if (is_array($byNumber) && isset($byNumber['ambiguous'])) {
                         unset(
                             self::$rowRepositoryStash[spl_object_id($record)],
                             self::$rowCustomFieldStash[spl_object_id($record)],
@@ -358,18 +385,24 @@ class BoxImporter extends Importer
 
                         throw ValidationException::withMessages([
                             'parent_barcode' => __(
-                                'The parent box (barcode :barcode) belongs to a different repository and cannot be linked to this box.',
-                                ['barcode' => trim($state)],
+                                'More than one RAS box has number :number in this repository, so the parent is ambiguous. Reference the parent by its unique barcode instead.',
+                                ['number' => $state],
                             ),
                         ]);
                     }
 
-                    $record->parent_box_id = $res['box_id'];
-                    // The parent's TYPE is validated centrally in Box::saving
-                    // (RFQ App.1 #3: the parent must be a RAS box). A barcode
-                    // that resolves to a non-RAS box is rejected there on save
-                    // and surfaces in the failed-rows export, so we do not
-                    // duplicate that check here.
+                    if (is_array($byNumber) && isset($byNumber['box_id'])) {
+                        // Same repository by construction (scoped above).
+                        $record->parent_box_id = $byNumber['box_id'];
+
+                        return;
+                    }
+
+                    // Neither a known barcode nor a resolvable RAS box number —
+                    // leave parent_box_id null; afterFill() rejects IN_SITU/NRA
+                    // rows that end up without a parent, with a clear message.
+                    // The parent's TYPE (must be RAS) is validated centrally in
+                    // Box::saving (RFQ App.1 #3).
                 }),
 
             ImportColumn::make('barcode')
