@@ -213,12 +213,10 @@ class BatchImporter extends Importer
                     'max:64',
                     // A NUMERIC batch number must be a positive whole number
                     // (no "0", no "1.5") — non-numeric labels are allowed as-is.
+                    // Single source of truth: Batch::isAcceptableNumberFormat().
                     function (string $attribute, mixed $value, \Closure $fail): void {
-                        $str = trim((string) $value);
-                        if (is_numeric($str) && (string) (int) $str !== $str) {
-                            $fail("Batch number {$value} must be a whole number or a text label.");
-                        } elseif (is_numeric($str) && (int) $str < 1) {
-                            $fail('A numeric batch number must be 1 or greater.');
+                        if (! Batch::isAcceptableNumberFormat((string) $value)) {
+                            $fail("Batch number {$value} must be a positive whole number or a text label.");
                         }
                     },
                     // RFQ App.1 #1 — batch 34 and 36 are unused and will never

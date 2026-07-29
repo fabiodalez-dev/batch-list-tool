@@ -121,6 +121,59 @@ test('a numeric batch still imports and keeps its reserved-number semantics alon
         ->and($wills->type)->toBe('NOTARY_ACCESSION'); // afterFill: numeric >= 30
 });
 
+test('a non-numeric batch is matched within its OWN repository (no cross-tenant steal)', function () {
+    $repoA = Repository::create(['code' => 'AAA', 'name' => 'Repo A']);
+    $repoB = Repository::create(['code' => 'BBB', 'name' => 'Repo B']);
+
+    // Repo A already owns an "Unknown" batch.
+    $batchA = Batch::withoutGlobalScope(RepositoryScope::class)->create([
+        'batch_number' => 'Unknown',
+        'repository_id' => $repoA->id,
+        'description' => 'A-owned',
+    ]);
+
+    // An operator whose default repository is B imports "Unknown" (no explicit
+    // repository_code → falls back to B). It must create B's own row, never
+    // match/steal A's.
+    $userB = bnn_admin($repoB->id);
+    $this->actingAs($userB);
+    bnn_import(['batch_number' => 'Unknown', 'description' => 'B-owned'], $userB->id);
+
+    $batchA->refresh();
+    expect($batchA->repository_id)->toBe($repoA->id)     // untouched
+        ->and($batchA->description)->toBe('A-owned');
+
+    $all = Batch::withoutGlobalScope(RepositoryScope::class)->where('batch_number', 'Unknown')->get();
+    expect($all)->toHaveCount(2)
+        ->and($all->pluck('repository_id')->sort()->values()->all())
+        ->toBe(collect([$repoA->id, $repoB->id])->sort()->values()->all());
+
+    // Re-importing "Unknown" for B again updates only B's row (idempotent).
+    bnn_import(['batch_number' => 'Unknown', 'description' => 'B-updated'], $userB->id);
+    expect(Batch::withoutGlobalScope(RepositoryScope::class)->where('batch_number', 'Unknown')->count())->toBe(2);
+    $batchA->refresh();
+    expect($batchA->description)->toBe('A-owned'); // A still untouched
+    expect(Batch::withoutGlobalScope(RepositoryScope::class)
+        ->where('batch_number', 'Unknown')->where('repository_id', $repoB->id)->value('description'))
+        ->toBe('B-updated');
+});
+
+test('a forbidden numeric batch (34 / 36) fails validation on import and creates no row', function () {
+    $repo = Repository::create(['code' => 'NRA', 'name' => 'National Records Archive']);
+    $u = bnn_admin($repo->id);
+    $this->actingAs($u);
+
+    foreach (['34', '36'] as $forbidden) {
+        try {
+            bnn_import(['batch_number' => $forbidden, 'repository_code' => 'NRA'], $u->id);
+        } catch (Throwable) {
+            // Validation rejects the forbidden number — expected.
+        }
+        expect(Batch::withoutGlobalScope(RepositoryScope::class)->withTrashed()
+            ->where('batch_number', $forbidden)->exists())->toBeFalse();
+    }
+});
+
 test('the model treats numeric-string reserved numbers correctly (34/36 forbidden, 33 MAV, 50 wills)', function () {
     expect((new Batch(['batch_number' => '34']))->isForbidden())->toBeTrue()
         ->and((new Batch(['batch_number' => '36']))->isForbidden())->toBeTrue()

@@ -102,6 +102,26 @@ class Batch extends Model implements AuditableContract
         return $query->where('is_active', true);
     }
 
+    /**
+     * A batch_number's FORMAT is acceptable when it is either a non-numeric
+     * catch-all label ("Unknown", "NULL") or a canonical positive whole number
+     * ("1", "50"). It rejects malformed numerics like "0", "-5", "1.5" or "007".
+     *
+     * Single source of truth for the "positive-integer-if-numeric" rule shared
+     * by the Batch form validator and BatchImporter (mirrors isForbidden()).
+     * Blank is treated as acceptable here — presence is enforced separately by
+     * the `required` rule.
+     */
+    public static function isAcceptableNumberFormat(?string $value): bool
+    {
+        $str = trim((string) $value);
+        if ($str === '' || ! is_numeric($str)) {
+            return true;
+        }
+
+        return (string) (int) $str === $str && (int) $str >= 1;
+    }
+
     public function isForbidden(): bool
     {
         $number = $this->numericBatchNumber();

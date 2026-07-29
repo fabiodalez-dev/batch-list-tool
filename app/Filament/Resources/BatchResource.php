@@ -83,11 +83,8 @@ class BatchResource extends Resource
                             // whole number.
                             ->rule(function () {
                                 return function (string $attribute, mixed $value, \Closure $fail): void {
-                                    $str = trim((string) $value);
-                                    if ($str === '' || ! is_numeric($str)) {
-                                        return;
-                                    }
-                                    if ((string) (int) $str !== $str || (int) $str < 1) {
+                                    // Single source of truth shared with BatchImporter.
+                                    if (! Batch::isAcceptableNumberFormat((string) $value)) {
                                         $fail('A numeric batch number must be a whole number of 1 or greater.');
                                     }
                                 };
@@ -440,7 +437,9 @@ class BatchResource extends Resource
             ->columns([
                 $gc(Tables\Columns\TextColumn::make('batch_number')
                     ->label('Batch Number')
-                    ->numeric()
+                    // NOT ->numeric(): batch_number is a string that can hold
+                    // non-numeric catch-all labels ("Unknown", "NULL") which must
+                    // display verbatim, not through numeric formatting.
                     ->sortable()
                     // A8 — hyperlink only this cell, not the whole row.
                     ->url(fn (?Batch $record): ?string => $record !== null

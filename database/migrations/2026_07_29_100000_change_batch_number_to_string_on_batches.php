@@ -78,9 +78,23 @@ return new class extends Migration
             });
         }
 
-        // NOTE: any non-numeric batch_number (e.g. "Unknown", "NULL") coerces to
-        // 0 on the way back to an integer column — the reverse is inherently
-        // lossy for the rows this migration exists to support.
+        // down() is a LOSSY rollback: a non-numeric batch_number ("Unknown",
+        // "NULL") cannot exist in an integer column. Every such value would
+        // coerce to 0, so two labels in the SAME repository (exactly the client
+        // scenario this migration supports) would both become (0, repository_id)
+        // and VIOLATE the unique key when it is re-added — turning a lossy
+        // rollback into a hard failure. Remove the non-numeric rows up front
+        // (hard delete, ignoring soft-delete — this is a schema rollback) so the
+        // integer conversion + unique re-add cannot collide. Done in PHP so the
+        // "is it numeric" test is portable across MySQL and SQLite.
+        $nonNumericIds = DB::table('batches')
+            ->pluck('batch_number', 'id')
+            ->reject(fn ($value): bool => ctype_digit((string) $value))
+            ->keys();
+        if ($nonNumericIds->isNotEmpty()) {
+            DB::table('batches')->whereIn('id', $nonNumericIds->all())->delete();
+        }
+
         Schema::table('batches', function (Blueprint $table): void {
             $table->unsignedInteger('batch_number')->nullable(false)->change();
         });
