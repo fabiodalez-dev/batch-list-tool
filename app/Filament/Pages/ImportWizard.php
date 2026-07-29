@@ -384,12 +384,22 @@ class ImportWizard extends Page
                     $this->stepValidate(),
                     $this->stepConfirm(),
                 ])
+                    // The submit button must SUBMIT the surrounding
+                    // <form wire:submit="startImport"> (see the page blade), not
+                    // carry its own ->action(). A wizard submitAction WITH an
+                    // ->action() closure is rendered as wire:click="mountAction()"
+                    // which (a) preventDefault()s the native submit so the form's
+                    // wire:submit never fires, and (b) can't resolve a wizard
+                    // submitAction as a mountable page action — so clicking it ran
+                    // NOTHING and every wizard import silently no-op'd. Rendering it
+                    // as a plain type="submit" button lets wire:submit="startImport"
+                    // invoke the page method directly (proven to dispatch the batch).
                     ->submitAction(
                         FilamentAction::make('startImport')
                             ->label('Start import')
                             ->color('primary')
                             ->icon('heroicon-o-arrow-up-tray')
-                            ->action(fn () => $this->startImport())
+                            ->submit('startImport')
                     )
                     ->skippable(false),
             ]);
@@ -409,22 +419,19 @@ class ImportWizard extends Page
     {
         abort_unless(static::canAccess(), 403);
 
-        // The 'file' FileUpload uses storeFiles(false) (see its definition), so
-        // getState() returns the raw TemporaryUploadedFile instead of moving it
-        // to disk and dehydrating it to a plain string path. That is what makes
-        // this method work at all: without storeFiles(false) the instanceof check
-        // below could never pass (every submit was rejected "No file uploaded")
-        // AND Filament would leave an orphan copy of every upload under
-        // storage/app/imports. getState() also enforces the required "confirm"
-        // checkbox on the final step (it throws Halt when that is unticked, which
-        // is why materialiseCsv runs only AFTER it — no orphan CSV on a halt).
-        try {
-            $state = $this->form->getState();
-        } catch (Halt) {
-            return;
-        }
+        // Read the uploaded file from the RAW form state — the same source
+        // runPreflight() uses and which is proven to work in the real multi-step
+        // wizard. In a Filament wizard, $this->form->getState() (the VALIDATED
+        // state) does NOT reliably surface the live TemporaryUploadedFile from an
+        // earlier step for this FileUpload — even with storeFiles(false) — so the
+        // `instanceof TemporaryUploadedFile` check used to fail and every real
+        // submit was silently rejected with "No file uploaded". getRawState()
+        // returns the file the operator actually uploaded. We capture + read it
+        // FIRST, then call getState() only to validate the rest (the required
+        // "confirm" checkbox).
+        $rawState = $this->form->getRawState();
 
-        $type = (string) ($state['import_type'] ?? '');
+        $type = (string) ($rawState['import_type'] ?? '');
         if (! array_key_exists($type, self::IMPORTERS)) {
             $this->notifyDanger('Pick a type in step 1 first.');
 
@@ -432,7 +439,7 @@ class ImportWizard extends Page
         }
 
         /** @var TemporaryUploadedFile|array<TemporaryUploadedFile>|null $file */
-        $file = $state['file'] ?? null;
+        $file = $rawState['file'] ?? null;
         if (is_array($file)) {
             $file = reset($file) ?: null;
         }
@@ -442,11 +449,21 @@ class ImportWizard extends Page
             return;
         }
 
+        // Materialise the CSV from the live temp file now, before getState()
+        // below can move/expire it.
         try {
-            $csvPath = $this->materialiseCsv($file, (int) ($state['sheet'] ?? 0));
+            $csvPath = $this->materialiseCsv($file, (int) ($rawState['sheet'] ?? 0));
         } catch (\Throwable $e) {
             $this->notifyDanger('Could not read the file: ' . $e->getMessage());
 
+            return;
+        }
+
+        // Validate the rest of the form (enforces the required "confirm"
+        // checkbox on the final step); its 'file' value is ignored.
+        try {
+            $state = $this->form->getState();
+        } catch (Halt) {
             return;
         }
 

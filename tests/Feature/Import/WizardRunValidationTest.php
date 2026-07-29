@@ -64,6 +64,40 @@ test('the whole-form getState() halts on the empty required confirm checkbox (th
     expect(fn () => $form->getState())->toThrow(ValidationException::class);
 });
 
+test('the wizard submit button SUBMITS the surrounding form (never a mountable action) — the real "wizard import does nothing" bug', function () {
+    // Client blocker (2026-07-28): importing through the wizard did nothing —
+    // only the per-resource pages worked. Root cause: the Wizard submitAction was
+    // built with ->action(fn () => $this->startImport()). In Filament v5 a wizard
+    // submitAction carrying an ->action() closure renders as
+    // wire:click="mountAction('startImport')", which (a) preventDefault()s the
+    // native submit so the page's <form wire:submit="startImport"> never fires,
+    // and (b) cannot be resolved as a mountable page action — so clicking "Start
+    // import" ran NOTHING and no Import row was ever created.
+    //
+    // Fix: ->submit('startImport') instead of ->action(...), so the button is a
+    // plain type="submit" that submits the form and runs the startImport() method.
+    // This guards against a regression back to ->action(): the button must report
+    // canSubmitForm() === true (submit), and the form it targets must be the
+    // page's startImport handler.
+    $this->actingAs(wrv_admin());
+
+    $form = Livewire::test(ImportWizard::class)->instance()->form;
+
+    /** @var \Filament\Schemas\Components\Wizard $wizard */
+    $wizard = collect($form->getComponents())
+        ->first(fn ($c): bool => $c instanceof \Filament\Schemas\Components\Wizard);
+
+    expect($wizard)->not->toBeNull();
+
+    $submit = $wizard->getSubmitAction();
+
+    // A submit button, not a mountable action: canSubmitForm() true and it targets
+    // the 'startImport' form handler. If someone reverts to ->action(), the button
+    // stops submitting the form and the wizard silently imports nothing again.
+    expect($submit->canSubmitForm())->toBeTrue()
+        ->and($submit->getFormToSubmit())->toBe('startImport');
+});
+
 test('preflight applies the column cast before validating — no false error on values the import would normalise', function () {
     // AuthorityImporter casts "Type of Entity" via normaliseEntityType() before
     // the in:PERSON,INSTITUTION rule. The preflight must apply that cast too,
