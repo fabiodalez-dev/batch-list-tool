@@ -76,13 +76,30 @@ class BatchResource extends Resource
                         $g(Forms\Components\TextInput::make('batch_number')
                             ->label('Batch Number')
                             ->required()
-                            ->numeric()
-                            ->minValue(1)
+                            ->maxLength(64)
+                            // Usually numeric, but non-numeric catch-all batches
+                            // ("Unknown", "NULL") are allowed too — so no ->numeric()
+                            // constraint. A numeric value must still be a positive
+                            // whole number.
+                            ->rule(function () {
+                                return function (string $attribute, mixed $value, \Closure $fail): void {
+                                    // Single source of truth shared with BatchImporter.
+                                    if (! Batch::isAcceptableNumberFormat((string) $value)) {
+                                        $fail('A numeric batch number must be a whole number of 1 or greater.');
+                                    }
+                                };
+                            })
                             // A2 — suggest the next sequential batch number as the
-                            // default, skipping forbidden numbers 34 and 36.
+                            // default, skipping forbidden numbers 34 and 36. Only
+                            // NUMERIC batch numbers are considered (a lexicographic
+                            // max over the string column would pick "Unknown").
                             // On edit the record's own value is used (no default).
                             ->default(static function (): int {
-                                $max = Batch::max('batch_number') ?? 0;
+                                $max = Batch::query()
+                                    ->pluck('batch_number')
+                                    ->filter(static fn ($v): bool => ctype_digit((string) $v))
+                                    ->map(static fn ($v): int => (int) $v)
+                                    ->max() ?? 0;
                                 $next = $max + 1;
                                 // Skip over every forbidden number.
                                 while (in_array($next, Batch::FORBIDDEN_NUMBERS, true)) {
@@ -112,7 +129,7 @@ class BatchResource extends Resource
 
                                     $query = Batch::query()
                                         ->withTrashed()
-                                        ->where('batch_number', (int) $value)
+                                        ->where('batch_number', trim((string) $value))
                                         ->where('repository_id', $repositoryId);
 
                                     if ($record !== null && $record->exists) {
@@ -135,7 +152,7 @@ class BatchResource extends Resource
                                     if ($value === null || $value === '') {
                                         return;
                                     }
-                                    $candidate = new Batch(['batch_number' => (int) $value]);
+                                    $candidate = new Batch(['batch_number' => trim((string) $value)]);
                                     if ($candidate->isForbidden()) {
                                         $fail("Batch number {$value} is reserved/forbidden (RFQ rule).");
                                     }
@@ -420,7 +437,9 @@ class BatchResource extends Resource
             ->columns([
                 $gc(Tables\Columns\TextColumn::make('batch_number')
                     ->label('Batch Number')
-                    ->numeric()
+                    // NOT ->numeric(): batch_number is a string that can hold
+                    // non-numeric catch-all labels ("Unknown", "NULL") which must
+                    // display verbatim, not through numeric formatting.
                     ->sortable()
                     // A8 — hyperlink only this cell, not the whole row.
                     ->url(fn (?Batch $record): ?string => $record !== null
@@ -472,7 +491,7 @@ class BatchResource extends Resource
                 SelectFilter::make('batch_number')
                     ->label('Batch number')
                     ->options(fn (): array => Batch::query()
-                        ->orderBy('batch_number')
+                        ->orderByRaw('batch_number + 0')
                         ->pluck('batch_number', 'batch_number')
                         ->all())
                     ->searchable()

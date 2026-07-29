@@ -748,7 +748,7 @@ it('RFQ-App1-WILLS: row with Batch 50 + wills series imports successfully', func
     $doc = Document::withoutGlobalScope(RepositoryScope::class)->where('identifier', 'DOC-WILLS-OK')->first();
     expect($doc)->not->toBeNull();
     $batch = Batch::withoutGlobalScope(RepositoryScope::class)->find($doc->batch_id);
-    expect($batch?->batch_number)->toBe(50);
+    expect($batch?->batch_number)->toBe('50'); // batch_number is a string column now
 });
 
 // ─────────────────────────────────────────────────────────────────────────────

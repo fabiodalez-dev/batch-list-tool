@@ -380,14 +380,14 @@ final class SearchableSelects
         }
 
         if ($search === '') {
-            $query->orderBy('batch_number');
+            $query->orderByRaw('batch_number + 0');
         } else {
             $needle = '%' . $search . '%';
             $query->where(function ($q) use ($needle) {
                 $q->where('batch_number', 'like', $needle)
                     ->orWhere('description', 'like', $needle)
                     ->orWhere('type', 'like', $needle);
-            })->orderBy('batch_number');
+            })->orderByRaw('batch_number + 0');
         }
 
         $rows = $query->limit(self::MAX_RESULTS)->get();
@@ -607,7 +607,7 @@ final class SearchableSelects
         // Wave B — Accession no longer has a single batch; use batches() N:N.
         // Order by batch_number so ->first() deterministically returns the lowest
         // batch number for the label suffix (matching the stated label rule).
-        $query = Accession::query()->with(['batches' => fn ($q) => $q->orderBy('batch_number')]);
+        $query = Accession::query()->with(['batches' => fn ($q) => $q->orderByRaw('batch_number + 0')]);
 
         // F041 — when a repository is in context, only same-repo accessions are
         // attachable (the pivot guard would reject cross-repo rows anyway).
@@ -641,7 +641,7 @@ final class SearchableSelects
         // Use the first batch number (lowest batch_number) as the label suffix.
         $batches = $r->relationLoaded('batches')
             ? $r->batches
-            : $r->batches()->orderBy('batch_number')->get();
+            : $r->batches()->orderByRaw('batch_number + 0')->get();
 
         /** @var Batch|null $first */
         $first = $batches->first();
@@ -965,7 +965,7 @@ final class SearchableSelects
 
         // Wave B — Accession no longer has a single batch; eager-load batches().
         // Order by batch_number so the label suffix deterministically shows the lowest number.
-        $record = Accession::withTrashed()->with(['batches' => fn ($q) => $q->orderBy('batch_number')])->find($value);
+        $record = Accession::withTrashed()->with(['batches' => fn ($q) => $q->orderByRaw('batch_number + 0')])->find($value);
 
         if ($record === null) {
             return null;
@@ -991,7 +991,7 @@ final class SearchableSelects
         }
 
         // Order by batch_number so the label suffix deterministically shows the lowest number.
-        $rows = Accession::withTrashed()->with(['batches' => fn ($q) => $q->orderBy('batch_number')])->whereIn('id', $values)->get();
+        $rows = Accession::withTrashed()->with(['batches' => fn ($q) => $q->orderByRaw('batch_number + 0')])->whereIn('id', $values)->get();
         $out = [];
         foreach ($rows as $r) {
             /** @var Accession $r */

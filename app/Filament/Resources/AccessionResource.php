@@ -221,7 +221,7 @@ class AccessionResource extends Resource
                             ->state(fn (?Accession $record): string => $record?->batches->isEmpty() ?? true
                                 ? '—'
                                 : $record->batches
-                                    ->sortBy('batch_number')
+                                    ->sortBy(fn ($b) => (float) $b->batch_number)
                                     ->map(fn ($b) => (string) $b->batch_number)
                                     ->join(', '))
                             ->placeholder('—'),
@@ -349,7 +349,7 @@ class AccessionResource extends Resource
                     ->state(fn (Accession $record): string => $record->batches->isEmpty()
                         ? '—'
                         : $record->batches
-                            ->sortBy('batch_number')
+                            ->sortBy(fn ($b) => (float) $b->batch_number)
                             ->map(fn ($b) => (string) $b->batch_number)
                             ->join(', '))
                     ->toggleable(),

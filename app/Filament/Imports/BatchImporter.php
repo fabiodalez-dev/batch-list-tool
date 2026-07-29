@@ -132,7 +132,7 @@ class BatchImporter extends Importer
         $record = Batch::query()
             ->withoutGlobalScope(RepositoryScope::class)
             ->withTrashed()
-            ->where('batch_number', (int) $number)
+            ->where('batch_number', trim((string) $number))
             ->where('repository_id', $repositoryId)
             ->first();
 
@@ -203,18 +203,29 @@ class BatchImporter extends Importer
             ImportColumn::make('batch_number')
                 ->label('Batch number')
                 ->requiredMapping()
-                ->integer()
+                // NOT ->integer(): batch_number is a short string. It is usually
+                // numeric, but the archive also has non-numeric catch-all batches
+                // ("Unknown", "NULL") the client needs to import.
                 ->guess(['Batch number', 'Batch', 'batch_number', 'Number'])
                 ->rules([
                     'required',
-                    'integer',
-                    'min:1',
+                    'string',
+                    'max:64',
+                    // A NUMERIC batch number must be a positive whole number
+                    // (no "0", no "1.5") — non-numeric labels are allowed as-is.
+                    // Single source of truth: Batch::isAcceptableNumberFormat().
+                    function (string $attribute, mixed $value, \Closure $fail): void {
+                        if (! Batch::isAcceptableNumberFormat((string) $value)) {
+                            $fail("Batch number {$value} must be a positive whole number or a text label.");
+                        }
+                    },
                     // RFQ App.1 #1 — batch 34 and 36 are unused and will never
                     // be used (forbidden). Batch 33 is reserved for old MAV
                     // boxes and IS a valid batch number. We drive this rule from
                     // Batch::isForbidden() so there is a single source of truth.
+                    // (A non-numeric label is never forbidden — see the model.)
                     function (string $attribute, mixed $value, \Closure $fail): void {
-                        $candidate = new Batch(['batch_number' => (int) $value]);
+                        $candidate = new Batch(['batch_number' => trim((string) $value)]);
                         if ($candidate->isForbidden()) {
                             $fail("Batch number {$value} is reserved/forbidden (RFQ rule): cannot be imported.");
                         }
