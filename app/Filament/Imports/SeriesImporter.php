@@ -145,10 +145,12 @@ class SeriesImporter extends Importer
                     if ($state === '') {
                         return;
                     }
-                    // Excel stores a date cell as a serial number (e.g. "46228");
-                    // render it as a readable Y-m-d. A text date or year range
-                    // ("1607-1629") is kept exactly as typed.
-                    if (ctype_digit($state) && (int) $state >= 1) {
+                    // Excel stores a date cell as a serial number (e.g. "46228")
+                    // — render it as a readable Y-m-d. Only a pure integer TOO
+                    // LARGE to be a year (5+ digits, i.e. > 9999) is treated as a
+                    // serial: a 4-digit year ("2026"), an ISAD year range
+                    // ("1607-1629"), or any other text is kept exactly as typed.
+                    if (ctype_digit($state) && (int) $state > 9999) {
                         $record->date_of_creation = Date::excelToDateTimeObject((int) $state)->format('Y-m-d');
                     } else {
                         $record->date_of_creation = $state;

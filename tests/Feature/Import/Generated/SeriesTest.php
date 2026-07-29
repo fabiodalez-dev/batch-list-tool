@@ -187,6 +187,27 @@ test('imports the ISAD metadata columns (level, creation date, inputter) verbati
         ->and($r->date_of_creation)->toBe('2026-07-25');
 });
 
+test('date_of_creation converts an Excel serial but preserves a 4-digit year and an ISAD year range', function () {
+    Repository::factory()->create(['code' => 'NRA']);
+    $u = srt_admin();
+    $this->actingAs($u);
+
+    // Three synthetic rows exercising the three date shapes the client may enter.
+    $rows = [
+        ['Identifier' => 'DZ1', 'Title' => 'Serial', 'Date' => '46228'],      // Excel serial → date
+        ['Identifier' => 'DZ2', 'Title' => 'Year', 'Date' => '2026'],         // 4-digit year → kept
+        ['Identifier' => 'DZ3', 'Title' => 'Range', 'Date' => '1607-1629'],   // ISAD range → kept
+    ];
+    $columnMap = ['code' => 'Identifier', 'title' => 'Title', 'date_of_creation' => 'Date'];
+
+    $import = srt_run($rows, $columnMap, $u->id);
+    expect(srt_failures($import))->toBe([]);
+
+    expect(Series::where('code', 'DZ1')->value('date_of_creation'))->toBe('2026-07-25')
+        ->and(Series::where('code', 'DZ2')->value('date_of_creation'))->toBe('2026')
+        ->and(Series::where('code', 'DZ3')->value('date_of_creation'))->toBe('1607-1629');
+});
+
 // ─── 2. Record types R / REG / RWL / O present with correct titles ────────
 
 test('the real prod CSV maps the R/REG/RWL/O record-type codes to their titles', function () {

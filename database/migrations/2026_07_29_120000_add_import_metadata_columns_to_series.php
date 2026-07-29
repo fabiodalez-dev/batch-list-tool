@@ -22,15 +22,19 @@ return new class extends Migration
 {
     public function up(): void
     {
+        // TEXT (not VARCHAR) so the values are stored VERBATIM: the importer keeps
+        // them as free text with no max rule, so a fixed VARCHAR limit could
+        // truncate or raise a SQL error on an unexpectedly long cell — the exact
+        // "silently lose the client's data" outcome this change exists to avoid.
         Schema::table('series', function (Blueprint $table): void {
             if (! Schema::hasColumn('series', 'level_of_description')) {
-                $table->string('level_of_description', 100)->nullable()->after('description');
+                $table->text('level_of_description')->nullable()->after('description');
             }
             if (! Schema::hasColumn('series', 'date_of_creation')) {
-                $table->string('date_of_creation', 100)->nullable()->after('level_of_description');
+                $table->text('date_of_creation')->nullable()->after('level_of_description');
             }
             if (! Schema::hasColumn('series', 'name_of_inputter')) {
-                $table->string('name_of_inputter', 255)->nullable()->after('date_of_creation');
+                $table->text('name_of_inputter')->nullable()->after('date_of_creation');
             }
         });
     }

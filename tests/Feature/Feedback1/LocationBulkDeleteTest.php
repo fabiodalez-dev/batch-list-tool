@@ -100,3 +100,23 @@ test('bulk delete removes all selected when every one is safely deletable', func
 
     expect(Location::withoutGlobalScope(RepositoryScope::class)->whereIn('id', [$a->id, $b->id])->count())->toBe(0);
 });
+
+test('bulk delete skips a location the operator lacks permission to delete', function () {
+    $repo = Repository::factory()->create(['code' => 'LBD3']);
+
+    // A user who CAN reach the page and the bulk action (view_any / delete_any)
+    // but does NOT hold the per-record `delete_location` ability — so the
+    // per-item can('delete') guard skips the row instead of deleting it.
+    $u = User::factory()->create(['is_active' => true, 'default_repository_id' => $repo->id]);
+    $u->repositories()->syncWithoutDetaching([$repo->id => ['is_default' => true]]);
+    $u->givePermissionTo(['view_any_location', 'delete_any_location']); // NOT delete_location
+    $this->actingAs($u);
+
+    $loc = lbd_location($repo->id);
+
+    Livewire::test(ListLocations::class)
+        ->callTableBulkAction('deleteDeletable', [$loc]);
+
+    // Skipped for lack of permission — still present, not soft-deleted.
+    expect(Location::withoutGlobalScope(RepositoryScope::class)->find($loc->id))->not->toBeNull();
+});
