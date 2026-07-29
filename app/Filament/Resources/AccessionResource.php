@@ -445,7 +445,7 @@ class AccessionResource extends Resource
                 // CreatorColumn resolves the first `created` audit entry.
                 // Eager-loading here keeps it O(1) per page instead of one
                 // query per row.
-                'audits' => fn ($q) => $q->where('event', 'created')->oldest('id')->with('user'),
+                'audits' => fn ($q) => $q->oldest('id')->with('user'),
             ]);
     }
 

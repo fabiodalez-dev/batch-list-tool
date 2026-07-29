@@ -424,7 +424,7 @@ class DocumentFlagResource extends Resource
                 'document',
                 'repository',
                 'flaggedBy',
-                'audits' => fn ($q) => $q->where('event', 'created')->oldest('id')->with('user'),
+                'audits' => fn ($q) => $q->oldest('id')->with('user'),
             ]);
     }
 

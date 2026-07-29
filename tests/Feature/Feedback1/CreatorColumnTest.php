@@ -75,6 +75,50 @@ it('resolves the creator name from the first created audit', function () {
 });
 
 // ---------------------------------------------------------------------------
+// 2b. Falls back to the earliest audit when there is NO 'created' audit
+// ---------------------------------------------------------------------------
+
+it('falls back to the earliest audit user when the record has no created audit', function () {
+    // The client's records were bulk-created before auditing was wired into the
+    // import path, so most carry NO 'created' audit — a re-import only UPDATES
+    // them (an 'updated' audit). Keying strictly on 'created' left the Inputter
+    // column blank for the vast majority (e.g. all 678 authorities). The column
+    // must fall back to the earliest audit of ANY event so it shows the operator
+    // who entered the record's data.
+    $editor = User::factory()->create(['name' => 'Charlene Ellul']);
+    $editor->assignRole('super_admin');
+    $this->actingAs($editor);
+
+    $repo = Repository::factory()->create();
+    $editor->update(['default_repository_id' => $repo->id]);
+
+    // Create the batch with auditing OFF (mimics the legacy bulk-created record
+    // that never got a 'created' audit)...
+    Audit::$auditingGloballyDisabled = true;
+    $batch = Batch::factory()->create(['repository_id' => $repo->id, 'batch_number' => 3001]);
+    Audit::$auditingGloballyDisabled = false;
+
+    // ...then write a single 'updated' audit attributed to $editor, exactly like
+    // a re-import would (no 'created' audit exists for this record).
+    $batch->audits()->create([
+        'event' => 'updated',
+        'auditable_type' => $batch::class,
+        'auditable_id' => $batch->getKey(),
+        'user_type' => $editor::class,
+        'user_id' => $editor->getKey(),
+        'old_values' => [],
+        'new_values' => [],
+    ]);
+
+    expect($batch->audits()->where('event', 'created')->count())->toBe(0);
+
+    $col = CreatorColumn::make();
+    $state = ($col->getGetStateUsingCallback())($batch->fresh());
+
+    expect($state)->toBe('Charlene Ellul');
+});
+
+// ---------------------------------------------------------------------------
 // 3. Null-safe when no audit entry exists
 // ---------------------------------------------------------------------------
 

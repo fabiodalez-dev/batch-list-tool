@@ -189,7 +189,7 @@ class RepositoryResource extends Resource
     {
         return parent::getEloquentQuery()
             ->with([
-                'audits' => fn ($q) => $q->where('event', 'created')->oldest('id')->with('user'),
+                'audits' => fn ($q) => $q->oldest('id')->with('user'),
             ]);
     }
 
