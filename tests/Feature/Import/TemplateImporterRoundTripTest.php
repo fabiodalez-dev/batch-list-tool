@@ -8,10 +8,13 @@ use App\Filament\Imports\BoxImporter;
 use App\Filament\Imports\LocationImporter;
 use App\Filament\Imports\SeriesImporter;
 use App\Filament\Pages\ImportWizard;
+use App\Models\User;
 use App\Support\BulkImport\TemplateGenerator;
 use App\Support\CustomFields\CustomFieldResolver;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Support\Facades\Log;
+use Livewire\Livewire;
+use Spatie\Permission\Models\Role;
 
 /**
  * Template ↔ importer round-trip guard.
@@ -126,4 +129,21 @@ test('the Download-template step has a hint for every tricky/known box column', 
         }
         expect($hints)->toHaveKey($h);
     }
+});
+
+test('the wizard Download-template step actually RENDERS the box column hints', function () {
+    // Guards the rendering path (the template_info placeholder), not just the
+    // columnHints() data: a regression that stops feeding the hints into the DOM
+    // would still leave columnHints() intact but must fail here.
+    foreach (['super_admin', 'admin', 'editor', 'viewer'] as $r) {
+        Role::firstOrCreate(['name' => $r, 'guard_name' => 'web']);
+    }
+    $admin = User::factory()->create(['is_active' => true]);
+    $admin->assignRole('super_admin');
+    $this->actingAs($admin);
+
+    Livewire::test(ImportWizard::class)
+        ->set('data.import_type', 'boxes')
+        ->assertSee('the parent RAS box')   // parent_box_number hint text
+        ->assertSee('location CODE');        // Location hint text
 });
