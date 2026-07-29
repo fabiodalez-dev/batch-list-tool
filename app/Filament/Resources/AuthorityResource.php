@@ -253,10 +253,17 @@ class AuthorityResource extends Resource
                                 return '—';
                             })
                             ->columnSpanFull(),
-                        // Surface the NTG year range on the View page (same shape
-                        // as the private-practice range above).
+                        // NTG dates shown as separate beginning/end + a combined
+                        // range, exactly like the private-practice dates above
+                        // (client request 2026-07-29).
+                        TextEntry::make('ntg_dates_start')
+                            ->label('NTG from')
+                            ->placeholder('—'),
+                        TextEntry::make('ntg_dates_end')
+                            ->label('NTG to')
+                            ->placeholder('—'),
                         TextEntry::make('ntg_dates_display')
-                            ->label('NTG dates')
+                            ->label('NTG range')
                             ->state(function (?Authority $record): string {
                                 $start = $record?->ntg_dates_start;
                                 $end = $record?->ntg_dates_end;
@@ -351,20 +358,18 @@ class AuthorityResource extends Resource
                     ->numeric(thousandsSeparator: '')
                     ->sortable()
                     ->toggleable()),
-                // NTG year range column, toggleable (off by default to keep the
-                // default grid focused on identity columns).
-                $gc(Tables\Columns\TextColumn::make('ntg_dates_display')
-                    ->label('NTG dates')
-                    ->state(function (Authority $record): ?string {
-                        $start = $record->ntg_dates_start;
-                        $end = $record->ntg_dates_end;
-                        if ($start && $end) {
-                            return "{$start} – {$end}";
-                        }
-
-                        return $start ? (string) $start : ($end ? (string) $end : null);
-                    })
-                    ->placeholder('—')
+                // NTG dates as separate start/end columns, mirroring the
+                // private-practice columns above (client request 2026-07-29).
+                // Toggleable off by default to keep the default grid focused.
+                $gc(Tables\Columns\TextColumn::make('ntg_dates_start')
+                    ->label('NTG from')
+                    ->numeric(thousandsSeparator: '')
+                    ->sortable()
+                    ->toggleable(isToggledHiddenByDefault: true)),
+                $gc(Tables\Columns\TextColumn::make('ntg_dates_end')
+                    ->label('NTG to')
+                    ->numeric(thousandsSeparator: '')
+                    ->sortable()
                     ->toggleable(isToggledHiddenByDefault: true)),
                 Tables\Columns\TextColumn::make('created_at')
                     ->dateTime()
