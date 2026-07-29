@@ -180,6 +180,15 @@ class BoxImporter extends Importer
             $record->is_legacy = true;
         }
 
+        // Default is_legacy to false when the column is mapped but the cell is
+        // blank. The ->boolean() cast turns an empty cell into null and the
+        // importer then writes null into the NOT NULL is_legacy column, failing
+        // the row with "a required value is missing" — which would reject EVERY
+        // non-legacy box whose is_legacy cell is left empty (the normal case).
+        if ($record->is_legacy === null) {
+            $record->is_legacy = false;
+        }
+
         if ($record->barcode_status === 'PERM_OUT' && $record->disinfestation_date === null) {
             // Drain the stashes before throwing so the static maps do not grow
             // unboundedly when many rows fail — afterSave() never runs for a
