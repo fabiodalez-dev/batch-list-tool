@@ -9,6 +9,7 @@ use App\Filament\Imports\LocationImporter;
 use App\Filament\Imports\SeriesImporter;
 use App\Filament\Pages\ImportWizard;
 use App\Support\BulkImport\TemplateGenerator;
+use App\Support\CustomFields\CustomFieldResolver;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Support\Facades\Log;
 
@@ -110,10 +111,16 @@ test('the Download-template step has a hint for every tricky/known box column', 
         ->and($hints)->toHaveKey('Location')
         ->and($hints['Location'])->toContain('CODE');
 
-    // Every box template column that is not free-form has an explanation.
-    $boxHeaders = TemplateGenerator::headersFor('box');
-    $noHintNeeded = ['notes'];
-    foreach ($boxHeaders as $h) {
+    // Every STATIC box template column that is not free-form has an explanation.
+    // Exclude the dynamic custom-field columns the template appends (their labels
+    // are operator-defined and cannot have a built-in hint), so the assertion is
+    // not coupled to whatever custom fields happen to be active.
+    $customFieldLabels = CustomFieldResolver::definitionsFor('box')
+        ->pluck('label')
+        ->all();
+    $noHintNeeded = array_merge(['notes'], $customFieldLabels);
+
+    foreach (TemplateGenerator::headersFor('box') as $h) {
         if (in_array($h, $noHintNeeded, true)) {
             continue;
         }
