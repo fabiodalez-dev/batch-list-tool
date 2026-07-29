@@ -125,7 +125,7 @@ it('filters creators that worked as NTG (true / false)', function () {
         ->assertCanNotSeeTableRecords([$withNtg]);
 });
 
-it('exposes an NTG dates column on the list table', function () {
+it('exposes the NTG start/end columns on the list table (split like practice dates)', function () {
     $this->actingAs(ntg_actAsSuperAdmin());
 
     $a = Authority::create(ntg_validForm([
@@ -133,6 +133,7 @@ it('exposes an NTG dates column on the list table', function () {
     ]));
 
     Livewire::test(ListAuthorities::class)
-        ->assertTableColumnExists('ntg_dates_display')
+        ->assertTableColumnExists('ntg_dates_start')
+        ->assertTableColumnExists('ntg_dates_end')
         ->assertCanSeeTableRecords([$a]);
 });
