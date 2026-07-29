@@ -161,6 +161,53 @@ test('imports the real prod Series CSV end-to-end with zero failures', function 
         ->and(Series::count())->toBe(30);
 });
 
+test('imports the ISAD metadata columns (level, creation date, inputter) verbatim from the real CSV', function () {
+    Repository::factory()->create(['code' => 'NRA']);
+    $u = srt_admin();
+    $this->actingAs($u);
+
+    [, $rows] = srt_readCsv(SRT_PROD_CSV);
+
+    $columnMap = [
+        'code' => 'Identifier',
+        'title' => 'Standard title in English (Plural)',
+        'repository_code' => 'Repository',
+        'level_of_description' => 'Level of description',
+        'date_of_creation' => 'Date of creation',
+        'name_of_inputter' => 'Name of Inputter',
+    ];
+
+    $import = srt_run($rows, $columnMap, $u->id);
+    expect(srt_failures($import))->toBe([]);
+
+    $r = Series::where('code', 'R')->first();
+    expect($r->level_of_description)->toBe('Series')
+        ->and($r->name_of_inputter)->toBe('Charlene Ellul')
+        // The sheet stores the date as the Excel serial 46228 → rendered Y-m-d.
+        ->and($r->date_of_creation)->toBe('2026-07-25');
+});
+
+test('date_of_creation converts an Excel serial but preserves a 4-digit year and an ISAD year range', function () {
+    Repository::factory()->create(['code' => 'NRA']);
+    $u = srt_admin();
+    $this->actingAs($u);
+
+    // Three synthetic rows exercising the three date shapes the client may enter.
+    $rows = [
+        ['Identifier' => 'DZ1', 'Title' => 'Serial', 'Date' => '46228'],      // Excel serial → date
+        ['Identifier' => 'DZ2', 'Title' => 'Year', 'Date' => '2026'],         // 4-digit year → kept
+        ['Identifier' => 'DZ3', 'Title' => 'Range', 'Date' => '1607-1629'],   // ISAD range → kept
+    ];
+    $columnMap = ['code' => 'Identifier', 'title' => 'Title', 'date_of_creation' => 'Date'];
+
+    $import = srt_run($rows, $columnMap, $u->id);
+    expect(srt_failures($import))->toBe([]);
+
+    expect(Series::where('code', 'DZ1')->value('date_of_creation'))->toBe('2026-07-25')
+        ->and(Series::where('code', 'DZ2')->value('date_of_creation'))->toBe('2026')
+        ->and(Series::where('code', 'DZ3')->value('date_of_creation'))->toBe('1607-1629');
+});
+
 // ─── 2. Record types R / REG / RWL / O present with correct titles ────────
 
 test('the real prod CSV maps the R/REG/RWL/O record-type codes to their titles', function () {

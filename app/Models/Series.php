@@ -31,7 +31,7 @@ class Series extends Model implements AuditableContract, Sortable
 
     protected $table = 'series';
 
-    protected $fillable = ['sort_order', 'code', 'title', 'description', 'is_wills_series', 'is_active', 'parent_id', 'repository_id'];
+    protected $fillable = ['sort_order', 'code', 'title', 'description', 'level_of_description', 'date_of_creation', 'name_of_inputter', 'is_wills_series', 'is_active', 'parent_id', 'repository_id'];
 
     protected $casts = [
         'is_wills_series' => 'boolean',

@@ -11,6 +11,7 @@ use App\Support\BulkImport\EntityResolver;
 use Filament\Actions\Imports\ImportColumn;
 use Filament\Actions\Imports\Importer;
 use Filament\Actions\Imports\Models\Import;
+use PhpOffice\PhpSpreadsheet\Shared\Date;
 
 /**
  * RFQ §3.1.3 — Bulk import for {@see Series} (record-group / "fond" codes:
@@ -117,6 +118,52 @@ class SeriesImporter extends Importer
                     $res = EntityResolver::resolveRepository($state);
                     if ($res !== null) {
                         $record->repository_id = $res['repository_id'];
+                    }
+                }),
+
+            // Informational ISAD(G) metadata the client keeps in the sheet.
+            // Stored verbatim (nullable free text) so nothing is dropped — the
+            // level is usually "Series", the inputter is the cataloguer's name,
+            // and the creation date may be a real date, an Excel serial or an
+            // ISAD year range. None of these replace the audit-derived Inputter
+            // column or the record's own created_at.
+            ImportColumn::make('level_of_description')
+                ->label('Level of description')
+                ->guess(['Level of description', 'Level', 'level_of_description'])
+                ->fillRecordUsing(function (Series $record, ?string $state): void {
+                    $state = $state !== null ? trim($state) : '';
+                    if ($state !== '') {
+                        $record->level_of_description = $state;
+                    }
+                }),
+
+            ImportColumn::make('date_of_creation')
+                ->label('Date of creation')
+                ->guess(['Date of creation', 'Creation date', 'date_of_creation', 'Dates'])
+                ->fillRecordUsing(function (Series $record, ?string $state): void {
+                    $state = $state !== null ? trim($state) : '';
+                    if ($state === '') {
+                        return;
+                    }
+                    // Excel stores a date cell as a serial number (e.g. "46228")
+                    // — render it as a readable Y-m-d. Only a pure integer TOO
+                    // LARGE to be a year (5+ digits, i.e. > 9999) is treated as a
+                    // serial: a 4-digit year ("2026"), an ISAD year range
+                    // ("1607-1629"), or any other text is kept exactly as typed.
+                    if (ctype_digit($state) && (int) $state > 9999) {
+                        $record->date_of_creation = Date::excelToDateTimeObject((int) $state)->format('Y-m-d');
+                    } else {
+                        $record->date_of_creation = $state;
+                    }
+                }),
+
+            ImportColumn::make('name_of_inputter')
+                ->label('Name of Inputter')
+                ->guess(['Name of Inputter', 'Inputter', 'name_of_inputter', 'Cataloguer'])
+                ->fillRecordUsing(function (Series $record, ?string $state): void {
+                    $state = $state !== null ? trim($state) : '';
+                    if ($state !== '') {
+                        $record->name_of_inputter = $state;
                     }
                 }),
         ];
