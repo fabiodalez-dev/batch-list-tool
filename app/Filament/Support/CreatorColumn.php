@@ -67,20 +67,36 @@ final class CreatorColumn
             ->getStateUsing(static function (object $record): ?string {
                 /** @var Model&Auditable $record */
 
-                // Use an already-loaded relation if possible; otherwise lazy-load.
+                // Resolve the "inputter" audit: the FIRST 'created' audit if one
+                // exists, otherwise the EARLIEST audit of any event.
+                //
+                // Most of the client's records were bulk-created before auditing
+                // was wired into the import path, so they carry NO 'created' audit
+                // at all (e.g. every one of the 678 authorities) — a re-import only
+                // UPDATES them, producing an 'updated' audit, never a 'created'
+                // one. Keying strictly on 'created' left the Inputter column blank
+                // for the vast majority of records. Falling back to the earliest
+                // audit surfaces the operator who first entered the record's data
+                // (the import that touched it), which is exactly the "inputter"
+                // the column is meant to show.
+                // Preference order: the first 'created' audit (the true creator),
+                // then the earliest 'updated' audit (whoever entered the record's
+                // data via a re-import), then the earliest audit of any event as a
+                // last resort. 'updated' is preferred over 'deleted' so a record
+                // that was only ever deleted+restored is not misattributed to the
+                // person who deleted it when a data-entry audit exists.
                 if ($record->relationLoaded('audits')) {
                     // Access via getRelation() so PHPStan sees a typed collection.
                     /** @var Collection<int,Audit> $loadedAudits */
                     $loadedAudits = $record->getRelation('audits');
-                    $audit = $loadedAudits
-                        ->where('event', 'created')
-                        ->sortBy('id')
-                        ->first();
+                    $sorted = $loadedAudits->sortBy('id');
+                    $audit = $sorted->firstWhere('event', 'created')
+                        ?? $sorted->firstWhere('event', 'updated')
+                        ?? $sorted->first();
                 } else {
-                    $audit = $record->audits()
-                        ->where('event', 'created')
-                        ->oldest('id')
-                        ->first();
+                    $audit = $record->audits()->where('event', 'created')->oldest('id')->first()
+                        ?? $record->audits()->where('event', 'updated')->oldest('id')->first()
+                        ?? $record->audits()->oldest('id')->first();
                 }
 
                 if ($audit === null) {

@@ -291,7 +291,7 @@ class BoxMovementResource extends Resource
                 'fromBox',
                 'toBox',
                 'user',
-                'audits' => fn ($q) => $q->where('event', 'created')->with('user'),
+                'audits' => fn ($q) => $q->oldest('id')->with('user'),
             ]);
     }
 

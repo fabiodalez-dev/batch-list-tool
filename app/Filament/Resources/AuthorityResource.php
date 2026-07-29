@@ -22,7 +22,6 @@ use Filament\Schemas\Schema;
 use Filament\Tables;
 use Filament\Tables\Filters\Filter;
 use Filament\Tables\Filters\QueryBuilder;
-use Filament\Tables\Filters\QueryBuilder\Constraints\DateConstraint;
 use Filament\Tables\Filters\QueryBuilder\Constraints\NumberConstraint;
 use Filament\Tables\Filters\QueryBuilder\Constraints\SelectConstraint;
 use Filament\Tables\Filters\QueryBuilder\Constraints\TextConstraint;
@@ -149,13 +148,36 @@ class AuthorityResource extends Resource
                                     }
                                 };
                             })),
-                        // Feedback1 C1.2 — optional NTG (Notary to Government)
-                        // date. Presence of a value is what the "worked as NTG"
-                        // filter keys off.
-                        $g(Forms\Components\DatePicker::make('ntg_date')
-                            ->label('NTG date')
-                            ->helperText('Date the creator worked as Notary to Government (if applicable)')
-                            ->native(false)),
+                        // NTG (Notari tal-Gvern / Notary to Government) dates —
+                        // a YEAR RANGE, same shape as the private-practice dates
+                        // above. Presence of either bound is what the "worked as
+                        // NTG" filter keys off.
+                        $g(Forms\Components\TextInput::make('ntg_dates_start')
+                            ->label('NTG dates — start')
+                            ->helperText('Year the creator started working as Notary to Government (if applicable)')
+                            ->numeric()
+                            ->minValue(1000)
+                            ->maxValue(9999)
+                            ->rule('digits:4')
+                            ->validationMessages(['digits' => 'Enter a 4-digit year.'])),
+                        $g(Forms\Components\TextInput::make('ntg_dates_end')
+                            ->label('NTG dates — end')
+                            ->numeric()
+                            ->minValue(1000)
+                            ->maxValue(9999)
+                            ->rule('digits:4')
+                            ->validationMessages(['digits' => 'Enter a 4-digit year.'])
+                            ->rule(static function (Get $get): \Closure {
+                                return static function (string $attribute, mixed $value, \Closure $fail) use ($get): void {
+                                    $start = $get('ntg_dates_start');
+                                    if ($value === null || $value === '' || $start === null || $start === '') {
+                                        return;
+                                    }
+                                    if ((int) $value < (int) $start) {
+                                        $fail('End year must be greater than or equal to the start year.');
+                                    }
+                                };
+                            })),
                     ]),
 
                 Section::make('Notes')
@@ -231,11 +253,25 @@ class AuthorityResource extends Resource
                                 return '—';
                             })
                             ->columnSpanFull(),
-                        // Feedback1 C1.2 — surface the NTG date on the View page.
-                        TextEntry::make('ntg_date')
-                            ->label('NTG date')
-                            ->date()
-                            ->placeholder('—')
+                        // Surface the NTG year range on the View page (same shape
+                        // as the private-practice range above).
+                        TextEntry::make('ntg_dates_display')
+                            ->label('NTG dates')
+                            ->state(function (?Authority $record): string {
+                                $start = $record?->ntg_dates_start;
+                                $end = $record?->ntg_dates_end;
+                                if ($start && $end) {
+                                    return "{$start} – {$end}";
+                                }
+                                if ($start) {
+                                    return "from {$start}";
+                                }
+                                if ($end) {
+                                    return "to {$end}";
+                                }
+
+                                return '—';
+                            })
                             ->columnSpanFull(),
                     ]),
 
@@ -303,20 +339,32 @@ class AuthorityResource extends Resource
                     ->sortable()
                     ->searchable()
                     ->toggleable()),
+                // A year is a plain 4-digit integer — never a thousands-grouped
+                // number. `->numeric()` alone renders 1607 as "1,607"; the empty
+                // thousandsSeparator drops the comma the client asked to remove
+                // while keeping the numeric right-alignment.
                 $gc(Tables\Columns\TextColumn::make('practice_dates_start')
-                    ->numeric()
+                    ->numeric(thousandsSeparator: '')
                     ->sortable()
                     ->toggleable()),
                 $gc(Tables\Columns\TextColumn::make('practice_dates_end')
-                    ->numeric()
+                    ->numeric(thousandsSeparator: '')
                     ->sortable()
                     ->toggleable()),
-                // Feedback1 C1.2 — NTG date column, toggleable (off by default
-                // to keep the default grid focused on identity columns).
-                $gc(Tables\Columns\TextColumn::make('ntg_date')
-                    ->label('NTG date')
-                    ->date()
-                    ->sortable()
+                // NTG year range column, toggleable (off by default to keep the
+                // default grid focused on identity columns).
+                $gc(Tables\Columns\TextColumn::make('ntg_dates_display')
+                    ->label('NTG dates')
+                    ->state(function (Authority $record): ?string {
+                        $start = $record->ntg_dates_start;
+                        $end = $record->ntg_dates_end;
+                        if ($start && $end) {
+                            return "{$start} – {$end}";
+                        }
+
+                        return $start ? (string) $start : ($end ? (string) $end : null);
+                    })
+                    ->placeholder('—')
                     ->toggleable(isToggledHiddenByDefault: true)),
                 Tables\Columns\TextColumn::make('created_at')
                     ->dateTime()
@@ -363,10 +411,14 @@ class AuthorityResource extends Resource
                         NumberConstraint::make('practice_dates_end')
                             ->label('Practice end year')
                             ->integer(),
-                        // Feedback1 C1.2 — NTG date as a date constraint
-                        // (before/after/between/is-set) inside the builder.
-                        DateConstraint::make('ntg_date')
-                            ->label('NTG date'),
+                        // NTG year range as numeric constraints (same shape as
+                        // the private-practice start/end above).
+                        NumberConstraint::make('ntg_dates_start')
+                            ->label('NTG start year')
+                            ->integer(),
+                        NumberConstraint::make('ntg_dates_end')
+                            ->label('NTG end year')
+                            ->integer(),
                     ]),
 
                 // Feedback1 Wave B (B2) — "worked between X and Y" helper. Two
@@ -432,16 +484,18 @@ class AuthorityResource extends Resource
                         blank: fn (Builder $q): Builder => $q,
                     ),
 
-                // Feedback1 C1.2 — "filter which creators worked as NTG ie:
-                // have a NTG date associated". Presence of ntg_date == NTG.
+                // "Filter which creators worked as NTG ie: have NTG dates
+                // associated". A creator counts as NTG when either bound of the
+                // NTG year range is present.
                 TernaryFilter::make('worked_as_ntg')
                     ->label('Worked as NTG')
                     ->placeholder('All creators')
                     ->trueLabel('Worked as NTG')
                     ->falseLabel('Never NTG')
                     ->queries(
-                        true: fn (Builder $q): Builder => $q->whereNotNull('ntg_date'),
-                        false: fn (Builder $q): Builder => $q->whereNull('ntg_date'),
+                        true: fn (Builder $q): Builder => $q->where(fn (Builder $sub): Builder => $sub
+                            ->whereNotNull('ntg_dates_start')->orWhereNotNull('ntg_dates_end')),
+                        false: fn (Builder $q): Builder => $q->whereNull('ntg_dates_start')->whereNull('ntg_dates_end'),
                         blank: fn (Builder $q): Builder => $q,
                     ),
             ])
@@ -513,7 +567,7 @@ class AuthorityResource extends Resource
     {
         return parent::getEloquentQuery()->with([
             // A9 — creator resolution: first 'created' audit with its user.
-            'audits' => fn ($q) => $q->where('event', 'created')->oldest('id')->with('user'),
+            'audits' => fn ($q) => $q->oldest('id')->with('user'),
         ]);
     }
 

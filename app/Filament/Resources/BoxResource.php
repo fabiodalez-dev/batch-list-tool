@@ -1135,7 +1135,7 @@ class BoxResource extends Resource
             'customFieldValues.definition',
             'batch',
             // A9 — CreatorColumn resolves the inputter via the first audit row.
-            'audits' => static fn ($q) => $q->where('event', 'created')->oldest('id')->with('user'),
+            'audits' => static fn ($q) => $q->oldest('id')->with('user'),
         ]);
     }
 }

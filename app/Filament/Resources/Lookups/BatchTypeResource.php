@@ -171,7 +171,7 @@ class BatchTypeResource extends Resource
         // eager-load it (with its user) so the table does not run one audit
         // query per row (N+1 — schema/query review 2026-07-07).
         return parent::getEloquentQuery()
-            ->with(['audits' => fn ($q) => $q->where('event', 'created')->with('user')]);
+            ->with(['audits' => fn ($q) => $q->oldest('id')->with('user')]);
     }
 
     public static function getPages(): array

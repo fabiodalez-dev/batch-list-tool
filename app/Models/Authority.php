@@ -23,13 +23,14 @@ class Authority extends Model implements AuditableContract
     protected $fillable = [
         'identifier', 'alternative_identifier', 'surname', 'given_names',
         'entity_type', 'practice_dates_start', 'practice_dates_end', 'notes',
-        'ntg_date',
+        'ntg_dates_start', 'ntg_dates_end',
     ];
 
     protected $casts = [
         'practice_dates_start' => 'integer',
         'practice_dates_end' => 'integer',
-        'ntg_date' => 'date',
+        'ntg_dates_start' => 'integer',
+        'ntg_dates_end' => 'integer',
     ];
 
     public function documents(): BelongsToMany
