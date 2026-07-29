@@ -210,6 +210,22 @@ class SeriesResource extends Resource
                             ->columnSpanFull(),
                     ]),
 
+                // ISAD(G) metadata imported from the client's sheet.
+                Section::make('Archival metadata')
+                    ->columns($twoCols)
+                    ->schema([
+                        TextEntry::make('level_of_description')
+                            ->label('Level of description')
+                            ->placeholder('—'),
+                        TextEntry::make('date_of_creation')
+                            ->label('Date of creation')
+                            ->placeholder('—'),
+                        TextEntry::make('name_of_inputter')
+                            ->label('Name of Inputter (from sheet)')
+                            ->placeholder('—')
+                            ->columnSpanFull(),
+                    ]),
+
                 Section::make('Counts')
                     ->columns($twoCols)
                     ->schema([

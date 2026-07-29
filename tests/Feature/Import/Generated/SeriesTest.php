@@ -161,6 +161,32 @@ test('imports the real prod Series CSV end-to-end with zero failures', function 
         ->and(Series::count())->toBe(30);
 });
 
+test('imports the ISAD metadata columns (level, creation date, inputter) verbatim from the real CSV', function () {
+    Repository::factory()->create(['code' => 'NRA']);
+    $u = srt_admin();
+    $this->actingAs($u);
+
+    [, $rows] = srt_readCsv(SRT_PROD_CSV);
+
+    $columnMap = [
+        'code' => 'Identifier',
+        'title' => 'Standard title in English (Plural)',
+        'repository_code' => 'Repository',
+        'level_of_description' => 'Level of description',
+        'date_of_creation' => 'Date of creation',
+        'name_of_inputter' => 'Name of Inputter',
+    ];
+
+    $import = srt_run($rows, $columnMap, $u->id);
+    expect(srt_failures($import))->toBe([]);
+
+    $r = Series::where('code', 'R')->first();
+    expect($r->level_of_description)->toBe('Series')
+        ->and($r->name_of_inputter)->toBe('Charlene Ellul')
+        // The sheet stores the date as the Excel serial 46228 → rendered Y-m-d.
+        ->and($r->date_of_creation)->toBe('2026-07-25');
+});
+
 // ─── 2. Record types R / REG / RWL / O present with correct titles ────────
 
 test('the real prod CSV maps the R/REG/RWL/O record-type codes to their titles', function () {

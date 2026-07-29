@@ -31,18 +31,14 @@ use Illuminate\Support\Facades\Log;
 uses(RefreshDatabase::class);
 
 /**
- * Columns that appear in a template BY DESIGN but are intentionally not imported
- * — they mirror the client's real sheet layout for the operator's eye, but the
- * data model has no field for them (or the value is derived elsewhere). Keeping
- * the allowlist explicit means a genuinely new unmapped column (the drift bug
- * this test exists to catch, e.g. box `parent_box_number`) still fails, while
- * the known-informational columns do not.
+ * Columns that appear in a template BY DESIGN but are intentionally not imported.
+ * Empty now that every shipped template column maps to an importer field — a
+ * genuinely new unmapped column (the drift bug this test exists to catch, e.g.
+ * box `parent_box_number`, or the Series ISAD metadata) must fail here.
+ *
+ * @var array<string, array<int, string>>
  */
-const RT_INFORMATIONAL = [
-    // Series: ISAD(G) "level" is always "Series" here; the model has no date
-    // field; the inputter is derived from the import's audit actor, not a cell.
-    'series' => ['Level of description', 'Date of creation', 'Name of Inputter'],
-];
+const RT_INFORMATIONAL = [];
 
 dataset('template_entities', [
     'series' => ['series', SeriesImporter::class],
