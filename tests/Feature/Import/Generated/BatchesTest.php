@@ -272,8 +272,12 @@ test('file1: repository_code NRA resolves and stamps repository_id on every impo
 });
 
 // ─── file2 (52-row real prod CSV, includes "Unknown"/"NULL" batch numbers) ────
+//
+// The client's catch-all batches "Unknown" (Documents with unknown origin) and
+// "NULL" (Documents never packed in boxes) now IMPORT — batch_number is a short
+// string. Only the RFQ-forbidden numeric batches 34 and 36 fail.
 
-test('file2: non-numeric batch_number "Unknown" fails with a clear, non-masked message', function () {
+test('file2: the non-numeric batch_number "Unknown" imports as a real batch', function () {
     $repo = Repository::factory()->create(['code' => 'NRA']);
     $u = bt_admin($repo->id);
     $this->actingAs($u);
@@ -284,16 +288,17 @@ test('file2: non-numeric batch_number "Unknown" fails with a clear, non-masked m
 
     $import = bt_run($rows, BT_COLUMN_MAP, $u->id);
 
-    $failedData = bt_failed_data($import);
-    $failures = bt_failures($import);
-    $idx = collect($failedData)->search(fn ($d) => ($d['batch_number'] ?? null) === '0' || ($d['batch_number'] ?? null) === 'Unknown');
-    expect($idx)->not->toBeFalse();
-    expect($failures[$idx])
-        ->not->toContain('generic_validation')
-        ->not->toContain('SQLSTATE');
+    // Not among the failed rows any more, and persisted verbatim.
+    $failedNumbers = collect(bt_failed_data($import))->pluck('batch_number');
+    expect($failedNumbers)->not->toContain('Unknown');
+
+    $batch = Batch::withoutGlobalScope(RepositoryScope::class)->where('batch_number', 'Unknown')->first();
+    expect($batch)->not->toBeNull()
+        ->and($batch->description)->toBe('Documents with unknown origin')
+        ->and($batch->isForbidden())->toBeFalse();
 });
 
-test('file2: non-numeric batch_number "NULL" (literal string) fails with a clear, non-masked message', function () {
+test('file2: the non-numeric batch_number "NULL" (literal string) imports as a real batch', function () {
     $repo = Repository::factory()->create(['code' => 'NRA']);
     $u = bt_admin($repo->id);
     $this->actingAs($u);
@@ -304,13 +309,20 @@ test('file2: non-numeric batch_number "NULL" (literal string) fails with a clear
 
     $import = bt_run($rows, BT_COLUMN_MAP, $u->id);
 
-    expect($import->getFailedRowsCount())->toBeGreaterThanOrEqual(3); // 34, 36, Unknown, NULL
+    $failedNumbers = collect(bt_failed_data($import))->pluck('batch_number');
+    expect($failedNumbers)->not->toContain('NULL');
+
+    $batch = Batch::withoutGlobalScope(RepositoryScope::class)->where('batch_number', 'NULL')->first();
+    expect($batch)->not->toBeNull()
+        ->and($batch->description)->toBe('Documents never packed in boxes');
+
+    // No masked failures anywhere.
     foreach (bt_failures($import) as $f) {
         expect($f)->not->toContain('generic_validation')->not->toContain('SQLSTATE');
     }
 });
 
-test('file2: the 52-row file => 48 succeed, 4 fail (34, 36, Unknown, NULL)', function () {
+test('file2: the 52-row file => 50 succeed, 2 fail (only the forbidden 34 and 36)', function () {
     $repo = Repository::factory()->create(['code' => 'NRA']);
     $u = bt_admin($repo->id);
     $this->actingAs($u);
@@ -320,8 +332,12 @@ test('file2: the 52-row file => 48 succeed, 4 fail (34, 36, Unknown, NULL)', fun
 
     $import = bt_run($rows, BT_COLUMN_MAP, $u->id);
 
-    expect($import->successful_rows)->toBe(48)
-        ->and($import->getFailedRowsCount())->toBe(4);
+    // 48 numeric-valid + "Unknown" + "NULL" = 50 succeed; only forbidden 34/36 fail.
+    expect($import->successful_rows)->toBe(50)
+        ->and($import->getFailedRowsCount())->toBe(2);
+
+    $failedNumbers = collect(bt_failed_data($import))->pluck('batch_number')->sort()->values()->all();
+    expect($failedNumbers)->toBe(['34', '36']);
 });
 
 // ─── Uniqueness withTrashed (soft-deleted collision) ───────────────────────────

@@ -42,13 +42,15 @@ return new class extends Migration
         // migrated environment does not error. The index is dropped first
         // (dropping a still-indexed column fails on some drivers).
         if (Schema::hasColumn('authorities', 'ntg_date')) {
-            Schema::table('authorities', function (Blueprint $table): void {
-                // The index name from 2026_05_31_100000_add_authority_filter_indexes.
-                try {
+            // Guard with hasIndex() rather than a try/catch: a Schema::table
+            // closure DEFERS its commands and runs them after the closure
+            // returns, so a try/catch around $table->dropIndex() catches nothing.
+            if (Schema::hasIndex('authorities', 'authorities_ntg_date_index')) {
+                Schema::table('authorities', function (Blueprint $table): void {
                     $table->dropIndex('authorities_ntg_date_index');
-                } catch (Throwable) {
-                    // Index may not exist (fresh/partial env) — ignore.
-                }
+                });
+            }
+            Schema::table('authorities', function (Blueprint $table): void {
                 $table->dropColumn('ntg_date');
             });
         }

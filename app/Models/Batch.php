@@ -55,7 +55,11 @@ class Batch extends Model implements AuditableContract
     ];
 
     protected $casts = [
-        'batch_number' => 'integer',
+        // batch_number is a SHORT STRING: it is usually numeric ("1".."50") but
+        // the archive also has non-numeric catch-all batches ("Unknown", "NULL").
+        // The RFQ reserved-number helpers below cast to int before comparing, so
+        // a non-numeric batch simply never matches a reserved number.
+        'batch_number' => 'string',
         'is_active' => 'boolean',
     ];
 
@@ -100,7 +104,9 @@ class Batch extends Model implements AuditableContract
 
     public function isForbidden(): bool
     {
-        return in_array($this->batch_number, self::FORBIDDEN_NUMBERS, true);
+        $number = $this->numericBatchNumber();
+
+        return $number !== null && in_array($number, self::FORBIDDEN_NUMBERS, true);
     }
 
     /**
@@ -109,11 +115,29 @@ class Batch extends Model implements AuditableContract
      */
     public function isReservedMav(): bool
     {
-        return $this->batch_number === self::RESERVED_MAV_BATCH;
+        return $this->numericBatchNumber() === self::RESERVED_MAV_BATCH;
     }
 
     public function isWillsOnly(): bool
     {
-        return $this->batch_number === self::WILLS_BATCH;
+        return $this->numericBatchNumber() === self::WILLS_BATCH;
+    }
+
+    /**
+     * The RFQ reserved-number rules apply only to NUMERIC batch numbers. A
+     * non-numeric batch ("Unknown", "NULL") is never reserved, so the helpers
+     * only compare when the value is a canonical integer string — `is_numeric`
+     * plus an int round-trip guards against "34abc" or float-ish inputs slipping
+     * through `(int)` coercion and falsely matching a reserved number.
+     */
+    private function numericBatchNumber(): ?int
+    {
+        $value = $this->batch_number;
+        if ($value === null || ! is_numeric($value)) {
+            return null;
+        }
+        $int = (int) $value;
+
+        return (string) $int === (string) $value ? $int : null;
     }
 }
