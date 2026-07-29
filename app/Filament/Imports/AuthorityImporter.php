@@ -91,19 +91,23 @@ class AuthorityImporter extends Importer
                     }
                 }),
 
-            // NTG = Notari tal-Gvern (Government Notaries). Stored alongside
-            // private practice dates in the `notes` field — the schema does
-            // not have dedicated columns for it.
+            // NTG = Notari tal-Gvern (Government Notaries). The client's sheet
+            // carries this as a YEAR RANGE ("1882-1893"), identical in shape to
+            // the private-practice dates, so it is parsed into the two integer
+            // year columns ntg_dates_start / ntg_dates_end (a single date column
+            // could not hold a range, which is why NTG dates previously never
+            // imported — the value was dropped into `notes` as free text).
             ImportColumn::make('ntg_dates_active')
                 ->label('NTG Dates Active')
                 ->guess(['NTG Dates Active', 'NTG Dates'])
                 ->fillRecordUsing(function (Authority $record, ?string $state): void {
-                    if ($state === null || trim($state) === '') {
-                        return;
+                    [$start, $end] = SpreadsheetParsers::parseYearRange($state);
+                    if ($start !== null) {
+                        $record->ntg_dates_start = $start;
                     }
-                    $prev = trim((string) $record->notes);
-                    $line = 'NTG dates: ' . trim($state);
-                    $record->notes = $prev === '' ? $line : ($prev . "\n" . $line);
+                    if ($end !== null) {
+                        $record->ntg_dates_end = $end;
+                    }
                 }),
 
             ImportColumn::make('name_suffix')
