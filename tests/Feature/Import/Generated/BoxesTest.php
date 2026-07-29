@@ -1005,3 +1005,32 @@ test('a SOFT-DELETED RAS box is never linked as a parent by its box number', fun
         ->and(strtolower(bxt_failures($import)[0]))->toContain('parent ras box');
     expect(Box::withoutGlobalScope(ThroughBatchRepositoryScope::class)->where('box_number', 'CHILD')->exists())->toBeFalse();
 });
+
+test('a box whose is_legacy column is MAPPED but BLANK imports (defaults to false), not a NOT NULL failure', function () {
+    $repo = Repository::factory()->create(['code' => 'BXLEG']);
+    $u = bxt_admin($repo->id);
+    $this->actingAs($u);
+
+    Batch::withoutGlobalScope(RepositoryScope::class)->create([
+        'batch_number' => '46', 'repository_id' => $repo->id, 'type' => 'MAIN_COLLECTION', 'is_active' => true,
+    ]);
+
+    // is_legacy is present in the column map (as the wizard auto-guesses it) but
+    // the cell is empty — the ->boolean() cast makes it null, which must default
+    // to false rather than fail the NOT NULL column.
+    $rows = [[
+        'box_type' => 'RAS', 'box_number' => '700', 'batch_number' => '46',
+        'barcode' => 'LEG-700', 'barcode_status' => 'IN', 'is_legacy' => '',
+    ]];
+    $columnMap = [
+        'box_type' => 'box_type', 'box_number' => 'box_number', 'batch_number' => 'batch_number',
+        'barcode' => 'barcode', 'barcode_status' => 'barcode_status', 'is_legacy' => 'is_legacy',
+    ];
+
+    $import = bxt_run($rows, $columnMap, $u->id);
+
+    expect(bxt_failures($import))->toBe([]);
+    $box = Box::withoutGlobalScope(ThroughBatchRepositoryScope::class)->where('box_number', '700')->first();
+    expect($box)->not->toBeNull()
+        ->and($box->is_legacy)->toBeFalse();
+});
