@@ -238,6 +238,9 @@ it('indexes the Authority filter columns for performance', function (): void {
 
     expect($schema::hasIndex('authorities', 'authorities_practice_dates_start_index'))->toBeTrue()
         ->and($schema::hasIndex('authorities', 'authorities_practice_dates_end_index'))->toBeTrue()
-        ->and($schema::hasIndex('authorities', 'authorities_ntg_date_index'))->toBeTrue()
+        // NTG is now a year range (ntg_dates_start/end), replacing the old
+        // single ntg_date column + its index.
+        ->and($schema::hasIndex('authorities', 'authorities_ntg_dates_start_index'))->toBeTrue()
+        ->and($schema::hasIndex('authorities', 'authorities_ntg_dates_end_index'))->toBeTrue()
         ->and($schema::hasIndex('authorities', 'authorities_alternative_identifier_index'))->toBeTrue();
 });

@@ -484,16 +484,20 @@ test('a "1607-1629" Private Practice Dates Active cell splits into practice_date
         ->and($a->practice_dates_end)->toBe(1629);
 });
 
-test('NTG Dates Active (real NAF example row 2) is appended into notes', function () {
+test('NTG Dates Active (real NAF example row 2) splits into ntg_dates_start/end integers', function () {
     $u = at_admin();
     $this->actingAs($u);
 
     // Real row R647 (Grech, Carmela) in the NAF example file carries NTG
-    // Dates Active "1885-1890".
+    // Dates Active "1885-1890" — a year range, parsed into the two NTG year
+    // columns exactly like the private-practice range (it used to be dumped
+    // into notes as free text, which is why NTG dates never imported).
     $rows = at_loadXlsx(AT_NAF_EXAMPLE_XLSX);
     at_run([$rows[1]], AT_COLUMN_MAP, $u->id);
 
-    expect(Authority::where('identifier', 'R647')->value('notes'))->toContain('NTG dates: 1885-1890');
+    $a = Authority::where('identifier', 'R647')->first();
+    expect($a->ntg_dates_start)->toBe(1885)
+        ->and($a->ntg_dates_end)->toBe(1890);
 })->skip(fn () => ! is_file(AT_NAF_EXAMPLE_XLSX), 'NAF example file not present');
 
 test('Maiden Surname (real NAF example row 2) is appended into notes', function () {

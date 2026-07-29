@@ -28,9 +28,13 @@ return new class extends Migration
         Schema::table('authorities', function (Blueprint $table): void {
             if (! Schema::hasColumn('authorities', 'ntg_dates_start')) {
                 $table->integer('ntg_dates_start')->nullable()->after('practice_dates_end');
+                // Mirrors the practice_dates_* indexes — powers the "worked as
+                // NTG" filter and the NTG number constraints.
+                $table->index('ntg_dates_start', 'authorities_ntg_dates_start_index');
             }
             if (! Schema::hasColumn('authorities', 'ntg_dates_end')) {
                 $table->integer('ntg_dates_end')->nullable()->after('ntg_dates_start');
+                $table->index('ntg_dates_end', 'authorities_ntg_dates_end_index');
             }
         });
 
