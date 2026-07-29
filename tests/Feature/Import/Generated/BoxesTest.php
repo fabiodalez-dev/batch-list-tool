@@ -926,3 +926,82 @@ test('re-importing the real template RAS row over a soft-deleted box with the sa
     expect($all)->toHaveCount(1)
         ->and($all->first()->trashed())->toBeFalse();
 });
+
+test('a numeric barcode of a NON-RAS box does not hijack the parent link — the RAS box NUMBER wins', function () {
+    $repo = Repository::factory()->create(['code' => 'BXCOL']);
+    $u = bxt_admin($repo->id);
+    $this->actingAs($u);
+
+    $batch = Batch::withoutGlobalScope(RepositoryScope::class)->create([
+        'batch_number' => '46', 'repository_id' => $repo->id, 'type' => 'MAIN_COLLECTION', 'is_active' => true,
+    ]);
+    Location::withoutGlobalScope(RepositoryScope::class)->create([
+        'name' => 'Room', 'code' => 'AR1', 'type' => 'room', 'is_active' => true, 'repository_id' => $repo->id, 'parent_id' => null,
+    ]);
+
+    // The real parent: a RAS box numbered "1" (barcode "RASBC").
+    $ras = Box::withoutGlobalScope(ThroughBatchRepositoryScope::class)->create([
+        'box_type' => 'RAS', 'box_number' => '1', 'batch_id' => $batch->id, 'barcode' => 'RASBC',
+    ]);
+    // A DECOY non-RAS box whose BARCODE is the numeric string "1". MAV is a
+    // legacy type that needs no parent, so it can exist standalone as the decoy.
+    Box::withoutGlobalScope(ThroughBatchRepositoryScope::class)->create([
+        'box_type' => 'MAV', 'box_number' => '99', 'batch_id' => $batch->id, 'barcode' => '1', 'is_legacy' => true,
+    ]);
+
+    // Child references its parent by number "1": resolveBox("1") finds the decoy
+    // (barcode "1") but it is NOT RAS, so we fall through to the RAS-number
+    // resolution and link the real RAS box.
+    $rows = [[
+        'box_type' => 'NRA', 'box_number' => 'CHILD', 'batch_number' => '46',
+        'barcode' => '', 'barcode_status' => 'IN', 'parent_box_number' => '1', 'Location' => 'AR1',
+    ]];
+    $columnMap = [
+        'box_type' => 'box_type', 'box_number' => 'box_number', 'batch_number' => 'batch_number',
+        'barcode' => 'barcode', 'barcode_status' => 'barcode_status',
+        'parent_barcode' => 'parent_box_number', 'location' => 'Location',
+    ];
+
+    $import = bxt_run($rows, $columnMap, $u->id);
+
+    expect(bxt_failures($import))->toBe([]);
+    $child = Box::withoutGlobalScope(ThroughBatchRepositoryScope::class)->where('box_number', 'CHILD')->first();
+    expect($child)->not->toBeNull()
+        ->and($child->parent_box_id)->toBe($ras->id); // the RAS box, not the decoy
+});
+
+test('a SOFT-DELETED RAS box is never linked as a parent by its box number', function () {
+    $repo = Repository::factory()->create(['code' => 'BXSD']);
+    $u = bxt_admin($repo->id);
+    $this->actingAs($u);
+
+    $batch = Batch::withoutGlobalScope(RepositoryScope::class)->create([
+        'batch_number' => '46', 'repository_id' => $repo->id, 'type' => 'MAIN_COLLECTION', 'is_active' => true,
+    ]);
+    Location::withoutGlobalScope(RepositoryScope::class)->create([
+        'name' => 'Room', 'code' => 'AR1', 'type' => 'room', 'is_active' => true, 'repository_id' => $repo->id, 'parent_id' => null,
+    ]);
+
+    // The only RAS box "1" is soft-deleted → must not be resolvable as a parent.
+    $ras = Box::withoutGlobalScope(ThroughBatchRepositoryScope::class)->create([
+        'box_type' => 'RAS', 'box_number' => '1', 'batch_id' => $batch->id, 'barcode' => 'RASBC',
+    ]);
+    $ras->delete();
+
+    $rows = [[
+        'box_type' => 'NRA', 'box_number' => 'CHILD', 'batch_number' => '46',
+        'barcode' => '', 'barcode_status' => 'IN', 'parent_box_number' => '1', 'Location' => 'AR1',
+    ]];
+    $columnMap = [
+        'box_type' => 'box_type', 'box_number' => 'box_number', 'batch_number' => 'batch_number',
+        'barcode' => 'barcode', 'barcode_status' => 'barcode_status',
+        'parent_barcode' => 'parent_box_number', 'location' => 'Location',
+    ];
+
+    $import = bxt_run($rows, $columnMap, $u->id);
+
+    // No live RAS parent → the NRA child fails the "must have a parent" rule.
+    expect(bxt_failures($import))->toHaveCount(1)
+        ->and(strtolower(bxt_failures($import)[0]))->toContain('parent ras box');
+    expect(Box::withoutGlobalScope(ThroughBatchRepositoryScope::class)->where('box_number', 'CHILD')->exists())->toBeFalse();
+});

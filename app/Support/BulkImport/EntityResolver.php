@@ -449,13 +449,18 @@ final class EntityResolver
 
         $key = "ras_parent:number:{$repositoryId}|{$boxNumber}";
         if (! array_key_exists($key, self::$memo)) {
+            // withoutGlobalScopes() also drops the SoftDeletingScope, so exclude
+            // trashed rows explicitly — a soft-deleted RAS box (or a box in a
+            // soft-deleted batch) must never be linked as a live parent.
             $batchIds = Batch::query()
                 ->withoutGlobalScopes()
+                ->whereNull('deleted_at')
                 ->where('repository_id', $repositoryId)
                 ->pluck('id');
 
             $matches = Box::query()
                 ->withoutGlobalScopes()
+                ->whereNull('deleted_at')
                 ->where('box_type', 'RAS')
                 ->where('box_number', $boxNumber)
                 ->whereIn('batch_id', $batchIds)

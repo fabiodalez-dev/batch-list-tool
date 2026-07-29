@@ -423,11 +423,11 @@ class LocationResource extends Resource
                             } elseif ($deleted > 0) {
                                 $notification->warning()
                                     ->title($deleted . ' deleted, ' . count($skipped) . ' skipped')
-                                    ->body('Skipped (still have children or are referenced): ' . implode(', ', $skipped));
+                                    ->body('Skipped (still have children, are referenced by Boxes/Documents, or you lack permission): ' . implode(', ', $skipped));
                             } else {
                                 $notification->danger()
                                     ->title('No locations deleted')
-                                    ->body('Every selected location still has children or is referenced by Boxes/Documents. Re-assign them first.');
+                                    ->body('Every selected location was skipped — each still has children, is referenced by Boxes/Documents, or you lack permission to delete it.');
                             }
                             $notification->send();
                         })

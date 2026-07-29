@@ -223,7 +223,7 @@ class BoxImporter extends Importer
             // RFQ #3 — IN_SITU / NRA boxes MUST reference a parent RAS box.
             // Reject the row instead of inserting an orphan.
             throw ValidationException::withMessages([
-                'parent_box_id' => __('IN_SITU and NRA boxes must reference a parent RAS box (via barcode).'),
+                'parent_box_id' => __('IN_SITU and NRA boxes must reference a parent RAS box (via its barcode or an unambiguous RAS box number).'),
             ]);
         }
     }
@@ -340,36 +340,50 @@ class BoxImporter extends Importer
                     $rowRepoId ??= self::$rowRepositoryStash[spl_object_id($record)] ?? null;
 
                     // (1) Try the value as a BARCODE — globally unique, so
-                    // resolveBox() is intentionally unscoped (BUG-09). Cross-tenant
-                    // correctness is validated here.
+                    // resolveBox() is intentionally unscoped (BUG-09). We only
+                    // ACCEPT it if it identifies a LIVE RAS box: resolveBox()
+                    // (withoutGlobalScopes) can return a non-RAS or soft-deleted
+                    // box, and a numeric barcode could collide with a valid RAS
+                    // box number — accepting it blindly would link a bad parent and
+                    // skip the number fallback below. Cross-tenant correctness is
+                    // validated too.
                     $res = EntityResolver::resolveBox($state);
                     if ($res !== null) {
-                        $parentRepoId = Batch::query()
+                        $parentBox = Box::query()
                             ->withoutGlobalScopes()
-                            ->whereKey($res['batch_id'])
-                            ->value('repository_id');
-                        $parentRepoId = $parentRepoId !== null ? (int) $parentRepoId : null;
+                            ->whereKey($res['box_id'])
+                            ->first(['id', 'box_type', 'deleted_at']);
 
-                        if ($parentRepoId !== null && $rowRepoId !== null && $parentRepoId !== $rowRepoId) {
-                            unset(
-                                self::$rowRepositoryStash[spl_object_id($record)],
-                                self::$rowCustomFieldStash[spl_object_id($record)],
-                            );
+                        if ($parentBox !== null && $parentBox->box_type === 'RAS' && $parentBox->deleted_at === null) {
+                            $parentRepoId = Batch::query()
+                                ->withoutGlobalScopes()
+                                ->whereKey($res['batch_id'])
+                                ->value('repository_id');
+                            $parentRepoId = $parentRepoId !== null ? (int) $parentRepoId : null;
 
-                            throw ValidationException::withMessages([
-                                'parent_barcode' => __(
-                                    'The parent box (barcode :barcode) belongs to a different repository and cannot be linked to this box.',
-                                    ['barcode' => $state],
-                                ),
-                            ]);
+                            if ($parentRepoId !== null && $rowRepoId !== null && $parentRepoId !== $rowRepoId) {
+                                unset(
+                                    self::$rowRepositoryStash[spl_object_id($record)],
+                                    self::$rowCustomFieldStash[spl_object_id($record)],
+                                );
+
+                                throw ValidationException::withMessages([
+                                    'parent_barcode' => __(
+                                        'The parent box (barcode :barcode) belongs to a different repository and cannot be linked to this box.',
+                                        ['barcode' => $state],
+                                    ),
+                                ]);
+                            }
+
+                            $record->parent_box_id = $res['box_id'];
+
+                            return;
                         }
-
-                        $record->parent_box_id = $res['box_id'];
-
-                        return;
+                        // Not a live RAS box → fall through to the number resolution
+                        // (the value may be a RAS box NUMBER, not a barcode).
                     }
 
-                    // (2) Not a barcode → try the value as a parent RAS box's
+                    // (2) Not a (RAS) barcode → try the value as a parent RAS box's
                     // BOX NUMBER within this row's repository. The client's sheet
                     // references the parent this way (the `parent_box_number`
                     // column holds "1", the RAS box's number). Scoped to RAS boxes
