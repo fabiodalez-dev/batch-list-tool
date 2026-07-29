@@ -101,3 +101,22 @@ test('logUnrecognisedHeaders stays silent when every column is recognised', func
 
     ImportWizard::logUnrecognisedHeaders(BatchImporter::class, $headers, $columnMap, 'test');
 });
+
+test('the Download-template step has a hint for every tricky/known box column', function () {
+    $hints = ImportWizard::columnHints();
+    // The two that caused the client's confusion must be explained.
+    expect($hints)->toHaveKey('parent_box_number')
+        ->and($hints['parent_box_number'])->toContain('RAS')
+        ->and($hints)->toHaveKey('Location')
+        ->and($hints['Location'])->toContain('CODE');
+
+    // Every box template column that is not free-form has an explanation.
+    $boxHeaders = TemplateGenerator::headersFor('box');
+    $noHintNeeded = ['notes'];
+    foreach ($boxHeaders as $h) {
+        if (in_array($h, $noHintNeeded, true)) {
+            continue;
+        }
+        expect($hints)->toHaveKey($h);
+    }
+});

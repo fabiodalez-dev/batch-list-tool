@@ -738,6 +738,58 @@ class ImportWizard extends Page
         );
     }
 
+    /**
+     * Short "what goes in this column" hint per template header, shown next to
+     * each column on the Download-template step so the operator fills the sheet
+     * correctly (especially the box parent link and the Location code, the two
+     * that caused the client's confusion). Unknown headers get no hint.
+     *
+     * @return array<string, string> header => hint
+     */
+    public static function columnHints(): array
+    {
+        return [
+            // Boxes
+            'box_type' => 'One of: RAS, IN_SITU, NRA, MAV, STVC.',
+            'box_number' => 'This box\'s own number.',
+            'parent_box_number' => 'For IN_SITU / NRA boxes: the parent RAS box\'s NUMBER (e.g. "1") or its barcode. Leave blank for RAS boxes.',
+            'barcode' => 'The physical barcode. Required for RAS boxes.',
+            'barcode_status' => 'IN, OUT or PERM_OUT. PERM_OUT also needs a disinfestation_date.',
+            'disinfestation_date' => 'Only needed when barcode_status is PERM_OUT.',
+            'is_legacy' => 'yes for a legacy box, otherwise leave blank.',
+            'Seal Number' => 'The physical seal id, if any.',
+            'Location' => 'The location CODE (e.g. "SHELF-A3"), NOT the room name.',
+            // Batches / shared
+            'batch_number' => 'The batch number (must already exist for boxes). Usually numeric; "Unknown" / "NULL" are allowed.',
+            'description' => 'Free text.',
+            'type' => 'A controlled code (batch type / location type).',
+            'is_active' => 'yes / no. Blank means active.',
+            'repository_code' => 'The repository code (e.g. "NRA"). Blank = your default / a global record.',
+            // Locations
+            'name' => 'The location name.',
+            'parent_name' => 'The parent location\'s name — import parents first. Blank for a top-level location.',
+            'code' => 'Optional identifier — auto-generated if left blank.',
+            'sort_order' => 'Optional display order (a number).',
+            // Series / Authorities
+            'Identifier' => 'The record\'s code / identifier.',
+            'Standard title in English (Plural)' => 'The title.',
+            'Level of description' => 'ISAD level (usually "Series"). Informational.',
+            'Date of creation' => 'A date or year range, e.g. "1607-1629". Informational.',
+            'Name of Inputter' => 'Who catalogued the record. Informational (the system also records who ran the import).',
+            'Repository' => 'The repository code (e.g. "NRA").',
+            'Alternative Identifier' => 'Any secondary identifier (e.g. an MS number).',
+            'Type of Entity' => 'Person or Institution (e.g. "Notary" counts as Institution).',
+            'Private Practice Dates Active' => 'A year range, e.g. "1607-1629".',
+            'NTG Dates Active' => 'A year range for Notary-to-Government service, e.g. "1882-1893".',
+            'Name Suffix' => 'e.g. "Jr." — appended to the given name.',
+            'Maiden Surname' => 'The creator\'s maiden surname, if any.',
+            'Creator Surname' => 'The creator\'s surname.',
+            'Creator Name' => 'The creator\'s given name(s).',
+            'notes' => 'Free text — any extra notes.',
+            'Note' => 'Free text — any extra notes.',
+        ];
+    }
+
     /* ──────────────────────────────────────────────────────────────── */
     /* Compat shims for legacy callers (tests, blade includes) */
     /* ──────────────────────────────────────────────────────────────── */
@@ -1090,7 +1142,7 @@ class ImportWizard extends Page
                         'authorities' => 'Depends on: nothing.',
                         'locations' => 'Depends on: at least one Repository AND a matching Location Type — the "type" column must be one of the configured location types (built-in ones like room / shelf / showcase always work). Parents must be imported before their children (re-run after fixing order if parent not found).',
                         'batches' => 'Depends on: at least one Repository.',
-                        'boxes' => 'Depends on: at least one Batch.',
+                        'boxes' => 'Depends on: at least one Batch. Import the RAS parent boxes first, then the boxes inside them. In "parent_box_number" put the parent RAS box\'s NUMBER (e.g. "1") or its barcode — every IN_SITU / NRA box needs a RAS parent. "Location" is a location CODE (e.g. "SHELF-A3"), not the room name.',
                         'documents' => 'Depends on: Series + Authorities + Batches + Boxes.',
                     ])
                     ->required()
@@ -1195,17 +1247,24 @@ class ImportWizard extends Page
                         $entity = self::TEMPLATE_KEYS[$type];
                         $headers = TemplateGenerator::headersFor($entity);
 
+                        $hints = self::columnHints();
                         $items = '';
                         foreach ($headers as $h) {
-                            $label = $h === '' ? '<em>(blank column)</em>' : e($h);
-                            $items .= '<li>' . $label . '</li>';
+                            if ($h === '') {
+                                $items .= '<li><em>(blank column)</em></li>';
+
+                                continue;
+                            }
+                            $label = '<strong>' . e($h) . '</strong>';
+                            $hint = isset($hints[$h]) ? ' — ' . e($hints[$h]) : '';
+                            $items .= '<li>' . $label . $hint . '</li>';
                         }
 
                         return new HtmlString(
-                            '<p class="text-sm">The template will have '
+                            '<p class="text-sm">The template has '
                             . count($headers)
-                            . ' header columns:</p>'
-                            . '<ul class="mt-2 list-disc pl-5 text-sm space-y-0.5">'
+                            . ' columns — here is what goes in each:</p>'
+                            . '<ul class="mt-2 list-disc pl-5 text-sm space-y-1">'
                             . $items
                             . '</ul>'
                         );
