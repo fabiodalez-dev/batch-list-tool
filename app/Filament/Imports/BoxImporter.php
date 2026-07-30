@@ -414,8 +414,10 @@ class BoxImporter extends Importer
                         ]);
                     }
 
-                    if (is_array($byNumber) && isset($byNumber['box_id'])) {
-                        // Same repository by construction (scoped above).
+                    if (is_array($byNumber)) {
+                        // Only the {box_id, batch_id} shape can reach here — the
+                        // ambiguous case threw above and a no-match is null. Same
+                        // repository by construction (scoped in the resolver).
                         $record->parent_box_id = $byNumber['box_id'];
 
                         return;
