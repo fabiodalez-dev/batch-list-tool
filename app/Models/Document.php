@@ -215,6 +215,73 @@ class Document extends Model implements AuditableContract, HasMedia, Sortable
         return $this->belongsTo(Location::class);
     }
 
+    /**
+     * The location that actually governs this document: its own pinned location
+     * if set, otherwise the location of the box it currently sits in.
+     *
+     * NAF (2026-07-30): the archive treats the box location as the default and
+     * the document location as a per-document override — a document can sit in a
+     * box that lives in Archive X yet itself be in Archive Y. This resolves the
+     * "effective" value for display WITHOUT copying data (no drift if the box
+     * later moves); the override is simply setting `location_id` on the document.
+     */
+    public function effectiveLocation(): ?Location
+    {
+        $own = $this->location;
+        if ($own instanceof Location) {
+            return $own;
+        }
+        $box = $this->currentBox;
+        $boxLocation = $box instanceof Box ? $box->location : null;
+
+        return $boxLocation instanceof Location ? $boxLocation : null;
+    }
+
+    /**
+     * True when the effective location is inherited from the box rather than set
+     * on the document — lets the UI label "from box" vs an explicit override.
+     */
+    public function locationIsInherited(): bool
+    {
+        if ($this->location_id !== null) {
+            return false;
+        }
+        $box = $this->currentBox;
+
+        return $box instanceof Box && $box->location_id !== null;
+    }
+
+    /**
+     * The disinfestation date that actually governs this document: its own if
+     * set, otherwise its box's. Box level drives the disinfestation report and
+     * how boxes are sent to / brought back from disinfestation; the per-document
+     * value overrides it for the few records that went through a different cycle.
+     * Read-only fallback — nothing is materialised, so no drift.
+     */
+    public function effectiveDisinfestationDate(): ?Carbon
+    {
+        if ($this->disinfestation_date !== null) {
+            return $this->disinfestation_date;
+        }
+        $box = $this->currentBox;
+
+        return $box instanceof Box ? $box->disinfestation_date : null;
+    }
+
+    /**
+     * True when the effective disinfestation date is inherited from the box
+     * rather than set on the document itself.
+     */
+    public function disinfestationDateIsInherited(): bool
+    {
+        if ($this->disinfestation_date !== null) {
+            return false;
+        }
+        $box = $this->currentBox;
+
+        return $box instanceof Box && $box->disinfestation_date !== null;
+    }
+
     public function batch(): BelongsTo
     {
         return $this->belongsTo(Batch::class);

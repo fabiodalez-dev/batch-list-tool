@@ -732,11 +732,19 @@ class DocumentResource extends Resource
                                 : null)
                             ->openUrlInNewTab(false)
                             ->placeholder('—'),
-                        TextEntry::make('location.full_path')
+                        // Two-level location: show the effective location (the
+                        // document's own if set, else inherited from its box) and
+                        // say so, so the operator knows the default came from the
+                        // box and that setting one here overrides it.
+                        TextEntry::make('effective_location')
                             ->label('Location')
+                            ->state(fn (?Document $record): ?string => $record?->effectiveLocation()?->full_path)
                             ->placeholder('—')
-                            ->url(fn (?Document $record): ?string => $record?->location_id
-                                ? route('filament.admin.resources.locations.view', ['record' => $record->location_id])
+                            ->helperText(fn (?Document $record): ?string => $record?->locationIsInherited()
+                                ? 'Inherited from the current box — set a location on this document to override it.'
+                                : null)
+                            ->url(fn (?Document $record): ?string => ($loc = $record?->effectiveLocation())
+                                ? route('filament.admin.resources.locations.view', ['record' => $loc->getKey()])
                                 : null)
                             ->openUrlInNewTab(false)
                             ->columnSpanFull(),
@@ -1030,6 +1038,20 @@ class DocumentResource extends Resource
                         ->orderByLeftPowerJoins('batch.batch_number', $direction)
                         ->orderByLeftPowerJoins('currentBox.box_number', $direction))
                     ->toggleable(), 'current_box_id'),
+                // NAF (2026-07-30) two-level location: a document shows its OWN
+                // location if set, otherwise it inherits its box's ("from box").
+                // Setting a location on the document overrides the box for that
+                // document only. Not sortable — effectiveLocation() is a resolved
+                // accessor, not a DB column. Gated on the document's location_id.
+                $gc(Tables\Columns\TextColumn::make('effective_location')
+                    ->label('Location')
+                    ->state(fn (?Document $record): ?string => $record?->effectiveLocation()?->full_path)
+                    ->description(fn (?Document $record): ?string => $record?->locationIsInherited() ? 'from box' : null)
+                    ->placeholder('—')
+                    ->url(fn (?Document $record): ?string => ($loc = $record?->effectiveLocation())
+                        ? route('filament.admin.resources.locations.view', ['record' => $loc->getKey()])
+                        : null)
+                    ->toggleable(), 'location_id'),
                 $gc(Tables\Columns\TextColumn::make('practice')->sortable()->toggleable()),
                 $gc(Tables\Columns\TextColumn::make('volume_number')->label('Vol.')->sortable()->toggleable()),
                 $gc(Tables\Columns\TextColumn::make('part_number')->label('Part No')->sortable()->toggleable(isToggledHiddenByDefault: true)),
@@ -1045,7 +1067,14 @@ class DocumentResource extends Resource
                 // via the column picker; truncated with the full text on hover.
                 $gc(Tables\Columns\TextColumn::make('notes')->label('Notes')->limit(60)->tooltip(fn (?string $state): ?string => $state)->sortable()->toggleable()),
                 $gc(Tables\Columns\TextColumn::make('repository.code')->label('Repo')->badge()->color('gray')->sortable()->toggleable(), 'repository_id'),
-                $gc(Tables\Columns\TextColumn::make('disinfestation_date')->label('Disinfested')->date()->sortable()->toggleable(isToggledHiddenByDefault: true)),
+                // Two-level disinfestation: show the effective date — the
+                // document's own if set, otherwise inherited from its box
+                // ("from box"). Not sortable (resolved accessor, not a column).
+                $gc(Tables\Columns\TextColumn::make('disinfestation_date')->label('Disinfested')
+                    ->state(fn (?Document $record): ?\Carbon\Carbon => $record?->effectiveDisinfestationDate())
+                    ->date()
+                    ->description(fn (?Document $record): ?string => $record?->disinfestationDateIsInherited() ? 'from box' : null)
+                    ->toggleable(isToggledHiddenByDefault: true)),
                 $gc(Tables\Columns\IconColumn::make('torre')->boolean()->sortable()->toggleable(isToggledHiddenByDefault: true)),
                 $gc(Tables\Columns\TextColumn::make('updated_at')->dateTime()->sortable()->toggleable(isToggledHiddenByDefault: true)),
                 // A9 — inputter column (who created the record).
