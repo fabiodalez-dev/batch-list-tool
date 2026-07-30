@@ -590,12 +590,20 @@ class DocumentResource extends Resource
                             })
                             ->placeholder('—'),
 
-                        TextEntry::make('disinfestation_date')
+                        // Effective disinfestation date: the document's own if
+                        // set, else inherited from its box — same two-level rule
+                        // as the list column, so the view doesn't show "Pending"
+                        // for a record the list shows a "from box" date for.
+                        TextEntry::make('effective_disinfestation_date')
                             ->label('Disinfestation')
+                            ->state(fn (?Document $record): ?\Carbon\Carbon => $record?->effectiveDisinfestationDate())
                             ->date()
                             ->badge()
-                            ->color(fn (?string $state): string => $state ? 'success' : 'warning')
+                            ->color(fn ($state): string => $state ? 'success' : 'warning')
                             ->placeholder('Pending')
+                            ->helperText(fn (?Document $record): ?string => $record?->disinfestationDateIsInherited()
+                                ? 'Inherited from the current box — set a disinfestation date on this document to override it.'
+                                : null)
                             ->columnSpanFull(),
                     ]),
 
@@ -1392,6 +1400,12 @@ class DocumentResource extends Resource
                 // `currentBox.batch` lets the "Box" column render
                 // "Batch X / Box Y" without firing a second query per row.
                 'currentBox.batch',
+                // The Location column shows the EFFECTIVE location: the
+                // document's own if set, else the box's (Document::
+                // effectiveLocation()). Inherited rows walk `currentBox.location`,
+                // so eager-load it too — without this the common inherited case
+                // fires one query per row.
+                'currentBox.location',
                 'repository',
                 'authorities',
                 // RFQ §3.1.9 — the Location column displays

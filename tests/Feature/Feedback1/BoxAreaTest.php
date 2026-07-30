@@ -206,7 +206,7 @@ it('A6: column names appear in the requested order: Batch, Box, Barcode, Barcode
 
     $columnNames = collect($table->getColumns())->keys()->all();
 
-    // The first 10 fixed columns must follow the spec order. `effective_location`
+    // The first 10 fixed columns must follow the spec order. `location.full_path`
     // sits between box_type and destroyed_at: the box's location was on the
     // import sheet but not on the page (NAF, 2026-07-30), so it's surfaced here.
     $expectedPrefix = [

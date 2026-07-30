@@ -786,8 +786,11 @@ class BoxResource extends Resource
                     ->label('Location')
                     ->placeholder('—')
                     ->toggleable()
-                    ->url(fn (?Box $record): ?string => $record?->location_id
-                        ? route('filament.admin.resources.locations.view', ['record' => $record->location_id])
+                    // Gate the link on the RESOLVED relation, not the raw FK: an
+                    // orphaned location_id renders a blank cell, so it must not
+                    // link to a location record that no longer exists.
+                    ->url(fn (?Box $record): ?string => $record?->location
+                        ? route('filament.admin.resources.locations.view', ['record' => $record->location->getKey()])
                         : null), 'location_id'),
                 // RFQ App.2 §vii — "destroyed" badge. Shown as a red
                 // chip on the row so operators can spot artefacts that
@@ -1136,6 +1139,10 @@ class BoxResource extends Resource
         return parent::getEloquentQuery()->with([
             'customFieldValues.definition',
             'batch',
+            // The Location column renders `location.full_path` (an accessor that
+            // walks the location's ancestors); eager-load the relation so the
+            // default box list doesn't fire one query per row.
+            'location',
             // A9 — CreatorColumn resolves the inputter via the first audit row.
             'audits' => static fn ($q) => $q->oldest('id')->with('user'),
         ]);

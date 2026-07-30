@@ -189,6 +189,21 @@ it('inherits dynamically: a non-overridden document reflects the box new date', 
         ->and($doc->fresh()->disinfestationDateIsInherited())->toBeTrue();
 });
 
+it('keeps locationIsInherited in step with effectiveLocation when the own location does not resolve', function () {
+    // A document whose location_id points at a row that no longer resolves must
+    // fall back to the box AND report the fallback (the two must never disagree).
+    $boxLoc = Location::factory()->create();
+    $doc = eld_doc(['location_id' => $boxLoc->id], ['location_id' => null]);
+
+    // Simulate an orphaned own-location: the FK is set but the relation resolves
+    // to null (deleted/orphaned row), the exact case the raw-FK check missed.
+    $doc->setAttribute('location_id', 999999);
+    $doc->setRelation('location', null);
+
+    expect($doc->effectiveLocation()?->id)->toBe($boxLoc->id)
+        ->and($doc->locationIsInherited())->toBeTrue(); // agrees with the fallback
+});
+
 // ─────────────────── independence of the two dimensions ───────────────────
 
 it('resolves location and disinfestation independently (own location, inherited date)', function () {

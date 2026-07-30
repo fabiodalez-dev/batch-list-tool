@@ -243,12 +243,16 @@ class Document extends Model implements AuditableContract, HasMedia, Sortable
      */
     public function locationIsInherited(): bool
     {
-        if ($this->location_id !== null) {
+        // Mirror effectiveLocation()'s precedence exactly — test the RESOLVED
+        // relation, not the raw FK. A document whose location_id points at a
+        // deleted/orphaned row has no effective own location, so it falls back
+        // to (and is "inherited from") the box, and the flag must say so.
+        if ($this->location instanceof Location) {
             return false;
         }
         $box = $this->currentBox;
 
-        return $box instanceof Box && $box->location_id !== null;
+        return $box instanceof Box && $box->location instanceof Location;
     }
 
     /**
