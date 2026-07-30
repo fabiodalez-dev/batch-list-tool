@@ -31,6 +31,25 @@ jobs:
       matrix:
         php: ['8.4']
 
+    # A real MariaDB so the MySQL/MariaDB-only regression tests (the batches
+    # forbidden-numbers CHECK) actually execute. The main Pest suite still runs
+    # on in-memory SQLite for speed; only the dedicated step below points at
+    # this service. SQLite silently ignores a named CHECK added via ALTER, so
+    # without a real engine that regression would never be exercised in CI.
+    services:
+      mariadb:
+        image: mariadb:11
+        env:
+          MARIADB_DATABASE: nra_test
+          MARIADB_ROOT_PASSWORD: root
+        ports:
+          - 3306:3306
+        options: >-
+          --health-cmd="healthcheck.sh --connect --innodb_initialized"
+          --health-interval=10s
+          --health-timeout=5s
+          --health-retries=10
+
     steps:
       - name: Checkout
         uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4
@@ -124,6 +143,24 @@ jobs:
         # The Browser (E2E) suite is excluded here — it needs a headless
         # Chromium and runs in the dedicated browser-tests.yml workflow.
         run: php -d memory_limit=2G ./vendor/bin/pest --compact --exclude-testsuite=Browser
+
+      # Real-driver coverage for the MySQL/MariaDB-only DB constraints. Only this
+      # file runs against MariaDB: the forbidden-numbers CHECK on `batches` is a
+      # named CHECK (added via ALTER) that SQLite ignores, so its regression test
+      # skips on the main SQLite suite and would otherwise never execute. The
+      # step-level DB_* env vars override phpunit.xml's sqlite defaults (PHPUnit
+      # <env> is non-forcing) and .env.testing (Laravel Dotenv is immutable),
+      # so the connection resolves to this MariaDB service.
+      - name: Run MySQL/MariaDB constraint tests (real driver)
+        env:
+          APP_ENV: testing
+          DB_CONNECTION: mysql
+          DB_HOST: 127.0.0.1
+          DB_PORT: 3306
+          DB_DATABASE: nra_test
+          DB_USERNAME: root
+          DB_PASSWORD: root
+        run: php -d memory_limit=2G ./vendor/bin/pest tests/Feature/Import/BatchNonNumericImportTest.php --compact
 
       - name: Run PHPStan (Larastan)
         run: ./vendor/bin/phpstan analyse --memory-limit=2G --no-progress
