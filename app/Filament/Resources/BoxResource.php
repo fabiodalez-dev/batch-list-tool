@@ -775,6 +775,20 @@ class BoxResource extends Resource
                     ->label('Box Type')
                     ->sortable()
                     ->toggleable()),
+                // The import template carries a `location` column (resolved by
+                // code), so operators can set where a box physically lives on
+                // import — surface it here too, otherwise that imported value is
+                // invisible on the list. Uses the same full_path accessor +
+                // deep-link as the view page. Not sortable: full_path is an
+                // accessor, not a DB column. Gated on the same field key as the
+                // form's location_id select.
+                $gc(Tables\Columns\TextColumn::make('location.full_path')
+                    ->label('Location')
+                    ->placeholder('—')
+                    ->toggleable()
+                    ->url(fn (?Box $record): ?string => $record?->location_id
+                        ? route('filament.admin.resources.locations.view', ['record' => $record->location_id])
+                        : null), 'location_id'),
                 // RFQ App.2 §vii — "destroyed" badge. Shown as a red
                 // chip on the row so operators can spot artefacts that
                 // physically no longer exist without opening the record.
