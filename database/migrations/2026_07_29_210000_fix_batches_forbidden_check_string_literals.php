@@ -34,11 +34,6 @@ return new class extends Migration
 {
     private const CHECK = 'chk_batches_forbidden_numbers';
 
-    private function isMysql(): bool
-    {
-        return DB::connection()->getDriverName() === 'mysql';
-    }
-
     public function up(): void
     {
         if (! $this->isMysql()) {
@@ -46,7 +41,7 @@ return new class extends Migration
         }
 
         DB::statement('ALTER TABLE batches DROP CONSTRAINT IF EXISTS ' . self::CHECK);
-        DB::statement("ALTER TABLE batches ADD CONSTRAINT " . self::CHECK . " CHECK (batch_number NOT IN ('34', '36'))");
+        DB::statement('ALTER TABLE batches ADD CONSTRAINT ' . self::CHECK . " CHECK (batch_number NOT IN ('34', '36'))");
     }
 
     public function down(): void
@@ -57,5 +52,10 @@ return new class extends Migration
 
         DB::statement('ALTER TABLE batches DROP CONSTRAINT IF EXISTS ' . self::CHECK);
         DB::statement('ALTER TABLE batches ADD CONSTRAINT ' . self::CHECK . ' CHECK (batch_number NOT IN (34, 36))');
+    }
+
+    private function isMysql(): bool
+    {
+        return DB::connection()->getDriverName() === 'mysql';
     }
 };

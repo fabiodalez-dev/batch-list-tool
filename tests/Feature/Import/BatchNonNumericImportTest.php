@@ -9,7 +9,9 @@ use App\Models\Scopes\RepositoryScope;
 use App\Models\User;
 use App\Support\BulkImport\EntityResolver;
 use Filament\Actions\Imports\Models\Import;
+use Illuminate\Database\QueryException;
 use Illuminate\Foundation\Testing\RefreshDatabase;
+use Illuminate\Support\Facades\DB;
 use Spatie\Permission\Models\Role;
 
 /**
@@ -184,3 +186,27 @@ test('the model treats numeric-string reserved numbers correctly (34/36 forbidde
         ->and((new Batch(['batch_number' => 'Unknown']))->isForbidden())->toBeFalse()
         ->and((new Batch(['batch_number' => 'NULL']))->isReservedMav())->toBeFalse();
 });
+
+test('MySQL/MariaDB: the forbidden-numbers CHECK accepts non-numeric batches and still rejects 34/36', function () {
+    // The chk_batches_forbidden_numbers CHECK is enforced only on MySQL/MariaDB
+    // (SQLite ignores a named CHECK added via ALTER), so this guards the real
+    // driver behaviour the SQLite suite cannot: it must compare batch_number as
+    // a STRING, otherwise a varchar "Unknown"/"NULL" is coerced to DECIMAL and
+    // the row is rejected (the original client bug).
+    $repo = Repository::create(['code' => 'CHK', 'name' => 'Chk']);
+
+    foreach (['Unknown', 'NULL', '60'] as $bn) {
+        DB::table('batches')->insert([
+            'batch_number' => $bn, 'type' => 'MAIN_COLLECTION', 'is_active' => 1,
+            'repository_id' => $repo->id, 'created_at' => now(), 'updated_at' => now(),
+        ]);
+    }
+    expect(DB::table('batches')->whereIn('batch_number', ['Unknown', 'NULL', '60'])->count())->toBe(3);
+
+    foreach (['34', '36'] as $forbidden) {
+        expect(fn () => DB::table('batches')->insert([
+            'batch_number' => $forbidden, 'type' => 'MAIN_COLLECTION', 'is_active' => 1,
+            'repository_id' => $repo->id, 'created_at' => now(), 'updated_at' => now(),
+        ]))->toThrow(QueryException::class);
+    }
+})->skip(fn (): bool => DB::connection()->getDriverName() !== 'mysql', 'CHECK constraint is enforced only on MySQL/MariaDB');
