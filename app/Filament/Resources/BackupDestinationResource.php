@@ -82,7 +82,7 @@ class BackupDestinationResource extends Resource
                             ->live()
                             ->native(false)
                             ->options([
-                                'local' => 'Local (this server\'s disk)',
+                                'local' => "Local (this server's disk)",
                                 'ftp' => 'FTP',
                                 'sftp' => 'SFTP (SSH)',
                                 's3' => 'S3 / S3-compatible',

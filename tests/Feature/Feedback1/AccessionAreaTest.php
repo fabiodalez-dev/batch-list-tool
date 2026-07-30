@@ -391,7 +391,6 @@ it('code column has a url closure (is the only hyperlink)', function () {
     // Read the protected $url property via reflection — the public API
     // only offers getUrl() which requires evaluation context.
     $ref = new ReflectionProperty($col, 'url');
-    $ref->setAccessible(true);
     $urlValue = $ref->getValue($col);
 
     // A Closure or non-null string means ->url() was configured.
@@ -420,7 +419,6 @@ it('code column url resolves to the view page', function () {
     // Invoke the protected $url closure directly via reflection with the
     // record as typed injection so the fn(Accession $record) parameter binds.
     $ref = new ReflectionProperty($col, 'url');
-    $ref->setAccessible(true);
     $urlClosure = $ref->getValue($col);
 
     expect($urlClosure)->toBeInstanceOf(Closure::class);

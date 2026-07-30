@@ -273,9 +273,9 @@ describe('FULLTEXT search', function () {
             Document::query()->searchFullText('foo', ['barcode_in']);
             // Unreachable — the previous line throws.
             expect(true)->toBeFalse();
-        } catch (InvalidArgumentException $e) {
-            expect($e->getMessage())->toContain('barcode_in');
-            expect($e->getMessage())->toContain('notes');
+        } catch (InvalidArgumentException $invalidArgumentException) {
+            expect($invalidArgumentException->getMessage())->toContain('barcode_in');
+            expect($invalidArgumentException->getMessage())->toContain('notes');
         }
     });
 
@@ -307,7 +307,7 @@ describe('FULLTEXT search', function () {
         // 2. No MATCH (...) AGAINST and no LIKE '%R7%' should have been
         //    issued — only the bare COUNT(*) from the assertion above.
         $hasFulltextOrLike = $queries->contains(function ($q) {
-            $sql = strtolower($q['query']);
+            $sql = strtolower((string) $q['query']);
 
             return str_contains($sql, 'match')
                 || str_contains($sql, 'against')

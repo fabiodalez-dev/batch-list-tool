@@ -229,7 +229,7 @@ function ce2_run(string $importerClass, array $data, int $userId): object
     // Match custom-field columns by guess aliases.
     foreach ($importerClass::getColumns() as $col) {
         $colName = $col->getName();
-        if (! str_starts_with($colName, 'custom_field_')) {
+        if (! str_starts_with((string) $colName, 'custom_field_')) {
             continue;
         }
         $guesses = method_exists($col, 'getGuesses') ? $col->getGuesses() : [];
@@ -618,7 +618,7 @@ test('[Export/Document] boolean custom field renders as 1 or 0', function (): vo
 
     expect($csv)->toContain('Digitised');
     $lines = array_values(array_filter(explode("\n", trim($csv))));
-    $header = str_getcsv(array_shift($lines));
+    $header = str_getcsv((string) array_shift($lines), escape: '\\');
     $colIdx = array_search('Digitised', $header, true);
     expect($colIdx)->not->toBeFalse();
 
@@ -626,7 +626,7 @@ test('[Export/Document] boolean custom field renders as 1 or 0', function (): vo
         if (trim($line) === '') {
             continue;
         }
-        $cells = str_getcsv($line);
+        $cells = str_getcsv($line, escape: '\\');
         expect($cells[$colIdx])->toBe('1');
     }
 })->group('export-document');
@@ -740,7 +740,7 @@ test('[Export/Box] boolean custom field renders as 1 or 0', function (): void {
 
     expect($csv)->toContain('Box Checked');
     $lines = array_values(array_filter(explode("\n", trim($csv))));
-    $header = str_getcsv(array_shift($lines));
+    $header = str_getcsv((string) array_shift($lines), escape: '\\');
     $colIdx = array_search('Box Checked', $header, true);
     expect($colIdx)->not->toBeFalse();
 
@@ -748,7 +748,7 @@ test('[Export/Box] boolean custom field renders as 1 or 0', function (): void {
         if (trim($line) === '') {
             continue;
         }
-        $cells = str_getcsv($line);
+        $cells = str_getcsv($line, escape: '\\');
         expect($cells[$colIdx])->toBe('0');
     }
 })->group('export-box');

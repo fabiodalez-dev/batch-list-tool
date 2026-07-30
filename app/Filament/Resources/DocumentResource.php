@@ -63,7 +63,7 @@ class DocumentResource extends Resource
      * Config key used by App\Support\FieldPermissions to look up
      * the per-field, per-role read/write/hidden matrix (RFQ §3.1.8).
      */
-    private const FIELD_PERMISSIONS_KEY = 'document';
+    private const string FIELD_PERMISSIONS_KEY = 'document';
 
     /**
      * Canonical list of Document direct columns the omni-search bar covers.
@@ -76,7 +76,7 @@ class DocumentResource extends Resource
      *
      * @var array<int,string>
      */
-    private const OMNI_DIRECT_COLUMNS = [
+    private const array OMNI_DIRECT_COLUMNS = [
         // Canonical normalised columns
         'identifier',
         'catalogue_identifier',
@@ -464,7 +464,7 @@ class DocumentResource extends Resource
                             ?: $record?->repository_id
                             ?: auth()->user()?->default_repository_id;
 
-                        return count(CustomFieldSchema::for('document', $repositoryId !== null ? (int) $repositoryId : null)) > 0;
+                        return CustomFieldSchema::for('document', $repositoryId !== null ? (int) $repositoryId : null) !== [];
                     }),
             ]);
     }
@@ -525,7 +525,7 @@ class DocumentResource extends Resource
                         TextEntry::make('primary_author_display')
                             ->label('Primary author')
                             ->state(function (?Document $record): string {
-                                if (! $record) {
+                                if (! $record instanceof Document) {
                                     return '—';
                                 }
                                 $authors = $record->authorities;
@@ -782,7 +782,7 @@ class DocumentResource extends Resource
                                 TextEntry::make('to_location_label')->label('To')->placeholder('—'),
                                 TextEntry::make('changedBy.name')->label('By')->placeholder('—'),
                             ])
-                            ->visible(fn (?Document $record): bool => $record !== null && $record->locationHistory()->exists()),
+                            ->visible(fn (?Document $record): bool => $record instanceof Document && $record->locationHistory()->exists()),
                     ]),
 
                 Section::make('Disinfestation timeline')
@@ -805,7 +805,7 @@ class DocumentResource extends Resource
                             ->columnSpanFull(),
                         RepeatableEntry::make('disinfestation_timeline_rows')
                             ->label('History')
-                            ->state(fn (?Document $record): array => $record
+                            ->state(fn (?Document $record): array => $record instanceof Document
                                 ? $record->disinfestationTimeline()
                                     ->map(fn (array $row) => [
                                         'date' => optional($row['date'])->format('Y-m-d'),
@@ -819,7 +819,7 @@ class DocumentResource extends Resource
                                 TextEntry::make('date')->label('Date')->badge()->color('success')->columnSpanFull(),
                                 TextEntry::make('label')->label('Round')->columnSpanFull(),
                             ])
-                            ->visible(fn (?Document $record): bool => $record !== null
+                            ->visible(fn (?Document $record): bool => $record instanceof Document
                                 && $record->disinfestationTimeline()->isNotEmpty()),
                     ]),
 
@@ -907,11 +907,11 @@ class DocumentResource extends Resource
                 Section::make('Custom fields')
                     ->columns($twoCols)
                     ->schema(static function (?Document $record): array {
-                        if ($record === null) {
+                        if (! $record instanceof Document) {
                             return [];
                         }
                         $data = $record->getCustomFieldData();
-                        if (empty($data)) {
+                        if ($data === []) {
                             return [];
                         }
                         $entries = [];
@@ -935,7 +935,7 @@ class DocumentResource extends Resource
                         return $entries;
                     })
                     ->visible(static function (?Document $record): bool {
-                        if ($record === null) {
+                        if (! $record instanceof Document) {
                             return false;
                         }
                         $data = $record->getCustomFieldData();
@@ -1162,7 +1162,7 @@ class DocumentResource extends Resource
                         fn (Builder $q, array $data) => $q->when(
                             $data['value'] ?? null,
                             fn ($q, $v) => $q->where(function ($q) use ($v) {
-                                $needle = '%' . trim($v) . '%';
+                                $needle = '%' . trim((string) $v) . '%';
                                 $q->where('volume_number', 'like', $needle)
                                     ->orWhere('extra->volume', 'like', $needle);
                             })
@@ -1175,13 +1175,11 @@ class DocumentResource extends Resource
                         Forms\Components\TextInput::make('year_from')->label('Year from')->numeric(),
                         Forms\Components\TextInput::make('year_to')->label('Year to')->numeric(),
                     ])
-                    ->query(function (Builder $q, array $data) {
-                        return $q
-                            ->when($data['year_from'] ?? null, fn ($q, $v) => $q->where(fn ($q) => $q->whereNull('dates_year_end')
-                                ->orWhere('dates_year_end', '>=', (int) $v)))
-                            ->when($data['year_to'] ?? null, fn ($q, $v) => $q->where(fn ($q) => $q->whereNull('dates_year_start')
-                                ->orWhere('dates_year_start', '<=', (int) $v)));
-                    })
+                    ->query(fn (Builder $q, array $data) => $q
+                        ->when($data['year_from'] ?? null, fn ($q, $v) => $q->where(fn ($q) => $q->whereNull('dates_year_end')
+                            ->orWhere('dates_year_end', '>=', (int) $v)))
+                        ->when($data['year_to'] ?? null, fn ($q, $v) => $q->where(fn ($q) => $q->whereNull('dates_year_start')
+                            ->orWhere('dates_year_start', '<=', (int) $v))))
                     ->indicateUsing(function (array $data): array {
                         $i = [];
                         if (! empty($data['year_from'])) {
@@ -1200,17 +1198,15 @@ class DocumentResource extends Resource
                         Forms\Components\DatePicker::make('disinfested_from')->label('Disinfested from'),
                         Forms\Components\DatePicker::make('disinfested_to')->label('Disinfested to'),
                     ])
-                    ->query(function (Builder $q, array $data) {
-                        return $q
-                            ->when(
-                                $data['disinfested_from'] ?? null,
-                                fn ($q, $v) => $q->whereDate('disinfestation_date', '>=', $v)
-                            )
-                            ->when(
-                                $data['disinfested_to'] ?? null,
-                                fn ($q, $v) => $q->whereDate('disinfestation_date', '<=', $v)
-                            );
-                    }),
+                    ->query(fn (Builder $q, array $data) => $q
+                        ->when(
+                            $data['disinfested_from'] ?? null,
+                            fn ($q, $v) => $q->whereDate('disinfestation_date', '>=', $v)
+                        )
+                        ->when(
+                            $data['disinfested_to'] ?? null,
+                            fn ($q, $v) => $q->whereDate('disinfestation_date', '<=', $v)
+                        )),
 
                 // Ternary filters
                 TernaryFilter::make('torre')
@@ -1423,31 +1419,29 @@ class DocumentResource extends Resource
             ->where('is_active', true)
             ->orderBy('sort_order')
             ->get()
-            ->map(static function (CustomFieldDefinition $def): Tables\Columns\TextColumn {
-                return Tables\Columns\TextColumn::make('customFieldValues_' . $def->key)
-                    ->label($def->label)
-                    ->toggleable(isToggledHiddenByDefault: true)
-                    ->placeholder('—')
-                    ->state(static function ($record) use ($def): ?string {
-                        if (! method_exists($record, 'customFieldValues')) {
-                            return null;
-                        }
-                        // Use already-eager-loaded collection where possible.
-                        $valueModel = $record->customFieldValues
-                            ->firstWhere('custom_field_definition_id', $def->id);
-                        if ($valueModel === null) {
-                            return null;
-                        }
-                        $typed = $valueModel->getTypedValueAttribute();
+            ->map(static fn (CustomFieldDefinition $def): Tables\Columns\TextColumn => Tables\Columns\TextColumn::make('customFieldValues_' . $def->key)
+                ->label($def->label)
+                ->toggleable(isToggledHiddenByDefault: true)
+                ->placeholder('—')
+                ->state(static function ($record) use ($def): ?string {
+                    if (! method_exists($record, 'customFieldValues')) {
+                        return null;
+                    }
+                    // Use already-eager-loaded collection where possible.
+                    $valueModel = $record->customFieldValues
+                        ->firstWhere('custom_field_definition_id', $def->id);
+                    if ($valueModel === null) {
+                        return null;
+                    }
+                    $typed = $valueModel->getTypedValueAttribute();
 
-                        return match ($def->type) {
-                            'boolean' => $typed ? 'Yes' : 'No',
-                            'date' => $typed instanceof Carbon ? $typed->toDateString() : (string) ($typed ?? ''),
-                            'datetime' => $typed instanceof Carbon ? $typed->toDateTimeString() : (string) ($typed ?? ''),
-                            default => $typed !== null ? (string) $typed : null,
-                        };
-                    });
-            })
+                    return match ($def->type) {
+                        'boolean' => $typed ? 'Yes' : 'No',
+                        'date' => $typed instanceof Carbon ? $typed->toDateString() : (string) ($typed ?? ''),
+                        'datetime' => $typed instanceof Carbon ? $typed->toDateTimeString() : (string) ($typed ?? ''),
+                        default => $typed !== null ? (string) $typed : null,
+                    };
+                }))
             ->all();
     }
 
@@ -1694,7 +1688,7 @@ class DocumentResource extends Resource
 
         return Filter::make($name)
             ->form([Forms\Components\TextInput::make('value')->label($label)])
-            ->query(fn (Builder $q, array $data) => $q->when($data['value'] ?? null, fn ($q, $v) => $q->where($col, 'like', '%' . trim($v) . '%')));
+            ->query(fn (Builder $q, array $data) => $q->when($data['value'] ?? null, fn ($q, $v) => $q->where($col, 'like', '%' . trim((string) $v) . '%')));
     }
 
     /**

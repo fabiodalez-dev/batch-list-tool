@@ -28,7 +28,7 @@ final class BatchListColumnMap
      *
      * @var array<string, array<int, string>>
      */
-    public const FIELDS = [
+    public const array FIELDS = [
         // ── Batch / Box (physical) ──────────────────────────────────────────
         'batch_number' => ['RAS Batch 1', 'Batch No', 'Batch Number', 'Batch'],
         'box_number' => ['RAS Box 1', 'Box No', 'Box Number', 'Box'],
@@ -82,7 +82,7 @@ final class BatchListColumnMap
      *
      * @var array<int, string>
      */
-    public const MULTI = ['disinfestation_date', 'barcode_in'];
+    public const array MULTI = ['disinfestation_date', 'barcode_in'];
 
     /**
      * Resolve a header row to `field => column index` (first match wins).
@@ -129,7 +129,7 @@ final class BatchListColumnMap
 
         $out = [];
         foreach (self::FIELDS as $field => $aliases) {
-            $aliasSet = array_map([self::class, 'normalise'], $aliases);
+            $aliasSet = array_map(self::normalise(...), $aliases);
             $cols = [];
             foreach ($norm as $i => $h) {
                 if ($h !== '' && in_array($h, $aliasSet, true)) {

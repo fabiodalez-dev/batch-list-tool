@@ -331,7 +331,7 @@ class DocumentsByCreatorReport extends Page implements HasTable
      */
     protected static function scopeViaDocumentColumn(Builder $query, string $column, array $values): Builder
     {
-        if (empty($values)) {
+        if ($values === []) {
             return $query;
         }
 

@@ -41,7 +41,7 @@ class BoxMovementResource extends Resource
      */
     public static function movementDocumentLabel(?Document $doc): ?string
     {
-        if ($doc === null) {
+        if (! $doc instanceof Document) {
             return null;
         }
 

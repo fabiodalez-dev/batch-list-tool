@@ -354,7 +354,7 @@ class ImportWizard extends Page
         // ?profile=N — preload a saved mapping. We only honour profiles the
         // current user can actually see (owner OR shared in their tenant).
         $profile = $this->resolveProfileFromQuery();
-        if ($profile !== null) {
+        if ($profile instanceof ImportProfile) {
             $initial['starting_profile_id'] = (string) $profile->getKey();
             $initial['import_type'] = $profile->import_type;
             $initial['column_map'] = is_array($profile->column_map) ? $profile->column_map : [];
@@ -454,8 +454,8 @@ class ImportWizard extends Page
         // below can move/expire it.
         try {
             $csvPath = $this->materialiseCsv($file, (int) ($rawState['sheet'] ?? 0));
-        } catch (\Throwable $e) {
-            $this->notifyDanger('Could not read the file: ' . $e->getMessage());
+        } catch (\Throwable $throwable) {
+            $this->notifyDanger('Could not read the file: ' . $throwable->getMessage());
 
             return;
         }
@@ -470,8 +470,8 @@ class ImportWizard extends Page
 
         try {
             [$headers, $rows] = $this->readCsvForImport($csvPath);
-        } catch (\Throwable $e) {
-            $this->notifyDanger('Could not parse the file rows: ' . $e->getMessage());
+        } catch (\Throwable $throwable) {
+            $this->notifyDanger('Could not parse the file rows: ' . $throwable->getMessage());
 
             return;
         }
@@ -499,7 +499,7 @@ class ImportWizard extends Page
         }
         /** @var array<string, string|null> $columnMap */
         $missing = self::findMissingRequiredColumns($importerClass, $columnMap);
-        if (count($missing) > 0) {
+        if ($missing !== []) {
             $this->notifyDanger(
                 'Missing required columns: ' . implode(', ', $missing) . '.'
             );
@@ -522,8 +522,8 @@ class ImportWizard extends Page
                 columnMap: $columnMap,
                 options: ['skip_duplicates' => (bool) ($state['skip_duplicates'] ?? true)],
             );
-        } catch (\Throwable $e) {
-            $this->notifyDanger('Import dispatch failed: ' . $e->getMessage());
+        } catch (\Throwable $throwable) {
+            $this->notifyDanger('Import dispatch failed: ' . $throwable->getMessage());
 
             return;
         }
@@ -623,30 +623,38 @@ class ImportWizard extends Page
                         // uploaded xlsx) ALSO need the sanitiser — a
                         // malicious header like '=cmd|...' would otherwise
                         // execute when the export is opened.
-                        fputcsv($out, array_merge(
-                            array_map(
-                                static fn ($k): string => $sanitizeForCsv((string) $k),
-                                array_keys($data),
+                        fputcsv(
+                            $out,
+                            array_merge(
+                                array_map(
+                                    static fn ($k): string => $sanitizeForCsv((string) $k),
+                                    array_keys($data),
+                                ),
+                                ['_validation_error'],
                             ),
-                            ['_validation_error'],
-                        ));
+                            escape: '\\'
+                        );
                         $first = false;
                     }
-                    fputcsv($out, array_merge(
-                        array_map(
-                            static fn ($v): string => $sanitizeForCsv(
-                                is_scalar($v) ? (string) $v : (string) json_encode($v),
+                    fputcsv(
+                        $out,
+                        array_merge(
+                            array_map(
+                                static fn ($v): string => $sanitizeForCsv(
+                                    is_scalar($v) ? (string) $v : (string) json_encode($v),
+                                ),
+                                $data,
                             ),
-                            $data,
+                            [$sanitizeForCsv((string) $row->getAttribute('validation_error'))],
                         ),
-                        [$sanitizeForCsv((string) $row->getAttribute('validation_error'))],
-                    ));
+                        escape: '\\'
+                    );
                 }
             });
 
             if ($first) {
                 // No failed rows yet — emit a single header row so the file is well-formed.
-                fputcsv($out, ['_no_failed_rows']);
+                fputcsv($out, ['_no_failed_rows'], escape: '\\');
             }
 
             fclose($out);
@@ -751,7 +759,7 @@ class ImportWizard extends Page
         return [
             // Boxes
             'box_type' => 'One of: RAS, IN_SITU, NRA, MAV, STVC.',
-            'box_number' => 'This box\'s own number.',
+            'box_number' => "This box's own number.",
             'parent_box_number' => 'For IN_SITU / NRA boxes: the parent RAS box\'s NUMBER (e.g. "1") or its barcode. Leave blank for RAS boxes.',
             'barcode' => 'The physical barcode. Required for RAS boxes.',
             'barcode_status' => 'IN, OUT or PERM_OUT. PERM_OUT also needs a disinfestation_date.',
@@ -771,7 +779,7 @@ class ImportWizard extends Page
             'code' => 'Optional identifier — auto-generated if left blank.',
             'sort_order' => 'Optional display order (a number).',
             // Series / Authorities
-            'Identifier' => 'The record\'s code / identifier.',
+            'Identifier' => "The record's code / identifier.",
             'Standard title in English (Plural)' => 'The title.',
             'Level of description' => 'ISAD level (usually "Series"). Informational.',
             'Date of creation' => 'A date or year range, e.g. "1607-1629". Informational.',
@@ -782,9 +790,9 @@ class ImportWizard extends Page
             'Private Practice Dates Active' => 'A year range, e.g. "1607-1629".',
             'NTG Dates Active' => 'A year range for Notary-to-Government service, e.g. "1882-1893".',
             'Name Suffix' => 'e.g. "Jr." — appended to the given name.',
-            'Maiden Surname' => 'The creator\'s maiden surname, if any.',
-            'Creator Surname' => 'The creator\'s surname.',
-            'Creator Name' => 'The creator\'s given name(s).',
+            'Maiden Surname' => "The creator's maiden surname, if any.",
+            'Creator Surname' => "The creator's surname.",
+            'Creator Name' => "The creator's given name(s).",
             'notes' => 'Free text — any extra notes.',
             'Note' => 'Free text — any extra notes.',
         ];
@@ -793,11 +801,10 @@ class ImportWizard extends Page
     /* ──────────────────────────────────────────────────────────────── */
     /* Compat shims for legacy callers (tests, blade includes) */
     /* ──────────────────────────────────────────────────────────────── */
-
-    /**
-     * @deprecated Use {@see TemplateGenerator::download()} directly. Kept
-     * for the few blade snippets that still call `$page->downloadTemplate`.
-     */
+    #[\Deprecated(message: <<<'TXT'
+    Use {@see TemplateGenerator::download()} directly. Kept
+     for the few blade snippets that still call `$page->downloadTemplate`.
+    TXT)]
     public function downloadTemplate(string $entity): StreamedResponse
     {
         abort_unless(static::canAccess(), 403);
@@ -864,8 +871,8 @@ class ImportWizard extends Page
         try {
             $csvPath = $this->materialiseCsv($file, (int) ($state['sheet'] ?? 0));
             [, $rows] = $this->readCsvForImport($csvPath);
-        } catch (\Throwable $e) {
-            $this->notifyDanger('Could not read the file: ' . $e->getMessage());
+        } catch (\Throwable $throwable) {
+            $this->notifyDanger('Could not read the file: ' . $throwable->getMessage());
 
             return;
         }
@@ -1073,10 +1080,10 @@ class ImportWizard extends Page
                 'synonyms' => null,
                 'is_shared' => (bool) ($state['save_as_profile_shared'] ?? false),
             ]);
-        } catch (\Throwable $e) {
+        } catch (\Throwable $throwable) {
             Notification::make()
                 ->title('Could not save profile')
-                ->body($e->getMessage())
+                ->body($throwable->getMessage())
                 ->warning()
                 ->send();
 
@@ -1111,7 +1118,7 @@ class ImportWizard extends Page
         if ($startingProfile === null) {
             return;
         }
-        if ($newProfile !== null && (int) $newProfile->getKey() === (int) $startingProfile->getKey()) {
+        if ($newProfile instanceof ImportProfile && (int) $newProfile->getKey() === (int) $startingProfile->getKey()) {
             return;
         }
         $startingProfile->markUsed();
@@ -1163,7 +1170,7 @@ class ImportWizard extends Page
                     ->helperText('Optional — pick a previously-saved column mapping. Leave empty to use auto-guess.')
                     ->placeholder('— Start from scratch (use auto-guess) —')
                     ->options(fn (Get $get): array => self::profileOptionsFor((string) ($get('import_type') ?? '')))
-                    ->visible(fn (Get $get): bool => filled($get('import_type')) && count(self::profileOptionsFor((string) $get('import_type'))) > 0)
+                    ->visible(fn (Get $get): bool => filled($get('import_type')) && self::profileOptionsFor((string) $get('import_type')) !== [])
                     ->searchable()
                     ->live()
                     ->afterStateUpdated(function ($state, Set $set): void {
@@ -1351,13 +1358,11 @@ class ImportWizard extends Page
                         }
 
                         return array_combine(
-                            array_map('strval', array_keys($sheets)),
+                            array_map(strval(...), array_keys($sheets)),
                             $sheets,
                         );
                     })
-                    ->visible(function (Get $get): bool {
-                        return count(self::detectSheetNames($get('file'))) > 1;
-                    })
+                    ->visible(fn (Get $get): bool => count(self::detectSheetNames($get('file'))) > 1)
                     ->live()
                     ->afterStateUpdated(function (Get $get, Set $set): void {
                         // Sheet change → re-guess unless a profile is in use.
@@ -1451,7 +1456,7 @@ class ImportWizard extends Page
                         }
                         /** @var array<string, string|null> $columnMap */
                         $missing = self::findMissingRequiredColumns(self::IMPORTERS[$type], $columnMap);
-                        if (count($missing) === 0) {
+                        if ($missing === []) {
                             return new HtmlString(
                                 '<p class="text-sm font-medium text-success-600">'
                                 . 'All required columns are mapped — you can continue.</p>'
@@ -1481,7 +1486,7 @@ class ImportWizard extends Page
                 }
                 /** @var array<string, string|null> $columnMap */
                 $missing = self::findMissingRequiredColumns(self::IMPORTERS[$type], $columnMap);
-                if (count($missing) === 0) {
+                if ($missing === []) {
                     return;
                 }
                 Notification::make()
@@ -1765,7 +1770,7 @@ class ImportWizard extends Page
                     ->accepted(),
 
                 Checkbox::make('skip_duplicates')
-                    ->label('Skip rows that already exist (matched by the importer\'s resolveRecord).')
+                    ->label("Skip rows that already exist (matched by the importer's resolveRecord).")
                     ->default(true),
 
                 Checkbox::make('save_as_profile')
@@ -1901,7 +1906,7 @@ class ImportWizard extends Page
      */
     protected static function renderPreviewTable(array $headers, array $rows): string
     {
-        if (count($headers) === 0) {
+        if ($headers === []) {
             return '<em>(no columns detected)</em>';
         }
         $thead = '';
@@ -1912,7 +1917,7 @@ class ImportWizard extends Page
         $tbody = '';
         foreach ($rows as $row) {
             $tbody .= '<tr>';
-            foreach ($headers as $i => $_h) {
+            foreach (array_keys($headers) as $i) {
                 /** @var mixed $cell */
                 $cell = $row[$i] ?? '';
                 $tbody .= '<td class="px-2 py-1 border-t border-gray-200 dark:border-gray-700">'

@@ -96,7 +96,7 @@ final class EntityResolver
         // (matches Italian/Maltese convention).
         if ($surname === null && $name !== null) {
             $parts = preg_split('/\s+/', $name) ?: [];
-            if (count($parts) > 0) {
+            if ($parts !== []) {
                 $surname = mb_strtolower(trim((string) end($parts)));
             }
         }
@@ -116,11 +116,7 @@ final class EntityResolver
                     ->limit(2)
                     ->pluck('id')
                     ->all();
-                if (count($rows) === 1) {
-                    self::$memo[$key] = ['authority_id' => (int) $rows[0], 'method' => 'surname_given'];
-                } else {
-                    self::$memo[$key] = null;
-                }
+                self::$memo[$key] = count($rows) === 1 ? ['authority_id' => (int) $rows[0], 'method' => 'surname_given'] : null;
             }
             if (self::$memo[$key] !== null) {
                 return self::$memo[$key];
@@ -145,7 +141,7 @@ final class EntityResolver
                 // for an operator to resolve manually.
                 self::$memo[$key] = [
                     'ambiguous_count' => count($rows),
-                    'candidates' => array_map('intval', $rows),
+                    'candidates' => array_map(intval(...), $rows),
                 ];
             } else {
                 self::$memo[$key] = null;
@@ -175,7 +171,7 @@ final class EntityResolver
             } elseif (count($rows) > 1) {
                 self::$memo[$key] = [
                     'ambiguous_count' => count($rows),
-                    'candidates' => array_map('intval', $rows),
+                    'candidates' => array_map(intval(...), $rows),
                 ];
             } else {
                 self::$memo[$key] = null;

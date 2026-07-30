@@ -150,7 +150,7 @@ test('B5: create-if-absent still refuses a forbidden batch number (A1.1) and nev
             'current_box_number' => '5',
         ], $u->id);
         $this->fail('Expected the forbidden batch to be rejected.');
-    } catch (ValidationException|RowImportFailedException $e) {
+    } catch (ValidationException|RowImportFailedException) {
         // either surface is acceptable — the point is the row fails.
     }
 
@@ -197,8 +197,8 @@ test('B5: a document whose batch differs from its resolved box batch is a FAILED
             'current_box_barcode' => 'barcode_in',
         ]);
         $this->fail('Expected a RowImportFailedException for the batch/box mismatch.');
-    } catch (RowImportFailedException $e) {
-        expect($e->getMessage())->toContain('batch');
+    } catch (RowImportFailedException $rowImportFailedException) {
+        expect($rowImportFailedException->getMessage())->toContain('batch');
     }
 
     expect(
@@ -271,7 +271,7 @@ test('I2: a PERM_OUT row missing a disinfestation_date is rejected BEFORE any sa
             'status_1' => 'status_1',
         ]);
         $this->fail('Expected a ValidationException for PERM_OUT without disinfestation_date.');
-    } catch (ValidationException|RowImportFailedException $e) {
+    } catch (ValidationException|RowImportFailedException) {
         // either surface is acceptable — the row must fail.
     }
 
@@ -320,8 +320,8 @@ test('I2: a failing box-status write rolls back the just-saved document (no half
             'status_1' => 'status_1',
         ]);
         $this->fail('Expected the simulated box-status failure to surface.');
-    } catch (Throwable $e) {
-        expect($e->getMessage())->toContain('Simulated box-status write failure');
+    } catch (Throwable $throwable) {
+        expect($throwable->getMessage())->toContain('Simulated box-status write failure');
     } finally {
         Box::setEventDispatcher($originalDispatcher);
     }

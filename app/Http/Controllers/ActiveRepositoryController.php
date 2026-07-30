@@ -22,7 +22,7 @@ class ActiveRepositoryController extends Controller
     {
         $raw = $request->input('repository_id');
 
-        $id = ($raw === null || $raw === '' || $raw === 'all')
+        $id = (in_array($raw, [null, '', 'all'], true))
             ? null
             : (int) $raw;
 

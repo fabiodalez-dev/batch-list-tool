@@ -21,7 +21,7 @@ use Illuminate\Support\Facades\Schema;
  */
 return new class extends Migration
 {
-    private const CONSTRAINT = 'chk_documents_permout_requires_disinfestation';
+    private const string CONSTRAINT = 'chk_documents_permout_requires_disinfestation';
 
     public function up(): void
     {

@@ -123,7 +123,7 @@ class Location extends Model implements AuditableContract
             return [];
         }
 
-        return array_values(array_map('intval', explode('/', $this->path)));
+        return array_values(array_map(intval(...), explode('/', $this->path)));
     }
 
     /* ---------------------------------------------------------------------
@@ -247,7 +247,7 @@ class Location extends Model implements AuditableContract
 
         /** @var EloquentCollection<int, Location> $sorted */
         $sorted = new EloquentCollection(
-            (new Collection($ids))
+            new Collection($ids)
                 ->map(fn (int $id) => $byId->get($id))
                 ->filter()
                 ->values()

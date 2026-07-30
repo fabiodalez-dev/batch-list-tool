@@ -48,7 +48,7 @@ class BoxResource extends Resource
     use AppliesFieldPermissions;
 
     /** RFQ §3.1.8 — see config/field_permissions.php */
-    private const FIELD_PERMISSIONS_KEY = 'box';
+    private const string FIELD_PERMISSIONS_KEY = 'box';
 
     protected static ?string $model = Box::class;
 
@@ -101,15 +101,13 @@ class BoxResource extends Resource
                             // RFQ Appendix-1 rule #4: legacy box types (MAV, STVC) cannot be
                             // assigned to *new* boxes. Existing legacy records must stay
                             // editable, so we only enforce this on CREATE.
-                            ->rule(function (?Box $record) {
-                                return function (string $attribute, $value, \Closure $fail) use ($record) {
-                                    if ($record !== null && $record->exists) {
-                                        return; // edit: legacy stays editable
-                                    }
-                                    if ($value !== null && in_array((string) $value, Box::LEGACY_TYPES, true)) {
-                                        $fail("Box type '{$value}' is a legacy type and cannot be assigned to new boxes (RFQ Appendix-1 rule #4). Allowed for create: " . implode(', ', array_diff(Box::TYPES, Box::LEGACY_TYPES)) . '.');
-                                    }
-                                };
+                            ->rule(fn (?Box $record) => function (string $attribute, $value, \Closure $fail) use ($record) {
+                                if ($record instanceof Box && $record->exists) {
+                                    return; // edit: legacy stays editable
+                                }
+                                if ($value !== null && in_array((string) $value, Box::LEGACY_TYPES, true)) {
+                                    $fail("Box type '{$value}' is a legacy type and cannot be assigned to new boxes (RFQ Appendix-1 rule #4). Allowed for create: " . implode(', ', array_diff(Box::TYPES, Box::LEGACY_TYPES)) . '.');
+                                }
                             })),
                         // Batches dropdown: ~30 rows in production, but kept on the
                         // SearchableSelects helper for label consistency.
@@ -148,26 +146,24 @@ class BoxResource extends Resource
                                     $get('batch_id') !== null && $get('batch_id') !== '' ? (int) $get('batch_id') : null,
                                     $record?->getKey(),
                                 ))
-                            ->rule(static function (Get $get, ?Box $record): \Closure {
-                                return static function (string $attribute, $value, \Closure $fail) use ($get, $record): void {
-                                    // Reject a box_number already used by another box
-                                    // in the same batch; ignore the current record on
-                                    // edit. No batch selected yet → nothing to check.
-                                    $batchId = $get('batch_id');
-                                    if ($batchId === null || $batchId === '' || $value === null || $value === '') {
-                                        return;
-                                    }
+                            ->rule(static fn (Get $get, ?Box $record): \Closure => static function (string $attribute, $value, \Closure $fail) use ($get, $record): void {
+                                // Reject a box_number already used by another box
+                                // in the same batch; ignore the current record on
+                                // edit. No batch selected yet → nothing to check.
+                                $batchId = $get('batch_id');
+                                if ($batchId === null || $batchId === '' || $value === null || $value === '') {
+                                    return;
+                                }
 
-                                    $exists = Box::query()
-                                        ->where('batch_id', (int) $batchId)
-                                        ->where('box_number', (string) $value)
-                                        ->when($record?->getKey(), fn ($q, $id) => $q->whereKeyNot($id))
-                                        ->exists();
+                                $exists = Box::query()
+                                    ->where('batch_id', (int) $batchId)
+                                    ->where('box_number', (string) $value)
+                                    ->when($record?->getKey(), fn ($q, $id) => $q->whereKeyNot($id))
+                                    ->exists();
 
-                                    if ($exists) {
-                                        $fail("Box number {$value} is already used in this batch. Box numbers must be unique within a batch.");
-                                    }
-                                };
+                                if ($exists) {
+                                    $fail("Box number {$value} is already used in this batch. Box numbers must be unique within a batch.");
+                                }
                             })),
                         // Feedback1 gaps (misc) — client asked "what is the purpose of
                         // Is legacy?": it only matters for legacy box types (MAV / STVC,
@@ -220,18 +216,16 @@ class BoxResource extends Resource
                             ->visible(fn (Get $get) => in_array($get('box_type'), ['IN_SITU', 'NRA'], true) && ! $get('provenance_unknown'))
                             ->required(fn (Get $get) => in_array($get('box_type'), ['IN_SITU', 'NRA'], true) && ! $get('provenance_unknown'))
                             ->columnSpanFull()
-                            ->rule(function (Get $get) {
-                                return function (string $attribute, $value, \Closure $fail) use ($get) {
-                                    // Strict enforcement at validation time (defence in depth
-                                    // vs the ->required() above; covers API/bulk-import paths
-                                    // that don't go through the Filament Required validator).
-                                    if (! in_array($get('box_type'), ['IN_SITU', 'NRA'], true)) {
-                                        return;
-                                    }
-                                    if (! $get('provenance_unknown') && empty($value)) {
-                                        $fail('IN_SITU / NRA boxes must reference a parent RAS box (RFQ Appendix-1 rule #3). Tick "Provenance unknown" only if the origin RAS box is genuinely unknown.');
-                                    }
-                                };
+                            ->rule(fn (Get $get) => function (string $attribute, $value, \Closure $fail) use ($get) {
+                                // Strict enforcement at validation time (defence in depth
+                                // vs the ->required() above; covers API/bulk-import paths
+                                // that don't go through the Filament Required validator).
+                                if (! in_array($get('box_type'), ['IN_SITU', 'NRA'], true)) {
+                                    return;
+                                }
+                                if (! $get('provenance_unknown') && empty($value)) {
+                                    $fail('IN_SITU / NRA boxes must reference a parent RAS box (RFQ Appendix-1 rule #3). Tick "Provenance unknown" only if the origin RAS box is genuinely unknown.');
+                                }
                             })),
                         // Bug #36 — a box may have MORE THAN ONE parent box (documents
                         // from several origin boxes combined after cataloguing). This is
@@ -245,7 +239,7 @@ class BoxResource extends Resource
                             // and a box may never be its own parent.
                             ->relationship('parents', 'box_number', function (Builder $query, ?Box $record) {
                                 $query->where('box_type', 'RAS');
-                                if ($record !== null) {
+                                if ($record instanceof Box) {
                                     $query->whereKeyNot($record->getKey());
                                 }
 
@@ -267,19 +261,17 @@ class BoxResource extends Resource
                             ->helperText('Barcode label affixed to this box. Must be globally unique. Distinct from any per-document barcodes inside it.')
                             ->required(fn (Get $get): bool => $isRas($get))
                             ->maxLength(64)
-                            ->rule(static function (?Box $record): \Closure {
-                                return static function (string $attribute, $value, \Closure $fail) use ($record): void {
-                                    if ($value === null || trim((string) $value) === '') {
-                                        return; // required() handles the empty case
-                                    }
-                                    $exists = Box::withoutGlobalScopes()
-                                        ->where('barcode', trim((string) $value))
-                                        ->when($record?->getKey(), fn ($q, $id) => $q->whereKeyNot($id))
-                                        ->exists();
-                                    if ($exists) {
-                                        $fail('This barcode is already assigned to another box. Box barcodes must be globally unique.');
-                                    }
-                                };
+                            ->rule(static fn (?Box $record): \Closure => static function (string $attribute, $value, \Closure $fail) use ($record): void {
+                                if ($value === null || trim((string) $value) === '') {
+                                    return; // required() handles the empty case
+                                }
+                                $exists = Box::withoutGlobalScopes()
+                                    ->where('barcode', trim((string) $value))
+                                    ->when($record?->getKey(), fn ($q, $id) => $q->whereKeyNot($id))
+                                    ->exists();
+                                if ($exists) {
+                                    $fail('This barcode is already assigned to another box. Box barcodes must be globally unique.');
+                                }
                             })),
                         // RFQ Contract App.2-i — the yellow security seal that
                         // closes the box belongs to the BOX; every change is
@@ -302,12 +294,10 @@ class BoxResource extends Resource
                                 ? 'Required when status is PERM OUT (RFQ Appendix-1 rule #2).'
                                 : null)
                             ->columnSpanFull()
-                            ->rule(function (Get $get) {
-                                return function (string $attribute, $value, \Closure $fail) use ($get) {
-                                    if ($get('barcode_status') === 'PERM_OUT' && empty($value)) {
-                                        $fail('Disinfestation date is required when status is PERM OUT (RFQ Appendix-1 rule #2).');
-                                    }
-                                };
+                            ->rule(fn (Get $get) => function (string $attribute, $value, \Closure $fail) use ($get) {
+                                if ($get('barcode_status') === 'PERM_OUT' && empty($value)) {
+                                    $fail('Disinfestation date is required when status is PERM OUT (RFQ Appendix-1 rule #2).');
+                                }
                             })),
                     ]),
 
@@ -339,18 +329,16 @@ class BoxResource extends Resource
                                 ? 'Required for IN_SITU / NRA boxes and for any box marked PERM OUT. Repository / room / shelf / showcase / temp-holding hierarchy.'
                                 : 'Repository / room / shelf / showcase / temp-holding hierarchy.')
                             ->columnSpanFull()
-                            ->rule(function (Get $get) use ($isInSitu) {
-                                return function (string $attribute, $value, \Closure $fail) use ($get, $isInSitu) {
-                                    // Defence-in-depth beyond ->required(): covers
-                                    // API / bulk-import paths that bypass the
-                                    // Filament Required validator.
-                                    if ($isInSitu($get) && empty($value)) {
-                                        $fail('IN_SITU / NRA boxes must reference a Location (RFQ Feedback1 C2.1).');
-                                    }
-                                    if ($get('barcode_status') === 'PERM_OUT' && empty($value)) {
-                                        $fail('A box marked PERM OUT must have a location.');
-                                    }
-                                };
+                            ->rule(fn (Get $get) => function (string $attribute, $value, \Closure $fail) use ($get, $isInSitu) {
+                                // Defence-in-depth beyond ->required(): covers
+                                // API / bulk-import paths that bypass the
+                                // Filament Required validator.
+                                if ($isInSitu($get) && empty($value)) {
+                                    $fail('IN_SITU / NRA boxes must reference a Location (RFQ Feedback1 C2.1).');
+                                }
+                                if ($get('barcode_status') === 'PERM_OUT' && empty($value)) {
+                                    $fail('A box marked PERM OUT must have a location.');
+                                }
                             })),
                     ]),
 
@@ -504,7 +492,7 @@ class BoxResource extends Resource
                             ?? $record?->batch?->repository_id
                             ?? auth()->user()?->default_repository_id;
 
-                        return count(CustomFieldSchema::for('box', $repositoryId !== null ? (int) $repositoryId : null)) > 0;
+                        return CustomFieldSchema::for('box', $repositoryId !== null ? (int) $repositoryId : null) !== [];
                     }),
             ]);
     }
@@ -680,11 +668,11 @@ class BoxResource extends Resource
                 Section::make('Custom fields')
                     ->columns($twoCols)
                     ->schema(static function (?Box $record): array {
-                        if ($record === null) {
+                        if (! $record instanceof Box) {
                             return [];
                         }
                         $data = $record->getCustomFieldData();
-                        if (empty($data)) {
+                        if ($data === []) {
                             return [];
                         }
                         $entries = [];
@@ -708,7 +696,7 @@ class BoxResource extends Resource
                         return $entries;
                     })
                     ->visible(static function (?Box $record): bool {
-                        if ($record === null) {
+                        if (! $record instanceof Box) {
                             return false;
                         }
                         $data = $record->getCustomFieldData();
@@ -1003,7 +991,7 @@ class BoxResource extends Resource
                                         : $data['tracking_note'];
                                 }
 
-                                if (! empty($update)) {
+                                if ($update !== []) {
                                     $record->update($update);
                                     $changed++;
                                 }

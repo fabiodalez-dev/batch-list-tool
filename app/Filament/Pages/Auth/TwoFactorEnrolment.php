@@ -186,7 +186,7 @@ class TwoFactorEnrolment extends Page
             return [];
         }
 
-        $decoded = json_decode($decrypted, true);
+        $decoded = json_decode((string) $decrypted, true);
 
         return is_array($decoded) ? $decoded : [];
     }

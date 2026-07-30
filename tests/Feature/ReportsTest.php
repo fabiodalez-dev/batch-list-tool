@@ -194,7 +194,6 @@ test('DocumentsByBatch returns correct grouping for a seeded dataset', function 
 
     $page = new DocumentsByBatchReport;
     $method = new ReflectionMethod($page, 'collectRows');
-    $method->setAccessible(true);
     /** @var array<int, array<int, scalar|null>> $rows */
     $rows = $method->invoke($page);
 
@@ -223,7 +222,6 @@ test('DocumentsByCreator counts a Document attached to 2 authorities under BOTH'
 
     $page = new DocumentsByCreatorReport;
     $method = new ReflectionMethod($page, 'collectRows');
-    $method->setAccessible(true);
     /** @var array<int, array<int, scalar|null>> $rows */
     $rows = $method->invoke($page);
 
@@ -254,7 +252,6 @@ test('DocumentsBySeries returns counts correctly per series code', function () {
 
     $page = new DocumentsBySeriesReport;
     $method = new ReflectionMethod($page, 'collectRows');
-    $method->setAccessible(true);
     $rows = $method->invoke($page);
 
     $byCode = [];
@@ -289,7 +286,6 @@ test('PendingDisinfestation filters out PERM_OUT box documents', function () {
 
     $page = new PendingDisinfestationReport;
     $method = new ReflectionMethod($page, 'reportQuery');
-    $method->setAccessible(true);
     /** @var Builder $q */
     $q = $method->invoke($page);
 
@@ -309,7 +305,6 @@ test('PendingDisinfestation filters out rows with disinfestation_date set', func
 
     $page = new PendingDisinfestationReport;
     $method = new ReflectionMethod($page, 'reportQuery');
-    $method->setAccessible(true);
     /** @var Builder $q */
     $q = $method->invoke($page);
 
@@ -382,7 +377,6 @@ test('reports respect RepositoryScope for editor users', function () {
 
     $page = new DocumentsBySeriesReport;
     $method = new ReflectionMethod($page, 'collectRows');
-    $method->setAccessible(true);
     $rows = $method->invoke($page);
 
     $total = 0;

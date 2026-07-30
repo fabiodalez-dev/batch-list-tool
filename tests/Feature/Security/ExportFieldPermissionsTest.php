@@ -54,14 +54,14 @@ function efp_seedPermissions(): void
     Role::findByName('super_admin', 'web')->syncPermissions($all);
     Role::findByName('admin', 'web')->syncPermissions($all);
 
-    $editorPerms = collect($all)->filter(fn ($p) => str_starts_with($p, 'view_')
-        || str_starts_with($p, 'create_')
-        || str_starts_with($p, 'update_')
-        || str_starts_with($p, 'reorder_')
+    $editorPerms = collect($all)->filter(fn ($p) => str_starts_with((string) $p, 'view_')
+        || str_starts_with((string) $p, 'create_')
+        || str_starts_with((string) $p, 'update_')
+        || str_starts_with((string) $p, 'reorder_')
         || $p === 'resolve_document_flag')->all();
     Role::findByName('editor', 'web')->syncPermissions($editorPerms);
 
-    $viewerPerms = collect($all)->filter(fn ($p) => str_starts_with($p, 'view_') && ! str_ends_with($p, '_user'))->all();
+    $viewerPerms = collect($all)->filter(fn ($p) => str_starts_with((string) $p, 'view_') && ! str_ends_with((string) $p, '_user'))->all();
     Role::findByName('viewer', 'web')->syncPermissions($viewerPerms);
 
     app(PermissionRegistrar::class)->forgetCachedPermissions();
@@ -75,7 +75,7 @@ function efp_user(string $role, ?Repository $repo = null): User
         'default_repository_id' => $repo?->id,
     ]);
     $u->assignRole($role);
-    if ($repo) {
+    if ($repo instanceof Repository) {
         $u->repositories()->attach($repo->id, ['is_default' => true]);
     }
 
@@ -136,7 +136,6 @@ function efp_captureSelectedCsv(EloquentCollection $records): string
     // ExportSelectedAction::perform() is private; invoke via reflection.
     $ref = new ReflectionClass(ExportSelectedAction::class);
     $method = $ref->getMethod('perform');
-    $method->setAccessible(true);
 
     ob_start();
     /** @var StreamedResponse $resp */
@@ -158,9 +157,9 @@ function efp_parseCsv(string $csv): array
     fwrite($fh, $csv);
     rewind($fh);
 
-    $headers = fgetcsv($fh) ?: [];
+    $headers = fgetcsv($fh, escape: '\\') ?: [];
     $rows = [];
-    while (($r = fgetcsv($fh)) !== false) {
+    while (($r = fgetcsv($fh, escape: '\\')) !== false) {
         $rows[] = array_combine($headers, $r) ?: [];
     }
     fclose($fh);

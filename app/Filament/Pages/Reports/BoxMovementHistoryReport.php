@@ -108,17 +108,15 @@ class BoxMovementHistoryReport extends Page implements HasTable
                         Forms\Components\DatePicker::make('from')->label('From date'),
                         Forms\Components\DatePicker::make('to')->label('To date'),
                     ])
-                    ->query(function (Builder $query, array $data): Builder {
-                        return $query
-                            ->when(
-                                $data['from'] ?? null,
-                                fn (Builder $q, $date) => $q->where('movement_date', '>=', $date),
-                            )
-                            ->when(
-                                $data['to'] ?? null,
-                                fn (Builder $q, $date) => $q->where('movement_date', '<=', $date . ' 23:59:59'),
-                            );
-                    })
+                    ->query(fn (Builder $query, array $data): Builder => $query
+                        ->when(
+                            $data['from'] ?? null,
+                            fn (Builder $q, $date) => $q->where('movement_date', '>=', $date),
+                        )
+                        ->when(
+                            $data['to'] ?? null,
+                            fn (Builder $q, $date) => $q->where('movement_date', '<=', $date . ' 23:59:59'),
+                        ))
                     ->indicateUsing(function (array $data): array {
                         $indicators = [];
                         if (! empty($data['from'])) {

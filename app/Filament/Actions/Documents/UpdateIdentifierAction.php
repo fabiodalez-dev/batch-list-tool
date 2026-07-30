@@ -99,10 +99,10 @@ final class UpdateIdentifierAction
             Notification::make()
                 ->title("Identifier changed to '{$new}'")
                 ->success()->send();
-        } catch (\Throwable $e) {
+        } catch (\Throwable $throwable) {
             Notification::make()
                 ->title('Identifier update failed')
-                ->body($e->getMessage())
+                ->body($throwable->getMessage())
                 ->danger()->send();
         }
     }

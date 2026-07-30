@@ -257,43 +257,41 @@ class Reports extends Page
         $counts = Cache::remember(
             "reports:landing:counts:u={$uid}",
             now()->addSeconds(60),
-            function (): array {
-                return [
-                    'documents' => Document::query()->count(),
-                    'pending' => Document::query()
-                        ->whereNull('disinfestation_date')
-                        ->where(function ($q): void {
-                            $q->whereNull('current_box_id')
-                                ->orWhereHas('currentBox', function ($q): void {
-                                    $q->where('barcode_status', '!=', 'PERM_OUT');
-                                });
-                        })
-                        ->count(),
-                    'movements' => BoxMovement::query()->count(),
-                    'flags' => DocumentFlag::query()->count(),
-                    'cycle' => Box::query()
-                        ->whereNull('destroyed_at')
-                        ->where(function ($q): void {
-                            // Use the shared cycle constant so this dashboard count can
-                            // never drift from DisinfestationCycleReport::reportQuery().
-                            $q->whereNull('disinfestation_date')
-                                ->orWhere('disinfestation_date', '<=', now()->subDays(DisinfestationCycle::DUE_DAYS)->startOfDay());
-                        })
-                        ->count(),
-                    'reconciliation' => Document::query()
-                        ->where(function ($q): void {
-                            $q->where(fn ($b) => $b->whereNotNull('ras_batch_1')->where('ras_batch_1', '!=', ''))
-                                ->orWhere(fn ($b) => $b->whereNotNull('ras_batch_2')->where('ras_batch_2', '!=', ''))
-                                ->orWhere(fn ($b) => $b->whereNotNull('ras_box_1')->where('ras_box_1', '!=', ''))
-                                ->orWhere(fn ($b) => $b->whereNotNull('ras_box_2')->where('ras_box_2', '!=', ''))
-                                ->orWhere(fn ($b) => $b->whereNotNull('barcode_ras_1')->where('barcode_ras_1', '!=', ''))
-                                ->orWhere(fn ($b) => $b->whereNotNull('barcode_ras_2')->where('barcode_ras_2', '!=', ''))
-                                ->orWhere(fn ($b) => $b->whereNotNull('barcode_in_2')->where('barcode_in_2', '!=', ''));
-                        })
-                        ->count(),
-                    'stocktake' => Location::query()->count(),
-                ];
-            },
+            fn (): array => [
+                'documents' => Document::query()->count(),
+                'pending' => Document::query()
+                    ->whereNull('disinfestation_date')
+                    ->where(function ($q): void {
+                        $q->whereNull('current_box_id')
+                            ->orWhereHas('currentBox', function ($q): void {
+                                $q->where('barcode_status', '!=', 'PERM_OUT');
+                            });
+                    })
+                    ->count(),
+                'movements' => BoxMovement::query()->count(),
+                'flags' => DocumentFlag::query()->count(),
+                'cycle' => Box::query()
+                    ->whereNull('destroyed_at')
+                    ->where(function ($q): void {
+                        // Use the shared cycle constant so this dashboard count can
+                        // never drift from DisinfestationCycleReport::reportQuery().
+                        $q->whereNull('disinfestation_date')
+                            ->orWhere('disinfestation_date', '<=', now()->subDays(DisinfestationCycle::DUE_DAYS)->startOfDay());
+                    })
+                    ->count(),
+                'reconciliation' => Document::query()
+                    ->where(function ($q): void {
+                        $q->where(fn ($b) => $b->whereNotNull('ras_batch_1')->where('ras_batch_1', '!=', ''))
+                            ->orWhere(fn ($b) => $b->whereNotNull('ras_batch_2')->where('ras_batch_2', '!=', ''))
+                            ->orWhere(fn ($b) => $b->whereNotNull('ras_box_1')->where('ras_box_1', '!=', ''))
+                            ->orWhere(fn ($b) => $b->whereNotNull('ras_box_2')->where('ras_box_2', '!=', ''))
+                            ->orWhere(fn ($b) => $b->whereNotNull('barcode_ras_1')->where('barcode_ras_1', '!=', ''))
+                            ->orWhere(fn ($b) => $b->whereNotNull('barcode_ras_2')->where('barcode_ras_2', '!=', ''))
+                            ->orWhere(fn ($b) => $b->whereNotNull('barcode_in_2')->where('barcode_in_2', '!=', ''));
+                    })
+                    ->count(),
+                'stocktake' => Location::query()->count(),
+            ],
         );
 
         return [

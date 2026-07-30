@@ -44,7 +44,7 @@ return new class extends Migration
                 Schema::table('documents', function (Blueprint $t): void {
                     $t->dropIndex('documents_catalogue_identifier_index');
                 });
-            } catch (QueryException $e) {
+            } catch (QueryException) {
                 // Tolerate "index does not exist" if probe missed it.
             }
         }
@@ -82,7 +82,7 @@ return new class extends Migration
 
             try {
                 DB::statement('ALTER TABLE documents DROP CONSTRAINT documents_current_box_type_chk');
-            } catch (QueryException $e) {
+            } catch (QueryException) {
                 // Constraint did not exist — fine.
             }
 
@@ -111,7 +111,7 @@ return new class extends Migration
 
             try {
                 DB::statement('ALTER TABLE documents DROP CONSTRAINT documents_digitised_chk');
-            } catch (QueryException $e) {
+            } catch (QueryException) {
                 // already gone
             }
         }
@@ -121,7 +121,7 @@ return new class extends Migration
                 Schema::table('documents', function (Blueprint $t): void {
                     $t->dropUnique('documents_catalogue_identifier_unique');
                 });
-            } catch (QueryException $e) {
+            } catch (QueryException) {
                 // tolerate
             }
         }
@@ -132,7 +132,7 @@ return new class extends Migration
                 Schema::table('documents', function (Blueprint $t): void {
                     $t->index('catalogue_identifier');
                 });
-            } catch (QueryException $e) {
+            } catch (QueryException) {
                 // tolerate
             }
         }

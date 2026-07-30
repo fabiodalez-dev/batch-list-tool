@@ -194,13 +194,9 @@ class DateRangeFilter extends Filter
 
         $this->columnSpan(['default' => 1, 'md' => 2]);
 
-        $this->query(function (Builder $query, array $data): Builder {
-            return $this->applyToQuery($query, $data);
-        });
+        $this->query(fn (Builder $query, array $data): Builder => $this->applyToQuery($query, $data));
 
-        $this->indicateUsing(function (array $data): array {
-            return $this->buildIndicators($data);
-        });
+        $this->indicateUsing(fn (array $data): array => $this->buildIndicators($data));
     }
 
     /**

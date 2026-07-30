@@ -57,9 +57,7 @@ uses(TestCase::class, RefreshDatabase::class)
 |--------------------------------------------------------------------------
 */
 
-expect()->extend('toBeOne', function () {
-    return $this->toBe(1);
-});
+expect()->extend('toBeOne', fn () => $this->toBe(1));
 
 /*
 |--------------------------------------------------------------------------
@@ -191,10 +189,10 @@ function bl_seedShieldPermissions(): void
     $editor = Role::findByName('editor', 'web');
     $editor->syncPermissions(
         collect($all)
-            ->filter(fn ($p) => str_starts_with($p, 'view_')
-                || str_starts_with($p, 'create_')
-                || str_starts_with($p, 'update_')
-                || str_starts_with($p, 'reorder_')
+            ->filter(fn ($p) => str_starts_with((string) $p, 'view_')
+                || str_starts_with((string) $p, 'create_')
+                || str_starts_with((string) $p, 'update_')
+                || str_starts_with((string) $p, 'reorder_')
                 || $p === 'resolve_document_flag')
             ->all()
     );
@@ -203,7 +201,7 @@ function bl_seedShieldPermissions(): void
     $viewer = Role::findByName('viewer', 'web');
     $viewer->syncPermissions(
         collect($all)
-            ->filter(fn ($p) => str_starts_with($p, 'view_') && ! str_ends_with($p, '_user'))
+            ->filter(fn ($p) => str_starts_with((string) $p, 'view_') && ! str_ends_with((string) $p, '_user'))
             ->all()
     );
 
@@ -278,7 +276,6 @@ function qf_stockRow(int $locationId): ?Location
 {
     $page = new StockTakeReport;
     $m = new ReflectionMethod($page, 'summaryQuery');
-    $m->setAccessible(true);
 
     /** @var Location|null $row */
     $row = $m->invoke($page)->where('locations.id', $locationId)->first();
@@ -291,7 +288,6 @@ function qf_stockEntry(string $type, int $sourceId): ?StockTakeEntry
 {
     $page = new StockTakeReport;
     $m = new ReflectionMethod($page, 'reportQuery');
-    $m->setAccessible(true);
 
     /** @var StockTakeEntry|null $row */
     $row = $m->invoke($page)

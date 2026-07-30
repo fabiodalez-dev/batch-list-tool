@@ -167,10 +167,10 @@ class DeduplicatingImportExcel extends ImportExcel
 
             return $rows;
         } catch (ReaderException $e) {
-            throw new \Exception('Error reading Excel file: ' . $e->getMessage());
+            throw new \Exception('Error reading Excel file: ' . $e->getMessage(), 0, $e);
         } catch (\Exception $e) {
-            if (strpos($e->getMessage(), 'memory') !== false || strpos($e->getMessage(), 'Memory') !== false) {
-                throw new \Exception('File chunk too large to process. The file may be corrupted or contains extremely wide rows.');
+            if (str_contains($e->getMessage(), 'memory') || str_contains($e->getMessage(), 'Memory')) {
+                throw new \Exception('File chunk too large to process. The file may be corrupted or contains extremely wide rows.', 0, $e);
             }
 
             throw $e;

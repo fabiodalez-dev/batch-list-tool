@@ -54,9 +54,9 @@ function bt_load_csv(string $path): array
     }
 
     $fh = fopen($path, 'r');
-    $headers = array_map(static fn ($h): string => trim((string) $h), fgetcsv($fh));
+    $headers = array_map(static fn ($h): string => trim((string) $h), fgetcsv($fh, escape: '\\'));
     $rows = [];
-    while (($row = fgetcsv($fh)) !== false) {
+    while (($row = fgetcsv($fh, escape: '\\')) !== false) {
         if (count($row) === 1 && $row[0] === null) {
             continue;
         }

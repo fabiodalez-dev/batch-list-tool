@@ -214,10 +214,10 @@ class RasNraReconciliationReport extends Page implements HasTable
     {
         return [
             'Document' => fn (Document $r) => $r->identifier,
-            'RAS batch' => fn (Document $r): ?string => RasReconciliation::latestRasBatch($r),
-            'RAS box' => fn (Document $r): ?string => RasReconciliation::latestRasBox($r),
+            'RAS batch' => RasReconciliation::latestRasBatch(...),
+            'RAS box' => RasReconciliation::latestRasBox(...),
             'RAS barcode' => fn (Document $r) => $r->barcode_ras_1,
-            'Latest barcode IN' => fn (Document $r): ?string => RasReconciliation::latestBarcodeIn($r),
+            'Latest barcode IN' => RasReconciliation::latestBarcodeIn(...),
             'Current batch' => fn (Document $r) => $r->batch?->getAttribute('batch_number'),
             'Current box' => fn (Document $r) => $r->currentBox?->getAttribute('box_number'),
             'Reconcilable' => fn (Document $r): string => RasReconciliation::isReconcilable($r) ? 'Yes' : 'No',

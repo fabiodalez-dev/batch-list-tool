@@ -32,9 +32,7 @@ final class ExportSelectedAction
             ->label('Export selected (CSV)')
             ->icon('heroicon-o-arrow-down-tray')
             ->color('gray')
-            ->action(function (EloquentCollection $records) {
-                return self::perform($records);
-            })
+            ->action(fn (EloquentCollection $records) => self::perform($records))
             ->deselectRecordsAfterCompletion()
             ->visible(fn () => auth()->user()?->can('view_any_document') ?? false);
     }
@@ -80,7 +78,7 @@ final class ExportSelectedAction
         return response()->streamDownload(function () use ($records, $columns): void {
             $out = fopen('php://output', 'wb');
             fwrite($out, "\xEF\xBB\xBF");
-            fputcsv($out, array_values($columns));
+            fputcsv($out, array_values($columns), escape: '\\');
 
             foreach ($records as $doc) {
                 /** @var Document $doc */
@@ -107,7 +105,7 @@ final class ExportSelectedAction
                     'pages_folios' => self::sanitize($doc->pages_folios),
                 ];
 
-                fputcsv($out, array_intersect_key($allCells, $columns));
+                fputcsv($out, array_intersect_key($allCells, $columns), escape: '\\');
             }
 
             fclose($out);

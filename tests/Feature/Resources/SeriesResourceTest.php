@@ -95,9 +95,9 @@ test('SeriesResource code is unique (DB constraint)', function () {
             'is_active' => true,
         ]);
         $this->fail('Expected uniqueness violation on duplicate code.');
-    } catch (Throwable $e) {
-        expect($e)->toBeInstanceOf(QueryException::class);
-        expect(strtolower($e->getMessage()))->toContain('unique');
+    } catch (Throwable $throwable) {
+        expect($throwable)->toBeInstanceOf(QueryException::class);
+        expect(strtolower($throwable->getMessage()))->toContain('unique');
     }
 });
 
@@ -122,10 +122,10 @@ test('Series cannot be hard-deleted while documents reference it', function () {
     try {
         $series->forceDelete();
         $this->fail('Expected restrictOnDelete FK violation when force-deleting a Series with documents.');
-    } catch (Throwable $e) {
-        expect($e)->toBeInstanceOf(QueryException::class);
+    } catch (Throwable $throwable) {
+        expect($throwable)->toBeInstanceOf(QueryException::class);
         // SQLite says "FOREIGN KEY constraint failed", MySQL "Cannot delete or update a parent row"
-        $msg = strtolower($e->getMessage());
+        $msg = strtolower($throwable->getMessage());
         expect($msg)->toMatch('/foreign key|parent row|constraint/');
     }
 });

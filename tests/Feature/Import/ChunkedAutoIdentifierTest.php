@@ -78,7 +78,7 @@ function chunkaid_xlsx(array $seriesCells): string
     }
 
     $path = tempnam(sys_get_temp_dir(), 'chunkaid_') . '.xlsx';
-    (new Xlsx($spreadsheet))->save($path);
+    new Xlsx($spreadsheet)->save($path);
     $spreadsheet->disconnectWorksheets();
 
     return $path;
@@ -171,14 +171,13 @@ test('Bug #22 (hardening): the WIZARD CSV path injects an ABSOLUTE __source_row 
 
     $wizard = new ImportWizard;
     $dispatch = new ReflectionMethod($wizard, 'dispatchImportBatch');
-    $dispatch->setAccessible(true);
     $dispatch->invoke($wizard, DocumentImporter::class, 'w.csv', '/tmp/w.csv', $rows, ['series' => 'Series'], []);
 
     // Collect every row's injected __source_row across ALL batched ImportCsv jobs.
     $srcKeys = [];
     Bus::assertBatched(function ($batch) use (&$srcKeys): bool {
         foreach (collect($batch->jobs)->flatten() as $job) {
-            $rowsProp = (new ReflectionProperty($job, 'rows'))->getValue($job);
+            $rowsProp = new ReflectionProperty($job, 'rows')->getValue($job);
             /** @var array<int, array<string, mixed>> $decoded */
             // nosemgrep: php.lang.security.unserialize-use.unserialize-use -- $rowsProp is the ImportCsv job payload this test just built via serialize(), never user input.
             $decoded = unserialize(base64_decode($rowsProp));

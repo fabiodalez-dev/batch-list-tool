@@ -2,6 +2,7 @@
 
 declare(strict_types=1);
 
+use App\Filament\Support\SearchableSelects;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Support\Facades\Schema;
 
@@ -37,7 +38,7 @@ describe('REQ-3.4.2 Backup schedule + off-site copy', function () {
 
 /* ─── REQ-3.4.3 Usability ────────────────────────────────────────── */
 describe('REQ-3.4.3 Usability', function () {
-    it('SearchableSelects helper drives server-side relation pickers')->todo('App\\Filament\\Support\\SearchableSelects');
+    it('SearchableSelects helper drives server-side relation pickers')->todo(SearchableSelects::class);
     it('Filament spotlight is wired on cmd+k')->todo('Feature\\GlobalSearchTest');
     it('15+ bulk actions are exposed on Document list')->todo('Feature\\DocumentActionsTest');
     it('Document edit/view page uses single-column root layout (no nested grids)')->todo('Feature\\Resources\\DocumentResource — layout');

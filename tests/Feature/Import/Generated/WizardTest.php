@@ -94,7 +94,6 @@ function wiz_page(): ImportWizard
 function wiz_call(object $target, string $method, array $args = [])
 {
     $ref = new ReflectionMethod($target, $method);
-    $ref->setAccessible(true);
 
     return $ref->invokeArgs($target, $args);
 }

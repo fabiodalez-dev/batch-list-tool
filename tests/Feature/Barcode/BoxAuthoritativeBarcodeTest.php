@@ -158,9 +158,7 @@ test('MarkDisinfested on a PERM_OUT box keeps PERM_OUT at the box level (B2 inva
         'location_id' => $loc6->id,
     ]);
 
-    $closure = (function () {
-        return $this->action;
-    })->call(MarkDisinfestedAction::make());
+    $closure = (fn () => $this->action)->call(MarkDisinfestedAction::make());
 
     $closure($doc, ['disinfestation_date' => now()->toDateString()]);
 
@@ -176,9 +174,7 @@ test('SendToDisinfestation flips the box (and mirrors docs) to OUT via box autho
     $box = bab_box(['barcode_status' => 'IN']);
     $doc = bab_docInBox($box);
 
-    $closure = (function () {
-        return $this->action;
-    })->call(SendToDisinfestationAction::make());
+    $closure = (fn () => $this->action)->call(SendToDisinfestationAction::make());
 
     $closure($doc);
 
@@ -201,9 +197,7 @@ test('a document with NO current box still gets its column written directly (fal
         'barcode_status' => 'IN',
     ]);
 
-    $closure = (function () {
-        return $this->action;
-    })->call(SendToDisinfestationAction::make());
+    $closure = (fn () => $this->action)->call(SendToDisinfestationAction::make());
 
     $closure($doc);
 

@@ -123,7 +123,7 @@ class ImportStatus extends Page
 
                 // Short importer class name (strip namespace) for display.
                 $importerShort = class_exists($import->importer)
-                    ? (new \ReflectionClass($import->importer))->getShortName()
+                    ? new \ReflectionClass($import->importer)->getShortName()
                     : $import->importer;
 
                 // Resolve the inputter name via user_id to avoid the

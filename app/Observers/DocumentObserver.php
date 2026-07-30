@@ -78,10 +78,6 @@ class DocumentObserver
         }
 
         // Whitespace-only difference -> ignore.
-        if (trim((string) $previous) === trim((string) $new)) {
-            return true;
-        }
-
-        return false;
+        return trim((string) $previous) === trim((string) $new);
     }
 }

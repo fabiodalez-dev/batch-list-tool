@@ -76,7 +76,7 @@ class RestoreDatabase
                 'triggered_by_user_id' => $userId,
                 'message' => 'Restored database from ' . basename($zipPath),
             ]);
-        } catch (Throwable $e) {
+        } catch (Throwable $throwable) {
             // STEP D — record failure, then re-throw so the caller can surface it.
             BackupRun::create([
                 'type' => 'restore',
@@ -85,12 +85,12 @@ class RestoreDatabase
                 'started_at' => now(),
                 'finished_at' => now(),
                 'triggered_by_user_id' => $userId,
-                'message' => 'Restore failed: ' . $e->getMessage(),
+                'message' => 'Restore failed: ' . $throwable->getMessage(),
             ]);
 
-            throw $e instanceof RuntimeException
-                ? $e
-                : new RuntimeException('Restore failed: ' . $e->getMessage(), 0, $e);
+            throw $throwable instanceof RuntimeException
+                ? $throwable
+                : new RuntimeException('Restore failed: ' . $throwable->getMessage(), 0, $throwable);
         } finally {
             // Always clean up the extracted dump. The path is one we created via
             // tempnam() under sys_get_temp_dir(); re-assert that confinement

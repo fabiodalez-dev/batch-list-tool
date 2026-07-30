@@ -174,11 +174,11 @@ test('Existing MAV/STVC legacy box can be created and edited when is_legacy=true
  * single source of truth.
  */
 test('Box::requiresParent() is true for IN_SITU and NRA, false for RAS / MAV / STVC', function () {
-    expect((new Box(['box_type' => 'IN_SITU']))->requiresParent())->toBeTrue();
-    expect((new Box(['box_type' => 'NRA']))->requiresParent())->toBeTrue();
-    expect((new Box(['box_type' => 'RAS']))->requiresParent())->toBeFalse();
-    expect((new Box(['box_type' => 'MAV']))->requiresParent())->toBeFalse();
-    expect((new Box(['box_type' => 'STVC']))->requiresParent())->toBeFalse();
+    expect(new Box(['box_type' => 'IN_SITU'])->requiresParent())->toBeTrue();
+    expect(new Box(['box_type' => 'NRA'])->requiresParent())->toBeTrue();
+    expect(new Box(['box_type' => 'RAS'])->requiresParent())->toBeFalse();
+    expect(new Box(['box_type' => 'MAV'])->requiresParent())->toBeFalse();
+    expect(new Box(['box_type' => 'STVC'])->requiresParent())->toBeFalse();
 });
 
 /* 24. PERM_OUT without disinfestation → canBePermOut() = false */
@@ -255,9 +255,9 @@ test('BoxResource barcode is unique (DB constraint)', function () {
     try {
         makeBox($batch->id, ['barcode' => $bar]);
         $this->fail('Expected uniqueness violation on duplicate barcode, but insert succeeded.');
-    } catch (Throwable $e) {
-        expect($e)->toBeInstanceOf(QueryException::class);
-        expect(strtolower($e->getMessage()))->toContain('unique');
+    } catch (Throwable $throwable) {
+        expect($throwable)->toBeInstanceOf(QueryException::class);
+        expect(strtolower($throwable->getMessage()))->toContain('unique');
     }
 });
 

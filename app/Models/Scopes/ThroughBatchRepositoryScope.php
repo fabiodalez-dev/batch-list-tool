@@ -60,7 +60,7 @@ class ThroughBatchRepositoryScope implements Scope
             return;
         }
 
-        if (empty($allowedIds)) {
+        if ($allowedIds === []) {
             $builder->whereRaw('1=0'); // user has no repos → no records visible
 
             return;
@@ -70,7 +70,7 @@ class ThroughBatchRepositoryScope implements Scope
         // stale/revoked active id (not in $allowedIds) is ignored and we fall
         // back to the full allowed set. Never widens, never exposes a forbidden
         // repo, never goes empty on a bad id. null (All) keeps the full set.
-        if ($active !== null && in_array($active, array_map('intval', $allowedIds), true)) {
+        if ($active !== null && in_array($active, array_map(intval(...), $allowedIds), true)) {
             $allowedIds = [$active];
         }
 

@@ -171,7 +171,7 @@ it('Accession batches() is BelongsToMany via accession_batch', function (): void
  * without PHPStan inferring the result at compile time.
  */
 it('Accession does not have a batch() belongsTo method', function (): void {
-    $methods = (new ReflectionClass(Accession::class))->getMethods(ReflectionMethod::IS_PUBLIC);
+    $methods = new ReflectionClass(Accession::class)->getMethods(ReflectionMethod::IS_PUBLIC);
     $publicMethodNames = array_map(fn (ReflectionMethod $m): string => $m->getName(), $methods);
     expect($publicMethodNames)->not->toContain('batch');
 });

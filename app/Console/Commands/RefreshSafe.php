@@ -44,14 +44,12 @@ class RefreshSafe extends Command
         }
 
         // Confirm on any non-local environment unless forced.
-        if (! $this->option('force') && ! $this->getLaravel()->environment('local')) {
-            if (! $this->confirm(
-                "This will DROP ALL TABLES on the [{$this->getLaravel()->environment()}] environment and repopulate. Continue?"
-            )) {
-                $this->warn('Aborted.');
+        if (! $this->option('force') && ! $this->getLaravel()->environment('local') && ! $this->confirm(
+            "This will DROP ALL TABLES on the [{$this->getLaravel()->environment()}] environment and repopulate. Continue?"
+        )) {
+            $this->warn('Aborted.');
 
-                return self::SUCCESS;
-            }
+            return self::SUCCESS;
         }
 
         $this->warn('Running migrate:fresh (all tables dropped) ...');

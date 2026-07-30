@@ -32,7 +32,7 @@ use Illuminate\Support\Facades\DB;
  */
 return new class extends Migration
 {
-    private const CHECK = 'chk_batches_forbidden_numbers';
+    private const string CHECK = 'chk_batches_forbidden_numbers';
 
     public function up(): void
     {

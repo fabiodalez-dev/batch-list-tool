@@ -371,10 +371,10 @@ class BackupHealthPage extends Page
                 ->body($run->message ?? 'The database was restored from the selected backup.')
                 ->success()
                 ->send();
-        } catch (\Throwable $e) {
+        } catch (\Throwable $throwable) {
             Notification::make()
                 ->title('Restore failed')
-                ->body($e->getMessage())
+                ->body($throwable->getMessage())
                 ->danger()
                 ->persistent()
                 ->send();
@@ -509,8 +509,8 @@ class BackupHealthPage extends Page
             DB::connection()->getPdo();
 
             return ['ok' => true, 'message' => 'Connected'];
-        } catch (\Throwable $e) {
-            return ['ok' => false, 'message' => $e->getMessage()];
+        } catch (\Throwable $throwable) {
+            return ['ok' => false, 'message' => $throwable->getMessage()];
         }
     }
 

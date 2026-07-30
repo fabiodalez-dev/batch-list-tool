@@ -145,7 +145,7 @@ trait HasCustomFields
             return;
         }
 
-        $morphType = get_class($this);
+        $morphType = $this::class;
         $morphId = $this->getKey();
 
         foreach ($definitions as $key => $def) {

@@ -60,7 +60,7 @@ function bcr_import(array $data, int $userId): void
     (new BatchImporter($row, $map, []))($data);
 }
 
-test('importing batch 50 for repository B does not steal repository A\'s batch 50', function () {
+test("importing batch 50 for repository B does not steal repository A's batch 50", function () {
     $repoA = Repository::create(['code' => 'AAA', 'name' => 'Repo A']);
     $repoB = Repository::create(['code' => 'BBB', 'name' => 'Repo B']);
 
@@ -86,7 +86,7 @@ test('importing batch 50 for repository B does not steal repository A\'s batch 5
         ->toBe(collect([$repoA->id, $repoB->id])->sort()->values()->all());
 });
 
-test('a user with no default repository and no repository_code cannot match (and steal) another repo\'s batch', function () {
+test("a user with no default repository and no repository_code cannot match (and steal) another repo's batch", function () {
     $repoA = Repository::create(['code' => 'AAA', 'name' => 'Repo A']);
 
     $batchA = Batch::withoutGlobalScope(RepositoryScope::class)->create([
@@ -114,7 +114,7 @@ test('a user with no default repository and no repository_code cannot match (and
         ->and(Batch::withoutGlobalScope(RepositoryScope::class)->where('batch_number', 50)->count())->toBe(1);
 });
 
-test('re-importing batch 50 with the owning repository_code updates that repo\'s row (idempotent)', function () {
+test("re-importing batch 50 with the owning repository_code updates that repo's row (idempotent)", function () {
     $repoA = Repository::create(['code' => 'AAA', 'name' => 'Repo A']);
     Repository::create(['code' => 'BBB', 'name' => 'Repo B']);
 

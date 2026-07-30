@@ -68,7 +68,7 @@ it('itemises from a real Excel sheet with reference and description columns', fu
     $sheet->setCellValue('A2', 'F-1');
     $sheet->setCellValue('B2', 'Deed of sale');
     $sheet->setCellValue('A3', 'F-2');
-    (new Xlsx($spreadsheet))->save($path);
+    new Xlsx($spreadsheet)->save($path);
     $spreadsheet->disconnectWorksheets();
 
     try {

@@ -69,7 +69,7 @@ final class TemplateGenerator
      *
      * @var array<int, string>
      */
-    public const AUTHORITY_HEADERS = [
+    public const array AUTHORITY_HEADERS = [
         'Identifier', 'Alternative Identifier', 'Type of Entity',
         'Private Practice Dates Active', 'NTG Dates Active', 'Name Suffix',
         'Maiden Surname', 'Creator Surname', 'Creator Name',
@@ -82,7 +82,7 @@ final class TemplateGenerator
     // "the template has a blank first column") and never mapped to anything,
     // since the importer resolves columns by header NAME, not position. The
     // real first column is Identifier, matching what operators actually fill in.
-    public const SERIES_HEADERS = [
+    public const array SERIES_HEADERS = [
         'Identifier', 'Standard title in English (Plural)',
         'Level of description', 'Date of creation', 'Name of Inputter',
         // Optional: archive code to assign the series to a specific Repository.
@@ -91,7 +91,7 @@ final class TemplateGenerator
     ];
 
     /** @var array<int, string> */
-    public const DOCUMENT_HEADERS = [
+    public const array DOCUMENT_HEADERS = [
         'RAS Batch 1', 'RAS Box 1', 'RAS Batch 2', 'RAS Box 2',
         'In Situ Box 1', 'In Situ Box 2', 'In Situ Box 3',
         'RAS 1 Box Destroyed', 'RAS 2 Box Destroyed', 'In Situ Box 1 Destroyed',
@@ -115,7 +115,7 @@ final class TemplateGenerator
      * can detect a stale template at re-upload time and warn the operator.
      * Bump on any change to the header contract.
      */
-    public const GENERATOR_VERSION = '1.3.0';
+    public const string GENERATOR_VERSION = '1.3.0';
 
     /**
      * Supported template entities. Headers come from the in-repo constants
@@ -127,7 +127,7 @@ final class TemplateGenerator
      *
      * @var array<string, array{}>
      */
-    public const TEMPLATES = [
+    public const array TEMPLATES = [
         'authority' => [],
         'series' => [],
         'batch' => [],
@@ -438,7 +438,7 @@ final class TemplateGenerator
         }
 
         // Light styling — bold header, freeze top row, autosize.
-        if (count($headers) > 0) {
+        if ($headers !== []) {
             $lastColLetter = Coordinate::stringFromColumnIndex(count($headers));
             $headerRange = "A1:{$lastColLetter}1";
             $sheet->getStyle($headerRange)->getFont()->setBold(true);

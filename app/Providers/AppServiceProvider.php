@@ -147,9 +147,7 @@ class AppServiceProvider extends ServiceProvider
         // Laravel Pulse dashboard access: restrict /pulse to super_admin and admin
         // roles only. Pulse's PulseServiceProvider checks Gate::check('viewPulse')
         // on its dashboard route.
-        Gate::define('viewPulse', function (?User $user): bool {
-            return $user !== null && $user->hasAnyRole(['super_admin', 'admin']);
-        });
+        Gate::define('viewPulse', fn (?User $user): bool => $user instanceof User && $user->hasAnyRole(['super_admin', 'admin']));
 
         $this->registerHealthChecks();
 
@@ -200,11 +198,7 @@ class AppServiceProvider extends ServiceProvider
             return false;
         }
 
-        if ($driver === null || $driver === 'sqlite') {
-            return false;
-        }
-
-        return true;
+        return $driver !== null && $driver !== 'sqlite';
     }
 
     /**
@@ -296,12 +290,12 @@ class AppServiceProvider extends ServiceProvider
                 'driver' => $driver,
             ]);
             Artisan::call('backup:run', ['--only-db' => true]);
-        } catch (\Throwable $e) {
+        } catch (\Throwable $throwable) {
             // Do NOT block migrations on a backup failure (e.g. first-time
             // setup before spatie is usable). Log clearly so it is visible.
             Log::warning('Pre-migrate safety backup failed; continuing with migrations.', [
                 'driver' => $driver,
-                'error' => $e->getMessage(),
+                'error' => $throwable->getMessage(),
             ]);
         }
     }

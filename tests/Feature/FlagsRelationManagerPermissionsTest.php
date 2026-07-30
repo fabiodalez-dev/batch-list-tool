@@ -56,7 +56,6 @@ function frmp_call(string $method): bool
 {
     $ref = new ReflectionClass(FlagsRelationManager::class);
     $m = $ref->getMethod($method);
-    $m->setAccessible(true);
 
     return (bool) $m->invoke(null);
 }

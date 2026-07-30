@@ -34,7 +34,7 @@ it('renders a Lookup table with CreatorColumn without one audit query per row', 
 
     DB::enableQueryLog();
     Livewire::test(ListBoxTypes::class)->assertOk();
-    $audits = array_filter(DB::getQueryLog(), fn (array $q): bool => str_contains($q['query'], 'audits'));
+    $audits = array_filter(DB::getQueryLog(), fn (array $q): bool => str_contains((string) $q['query'], 'audits'));
     DB::disableQueryLog();
 
     // One eager-load query, not one per row.

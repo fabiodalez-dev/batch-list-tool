@@ -93,9 +93,9 @@ function srt_failures(Import $import): array
 function srt_readCsv(string $path): array
 {
     $handle = fopen($path, 'rb');
-    $headers = fgetcsv($handle);
+    $headers = fgetcsv($handle, escape: '\\');
     $rows = [];
-    while (($line = fgetcsv($handle)) !== false) {
+    while (($line = fgetcsv($handle, escape: '\\')) !== false) {
         if ($line === [null] || $line === false) {
             continue;
         }
@@ -123,7 +123,7 @@ function srt_readXlsx(string $path): array
     $rows = [];
     foreach (array_slice($all, 1) as $line) {
         // Skip fully-blank rows.
-        if (count(array_filter($line, fn ($c) => $c !== null && $c !== '')) === 0) {
+        if (array_filter($line, fn ($c) => $c !== null && $c !== '') === []) {
             continue;
         }
         $keyed = [];

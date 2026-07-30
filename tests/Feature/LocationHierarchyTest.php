@@ -434,9 +434,9 @@ test('code is unique within the same repository (DB constraint)', function () {
     try {
         makeLocation_loc(['repository_id' => $repo->id, 'code' => $code, 'name' => 'L2']);
         $this->fail('Expected uniqueness violation on duplicate (repository_id, code).');
-    } catch (Throwable $e) {
-        expect($e)->toBeInstanceOf(QueryException::class);
-        expect(strtolower($e->getMessage()))->toMatch('/unique|constraint/');
+    } catch (Throwable $throwable) {
+        expect($throwable)->toBeInstanceOf(QueryException::class);
+        expect(strtolower($throwable->getMessage()))->toMatch('/unique|constraint/');
     }
 
     // Same code in a DIFFERENT repository must succeed.

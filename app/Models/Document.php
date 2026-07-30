@@ -422,12 +422,12 @@ class Document extends Model implements AuditableContract, HasMedia, Sortable
      */
     public static function withoutAuditGuards(callable $callback): mixed
     {
-        static::$bypassAuditGuard = true;
+        self::$bypassAuditGuard = true;
 
         try {
             return $callback();
         } finally {
-            static::$bypassAuditGuard = false;
+            self::$bypassAuditGuard = false;
         }
     }
 
@@ -458,7 +458,7 @@ class Document extends Model implements AuditableContract, HasMedia, Sortable
 
     public static function shouldBypassAuditGuard(): bool
     {
-        return static::$bypassAuditGuard;
+        return self::$bypassAuditGuard;
     }
 
     /**
@@ -891,13 +891,13 @@ class Document extends Model implements AuditableContract, HasMedia, Sortable
      */
     protected function performUpdate(Builder $query)
     {
-        $previous = static::$bypassAuditGuard;
-        static::$bypassAuditGuard = true;
+        $previous = self::$bypassAuditGuard;
+        self::$bypassAuditGuard = true;
 
         try {
             return parent::performUpdate($query);
         } finally {
-            static::$bypassAuditGuard = $previous;
+            self::$bypassAuditGuard = $previous;
         }
     }
 

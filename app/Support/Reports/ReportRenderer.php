@@ -69,12 +69,12 @@ final class ReportRenderer
             $out = fopen('php://output', 'wb');
             // UTF-8 BOM — Excel on Windows needs it for non-ASCII (Maltese accents).
             fwrite($out, "\xEF\xBB\xBF");
-            fputcsv($out, array_keys($columns));
+            fputcsv($out, array_keys($columns), escape: '\\');
 
             $query->chunkById(500, function ($rows) use ($out, $rowMapper): void {
                 foreach ($rows as $row) {
                     $cells = $rowMapper($row);
-                    fputcsv($out, array_map(self::sanitizeCsvCell(...), $cells));
+                    fputcsv($out, array_map(self::sanitizeCsvCell(...), $cells), escape: '\\');
                 }
             });
 
@@ -105,10 +105,10 @@ final class ReportRenderer
         return response()->streamDownload(function () use ($columns, $rows): void {
             $out = fopen('php://output', 'wb');
             fwrite($out, "\xEF\xBB\xBF");
-            fputcsv($out, array_keys($columns));
+            fputcsv($out, array_keys($columns), escape: '\\');
 
             foreach ($rows as $row) {
-                fputcsv($out, array_map(self::sanitizeCsvCell(...), $row));
+                fputcsv($out, array_map(self::sanitizeCsvCell(...), $row), escape: '\\');
             }
 
             fclose($out);

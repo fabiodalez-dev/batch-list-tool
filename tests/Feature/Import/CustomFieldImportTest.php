@@ -177,7 +177,7 @@ function cfi_buildColumnMap(string $importerClass, array $data): array
     // and match each column's guess aliases against the data keys.
     foreach ($importerClass::getColumns() as $column) {
         $colName = $column->getName();
-        if (! str_starts_with($colName, 'custom_field_')) {
+        if (! str_starts_with((string) $colName, 'custom_field_')) {
             continue; // static columns already handled by identity map
         }
 

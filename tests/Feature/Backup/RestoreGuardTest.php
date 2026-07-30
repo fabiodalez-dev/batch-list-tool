@@ -124,8 +124,8 @@ it('aborts 403 server-side when a non super_admin invokes the handler', function
 
     try {
         $call();
-    } catch (HttpException $e) {
-        expect($e->getStatusCode())->toBe(403);
+    } catch (HttpException $httpException) {
+        expect($httpException->getStatusCode())->toBe(403);
     }
 
     expect(BackupRun::where('type', 'restore')->count())->toBe(0);

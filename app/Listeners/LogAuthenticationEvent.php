@@ -33,8 +33,8 @@ class LogAuthenticationEvent
                 auditable: $user,
                 newValues: ['guard' => $event->guard],
             );
-        } catch (\Throwable $e) {
-            Log::warning('LogAuthenticationEvent::handleLogin failed', ['error' => $e->getMessage()]);
+        } catch (\Throwable $throwable) {
+            Log::warning('LogAuthenticationEvent::handleLogin failed', ['error' => $throwable->getMessage()]);
         }
     }
 
@@ -54,8 +54,8 @@ class LogAuthenticationEvent
                 auditable: $user,
                 newValues: ['guard' => $event->guard],
             );
-        } catch (\Throwable $e) {
-            Log::warning('LogAuthenticationEvent::handleLogout failed', ['error' => $e->getMessage()]);
+        } catch (\Throwable $throwable) {
+            Log::warning('LogAuthenticationEvent::handleLogout failed', ['error' => $throwable->getMessage()]);
         }
     }
 
@@ -88,8 +88,8 @@ class LogAuthenticationEvent
                 'user_agent' => request()->userAgent(),
                 'tags' => null,
             ]);
-        } catch (\Throwable $e) {
-            Log::warning('LogAuthenticationEvent::handleFailed failed', ['error' => $e->getMessage()]);
+        } catch (\Throwable $throwable) {
+            Log::warning('LogAuthenticationEvent::handleFailed failed', ['error' => $throwable->getMessage()]);
         }
     }
 
@@ -121,8 +121,8 @@ class LogAuthenticationEvent
                 'user_agent' => $req->userAgent(),
                 'tags' => null,
             ]);
-        } catch (\Throwable $e) {
-            Log::warning('LogAuthenticationEvent::handleLockout failed', ['error' => $e->getMessage()]);
+        } catch (\Throwable $throwable) {
+            Log::warning('LogAuthenticationEvent::handleLockout failed', ['error' => $throwable->getMessage()]);
         }
     }
 
@@ -136,8 +136,8 @@ class LogAuthenticationEvent
                 auditable: $user,
                 newValues: [],
             );
-        } catch (\Throwable $e) {
-            Log::warning('LogAuthenticationEvent::handlePasswordReset failed', ['error' => $e->getMessage()]);
+        } catch (\Throwable $throwable) {
+            Log::warning('LogAuthenticationEvent::handlePasswordReset failed', ['error' => $throwable->getMessage()]);
         }
     }
 

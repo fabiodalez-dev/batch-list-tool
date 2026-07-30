@@ -87,7 +87,7 @@ class ListBoxes extends ListRecords
             $out = fopen('php://output', 'wb');
             // UTF-8 BOM — Excel on Windows needs it for non-ASCII characters.
             fwrite($out, "\xEF\xBB\xBF");
-            fputcsv($out, array_values($allColumns));
+            fputcsv($out, array_values($allColumns), escape: '\\');
 
             $query->orderBy('id')->chunk(500, function ($boxes) use ($out, $allColumns, $customFieldDefs): void {
                 foreach ($boxes as $box) {
@@ -117,7 +117,7 @@ class ListBoxes extends ListRecords
                         $allCells['cf_' . $def->key] = $raw !== '' ? $this->sanitizeCsvCell($raw) : '';
                     }
 
-                    fputcsv($out, array_intersect_key($allCells, $allColumns));
+                    fputcsv($out, array_intersect_key($allCells, $allColumns), escape: '\\');
                 }
             });
 

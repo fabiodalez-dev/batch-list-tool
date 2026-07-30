@@ -18,14 +18,12 @@ uses(RefreshDatabase::class);
 function chartData(DocumentsPerSeriesChart $w): array
 {
     $m = new ReflectionMethod($w, 'getData');
-    $m->setAccessible(true);
 
     return $m->invoke($w);
 }
 
 it('assigns one distinct, saturated colour per doughnut slice', function (): void {
     $m = new ReflectionMethod(DocumentsPerSeriesChart::class, 'segmentColors');
-    $m->setAccessible(true);
 
     $colors = $m->invoke(null, 5);
 
@@ -37,7 +35,6 @@ it('assigns one distinct, saturated colour per doughnut slice', function (): voi
 
 it('cycles the palette when there are more slices than colours', function (): void {
     $m = new ReflectionMethod(DocumentsPerSeriesChart::class, 'segmentColors');
-    $m->setAccessible(true);
 
     $colors = $m->invoke(null, 25);
 
@@ -47,7 +44,6 @@ it('cycles the palette when there are more slices than colours', function (): vo
 
 it('never emits a near-white slice colour', function (): void {
     $m = new ReflectionMethod(DocumentsPerSeriesChart::class, 'segmentColors');
-    $m->setAccessible(true);
 
     foreach ($m->invoke(null, 20) as $hex) {
         [$r, $g, $b] = sscanf($hex, '#%02x%02x%02x');

@@ -245,9 +245,9 @@ test('BatchResource duplicate batch_number is rejected (unique DB constraint)', 
             'is_active' => true,
         ]);
         $this->fail('Expected uniqueness violation on duplicate batch_number, but insert succeeded.');
-    } catch (Throwable $e) {
-        expect($e)->toBeInstanceOf(QueryException::class);
-        expect(strtolower($e->getMessage()))->toContain('unique');
+    } catch (Throwable $throwable) {
+        expect($throwable)->toBeInstanceOf(QueryException::class);
+        expect(strtolower($throwable->getMessage()))->toContain('unique');
     }
 });
 

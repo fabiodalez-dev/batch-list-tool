@@ -142,9 +142,9 @@ test('AuthorityResource rejects duplicate identifier (unique DB constraint)', fu
         ]);
         // If we reach here, uniqueness is NOT enforced — fail the test.
         $this->fail('Expected uniqueness violation on duplicate identifier, but insert succeeded.');
-    } catch (Throwable $e) {
-        expect($e)->toBeInstanceOf(QueryException::class);
-        expect(strtolower($e->getMessage()))->toContain('unique');
+    } catch (Throwable $throwable) {
+        expect($throwable)->toBeInstanceOf(QueryException::class);
+        expect(strtolower($throwable->getMessage()))->toContain('unique');
     }
 });
 

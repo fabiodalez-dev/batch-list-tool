@@ -33,7 +33,7 @@ function ip_user(string $role, ?Repository $repo = null): User
         'default_repository_id' => $repo?->getKey(),
     ]);
     $u->assignRole($role);
-    if ($repo !== null) {
+    if ($repo instanceof Repository) {
         $u->repositories()->syncWithoutDetaching([$repo->getKey() => ['is_default' => true]]);
     }
 

@@ -43,7 +43,7 @@ final class SpreadsheetHeaders
      * reading utility so the generic {@see Jobs\DeduplicatingImportExcel} reader
      * does not have to depend on any one importer's domain class.
      */
-    public const SOURCE_ROW_KEY = '__source_row';
+    public const string SOURCE_ROW_KEY = '__source_row';
 
     /**
      * Turn a positional list of raw header cell values into a positional list

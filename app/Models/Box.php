@@ -516,7 +516,7 @@ class Box extends Model implements AuditableContract, Sortable
             if (! $box->requiresParent()) {
                 return;
             }
-            if (! ($box->isDirty('box_type') || $box->isDirty('parent_box_id'))) {
+            if (! $box->isDirty('box_type') && ! $box->isDirty('parent_box_id')) {
                 return;
             }
 
@@ -678,12 +678,10 @@ class Box extends Model implements AuditableContract, Sortable
             // IN_SITU / NRA require a Location — its location IS the box's
             // identity, so a provenance box with none is structurally
             // meaningless. This is enforced at the model level (every path).
-            if (in_array($box->box_type, ['IN_SITU', 'NRA'], true)) {
-                if ($box->location_id === null) {
-                    throw ValidationException::withMessages([
-                        'location_id' => 'IN_SITU / NRA boxes must reference a Location (RFQ Feedback1 C2.1).',
-                    ]);
-                }
+            if (in_array($box->box_type, ['IN_SITU', 'NRA'], true) && $box->location_id === null) {
+                throw ValidationException::withMessages([
+                    'location_id' => 'IN_SITU / NRA boxes must reference a Location (RFQ Feedback1 C2.1).',
+                ]);
             }
 
             // NOTE: the "RAS box requires a barcode" rule (Feedback1 C2.1) is

@@ -45,13 +45,13 @@ it('renders every parameter-free admin GET page without a server error', functio
         $uri = $route->uri();
 
         // Panel pages only.
-        if ($uri !== 'admin' && ! str_starts_with($uri, 'admin/')) {
+        if ($uri !== 'admin' && ! str_starts_with((string) $uri, 'admin/')) {
             continue;
         }
 
         // Skip routes that require parameters (record views/edits, etc.) —
         // those need fixture models and are covered by their own tests.
-        if (str_contains($uri, '{')) {
+        if (str_contains((string) $uri, '{')) {
             continue;
         }
 

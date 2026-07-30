@@ -45,16 +45,7 @@ return new class extends Migration
             foreach ($rows as $row) {
                 [$columns, $indexName] = [$row[0], $row[1]];
                 $columns = (array) $columns;
-
-                // Skip if every column is missing (defensive against schema
-                // drift in older test fixtures).
-                $allColumnsExist = true;
-                foreach ($columns as $column) {
-                    if (! Schema::hasColumn($table, $column)) {
-                        $allColumnsExist = false;
-                        break;
-                    }
-                }
+                $allColumnsExist = array_all($columns, fn ($column) => Schema::hasColumn($table, $column));
                 if (! $allColumnsExist) {
                     continue;
                 }
@@ -304,11 +295,7 @@ return new class extends Migration
         }
 
         // SQLite: "index ... already exists"
-        if (str_contains($message, 'already exists')) {
-            return true;
-        }
-
-        return false;
+        return str_contains($message, 'already exists');
     }
 
     private function quoteIdentifier(string $name): string

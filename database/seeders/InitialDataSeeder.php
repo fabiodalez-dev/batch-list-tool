@@ -69,10 +69,10 @@ class InitialDataSeeder extends Seeder
         $allPerms = Permission::pluck('name')->all();
         $admin->syncPermissions($allPerms);
         $editor->syncPermissions(
-            collect($allPerms)->filter(fn ($p) => str_starts_with($p, 'view_') || str_starts_with($p, 'create_') || str_starts_with($p, 'update_') || str_starts_with($p, 'reorder_') || $p === 'resolve_document_flag')->all()
+            collect($allPerms)->filter(fn ($p) => str_starts_with((string) $p, 'view_') || str_starts_with((string) $p, 'create_') || str_starts_with((string) $p, 'update_') || str_starts_with((string) $p, 'reorder_') || $p === 'resolve_document_flag')->all()
         );
         $viewer->syncPermissions(
-            collect($allPerms)->filter(fn ($p) => str_starts_with($p, 'view_') && ! str_ends_with($p, '_user'))->all()
+            collect($allPerms)->filter(fn ($p) => str_starts_with((string) $p, 'view_') && ! str_ends_with((string) $p, '_user'))->all()
         );
 
         // ----- Admin user -----

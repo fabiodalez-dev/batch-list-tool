@@ -40,9 +40,9 @@ return new class extends Migration
                     ->on('series')
                     ->cascadeOnDelete();
             });
-        } catch (Throwable $e) {
+        } catch (Throwable $throwable) {
             Log::warning('create_document_type_series: FKs add skipped/failed (likely already present)', [
-                'exception' => $e->getMessage(),
+                'exception' => $throwable->getMessage(),
             ]);
         }
     }
