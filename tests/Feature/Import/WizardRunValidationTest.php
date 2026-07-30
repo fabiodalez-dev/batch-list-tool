@@ -5,6 +5,7 @@ declare(strict_types=1);
 use App\Filament\Imports\AuthorityImporter;
 use App\Filament\Pages\ImportWizard;
 use App\Models\User;
+use Filament\Schemas\Components\Wizard;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Validation\ValidationException;
 use Livewire\Livewire;
@@ -83,9 +84,9 @@ test('the wizard submit button SUBMITS the surrounding form (never a mountable a
 
     $form = Livewire::test(ImportWizard::class)->instance()->form;
 
-    /** @var \Filament\Schemas\Components\Wizard $wizard */
+    /** @var Wizard $wizard */
     $wizard = collect($form->getComponents())
-        ->first(fn ($c): bool => $c instanceof \Filament\Schemas\Components\Wizard);
+        ->first(fn ($c): bool => $c instanceof Wizard);
 
     expect($wizard)->not->toBeNull();
 
