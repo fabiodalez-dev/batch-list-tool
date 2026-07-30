@@ -264,11 +264,9 @@ it('attachments form field is multiple and bound to the attachments collection',
     $this->actingAs(fga_superAdmin());
 
     Livewire::test(CreateAccession::class)
-        ->assertFormFieldExists('attachments', function ($field): bool {
-            return $field instanceof SpatieMediaLibraryFileUpload
-                && $field->isMultiple()
-                && $field->getCollection() === 'attachments';
-        });
+        ->assertFormFieldExists('attachments', fn ($field): bool => $field instanceof SpatieMediaLibraryFileUpload
+            && $field->isMultiple()
+            && $field->getCollection() === 'attachments');
 });
 
 /**

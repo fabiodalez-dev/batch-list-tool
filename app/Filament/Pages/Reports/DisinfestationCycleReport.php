@@ -231,7 +231,7 @@ class DisinfestationCycleReport extends Page implements HasTable
             'Box' => fn (Box $r) => $r->box_number,
             'Batch' => fn (Box $r) => $r->batch?->getAttribute('batch_number'),
             'Location' => fn (Box $r) => $r->location?->getAttribute('name'),
-            'Slots' => fn (Box $r): int => DisinfestationCapacity::weightForBox($r),
+            'Slots' => DisinfestationCapacity::weightForBox(...),
             'Last disinfestation' => fn (Box $r) => $r->disinfestation_date instanceof \DateTimeInterface ? $r->disinfestation_date->format('Y-m-d') : 'Never',
             'Cycle status' => fn (Box $r): string => ucfirst(DisinfestationCycle::status($r->disinfestation_date)),
             'Next due' => fn (Box $r): string => DisinfestationCycle::dueDate($r->disinfestation_date)?->toDateString() ?? 'Now',

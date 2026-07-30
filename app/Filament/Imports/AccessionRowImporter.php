@@ -318,13 +318,13 @@ class AccessionRowImporter extends Importer
                 // here still rolls back every cascade write above.
                 $this->validatePracticeExists($record);
             });
-        } catch (\Throwable $e) {
+        } catch (\Throwable $throwable) {
             // Cascade rolled back by DB::transaction; also drop this row's stash
             // so the next row can't inherit its half-populated state.
             $this->clearRowStash($key);
             $this->pendingRowKey = null;
 
-            throw $e;
+            throw $throwable;
         }
 
         // 5. Auto-generate document identifier if not supplied (DECISION 4)
@@ -364,7 +364,7 @@ class AccessionRowImporter extends Importer
     {
         try {
             $this->persistRowSideEffects();
-        } catch (\Throwable $e) {
+        } catch (\Throwable $throwable) {
             if ($this->rowSavepointOpen) {
                 DB::rollBack();
                 $this->rowSavepointOpen = false;
@@ -374,7 +374,7 @@ class AccessionRowImporter extends Importer
                 $this->pendingRowKey = null;
             }
 
-            throw $e;
+            throw $throwable;
         }
 
         if ($this->rowSavepointOpen) {
@@ -409,7 +409,7 @@ class AccessionRowImporter extends Importer
 
             return $only === '' ? [] : [$only];
         }
-        $pieces = array_map('trim', explode(self::SEMICOLON_DELIMITER, $raw));
+        $pieces = array_map(trim(...), explode(self::SEMICOLON_DELIMITER, $raw));
 
         return array_values(array_filter($pieces, static fn (string $p): bool => $p !== ''));
     }
@@ -1048,7 +1048,7 @@ class AccessionRowImporter extends Importer
         // Authority pivot.
         $ids = static::$rowAuthorityStash[$key] ?? [];
         unset(static::$rowAuthorityStash[$key]);
-        if (is_array($ids) && count($ids) > 0) {
+        if (is_array($ids) && $ids !== []) {
             $ids = array_values(array_unique($ids));
             $pivot = [];
             foreach ($ids as $i => $authorityId) {

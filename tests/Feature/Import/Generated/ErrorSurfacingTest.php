@@ -87,7 +87,7 @@ const ESF_BATCH_MAP = [
 /** @return array<int, array<string, string>> */
 function esf_loadCsv(string $path): array
 {
-    $lines = array_map('str_getcsv', file($path));
+    $lines = array_map(str_getcsv(...), file($path));
     $headers = array_shift($lines);
 
     return array_values(array_filter(array_map(
@@ -160,7 +160,6 @@ function esf_vendorParse(Throwable $e): string
     $ref = new ReflectionClass(ImportExcel::class);
     $job = $ref->newInstanceWithoutConstructor();
     $method = $ref->getMethod('parseErrorMessage');
-    $method->setAccessible(true);
 
     return $method->invoke($job, $e);
 }
@@ -531,7 +530,7 @@ test('soft-deleted Locations from a prior real-file import are restored on re-im
         ->and(Location::withTrashed()->count())->toBe(5); // restored, not duplicated
 });
 
-test('the real Batch CSV\'s own in-file duplicate row (batch_number 43 twice) updates in place, zero failures', function () {
+test("the real Batch CSV's own in-file duplicate row (batch_number 43 twice) updates in place, zero failures", function () {
     $repo = Repository::factory()->create(['code' => 'NRA']);
     $u = esf_admin($repo->id);
     $this->actingAs($u);
@@ -551,7 +550,7 @@ test('the real Batch CSV\'s own in-file duplicate row (batch_number 43 twice) up
         ->and(Batch::withoutGlobalScope(RepositoryScope::class)->where('batch_number', 43)->count())->toBe(1);
 });
 
-test('the real Batch CSV\'s forbidden numbers (34, 36) fail with the RFQ message, never generic_validation', function () {
+test("the real Batch CSV's forbidden numbers (34, 36) fail with the RFQ message, never generic_validation", function () {
     $repo = Repository::factory()->create(['code' => 'NRA']);
     $u = esf_admin($repo->id);
     $this->actingAs($u);

@@ -77,9 +77,9 @@ class BackupDestinations
             $disk->delete('.bc-conn-test');
 
             return ['ok' => true, 'message' => 'Connection OK'];
-        } catch (\Throwable $e) {
+        } catch (\Throwable $throwable) {
             // Only the exception message — never the config — is exposed.
-            return ['ok' => false, 'message' => $e->getMessage()];
+            return ['ok' => false, 'message' => $throwable->getMessage()];
         }
     }
 

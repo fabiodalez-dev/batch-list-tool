@@ -124,7 +124,6 @@ function axc_realRows(string $filePath, int $startRow, int $endRow, int $headerO
         options: ['headerOffset' => $headerOffset, 'activeSheet' => $activeSheet],
     );
     $method = new ReflectionMethod($job, 'readExcelRowsFromFile');
-    $method->setAccessible(true);
 
     /** @var array<int, array<string, mixed>> $rows */
     $rows = $method->invoke($job, $filePath, $startRow, $endRow);

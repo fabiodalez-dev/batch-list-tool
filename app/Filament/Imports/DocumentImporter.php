@@ -450,7 +450,7 @@ class DocumentImporter extends Importer
     {
         try {
             $this->persistRowSideEffects();
-        } catch (\Throwable $e) {
+        } catch (\Throwable $throwable) {
             // Undo the document save (and anything written since beforeSave)
             // so a failed box-status / pivot write never leaves a half-saved
             // row. Re-throw so Filament's job logs this as a FAILED row.
@@ -459,7 +459,7 @@ class DocumentImporter extends Importer
                 $this->rowSavepointOpen = false;
             }
 
-            throw $e;
+            throw $throwable;
         }
 
         if ($this->rowSavepointOpen) {
@@ -514,7 +514,7 @@ class DocumentImporter extends Importer
             return $only === '' ? [] : [$only];
         }
 
-        $pieces = array_map('trim', explode(self::SEMICOLON_DELIMITER, $raw));
+        $pieces = array_map(trim(...), explode(self::SEMICOLON_DELIMITER, $raw));
 
         return array_values(array_filter(
             $pieces,

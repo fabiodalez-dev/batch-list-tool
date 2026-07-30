@@ -98,10 +98,10 @@ function at_failures(Import $import): array
 function at_loadCsv(string $path): array
 {
     $fh = fopen($path, 'r');
-    $header = fgetcsv($fh);
+    $header = fgetcsv($fh, escape: '\\');
     $header[0] = preg_replace('/^\x{FEFF}/u', '', (string) $header[0]);
     $rows = [];
-    while (($row = fgetcsv($fh)) !== false) {
+    while (($row = fgetcsv($fh, escape: '\\')) !== false) {
         if (count($row) === 1 && $row[0] === null) {
             continue;
         }
@@ -127,7 +127,7 @@ function at_loadXlsx(string $path): array
 
     $rows = [];
     foreach ($raw as $r) {
-        if (count(array_filter($r, fn ($c) => $c !== null && $c !== '')) === 0) {
+        if (array_filter($r, fn ($c) => $c !== null && $c !== '') === []) {
             continue;
         }
         $rows[] = array_combine($header, $r);

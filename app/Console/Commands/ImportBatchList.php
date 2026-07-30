@@ -32,7 +32,7 @@ use PhpOffice\PhpSpreadsheet\Shared\Date as ExcelDate;
  */
 class ImportBatchList extends Command
 {
-    private const WINDOW = 2000;
+    private const int WINDOW = 2000;
 
     /**
      * Tables emptied by --truncate-data. EXCLUDES users, roles, permissions,
@@ -42,7 +42,7 @@ class ImportBatchList extends Command
      *
      * @var array<int, string>
      */
-    private const DATA_TABLES = [
+    private const array DATA_TABLES = [
         'document_authority', 'accession_batch', 'box_movements',
         'document_location_history', 'document_barcode_history',
         'document_identifier_history', 'box_barcode_history', 'box_seal_number_history',
@@ -80,7 +80,7 @@ class ImportBatchList extends Command
         $file = $this->option('file')
             ?: base_path('nra/inbox/2026-06-22_NAF_New_BATCH_LIST_04_06_26_sample.xlsx');
         if (! is_file($file)) {
-            $this->error("File not found: $file");
+            $this->error("File not found: {$file}");
 
             return self::FAILURE;
         }
@@ -168,7 +168,7 @@ class ImportBatchList extends Command
                         $batch = $batches[$batchNo] ??= Batch::firstOrCreate(
                             ['batch_number' => $batchNo],
                             [
-                                'description' => "Imported batch $batchNo",
+                                'description' => "Imported batch {$batchNo}",
                                 'type' => $batchNo >= 30 ? 'NOTARY_ACCESSION' : 'MAIN_COLLECTION',
                                 'repository_id' => $repo->id,
                             ],
@@ -293,18 +293,18 @@ class ImportBatchList extends Command
                 DB::rollBack();
                 $this->warn('DRY RUN — all changes rolled back.');
             }
-        } catch (\Throwable $e) {
+        } catch (\Throwable $throwable) {
             if ($dry) {
                 DB::rollBack();
             }
-            $this->error('Import aborted: ' . $e->getMessage());
-            $this->line($e->getFile() . ':' . $e->getLine());
+            $this->error('Import aborted: ' . $throwable->getMessage());
+            $this->line($throwable->getFile() . ':' . $throwable->getLine());
 
             return self::FAILURE;
         }
 
         $this->newLine();
-        $this->info("Imported $count documents, skipped $skipped (empty), failed $failed (row errors)." . ($dry ? ' (rolled back)' : ''));
+        $this->info("Imported {$count} documents, skipped {$skipped} (empty), failed {$failed} (row errors)." . ($dry ? ' (rolled back)' : ''));
         if ($errSamples !== []) {
             $this->newLine();
             $this->warn('Sample row errors:');
@@ -354,7 +354,7 @@ class ImportBatchList extends Command
         // shared-host (CloudLinux LVE) memory limits on large xlsx files.
         if ($this->isCsv($file)) {
             $fh = fopen($file, 'r');
-            $header = $fh ? fgetcsv($fh) : [];
+            $header = $fh ? fgetcsv($fh, escape: '\\') : [];
             if ($fh) {
                 fclose($fh);
             }
@@ -389,9 +389,9 @@ class ImportBatchList extends Command
             if ($fh === false) {
                 return;
             }
-            fgetcsv($fh); // skip header
+            fgetcsv($fh, escape: '\\'); // skip header
             $emitted = 0;
-            while (($row = fgetcsv($fh)) !== false) {
+            while (($row = fgetcsv($fh, escape: '\\')) !== false) {
                 if ($this->isBlank($row)) {
                     continue;
                 }
@@ -465,7 +465,7 @@ class ImportBatchList extends Command
     private function mapRow(array $row): array
     {
         $out = [];
-        foreach (BatchListColumnMap::FIELDS as $field => $_) {
+        foreach (array_keys(BatchListColumnMap::FIELDS) as $field) {
             $i = $this->idx[$field] ?? null;
             $out[$field] = $i !== null ? ($row[$i] ?? null) : null;
         }
@@ -577,13 +577,7 @@ class ImportBatchList extends Command
     /** @param array<int, mixed> $row */
     private function isBlank(array $row): bool
     {
-        foreach ($row as $c) {
-            if ($c !== null && trim((string) $c) !== '') {
-                return false;
-            }
-        }
-
-        return true;
+        return array_all($row, fn ($c) => ! ($c !== null && trim((string) $c) !== ''));
     }
 
     private function parseInt(mixed $v): ?int

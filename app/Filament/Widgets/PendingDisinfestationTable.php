@@ -34,7 +34,7 @@ class PendingDisinfestationTable extends BaseWidget
     public function table(Table $table): Table
     {
         return $table
-            ->query(fn (): Builder => $this->pendingQuery())
+            ->query(fn (): Builder => static::pendingQuery())
             ->defaultSort('created_at', 'asc')
             ->paginated(false)
             ->emptyStateHeading('All documents are disinfested')

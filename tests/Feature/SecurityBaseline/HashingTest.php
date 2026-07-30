@@ -47,7 +47,7 @@ test('Hash::needsRehash returns false for a $2y$12$ hash when configured cost is
     expect($hasher->needsRehash($hashAt12))->toBeFalse();
 
     // Sanity check: a lower-cost hash MUST be flagged for rehashing.
-    $hashAt4 = (new BcryptHasher(['rounds' => 4]))->make('password');
+    $hashAt4 = new BcryptHasher(['rounds' => 4])->make('password');
     expect($hasher->needsRehash($hashAt4))->toBeTrue();
 
     // And via the Hash facade, after we explicitly bind the config to 12

@@ -147,7 +147,7 @@ final class MoveToBoxAction
         if ($targetBox->batch_id === null) {
             Notification::make()
                 ->title('Cannot move — target box has no batch assignment')
-                ->body('Assign a batch to the box first, then retry. Documents must always inherit the box\'s batch.')
+                ->body("Assign a batch to the box first, then retry. Documents must always inherit the box's batch.")
                 ->danger()
                 ->send();
 

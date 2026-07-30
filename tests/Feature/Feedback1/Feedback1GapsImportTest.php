@@ -239,9 +239,9 @@ it('GAP3-Unknown: an Accession Type missing from the batch_types lookup is a row
             'accession_type' => 'TOTALLY_BOGUS_TYPE',
         ], $u->id);
         $this->fail('Expected ValidationException for unknown Accession Type.');
-    } catch (ValidationException $e) {
-        expect($e->errors())->toHaveKey('accession_type');
-        expect($e->errors()['accession_type'][0])
+    } catch (ValidationException $validationException) {
+        expect($validationException->errors())->toHaveKey('accession_type');
+        expect($validationException->errors()['accession_type'][0])
             ->toBe("Accession Type 'TOTALLY_BOGUS_TYPE' is not in the Accession Types lookup.");
     }
 

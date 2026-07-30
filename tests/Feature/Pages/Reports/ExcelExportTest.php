@@ -139,7 +139,6 @@ test('xlsx contains the expected headers from getXlsxColumns()', function () {
     // Round-trip through GenericReportExport: build the exporter ourselves
     // and assert the in-memory headings + first row.
     $rowsMethod = new ReflectionMethod($page, 'collectRowsAsAssoc');
-    $rowsMethod->setAccessible(true);
     $rows = $rowsMethod->invoke($page);
 
     $exporter = new GenericReportExport($rows, $columns, 'Documents by batch');
@@ -179,7 +178,6 @@ test('xlsx export honours RepositoryScope (cross-tenant safety)', function () {
 
     $page = new DocumentsBySeriesReport;
     $method = new ReflectionMethod($page, 'collectRowsAsAssoc');
-    $method->setAccessible(true);
     /** @var array<int, array<string, mixed>> $rows */
     $rows = $method->invoke($page);
 

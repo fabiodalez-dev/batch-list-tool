@@ -149,9 +149,9 @@ test('Repository cannot be force-deleted while documents reference it', function
     try {
         $repo->forceDelete();
         $this->fail('Expected restrictOnDelete FK violation when force-deleting a Repository with documents.');
-    } catch (Throwable $e) {
-        expect($e)->toBeInstanceOf(QueryException::class);
-        $msg = strtolower($e->getMessage());
+    } catch (Throwable $throwable) {
+        expect($throwable)->toBeInstanceOf(QueryException::class);
+        $msg = strtolower($throwable->getMessage());
         expect($msg)->toMatch('/foreign key|parent row|constraint/');
     }
 });

@@ -27,25 +27,25 @@ use Carbon\CarbonInterface;
 final class DisinfestationCycle
 {
     /** Nominal cycle length in days. */
-    public const DUE_DAYS = 40;
+    public const int DUE_DAYS = 40;
 
     /** Upper tolerance before an item is overdue (service-provider delays). */
-    public const OVERDUE_DAYS = 80;
+    public const int OVERDUE_DAYS = 80;
 
-    public const NEVER = 'never';
+    public const string NEVER = 'never';
 
-    public const CURRENT = 'current';
+    public const string CURRENT = 'current';
 
-    public const DUE = 'due';
+    public const string DUE = 'due';
 
-    public const OVERDUE = 'overdue';
+    public const string OVERDUE = 'overdue';
 
     /**
      * Cycle status for the given last-disinfestation date.
      */
     public static function status(?CarbonInterface $lastDate, ?CarbonInterface $now = null): string
     {
-        if ($lastDate === null) {
+        if (! $lastDate instanceof CarbonInterface) {
             return self::NEVER;
         }
 

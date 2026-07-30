@@ -405,7 +405,6 @@ function invokeOptionLabelUsing(Select $select, mixed $value): mixed
 {
     $ref = new ReflectionClass(Select::class);
     $prop = $ref->getProperty('getOptionLabelUsing');
-    $prop->setAccessible(true);
     $closure = $prop->getValue($select);
 
     if (! ($closure instanceof Closure)) {

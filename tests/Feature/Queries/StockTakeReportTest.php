@@ -58,7 +58,6 @@ it('counts boxes (destroyed excluded) and items per location', function (): void
 
     $page = new StockTakeReport;
     $method = new ReflectionMethod($page, 'summaryQuery');
-    $method->setAccessible(true);
     /** @var Location $row */
     $row = $method->invoke($page)->where('locations.id', $loc->id)->first();
 

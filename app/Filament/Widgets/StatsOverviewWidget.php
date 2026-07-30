@@ -187,7 +187,7 @@ class StatsOverviewWidget extends BaseStatsOverviewWidget
         }
 
         $allowed = $this->allowedRepositoryIds($user);
-        if (empty($allowed)) {
+        if ($allowed === []) {
             return 0;
         }
 
@@ -215,7 +215,7 @@ class StatsOverviewWidget extends BaseStatsOverviewWidget
     /** @return array<int, int> */
     protected function allowedRepositoryIds(?object $user): array
     {
-        if (! $user) {
+        if ($user === null) {
             return [];
         }
         $ids = collect();

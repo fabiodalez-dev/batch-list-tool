@@ -43,7 +43,7 @@ class BatchResource extends Resource
     use AppliesFieldPermissions;
 
     /** RFQ §3.1.8 — see config/field_permissions.php */
-    private const FIELD_PERMISSIONS_KEY = 'batch';
+    private const string FIELD_PERMISSIONS_KEY = 'batch';
 
     protected static ?string $model = Batch::class;
 
@@ -81,13 +81,11 @@ class BatchResource extends Resource
                             // ("Unknown", "NULL") are allowed too — so no ->numeric()
                             // constraint. A numeric value must still be a positive
                             // whole number.
-                            ->rule(function () {
-                                return function (string $attribute, mixed $value, \Closure $fail): void {
-                                    // Single source of truth shared with BatchImporter.
-                                    if (! Batch::isAcceptableNumberFormat((string) $value)) {
-                                        $fail('A numeric batch number must be a whole number of 1 or greater.');
-                                    }
-                                };
+                            ->rule(fn () => function (string $attribute, mixed $value, \Closure $fail): void {
+                                // Single source of truth shared with BatchImporter.
+                                if (! Batch::isAcceptableNumberFormat((string) $value)) {
+                                    $fail('A numeric batch number must be a whole number of 1 or greater.');
+                                }
                             })
                             // A2 — suggest the next sequential batch number as the
                             // default, skipping forbidden numbers 34 and 36. Only
@@ -117,29 +115,27 @@ class BatchResource extends Resource
                             // Rule::unique does not expose a per-instance message API
                             // in this Laravel version.  The closure calls $fail() with
                             // exactly the text the spec requires.
-                            ->rule(function (?Batch $record, Get $get): \Closure {
-                                return function (string $attribute, mixed $value, \Closure $fail) use ($record, $get): void {
-                                    if ($value === null || $value === '') {
-                                        return;
-                                    }
+                            ->rule(fn (?Batch $record, Get $get): \Closure => function (string $attribute, mixed $value, \Closure $fail) use ($record, $get): void {
+                                if ($value === null || $value === '') {
+                                    return;
+                                }
 
-                                    $repositoryId = $get('repository_id')
-                                        ?? $record?->repository_id
-                                        ?? auth()->user()?->default_repository_id;
+                                $repositoryId = $get('repository_id')
+                                    ?? $record?->repository_id
+                                    ?? auth()->user()?->default_repository_id;
 
-                                    $query = Batch::query()
-                                        ->withTrashed()
-                                        ->where('batch_number', trim((string) $value))
-                                        ->where('repository_id', $repositoryId);
+                                $query = Batch::query()
+                                    ->withTrashed()
+                                    ->where('batch_number', trim((string) $value))
+                                    ->where('repository_id', $repositoryId);
 
-                                    if ($record !== null && $record->exists) {
-                                        $query->whereKeyNot($record->getKey());
-                                    }
+                                if ($record instanceof Batch && $record->exists) {
+                                    $query->whereKeyNot($record->getKey());
+                                }
 
-                                    if ($query->exists()) {
-                                        $fail("Batch number {$value} already exists in this repository (it may be in the trash — restore or permanently delete it first).");
-                                    }
-                                };
+                                if ($query->exists()) {
+                                    $fail("Batch number {$value} already exists in this repository (it may be in the trash — restore or permanently delete it first).");
+                                }
                             })
                             // RFQ rule #1: batches 34 and 36 are forbidden (unused,
                             // never to be used); batch 33 is reserved for old MAV
@@ -147,16 +143,14 @@ class BatchResource extends Resource
                             // The Batch model defines FORBIDDEN_NUMBERS — we use the
                             // model helper so the rule has a single source of truth
                             // (model const + form validator + DB CHECK on MySQL).
-                            ->rule(function () {
-                                return function (string $attribute, $value, \Closure $fail) {
-                                    if ($value === null || $value === '') {
-                                        return;
-                                    }
-                                    $candidate = new Batch(['batch_number' => trim((string) $value)]);
-                                    if ($candidate->isForbidden()) {
-                                        $fail("Batch number {$value} is reserved/forbidden (RFQ rule).");
-                                    }
-                                };
+                            ->rule(fn () => function (string $attribute, $value, \Closure $fail) {
+                                if ($value === null || $value === '') {
+                                    return;
+                                }
+                                $candidate = new Batch(['batch_number' => trim((string) $value)]);
+                                if ($candidate->isForbidden()) {
+                                    $fail("Batch number {$value} is reserved/forbidden (RFQ rule).");
+                                }
                             })),
                         // RFQ §3.1.11 — expose the batch_types lookup as form
                         // options. batches.type retains its DB ENUM
@@ -302,7 +296,7 @@ class BatchResource extends Resource
                             ?: $record?->repository_id
                             ?: auth()->user()?->default_repository_id;
 
-                        return count(CustomFieldSchema::for('batch', $repositoryId !== null ? (int) $repositoryId : null)) > 0;
+                        return CustomFieldSchema::for('batch', $repositoryId !== null ? (int) $repositoryId : null) !== [];
                     }),
             ]);
     }
@@ -370,11 +364,11 @@ class BatchResource extends Resource
                 Section::make('Custom fields')
                     ->columns($twoCols)
                     ->schema(static function (?Batch $record): array {
-                        if ($record === null) {
+                        if (! $record instanceof Batch) {
                             return [];
                         }
                         $data = $record->getCustomFieldData();
-                        if (empty($data)) {
+                        if ($data === []) {
                             return [];
                         }
                         $entries = [];
@@ -398,7 +392,7 @@ class BatchResource extends Resource
                         return $entries;
                     })
                     ->visible(static function (?Batch $record): bool {
-                        if ($record === null) {
+                        if (! $record instanceof Batch) {
                             return false;
                         }
                         $data = $record->getCustomFieldData();
@@ -442,7 +436,7 @@ class BatchResource extends Resource
                     // display verbatim, not through numeric formatting.
                     ->sortable()
                     // A8 — hyperlink only this cell, not the whole row.
-                    ->url(fn (?Batch $record): ?string => $record !== null
+                    ->url(fn (?Batch $record): ?string => $record instanceof Batch
                         ? static::getUrl('view', ['record' => $record])
                         : null)
                     ->color('primary')),

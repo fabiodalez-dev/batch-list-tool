@@ -24,7 +24,7 @@ class ImportSampleData extends Command
     {
         $path = rtrim($this->option('path'), '/');
         if (! is_dir($path)) {
-            $this->error("Sample folder not found: $path");
+            $this->error("Sample folder not found: {$path}");
 
             return self::FAILURE;
         }
@@ -36,9 +36,9 @@ class ImportSampleData extends Command
 
         $repo = Repository::where('code', 'NRA')->firstOrFail();
 
-        $this->importSeries("$path/Series_Sample.xlsx");
-        $this->importAuthorities("$path/Authorities_Sample.xlsx");
-        $this->importBatchList("$path/Batch_List_Sample.xlsx", $repo);
+        $this->importSeries("{$path}/Series_Sample.xlsx");
+        $this->importAuthorities("{$path}/Authorities_Sample.xlsx");
+        $this->importBatchList("{$path}/Batch_List_Sample.xlsx", $repo);
 
         $this->info('');
         $this->info('═══════════════════════════════════════════════════');
@@ -92,11 +92,11 @@ class ImportSampleData extends Command
                 $count++;
             }
             DB::commit();
-            $this->info("  → $count Series imported.");
-        } catch (\Throwable $e) {
+            $this->info("  → {$count} Series imported.");
+        } catch (\Throwable $throwable) {
             DB::rollBack();
 
-            throw $e;
+            throw $throwable;
         }
     }
 
@@ -138,11 +138,11 @@ class ImportSampleData extends Command
                 $count++;
             }
             DB::commit();
-            $this->info("  → $count Authorities imported.");
-        } catch (\Throwable $e) {
+            $this->info("  → {$count} Authorities imported.");
+        } catch (\Throwable $throwable) {
             DB::rollBack();
 
-            throw $e;
+            throw $throwable;
         }
     }
 
@@ -170,7 +170,7 @@ class ImportSampleData extends Command
                 $inSitu1 = trim((string) ($row[4] ?? ''));
                 $barcodeIn = trim((string) ($row[12] ?? ''));
                 $disinfest1 = $this->parseDate($row[27] ?? null);
-                $identifier = trim((string) ($row[27] ?? '') ?: ($row[28] ?? ''));
+                $identifier = trim((string) ((string) ($row[27] ?? '') ?: ($row[28] ?? '')));
                 // Column "Identifier" is index "b" → 27 (0-based), so use 27 if non-numeric date, else 28
                 $identifier = trim((string) ($row[27] ?? ''));
                 // Actually based on headers given: column index for "Identifier" header was 27 (= column 'b' 0-based 27)
@@ -212,7 +212,7 @@ class ImportSampleData extends Command
                     $batch = $batches[$batch1Num] ??= Batch::firstOrCreate(
                         ['batch_number' => $batch1Num],
                         [
-                            'description' => "Imported batch $batch1Num",
+                            'description' => "Imported batch {$batch1Num}",
                             'type' => $batch1Num >= 30 ? 'NOTARY_ACCESSION' : 'MAIN_COLLECTION',
                             'repository_id' => $repo->id,
                         ]
@@ -342,11 +342,11 @@ class ImportSampleData extends Command
                 }
             }
             DB::commit();
-            $this->info("  → $count Documents imported, $skipped skipped.");
-        } catch (\Throwable $e) {
+            $this->info("  → {$count} Documents imported, {$skipped} skipped.");
+        } catch (\Throwable $throwable) {
             DB::rollBack();
 
-            throw $e;
+            throw $throwable;
         }
     }
 

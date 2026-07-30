@@ -84,13 +84,13 @@ trait LogsImportRows
             ImportAwareUserResolver::$importActor = $this->import->user;
 
             parent::saveRecord();
-        } catch (\Throwable $e) {
-            $human = self::humaniseImportError($e);
+        } catch (\Throwable $throwable) {
+            $human = self::humaniseImportError($throwable);
 
             Log::channel('import')->error("{$short}: ROW FAILED — {$human}", [
                 ...$this->importLogContext(),
-                'exception' => $e::class,
-                'raw_message' => $e->getMessage(),
+                'exception' => $throwable::class,
+                'raw_message' => $throwable->getMessage(),
             ]);
 
             // The vendor rolls this row's transaction back on failure, undoing any
@@ -101,7 +101,10 @@ trait LogsImportRows
 
             // Re-throw a clean, short message so the vendor importer does NOT
             // mask it as generic_validation — the operator sees the real reason.
-            throw new RowImportFailedException($human);
+            // Code stays 0: Throwable::getCode() is mixed and a PDOException
+            // returns a string SQLSTATE, which violates \Exception's int $code
+            // (TypeError). Keep the previous for the chain.
+            throw new RowImportFailedException($human, 0, $throwable);
         } finally {
             ImportAwareUserResolver::$importActor = null;
             config(['audit.console' => $previousConsole]);

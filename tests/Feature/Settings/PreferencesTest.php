@@ -102,9 +102,7 @@ it('applies the user locale via middleware', function () {
     $middleware = app(ApplyUserPreferences::class);
     $middleware->handle(
         Request::create('/admin'),
-        function ($req) {
-            return new Response;
-        },
+        fn ($req) => new Response,
     );
 
     expect(app()->getLocale())->toBe('it');

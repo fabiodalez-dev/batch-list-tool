@@ -99,10 +99,10 @@ test('super_admin holds every Shield-generated permission (no Gate::before bypas
     // Direct permission lookup — these only resolve to true if Shield
     // attached the permission to the super_admin role during seeding.
     foreach (['document', 'repository'] as $r) {
-        expect($u->hasPermissionTo("view_any_$r"))
-            ->toBeTrue("super_admin role is missing view_any_$r — was shield:generate ever run?");
-        expect($u->hasPermissionTo("delete_any_$r"))
-            ->toBeTrue("super_admin role is missing delete_any_$r — was shield:generate ever run?");
+        expect($u->hasPermissionTo("view_any_{$r}"))
+            ->toBeTrue("super_admin role is missing view_any_{$r} — was shield:generate ever run?");
+        expect($u->hasPermissionTo("delete_any_{$r}"))
+            ->toBeTrue("super_admin role is missing delete_any_{$r} — was shield:generate ever run?");
     }
 
     // And the same abilities resolve true at the Gate layer (Spatie's
@@ -123,8 +123,8 @@ test('admin has every Shield permission (RFQ §3.5.1 oversight)', function () {
 
     // Every resource's view_any_/delete_any_ should be granted
     foreach (['document', 'authority', 'batch', 'box', 'series', 'accession', 'repository'] as $r) {
-        expect($u->hasPermissionTo("view_any_$r"))->toBeTrue("missing view_any_$r");
-        expect($u->hasPermissionTo("delete_any_$r"))->toBeTrue("missing delete_any_$r");
+        expect($u->hasPermissionTo("view_any_{$r}"))->toBeTrue("missing view_any_{$r}");
+        expect($u->hasPermissionTo("delete_any_{$r}"))->toBeTrue("missing delete_any_{$r}");
     }
 });
 
@@ -172,12 +172,12 @@ test('Shield has generated a Policy class for every Filament Resource', function
     ];
 
     foreach ($expected as $model => $policy) {
-        expect(class_exists($policy))->toBeTrue("Missing policy: $policy for $model");
+        expect(class_exists($policy))->toBeTrue("Missing policy: {$policy} for {$model}");
         // Each policy has the conventional Shield method signature
-        expect(method_exists($policy, 'viewAny'))->toBeTrue("$policy lacks viewAny()");
-        expect(method_exists($policy, 'create'))->toBeTrue("$policy lacks create()");
-        expect(method_exists($policy, 'update'))->toBeTrue("$policy lacks update()");
-        expect(method_exists($policy, 'delete'))->toBeTrue("$policy lacks delete()");
+        expect(method_exists($policy, 'viewAny'))->toBeTrue("{$policy} lacks viewAny()");
+        expect(method_exists($policy, 'create'))->toBeTrue("{$policy} lacks create()");
+        expect(method_exists($policy, 'update'))->toBeTrue("{$policy} lacks update()");
+        expect(method_exists($policy, 'delete'))->toBeTrue("{$policy} lacks delete()");
     }
 });
 

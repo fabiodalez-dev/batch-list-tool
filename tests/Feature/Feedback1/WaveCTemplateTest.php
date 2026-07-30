@@ -78,7 +78,6 @@ it('C3-SheetTitle: sheetTitleFor accession returns Accession Import', function (
     // Verify the sheet title by calling the reflection on the private method.
     $ref = new ReflectionClass(TemplateGenerator::class);
     $method = $ref->getMethod('sheetTitleFor');
-    $method->setAccessible(true);
     $title = $method->invoke(null, 'accession');
     expect($title)->toBe('Accession Import');
 });

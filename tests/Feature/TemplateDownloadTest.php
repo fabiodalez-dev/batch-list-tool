@@ -140,7 +140,7 @@ function tpl_renderAndParse(StreamedResponse $response): array
         $headers[] = (string) ($sheet->getCell(Coordinate::stringFromColumnIndex($c) . '1')->getValue() ?? '');
     }
     // Trim trailing empties to mirror TemplateGenerator's contract.
-    while (count($headers) > 0 && end($headers) === '') {
+    while ($headers !== [] && end($headers) === '') {
         array_pop($headers);
     }
 
@@ -190,7 +190,7 @@ function tpl_sampleHeaders(string $samplePath): array
     for ($c = 1; $c <= $highestIdx; $c++) {
         $headers[] = $sheet->getCell(Coordinate::stringFromColumnIndex($c) . '1')->getValue();
     }
-    while (count($headers) > 0) {
+    while ($headers !== []) {
         $last = end($headers);
         if ($last === null || $last === '') {
             array_pop($headers);

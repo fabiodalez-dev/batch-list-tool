@@ -27,6 +27,6 @@ class LocalAvatarProvider implements AvatarProvider
             ->setFontSize(28)
             ->toSvg();
 
-        return 'data:image/svg+xml;base64,' . base64_encode($svg);
+        return 'data:image/svg+xml;base64,' . base64_encode((string) $svg);
     }
 }

@@ -26,7 +26,7 @@ use Illuminate\Database\Eloquent\Collection as EloquentCollection;
  */
 final class SetMuseumLocationAction
 {
-    private const MUSEUM_LOCATION_TYPES = ['museum', 'showcase'];
+    private const array MUSEUM_LOCATION_TYPES = ['museum', 'showcase'];
 
     public static function make(string $name = 'setMuseumLocation'): Action
     {

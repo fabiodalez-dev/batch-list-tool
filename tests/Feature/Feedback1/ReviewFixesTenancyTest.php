@@ -160,7 +160,7 @@ it('F023-2: box import with batch_number that exists only in repo B (user defaul
         if ($box !== null) {
             expect($box->batch_id)->not->toBe($batchB->id);
         }
-    } catch (Throwable $e) {
+    } catch (Throwable) {
         // Any exception (ValidationException, QueryException for NOT NULL, etc.)
         // is also an acceptable outcome — row rejected.
         $box = Box::withoutGlobalScope(ThroughBatchRepositoryScope::class)

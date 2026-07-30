@@ -38,7 +38,7 @@ class ImportAwareUserResolver implements UserResolverContract
      */
     public static function resolve()
     {
-        if (static::$importActor !== null) {
+        if (static::$importActor instanceof Authenticatable) {
             return static::$importActor;
         }
 

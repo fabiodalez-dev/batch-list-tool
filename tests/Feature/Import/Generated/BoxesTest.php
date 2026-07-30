@@ -97,7 +97,7 @@ function bxt_readSample(): array
     $sheet = $reader->load(BXT_SAMPLE)->getSheetByName('Data');
     $raw = array_values(array_filter(
         $sheet->toArray(null, true, false, false),
-        fn (array $r): bool => count(array_filter($r, fn ($c) => $c !== null && $c !== '')) > 0,
+        fn (array $r): bool => array_filter($r, fn ($c) => $c !== null && $c !== '') !== [],
     ));
 
     $headers = array_map(fn ($h): string => (string) $h, $raw[0]);

@@ -20,7 +20,7 @@ use Illuminate\Support\Facades\Schema;
  */
 return new class extends Migration
 {
-    private const TYPES = [
+    private const array TYPES = [
         'needs_review',
         'missing_data',
         'duplicate_suspect',

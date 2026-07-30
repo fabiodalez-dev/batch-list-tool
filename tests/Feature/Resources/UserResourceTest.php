@@ -139,6 +139,6 @@ test('User password is bcrypt-hashed and the production baseline (cost=12) is en
     // (c) The production hasher (rounds=12) detects a sub-12 cost as needing rehash
     $prodHasher = new BcryptHasher(['rounds' => 12]);
     // Generate a cost-4 hash explicitly (mirroring phpunit.xml)
-    $weakHash = (new BcryptHasher(['rounds' => 4]))->make('x');
+    $weakHash = new BcryptHasher(['rounds' => 4])->make('x');
     expect($prodHasher->needsRehash($weakHash))->toBeTrue();
 });

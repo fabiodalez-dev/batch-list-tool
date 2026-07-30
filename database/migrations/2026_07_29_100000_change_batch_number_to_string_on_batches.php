@@ -33,9 +33,9 @@ use Illuminate\Support\Facades\Schema;
  */
 return new class extends Migration
 {
-    private const UNIQUE = 'batches_batch_number_repository_id_unique';
+    private const string UNIQUE = 'batches_batch_number_repository_id_unique';
 
-    private const CHECK = 'chk_batches_forbidden_numbers';
+    private const string CHECK = 'chk_batches_forbidden_numbers';
 
     public function up(): void
     {

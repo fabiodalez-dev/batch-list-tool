@@ -355,7 +355,7 @@ class StockTakeReport extends Page implements HasTable
     protected function flatExportRows(?int $limit = null): array
     {
         return array_map(
-            fn (array $row): array => array_values($row),
+            array_values(...),
             $this->exportRows($limit),
         );
     }

@@ -49,7 +49,7 @@ class AuthorityResource extends Resource
     ];
 
     /** RFQ §3.1.8 — see config/field_permissions.php */
-    private const FIELD_PERMISSIONS_KEY = 'authority';
+    private const string FIELD_PERMISSIONS_KEY = 'authority';
 
     protected static ?string $model = Authority::class;
 
@@ -137,16 +137,14 @@ class AuthorityResource extends Resource
                             ->validationMessages(['digits' => 'Enter a 4-digit year.'])
                             // Closure rule so the comparison is skipped when
                             // either bound is empty (both dates are optional).
-                            ->rule(static function (Get $get): \Closure {
-                                return static function (string $attribute, mixed $value, \Closure $fail) use ($get): void {
-                                    $start = $get('practice_dates_start');
-                                    if ($value === null || $value === '' || $start === null || $start === '') {
-                                        return;
-                                    }
-                                    if ((int) $value < (int) $start) {
-                                        $fail('End year must be greater than or equal to the start year.');
-                                    }
-                                };
+                            ->rule(static fn (Get $get): \Closure => static function (string $attribute, mixed $value, \Closure $fail) use ($get): void {
+                                $start = $get('practice_dates_start');
+                                if ($value === null || $value === '' || $start === null || $start === '') {
+                                    return;
+                                }
+                                if ((int) $value < (int) $start) {
+                                    $fail('End year must be greater than or equal to the start year.');
+                                }
                             })),
                         // NTG (Notari tal-Gvern / Notary to Government) dates —
                         // a YEAR RANGE, same shape as the private-practice dates
@@ -167,16 +165,14 @@ class AuthorityResource extends Resource
                             ->maxValue(9999)
                             ->rule('digits:4')
                             ->validationMessages(['digits' => 'Enter a 4-digit year.'])
-                            ->rule(static function (Get $get): \Closure {
-                                return static function (string $attribute, mixed $value, \Closure $fail) use ($get): void {
-                                    $start = $get('ntg_dates_start');
-                                    if ($value === null || $value === '' || $start === null || $start === '') {
-                                        return;
-                                    }
-                                    if ((int) $value < (int) $start) {
-                                        $fail('End year must be greater than or equal to the start year.');
-                                    }
-                                };
+                            ->rule(static fn (Get $get): \Closure => static function (string $attribute, mixed $value, \Closure $fail) use ($get): void {
+                                $start = $get('ntg_dates_start');
+                                if ($value === null || $value === '' || $start === null || $start === '') {
+                                    return;
+                                }
+                                if ((int) $value < (int) $start) {
+                                    $fail('End year must be greater than or equal to the start year.');
+                                }
                             })),
                     ]),
 
@@ -441,25 +437,23 @@ class AuthorityResource extends Resource
                             ->label('Worked before / to (year)')
                             ->numeric(),
                     ])
-                    ->query(function (Builder $query, array $data): Builder {
-                        return $query
-                            ->when(
-                                $data['from'] ?? null,
-                                fn (Builder $q, $from): Builder => $q->where(
-                                    fn (Builder $q) => $q
-                                        ->whereNull('practice_dates_end')
-                                        ->orWhere('practice_dates_end', '>=', (int) $from)
-                                )
+                    ->query(fn (Builder $query, array $data): Builder => $query
+                        ->when(
+                            $data['from'] ?? null,
+                            fn (Builder $q, $from): Builder => $q->where(
+                                fn (Builder $q) => $q
+                                    ->whereNull('practice_dates_end')
+                                    ->orWhere('practice_dates_end', '>=', (int) $from)
                             )
-                            ->when(
-                                $data['to'] ?? null,
-                                fn (Builder $q, $to): Builder => $q->where(
-                                    fn (Builder $q) => $q
-                                        ->whereNull('practice_dates_start')
-                                        ->orWhere('practice_dates_start', '<=', (int) $to)
-                                )
-                            );
-                    })
+                        )
+                        ->when(
+                            $data['to'] ?? null,
+                            fn (Builder $q, $to): Builder => $q->where(
+                                fn (Builder $q) => $q
+                                    ->whereNull('practice_dates_start')
+                                    ->orWhere('practice_dates_start', '<=', (int) $to)
+                            )
+                        ))
                     ->indicateUsing(function (array $data): array {
                         $i = [];
                         if (! empty($data['from'])) {

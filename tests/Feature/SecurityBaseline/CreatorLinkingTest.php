@@ -92,11 +92,10 @@ test('F-001 — fuzzy match on a token shorter than 4 chars returns null', funct
         ->whereNotNull('surname')
         ->where('surname', '!=', '')
         ->get(['id', 'surname'])
-        ->groupBy(fn ($a) => mb_strtolower(trim($a->surname)));
+        ->groupBy(fn ($a) => mb_strtolower(trim((string) $a->surname)));
 
     $reflection = new ReflectionClass($command);
     $method = $reflection->getMethod('resolveAuthority');
-    $method->setAccessible(true);
 
     // Short token (3 chars) → must be REFUSED (null) even though "Fontana" is a
     // LIKE-match for "Foo". This is the F-001 contract.

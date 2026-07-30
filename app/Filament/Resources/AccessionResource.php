@@ -27,6 +27,7 @@ use Filament\Tables\Table;
 use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Support\Collection;
 use Illuminate\Support\HtmlString;
+use Spatie\MediaLibrary\MediaCollections\Models\Collections\MediaCollection;
 
 class AccessionResource extends Resource
 {
@@ -262,7 +263,7 @@ class AccessionResource extends Resource
                             ->state(function (?Accession $record): ?HtmlString {
                                 $media = $record?->getMedia('attachments');
 
-                                if ($media === null || $media->isEmpty()) {
+                                if (! $media instanceof MediaCollection || $media->isEmpty()) {
                                     return null;
                                 }
 
@@ -467,7 +468,7 @@ class AccessionResource extends Resource
      */
     private static function formatBatchesList(?Collection $batches): string
     {
-        if ($batches === null || $batches->isEmpty()) {
+        if (! $batches instanceof Collection || $batches->isEmpty()) {
             return '—';
         }
 

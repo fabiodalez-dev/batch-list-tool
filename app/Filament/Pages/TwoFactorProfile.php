@@ -152,7 +152,7 @@ class TwoFactorProfile extends Page
                         $this->user(),
                         trim($this->confirmCode),
                     );
-                } catch (ValidationException $e) {
+                } catch (ValidationException) {
                     Notification::make()
                         ->title('The code you entered is not valid. Please try again.')
                         ->danger()

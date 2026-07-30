@@ -37,7 +37,7 @@ trait SkipsExistingRows
     protected function skipIfDuplicate(?Model $record): void
     {
         if (
-            $record !== null
+            $record instanceof Model
             && $record->exists
             && ($this->options['skip_duplicates'] ?? false)
         ) {

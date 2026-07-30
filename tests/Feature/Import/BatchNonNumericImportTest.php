@@ -177,14 +177,14 @@ test('a forbidden numeric batch (34 / 36) fails validation on import and creates
 });
 
 test('the model treats numeric-string reserved numbers correctly (34/36 forbidden, 33 MAV, 50 wills)', function () {
-    expect((new Batch(['batch_number' => '34']))->isForbidden())->toBeTrue()
-        ->and((new Batch(['batch_number' => '36']))->isForbidden())->toBeTrue()
-        ->and((new Batch(['batch_number' => '33']))->isForbidden())->toBeFalse()
-        ->and((new Batch(['batch_number' => '33']))->isReservedMav())->toBeTrue()
-        ->and((new Batch(['batch_number' => '50']))->isWillsOnly())->toBeTrue()
+    expect(new Batch(['batch_number' => '34'])->isForbidden())->toBeTrue()
+        ->and(new Batch(['batch_number' => '36'])->isForbidden())->toBeTrue()
+        ->and(new Batch(['batch_number' => '33'])->isForbidden())->toBeFalse()
+        ->and(new Batch(['batch_number' => '33'])->isReservedMav())->toBeTrue()
+        ->and(new Batch(['batch_number' => '50'])->isWillsOnly())->toBeTrue()
         // Non-numeric labels are never reserved.
-        ->and((new Batch(['batch_number' => 'Unknown']))->isForbidden())->toBeFalse()
-        ->and((new Batch(['batch_number' => 'NULL']))->isReservedMav())->toBeFalse();
+        ->and(new Batch(['batch_number' => 'Unknown'])->isForbidden())->toBeFalse()
+        ->and(new Batch(['batch_number' => 'NULL'])->isReservedMav())->toBeFalse();
 });
 
 test('MySQL/MariaDB: the forbidden-numbers CHECK accepts non-numeric batches and still rejects 34/36', function () {

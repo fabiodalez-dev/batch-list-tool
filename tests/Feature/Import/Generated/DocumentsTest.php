@@ -132,7 +132,6 @@ function dgt_realRows(string $filePath, int $startRow, int $endRow, int $headerO
         options: ['headerOffset' => $headerOffset, 'activeSheet' => $activeSheet],
     );
     $method = new ReflectionMethod($job, 'readExcelRowsFromFile');
-    $method->setAccessible(true);
 
     /** @var array<int, array<string, mixed>> $rows */
     $rows = $method->invoke($job, $filePath, $startRow, $endRow);
@@ -159,7 +158,6 @@ function dgt_vendorRows(string $filePath, int $startRow, int $endRow, int $heade
         options: ['headerOffset' => $headerOffset, 'activeSheet' => $activeSheet],
     );
     $method = new ReflectionMethod($job, 'readExcelRowsFromFile');
-    $method->setAccessible(true);
 
     /** @var array<int, array<string, mixed>> $rows */
     $rows = $method->invoke($job, $filePath, $startRow, $endRow);
@@ -385,7 +383,7 @@ test('Bug #4: the de-duplicating reader RECOVERS the first-occurrence data the v
     expect($rows[0])->toHaveKeys(['Barcode (IN) (2)', 'Status 1 (2)', 'Disinfestation Date (2)', 'Disinfestation Date (3)']);
 });
 
-test('Bug #4: the de-duplicating reader recovers the first-occurrence Barcode (IN) on the client\'s own live ~5MB batch list', function () {
+test("Bug #4: the de-duplicating reader recovers the first-occurrence Barcode (IN) on the client's own live ~5MB batch list", function () {
     if (! is_file(DGT_BATCHLIST_XLSX)) {
         $this->markTestSkipped('client sample not present (nra/inbox is untracked)');
     }
@@ -734,7 +732,7 @@ test('REGRESSION (bug #13): a soft-deleted batch sharing (batch_number, reposito
 //  Box dependency — Task 8 (B5)
 // ════════════════════════════════════════════════════════════════════════
 
-test('current_box_number auto-creates the box inside the document\'s resolved batch', function () {
+test("current_box_number auto-creates the box inside the document's resolved batch", function () {
     $repo = Repository::factory()->create(['code' => 'DGT4']);
     dgt_series('REG');
     $u = dgt_admin($repo->id);
@@ -779,7 +777,7 @@ test('current_box_barcode resolves a SPECIFIC existing box and never creates one
         ->and(Box::withoutGlobalScope(ThroughBatchRepositoryScope::class)->count())->toBe($before);
 });
 
-test('B5: a box whose batch differs from the document\'s own batch fails the row cleanly, no half-saved document', function () {
+test("B5: a box whose batch differs from the document's own batch fails the row cleanly, no half-saved document", function () {
     $repo = Repository::factory()->create(['code' => 'DGT5']);
     dgt_series('REG');
     $u = dgt_admin($repo->id);
@@ -948,7 +946,7 @@ test('a blank "Torre" cell fails the row with "fill that column", even though th
 //  connection's transaction depth for the REST OF THE PROCESS
 // ════════════════════════════════════════════════════════════════════════
 
-test('a row that fails inside saveRecord() leaks DocumentImporter\'s per-row savepoint, corrupting the connection for every subsequent operation', function () {
+test("a row that fails inside saveRecord() leaks DocumentImporter's per-row savepoint, corrupting the connection for every subsequent operation", function () {
     dgt_series('REG');
     $u = dgt_admin();
     $this->actingAs($u);
@@ -1052,7 +1050,7 @@ test('Bug #22 (a): re-importing the IDENTICAL blank-identifier row updates in pl
         ->and($second->identifier)->toBe($first->identifier); // stable auto id across runs
 });
 
-test('Bug #22 (c): a real multi-row slice of the client\'s own ~5MB batch list re-imported TWICE keeps the same document count (idempotent on real blank-identifier data)', function () {
+test("Bug #22 (c): a real multi-row slice of the client's own ~5MB batch list re-imported TWICE keeps the same document count (idempotent on real blank-identifier data)", function () {
     if (! is_file(DGT_BATCHLIST_XLSX)) {
         $this->markTestSkipped('client sample not present (nra/inbox is untracked)');
     }
@@ -1196,7 +1194,7 @@ test('a numeric cell in a string column (part_number arriving as a float) import
 //  Performance / streaming — a real slice of the ~5MB live batch list
 // ════════════════════════════════════════════════════════════════════════
 
-test('streaming a real 25-row slice of the client\'s own ~5MB batch list end-to-end completes, isolates per-row failures, and creates documents', function () {
+test("streaming a real 25-row slice of the client's own ~5MB batch list end-to-end completes, isolates per-row failures, and creates documents", function () {
     if (! is_file(DGT_BATCHLIST_XLSX)) {
         $this->markTestSkipped('client sample not present (nra/inbox is untracked)');
     }

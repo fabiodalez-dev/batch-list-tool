@@ -128,22 +128,20 @@ class LocationResource extends Resource
                             // Bug #17 — location name unique per repository. Use the
                             // injectable Get so it works inside modals/relation managers
                             // (not the brittle request()->input('data.*')).
-                            ->rule(function (?Location $record, Get $get) {
-                                return function (string $attribute, $value, \Closure $fail) use ($record, $get) {
-                                    $repoId = $get('repository_id') ?? optional($record)->repository_id;
-                                    $q = Location::query()
-                                        ->withoutGlobalScopes()
-                                        ->where('name', $value);
-                                    $repoId === null
-                                        ? $q->whereNull('repository_id')
-                                        : $q->where('repository_id', $repoId);
-                                    if ($record !== null) {
-                                        $q->whereKeyNot($record->getKey());
-                                    }
-                                    if ($q->exists()) {
-                                        $fail("A location named '{$value}' already exists in this repository.");
-                                    }
-                                };
+                            ->rule(fn (?Location $record, Get $get) => function (string $attribute, $value, \Closure $fail) use ($record, $get) {
+                                $repoId = $get('repository_id') ?? optional($record)->repository_id;
+                                $q = Location::query()
+                                    ->withoutGlobalScopes()
+                                    ->where('name', $value);
+                                $repoId === null
+                                    ? $q->whereNull('repository_id')
+                                    : $q->where('repository_id', $repoId);
+                                if ($record instanceof Location) {
+                                    $q->whereKeyNot($record->getKey());
+                                }
+                                if ($q->exists()) {
+                                    $fail("A location named '{$value}' already exists in this repository.");
+                                }
                             }),
                         // Wave D3: code is auto-generated on create when blank.
                         Forms\Components\TextInput::make('code')
@@ -151,25 +149,23 @@ class LocationResource extends Resource
                             ->maxLength(32)
                             ->helperText('Auto-generated if left blank. Must be unique within the repository.')
                             ->columnSpanFull()
-                            ->rule(function (?Location $record) {
-                                return function (string $attribute, $value, \Closure $fail) use ($record) {
-                                    if ($value === null || $value === '') {
-                                        return; // Will be auto-generated on save.
-                                    }
-                                    $repoId = request()->input('data.repository_id') ?? optional($record)->repository_id;
-                                    $q = Location::query()
-                                        ->withoutGlobalScopes()
-                                        ->where('code', $value);
-                                    $repoId === null
-                                        ? $q->whereNull('repository_id')
-                                        : $q->where('repository_id', $repoId);
-                                    if ($record !== null) {
-                                        $q->whereKeyNot($record->getKey());
-                                    }
-                                    if ($q->exists()) {
-                                        $fail("The identifier '{$value}' is already used in this repository.");
-                                    }
-                                };
+                            ->rule(fn (?Location $record) => function (string $attribute, $value, \Closure $fail) use ($record) {
+                                if ($value === null || $value === '') {
+                                    return; // Will be auto-generated on save.
+                                }
+                                $repoId = request()->input('data.repository_id') ?? optional($record)->repository_id;
+                                $q = Location::query()
+                                    ->withoutGlobalScopes()
+                                    ->where('code', $value);
+                                $repoId === null
+                                    ? $q->whereNull('repository_id')
+                                    : $q->where('repository_id', $repoId);
+                                if ($record instanceof Location) {
+                                    $q->whereKeyNot($record->getKey());
+                                }
+                                if ($q->exists()) {
+                                    $fail("The identifier '{$value}' is already used in this repository.");
+                                }
                             }),
                     ]),
 

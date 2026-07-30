@@ -140,7 +140,6 @@ it('ActivityRelationManager class exists with correct relationship property', fu
 
     $rm = new ReflectionClass(ActivityRelationManager::class);
     $relProp = $rm->getProperty('relationship');
-    $relProp->setAccessible(true);
     expect($relProp->getValue())->toBe('activityAudits');
 });
 

@@ -47,7 +47,7 @@ return new class extends Migration
                     ->on('series')
                     ->nullOnDelete();
             });
-        } catch (Throwable $e) {
+        } catch (Throwable $throwable) {
             // Expected on an idempotent re-run where the FK already exists
             // (MariaDB: "Duplicate foreign key constraint name"). Log at
             // warning so a GENUINE failure (e.g. type mismatch, missing
@@ -55,7 +55,7 @@ return new class extends Migration
             // deploy logs for triage. The migration intentionally continues —
             // a duplicate FK is a no-op, not a failure.
             Log::warning('add_parent_id_to_series: self FK add skipped/failed (likely already present)', [
-                'exception' => $e->getMessage(),
+                'exception' => $throwable->getMessage(),
             ]);
         }
     }

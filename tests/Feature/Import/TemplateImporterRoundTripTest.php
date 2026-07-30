@@ -85,11 +85,9 @@ test('the Box template parent_box_number column maps to the parent barcode impor
 
 test('logUnrecognisedHeaders warns about spreadsheet columns the importer will not consume', function () {
     Log::shouldReceive('channel')->with('import')->andReturnSelf();
-    Log::shouldReceive('warning')->once()->withArgs(function (string $message, array $context): bool {
-        return str_contains($message, 'not recognised')
-            && in_array('Totally Unknown Column', $context['ignored_columns'], true)
-            && ! in_array('Identifier', $context['ignored_columns'], true);
-    });
+    Log::shouldReceive('warning')->once()->withArgs(fn (string $message, array $context): bool => str_contains($message, 'not recognised')
+        && in_array('Totally Unknown Column', $context['ignored_columns'], true)
+        && ! in_array('Identifier', $context['ignored_columns'], true));
 
     $headers = ['Identifier', 'Totally Unknown Column'];
     $columnMap = ImportWizard::guessColumnMap(SeriesImporter::class, $headers);

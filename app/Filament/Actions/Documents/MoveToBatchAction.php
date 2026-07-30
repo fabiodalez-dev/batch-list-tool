@@ -71,7 +71,7 @@ final class MoveToBatchAction
                 ->required(),
             Toggle::make('clear_current_box')
                 ->label('Clear current box assignment')
-                ->helperText('Box assignment is cleared when the new batch differs from the existing box\'s batch.')
+                ->helperText("Box assignment is cleared when the new batch differs from the existing box's batch.")
                 ->default(true),
         ];
     }

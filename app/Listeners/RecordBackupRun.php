@@ -41,8 +41,8 @@ class RecordBackupRun
                 'size_bytes' => $sizeBytes,
                 'message' => "Backup '{$event->backupName}' completed on disk '{$event->diskName}'.",
             ]);
-        } catch (\Throwable $e) {
-            Log::warning('RecordBackupRun::handleBackupWasSuccessful failed', ['error' => $e->getMessage()]);
+        } catch (\Throwable $throwable) {
+            Log::warning('RecordBackupRun::handleBackupWasSuccessful failed', ['error' => $throwable->getMessage()]);
         }
     }
 
@@ -57,8 +57,8 @@ class RecordBackupRun
                 'finished_at' => now(),
                 'message' => $this->throwableMessage($event->exception ?? null),
             ]);
-        } catch (\Throwable $e) {
-            Log::warning('RecordBackupRun::handleBackupHasFailed failed', ['error' => $e->getMessage()]);
+        } catch (\Throwable $throwable) {
+            Log::warning('RecordBackupRun::handleBackupHasFailed failed', ['error' => $throwable->getMessage()]);
         }
     }
 
@@ -73,8 +73,8 @@ class RecordBackupRun
                 'finished_at' => now(),
                 'message' => "Cleanup of '{$event->backupName}' completed on disk '{$event->diskName}'.",
             ]);
-        } catch (\Throwable $e) {
-            Log::warning('RecordBackupRun::handleCleanupWasSuccessful failed', ['error' => $e->getMessage()]);
+        } catch (\Throwable $throwable) {
+            Log::warning('RecordBackupRun::handleCleanupWasSuccessful failed', ['error' => $throwable->getMessage()]);
         }
     }
 
@@ -89,8 +89,8 @@ class RecordBackupRun
                 'finished_at' => now(),
                 'message' => $this->throwableMessage($event->exception ?? null),
             ]);
-        } catch (\Throwable $e) {
-            Log::warning('RecordBackupRun::handleCleanupHasFailed failed', ['error' => $e->getMessage()]);
+        } catch (\Throwable $throwable) {
+            Log::warning('RecordBackupRun::handleCleanupHasFailed failed', ['error' => $throwable->getMessage()]);
         }
     }
 
@@ -124,7 +124,7 @@ class RecordBackupRun
      */
     private function throwableMessage(?\Throwable $throwable): string
     {
-        if ($throwable === null) {
+        if (! $throwable instanceof \Throwable) {
             return 'Backup failed (no exception detail available).';
         }
 

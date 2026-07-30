@@ -262,7 +262,7 @@ it('F05.5: BoxImporter location column throws for unknown code', function (): vo
 
     try {
         rfu_box_import($data, $user->id);
-    } catch (ValidationException $e) {
+    } catch (ValidationException) {
         $threw = true;
     } catch (Throwable $e) {
         $threw = str_contains($e->getMessage(), 'Unknown location code')

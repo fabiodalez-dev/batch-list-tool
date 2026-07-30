@@ -31,7 +31,7 @@ class DemoDataSeeder extends Seeder
         $this->createSampleBoxMovements();
         $this->assignSampleUsersToRepository();
 
-        if (isset($this->command)) {
+        if ($this->command !== null) {
             $this->command->info('DemoDataSeeder finished — dashboard now has realistic activity.');
         }
     }

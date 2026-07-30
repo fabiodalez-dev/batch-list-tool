@@ -32,9 +32,9 @@ return new class extends Migration
                     ->on('repositories')
                     ->nullOnDelete();
             });
-        } catch (Throwable $e) {
+        } catch (Throwable $throwable) {
             Log::warning('add_repository_id_to_series: FK add skipped/failed (likely already present)', [
-                'exception' => $e->getMessage(),
+                'exception' => $throwable->getMessage(),
             ]);
         }
     }

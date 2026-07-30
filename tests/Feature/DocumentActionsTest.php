@@ -160,9 +160,7 @@ function asColl(Document ...$docs): EloquentCollection
  */
 function runAction(Action $action, array $named): void
 {
-    $closure = (function () {
-        return $this->action;
-    })->call($action);
+    $closure = (fn () => $this->action)->call($action);
 
     if (! $closure instanceof Closure) {
         throw new RuntimeException('Action closure missing');
@@ -787,9 +785,7 @@ test('Export selected returns a streamed CSV response with the right header', fu
     $docs = collect(range(0, 2))->map(fn () => doc_($repo->id, $series->id));
 
     $action = ExportSelectedAction::bulk();
-    $closure = (function () {
-        return $this->action;
-    })->call($action);
+    $closure = (fn () => $this->action)->call($action);
 
     /** @var StreamedResponse $resp */
     $resp = $closure(asColl(...$docs->all()));

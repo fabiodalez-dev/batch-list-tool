@@ -156,7 +156,7 @@ function vt_readSample(): array
     $sheet = $reader->load(VT_SAMPLE)->getSheetByName('Data');
     $raw = array_values(array_filter(
         $sheet->toArray(null, true, false, false),
-        fn (array $r): bool => count(array_filter($r, fn ($c) => $c !== null && $c !== '')) > 0,
+        fn (array $r): bool => array_filter($r, fn ($c) => $c !== null && $c !== '') !== [],
     ));
 
     $headers = array_map(fn ($h): string => (string) $h, $raw[0]);
@@ -594,7 +594,7 @@ test('a differently-cased document_identifier does not resolve the document (cas
 
     [, $rows] = vt_readSample();
     $row = $rows[0];
-    $row['document_identifier'] = strtolower($row['document_identifier']); // real 'R642/001' lower-cased to 'r642/001'
+    $row['document_identifier'] = strtolower((string) $row['document_identifier']); // real 'R642/001' lower-cased to 'r642/001'
 
     $import = vt_run([$row], VT_MAP, $u->id);
 

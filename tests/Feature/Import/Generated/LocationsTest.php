@@ -116,7 +116,7 @@ function loc_columnMap(): array
  */
 function loc_realRows(): array
 {
-    $csv = array_map('str_getcsv', file(LOC_PROD_CSV));
+    $csv = array_map(str_getcsv(...), file(LOC_PROD_CSV));
     $headers = array_map(fn ($h) => trim((string) $h), $csv[0]);
     $dataRows = array_slice($csv, 1);
 
@@ -632,7 +632,7 @@ test('the real xlsx "Data" sheet imports both a repo-scoped and a global locatio
     $sheet = $spreadsheet->getSheetByName('Data');
     $rawRows = array_values(array_filter(
         $sheet->toArray(null, true, false, false),
-        fn (array $r): bool => count(array_filter($r, fn ($c) => $c !== null && $c !== '')) > 0,
+        fn (array $r): bool => array_filter($r, fn ($c) => $c !== null && $c !== '') !== [],
     ));
 
     $headers = array_map(fn ($h) => (string) $h, $rawRows[0]);

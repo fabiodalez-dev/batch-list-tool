@@ -8,7 +8,7 @@ class BrandingSettings extends Settings
 {
     public string $brand_name;
 
-    public ?string $logo_path;
+    public ?string $logo_path = null;
 
     public string $logo_height;
 

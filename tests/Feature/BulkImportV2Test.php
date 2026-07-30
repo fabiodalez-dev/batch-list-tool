@@ -400,8 +400,8 @@ test('DocumentImporter rejects forbidden batch_number 34 (RFQ App.1 #1); batch 3
             'batch_number' => 34,
         ], $u->id);
         $this->fail('Expected a validation exception for forbidden batch 34.');
-    } catch (ValidationException $e) {
-        expect($e->errors())->toHaveKey('batch_number');
+    } catch (ValidationException $validationException) {
+        expect($validationException->errors())->toHaveKey('batch_number');
     }
 
     // No row should have been inserted for the forbidden batch.
@@ -458,7 +458,6 @@ test('DocumentImporter requires disinfestation_date when status is PERM_OUT', fu
         // ImportColumns to flow values; here we want to assert the rule logic.
         $reflection = new ReflectionClass($importer);
         $recordProp = $reflection->getProperty('record');
-        $recordProp->setAccessible(true);
         $doc = new Document([
             'identifier' => 'DOC-PERMOUT-1',
             'series_id' => Series::first()->id,
@@ -470,8 +469,8 @@ test('DocumentImporter requires disinfestation_date when status is PERM_OUT', fu
 
         $importer->afterFill();
         $this->fail('Expected ValidationException for PERM_OUT without disinfestation_date');
-    } catch (ValidationException $e) {
-        expect($e->errors())->toHaveKey('disinfestation_date');
+    } catch (ValidationException $validationException) {
+        expect($validationException->errors())->toHaveKey('disinfestation_date');
     }
 });
 
@@ -489,7 +488,7 @@ test('BatchImporter rejects batch_number 34 and 36 with a validation error; allo
                 'batch_number' => $forbidden,
                 'type' => 'MAIN_COLLECTION',
             ], $u->id);
-            $this->fail("Expected a validation exception for forbidden batch $forbidden.");
+            $this->fail("Expected a validation exception for forbidden batch {$forbidden}.");
         } catch (ValidationException $e) {
             expect($e->errors())->toHaveKey('batch_number');
         }
@@ -571,8 +570,8 @@ test('BoxImporter rejects IN_SITU box without a parent RAS box (RFQ #3)', functi
             'batch_number' => 998,
         ], $u->id);
         $this->fail('Expected ValidationException for IN_SITU without parent.');
-    } catch (ValidationException $e) {
-        expect($e->errors())->toHaveKey('parent_box_id');
+    } catch (ValidationException $validationException) {
+        expect($validationException->errors())->toHaveKey('parent_box_id');
     }
 });
 
@@ -595,7 +594,7 @@ test('BoxImporter rejects PERM_OUT box without disinfestation_date (RFQ #5)', fu
             'barcode_status' => 'PERM_OUT',
         ], $u->id);
         $this->fail('Expected ValidationException for PERM_OUT without disinfestation_date.');
-    } catch (ValidationException $e) {
-        expect($e->errors())->toHaveKey('disinfestation_date');
+    } catch (ValidationException $validationException) {
+        expect($validationException->errors())->toHaveKey('disinfestation_date');
     }
 });

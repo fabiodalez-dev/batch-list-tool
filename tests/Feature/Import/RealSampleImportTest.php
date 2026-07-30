@@ -91,7 +91,7 @@ it('imports the real Sam Abela sample sheet end-to-end like the wizard will', fu
     $sheet = $reader->load(RSI_SAMPLE)->getSheetByName('Batch list format');
     $rows = array_values(array_filter(
         $sheet->toArray(null, true, false, false),
-        fn (array $r): bool => count(array_filter($r, fn ($c) => $c !== null && $c !== '')) > 0,
+        fn (array $r): bool => array_filter($r, fn ($c) => $c !== null && $c !== '') !== [],
     ));
 
     $headers = array_map(fn ($h): string => (string) $h, $rows[0]);

@@ -122,15 +122,12 @@ class DocumentFlag extends Model implements AuditableContract
         // Only mirror if the caller didn't explicitly set a repository_id —
         // otherwise we'd overwrite an admin's intentional cross-tenant value
         // and silently fight with their input.
-        if (! array_key_exists('repository_id', $this->attributes) || empty($this->attributes['repository_id'])) {
-            if (! empty($value)) {
-                $parent = Document::withoutGlobalScopes()
-                    ->whereKey($value)
-                    ->first();
-
-                if ($parent !== null) {
-                    $this->attributes['repository_id'] = $parent->repository_id;
-                }
+        if ((! array_key_exists('repository_id', $this->attributes) || empty($this->attributes['repository_id'])) && ! empty($value)) {
+            $parent = Document::withoutGlobalScopes()
+                ->whereKey($value)
+                ->first();
+            if ($parent !== null) {
+                $this->attributes['repository_id'] = $parent->repository_id;
             }
         }
     }

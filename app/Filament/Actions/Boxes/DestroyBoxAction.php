@@ -54,7 +54,7 @@ final class DestroyBoxAction
             // "irreversible action" cue across the project (see also
             // MarkPermOutAction). We keep the language consistent.
             ->modalSubmitActionLabel('Mark destroyed')
-            ->visible(fn (?Box $record): bool => $record !== null && ! $record->isDestroyed())
+            ->visible(fn (?Box $record): bool => $record instanceof Box && ! $record->isDestroyed())
             ->authorize(fn (): bool => (bool) (auth()->user()?->can('delete_box') ?? false))
             ->action(function (Box $record, array $data): void {
                 $check = $record->canBeDestroyed();

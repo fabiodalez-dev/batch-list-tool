@@ -415,7 +415,7 @@ it('BUG-03: after a wizard-path import completes, a database notification exists
 // BUG-05 — DocumentImporter.resolveBatch() cross-tenant isolation
 // ─────────────────────────────────────────────────────────────────────────────
 
-it('BUG-05: with two repos each having batch_number 10, a user of repo A gets repo A\'s batch', function (): void {
+it("BUG-05: with two repos each having batch_number 10, a user of repo A gets repo A's batch", function (): void {
     $repoA = rfi_repo('BUGA');
     $repoB = rfi_repo('BUGB');
     $u = rfi_sa($repoA->id);
