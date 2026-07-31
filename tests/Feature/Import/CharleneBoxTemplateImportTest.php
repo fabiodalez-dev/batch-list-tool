@@ -70,6 +70,12 @@ it('imports Charlene\'s real box template (with disinfestation) and documents in
     $map = ImportWizard::guessColumnMap(BoxImporter::class, $headers);
 
     foreach ($rows as $row) {
+        // Skip trailing all-blank rows a sheet can carry beyond its data — they
+        // would import a spurious box or a silently-failed row the barcode
+        // assertions below wouldn't catch.
+        if (count(array_filter($row, fn ($c): bool => $c !== null && trim((string) $c) !== '')) === 0) {
+            continue;
+        }
         $data = [];
         foreach ($headers as $i => $h) {
             $data[$h] = $row[$i] ?? null;
@@ -85,6 +91,10 @@ it('imports Charlene\'s real box template (with disinfestation) and documents in
     }
 
     $boxes = Box::withoutGlobalScope(RepositoryScope::class)->get()->keyBy('barcode');
+
+    // Exactly the three data rows imported — a column-map regression that drops
+    // rows (or a blank row sneaking through) fails here, not just on a barcode.
+    expect($boxes)->toHaveCount(3);
 
     // Row 1 — RAS box with disinfestation_date + location.
     expect($boxes['CH-BOX-9001']->disinfestation_date?->toDateString())->toBe('2024-05-01')
