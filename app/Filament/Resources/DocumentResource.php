@@ -60,6 +60,17 @@ class DocumentResource extends Resource
     use AppliesFieldPermissions;
 
     /**
+     * SQL expression for a document's EFFECTIVE disinfestation date — its own
+     * date, else its (non-deleted) box's — matching Document::
+     * effectiveDisinfestationDate(). Used by the disinfestation range filter so
+     * a document shown a "from box" date still filters on that inherited value.
+     */
+    public const string EFFECTIVE_DISINFESTATION_SQL =
+        'DATE(COALESCE(documents.disinfestation_date, '
+        . '(SELECT b.disinfestation_date FROM boxes b '
+        . 'WHERE b.id = documents.current_box_id AND b.deleted_at IS NULL)))';
+
+    /**
      * Config key used by App\Support\FieldPermissions to look up
      * the per-field, per-role read/write/hidden matrix (RFQ §3.1.8).
      */
@@ -590,12 +601,20 @@ class DocumentResource extends Resource
                             })
                             ->placeholder('—'),
 
-                        TextEntry::make('disinfestation_date')
+                        // Effective disinfestation date: the document's own if
+                        // set, else inherited from its box — same two-level rule
+                        // as the list column, so the view doesn't show "Pending"
+                        // for a record the list shows a "from box" date for.
+                        TextEntry::make('effective_disinfestation_date')
                             ->label('Disinfestation')
+                            ->state(fn (?Document $record): ?\Carbon\Carbon => $record?->effectiveDisinfestationDate())
                             ->date()
                             ->badge()
-                            ->color(fn (?string $state): string => $state ? 'success' : 'warning')
+                            ->color(fn ($state): string => $state ? 'success' : 'warning')
                             ->placeholder('Pending')
+                            ->helperText(fn (?Document $record): ?string => $record?->disinfestationDateIsInherited()
+                                ? 'Inherited from the current box — set a disinfestation date on this document to override it.'
+                                : null)
                             ->columnSpanFull(),
                     ]),
 
@@ -732,11 +751,19 @@ class DocumentResource extends Resource
                                 : null)
                             ->openUrlInNewTab(false)
                             ->placeholder('—'),
-                        TextEntry::make('location.full_path')
+                        // Two-level location: show the effective location (the
+                        // document's own if set, else inherited from its box) and
+                        // say so, so the operator knows the default came from the
+                        // box and that setting one here overrides it.
+                        TextEntry::make('effective_location')
                             ->label('Location')
+                            ->state(fn (?Document $record): ?string => $record?->effectiveLocation()?->full_path)
                             ->placeholder('—')
-                            ->url(fn (?Document $record): ?string => $record?->location_id
-                                ? route('filament.admin.resources.locations.view', ['record' => $record->location_id])
+                            ->helperText(fn (?Document $record): ?string => $record?->locationIsInherited()
+                                ? 'Inherited from the current box — set a location on this document to override it.'
+                                : null)
+                            ->url(fn (?Document $record): ?string => ($loc = $record?->effectiveLocation())
+                                ? route('filament.admin.resources.locations.view', ['record' => $loc->getKey()])
                                 : null)
                             ->openUrlInNewTab(false)
                             ->columnSpanFull(),
@@ -1030,6 +1057,20 @@ class DocumentResource extends Resource
                         ->orderByLeftPowerJoins('batch.batch_number', $direction)
                         ->orderByLeftPowerJoins('currentBox.box_number', $direction))
                     ->toggleable(), 'current_box_id'),
+                // NAF (2026-07-30) two-level location: a document shows its OWN
+                // location if set, otherwise it inherits its box's ("from box").
+                // Setting a location on the document overrides the box for that
+                // document only. Not sortable — effectiveLocation() is a resolved
+                // accessor, not a DB column. Gated on the document's location_id.
+                $gc(Tables\Columns\TextColumn::make('effective_location')
+                    ->label('Location')
+                    ->state(fn (?Document $record): ?string => $record?->effectiveLocation()?->full_path)
+                    ->description(fn (?Document $record): ?string => $record?->locationIsInherited() ? 'from box' : null)
+                    ->placeholder('—')
+                    ->url(fn (?Document $record): ?string => ($loc = $record?->effectiveLocation())
+                        ? route('filament.admin.resources.locations.view', ['record' => $loc->getKey()])
+                        : null)
+                    ->toggleable(), 'location_id'),
                 $gc(Tables\Columns\TextColumn::make('practice')->sortable()->toggleable()),
                 $gc(Tables\Columns\TextColumn::make('volume_number')->label('Vol.')->sortable()->toggleable()),
                 $gc(Tables\Columns\TextColumn::make('part_number')->label('Part No')->sortable()->toggleable(isToggledHiddenByDefault: true)),
@@ -1045,7 +1086,14 @@ class DocumentResource extends Resource
                 // via the column picker; truncated with the full text on hover.
                 $gc(Tables\Columns\TextColumn::make('notes')->label('Notes')->limit(60)->tooltip(fn (?string $state): ?string => $state)->sortable()->toggleable()),
                 $gc(Tables\Columns\TextColumn::make('repository.code')->label('Repo')->badge()->color('gray')->sortable()->toggleable(), 'repository_id'),
-                $gc(Tables\Columns\TextColumn::make('disinfestation_date')->label('Disinfested')->date()->sortable()->toggleable(isToggledHiddenByDefault: true)),
+                // Two-level disinfestation: show the effective date — the
+                // document's own if set, otherwise inherited from its box
+                // ("from box"). Not sortable (resolved accessor, not a column).
+                $gc(Tables\Columns\TextColumn::make('disinfestation_date')->label('Disinfested')
+                    ->state(fn (?Document $record): ?\Carbon\Carbon => $record?->effectiveDisinfestationDate())
+                    ->date()
+                    ->description(fn (?Document $record): ?string => $record?->disinfestationDateIsInherited() ? 'from box' : null)
+                    ->toggleable(isToggledHiddenByDefault: true)),
                 $gc(Tables\Columns\IconColumn::make('torre')->boolean()->sortable()->toggleable(isToggledHiddenByDefault: true)),
                 $gc(Tables\Columns\TextColumn::make('updated_at')->dateTime()->sortable()->toggleable(isToggledHiddenByDefault: true)),
                 // A9 — inputter column (who created the record).
@@ -1193,19 +1241,27 @@ class DocumentResource extends Resource
                     }),
 
                 // Disinfestation date range
+                // Two-level: filter on the EFFECTIVE date — the document's own,
+                // else its box's (matching Document::effectiveDisinfestationDate()
+                // and the list column). A document shown a "from box" date must
+                // still fall inside the range / count as disinfested.
                 Filter::make('disinfestation_range')
                     ->form([
                         Forms\Components\DatePicker::make('disinfested_from')->label('Disinfested from'),
                         Forms\Components\DatePicker::make('disinfested_to')->label('Disinfested to'),
                     ])
-                    ->query(fn (Builder $q, array $data) => $q
+                    // Compare against the EFFECTIVE date via a single COALESCE
+                    // expression — the document's own date, else its (non-deleted)
+                    // box's. One whereRaw per bound keeps the two bounds ANDed and
+                    // avoids the nested-closure builder pitfalls.
+                    ->query(fn (Builder $q, array $data): Builder => $q
                         ->when(
                             $data['disinfested_from'] ?? null,
-                            fn ($q, $v) => $q->whereDate('disinfestation_date', '>=', $v)
+                            fn (Builder $q, $v): Builder => $q->whereRaw(self::EFFECTIVE_DISINFESTATION_SQL . ' >= ?', [$v])
                         )
                         ->when(
                             $data['disinfested_to'] ?? null,
-                            fn ($q, $v) => $q->whereDate('disinfestation_date', '<=', $v)
+                            fn (Builder $q, $v): Builder => $q->whereRaw(self::EFFECTIVE_DISINFESTATION_SQL . ' <= ?', [$v])
                         )),
 
                 // Ternary filters
@@ -1215,9 +1271,14 @@ class DocumentResource extends Resource
                 TernaryFilter::make('disinfestation_date')
                     ->label('Disinfested?')->nullable()
                     ->trueLabel('Yes')->falseLabel('No')
+                    // Effective precedence: a document counts as disinfested when
+                    // it has its own date OR inherits one from its box.
                     ->queries(
-                        true: fn ($q) => $q->whereNotNull('disinfestation_date'),
-                        false: fn ($q) => $q->whereNull('disinfestation_date'),
+                        true: fn (Builder $q) => $q->where(fn (Builder $q) => $q
+                            ->whereNotNull('disinfestation_date')
+                            ->orWhereHas('currentBox', fn (Builder $b) => $b->whereNotNull('disinfestation_date'))),
+                        false: fn (Builder $q) => $q->whereNull('disinfestation_date')
+                            ->whereDoesntHave('currentBox', fn (Builder $b) => $b->whereNotNull('disinfestation_date')),
                     ),
 
                 // Workflow filter (RFQ App.1 #5 — disinfestation lifecycle).
@@ -1363,6 +1424,12 @@ class DocumentResource extends Resource
                 // `currentBox.batch` lets the "Box" column render
                 // "Batch X / Box Y" without firing a second query per row.
                 'currentBox.batch',
+                // The Location column shows the EFFECTIVE location: the
+                // document's own if set, else the box's (Document::
+                // effectiveLocation()). Inherited rows walk `currentBox.location`,
+                // so eager-load it too — without this the common inherited case
+                // fires one query per row.
+                'currentBox.location',
                 'repository',
                 'authorities',
                 // RFQ §3.1.9 — the Location column displays

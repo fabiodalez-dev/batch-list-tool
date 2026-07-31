@@ -603,8 +603,11 @@ class BoxResource extends Resource
                     ->schema([
                         TextEntry::make('location.full_path')
                             ->label('Location')
-                            ->url(fn (?Box $record): ?string => $record?->location_id
-                                ? route('filament.admin.resources.locations.view', ['record' => $record->location_id])
+                            // Gate the link on the resolved relation, not the raw
+                            // FK — an orphaned location_id must not link to a
+                            // record that no longer exists (matches the list column).
+                            ->url(fn (?Box $record): ?string => $record?->location
+                                ? route('filament.admin.resources.locations.view', ['record' => $record->location->getKey()])
                                 : null)
                             ->openUrlInNewTab(false)
                             ->placeholder('—')
@@ -775,6 +778,23 @@ class BoxResource extends Resource
                     ->label('Box Type')
                     ->sortable()
                     ->toggleable()),
+                // The import template carries a `location` column (resolved by
+                // code), so operators can set where a box physically lives on
+                // import — surface it here too, otherwise that imported value is
+                // invisible on the list. Uses the same full_path accessor +
+                // deep-link as the view page. Not sortable: full_path is an
+                // accessor, not a DB column. Gated on the same field key as the
+                // form's location_id select.
+                $gc(Tables\Columns\TextColumn::make('location.full_path')
+                    ->label('Location')
+                    ->placeholder('—')
+                    ->toggleable()
+                    // Gate the link on the RESOLVED relation, not the raw FK: an
+                    // orphaned location_id renders a blank cell, so it must not
+                    // link to a location record that no longer exists.
+                    ->url(fn (?Box $record): ?string => $record?->location
+                        ? route('filament.admin.resources.locations.view', ['record' => $record->location->getKey()])
+                        : null), 'location_id'),
                 // RFQ App.2 §vii — "destroyed" badge. Shown as a red
                 // chip on the row so operators can spot artefacts that
                 // physically no longer exist without opening the record.
@@ -1122,6 +1142,10 @@ class BoxResource extends Resource
         return parent::getEloquentQuery()->with([
             'customFieldValues.definition',
             'batch',
+            // The Location column renders `location.full_path` (an accessor that
+            // walks the location's ancestors); eager-load the relation so the
+            // default box list doesn't fire one query per row.
+            'location',
             // A9 — CreatorColumn resolves the inputter via the first audit row.
             'audits' => static fn ($q) => $q->oldest('id')->with('user'),
         ]);

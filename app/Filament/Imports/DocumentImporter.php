@@ -1014,6 +1014,12 @@ class DocumentImporter extends Importer
                 ->label('Museum Location')
                 ->guess(['Museum Location', 'museum_location'])
                 ->rules(['nullable', 'string']),
+            // Note: the document's OWN location (the two-level override) is set
+            // by hand on the Documents form (the location_id select) — the
+            // archive amends only the few records that differ from their box.
+            // It is deliberately NOT an import column: the Documents template is
+            // a fixed, position-matched legacy layout, and a blank document
+            // simply inherits its box's location (see Document::effectiveLocation()).
 
             // ── Current location (legacy POC text + new FK) ────────────
             ImportColumn::make('batch_number')
