@@ -18,6 +18,7 @@ use Filament\Actions\Imports\ImportColumn;
 use Filament\Actions\Imports\Importer;
 use Filament\Actions\Imports\Models\Import;
 use Illuminate\Database\Eloquent\Collection as EloquentCollection;
+use Illuminate\Support\Facades\Log;
 use Illuminate\Validation\ValidationException;
 
 /**
@@ -101,6 +102,25 @@ class BoxImporter extends Importer
             // with partial/missing custom fields.
             $record->setCustomFieldData($customData, false);
         }
+
+        // Resolution trace: log WHAT each weak cell resolved to (batch, location,
+        // parent, disinfestation date), not only whether the row failed. When the
+        // next client sample has a different shape (UK dates, spaced location
+        // codes, parent-by-number vs barcode) this shows how the importer read
+        // each cell. `import` channel → storage/logs/import-*.log, debug level.
+        Log::channel('import')->debug('BoxImporter: resolved row', [
+            'import_id' => $this->import->getKey(),
+            'box_number' => $record->box_number,
+            'box_type' => $record->box_type,
+            'barcode' => $record->barcode,
+            'barcode_status' => $record->barcode_status,
+            'batch_id' => $record->batch_id,
+            'location_id' => $record->location_id,
+            'disinfestation_date' => $record->disinfestation_date?->toDateString(),
+            'parent_box_id' => $record->parent_box_id,
+            'is_legacy' => $record->is_legacy,
+            'created' => $record->wasRecentlyCreated,
+        ]);
     }
 
     /**
