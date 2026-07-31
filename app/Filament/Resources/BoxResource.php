@@ -603,8 +603,11 @@ class BoxResource extends Resource
                     ->schema([
                         TextEntry::make('location.full_path')
                             ->label('Location')
-                            ->url(fn (?Box $record): ?string => $record?->location_id
-                                ? route('filament.admin.resources.locations.view', ['record' => $record->location_id])
+                            // Gate the link on the resolved relation, not the raw
+                            // FK — an orphaned location_id must not link to a
+                            // record that no longer exists (matches the list column).
+                            ->url(fn (?Box $record): ?string => $record?->location
+                                ? route('filament.admin.resources.locations.view', ['record' => $record->location->getKey()])
                                 : null)
                             ->openUrlInNewTab(false)
                             ->placeholder('—')

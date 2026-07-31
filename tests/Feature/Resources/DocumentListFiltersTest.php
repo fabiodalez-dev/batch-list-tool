@@ -2,7 +2,9 @@
 
 declare(strict_types=1);
 
+use App\Filament\Resources\DocumentResource;
 use App\Filament\Resources\DocumentResource\Pages\ListDocuments;
+use App\Models\Box;
 use App\Models\Document;
 use App\Models\DocumentFlag;
 use App\Models\Repository;
@@ -225,4 +227,75 @@ test('filter uncatalogued=false returns only docs without a catalogue_identifier
         ->filterTable('uncatalogued', false)
         ->assertCanSeeTableRecords([$uncatalogued, $uncataloguedB])
         ->assertCanNotSeeTableRecords([$catalogued]);
+});
+
+/*
+ * Two-level disinfestation filters (NAF 2026-07-30). The list column shows the
+ * EFFECTIVE date — the document's own, else its box's — so the filters must use
+ * the same precedence, otherwise a document shown a "from box" date would be
+ * wrongly excluded from a range or classified as not disinfested.
+ */
+test('Disinfested?=yes includes a document that inherits its box disinfestation date', function (): void {
+    $u = filt_actAsAdmin();
+    $this->actingAs($u);
+    $repo = filt_makeRepo();
+    $series = filt_makeSeries();
+
+    $boxWithDate = Box::factory()->create(['disinfestation_date' => '2024-05-01']);
+    $boxNoDate = Box::factory()->create(['disinfestation_date' => null]);
+
+    $ownDate = filt_makeDoc($repo->id, $series->id, ['disinfestation_date' => '2023-01-01']);
+    $inherited = filt_makeDoc($repo->id, $series->id, ['disinfestation_date' => null, 'current_box_id' => $boxWithDate->id]);
+    $neither = filt_makeDoc($repo->id, $series->id, ['disinfestation_date' => null, 'current_box_id' => $boxNoDate->id]);
+    $noBox = filt_makeDoc($repo->id, $series->id, ['disinfestation_date' => null]);
+
+    Livewire::test(ListDocuments::class)
+        ->filterTable('disinfestation_date', true)
+        ->assertCanSeeTableRecords([$ownDate, $inherited])
+        ->assertCanNotSeeTableRecords([$neither, $noBox]);
+});
+
+test('Disinfested?=no excludes a document that inherits a box date, keeps the truly-undisinfested', function (): void {
+    $u = filt_actAsAdmin();
+    $this->actingAs($u);
+    $repo = filt_makeRepo();
+    $series = filt_makeSeries();
+
+    $boxWithDate = Box::factory()->create(['disinfestation_date' => '2024-05-01']);
+
+    $inherited = filt_makeDoc($repo->id, $series->id, ['disinfestation_date' => null, 'current_box_id' => $boxWithDate->id]);
+    $noBox = filt_makeDoc($repo->id, $series->id, ['disinfestation_date' => null]);
+
+    Livewire::test(ListDocuments::class)
+        ->filterTable('disinfestation_date', false)
+        ->assertCanSeeTableRecords([$noBox])
+        ->assertCanNotSeeTableRecords([$inherited]); // inherits a date → counts as disinfested
+});
+
+test('the disinfestation_range effective-date clause matches inherited and own dates, excludes out-of-range', function (): void {
+    // The range filter's ->query() applies DocumentResource::
+    // EFFECTIVE_DISINFESTATION_SQL as `>= from` / `<= to`. We exercise that exact
+    // clause here (the DatePicker form filter does not hydrate under Livewire's
+    // test harness, but the SQL is what runs in the browser and in production).
+    $repo = filt_makeRepo();
+    $series = filt_makeSeries();
+
+    $boxInRange = Box::factory()->create(['disinfestation_date' => '2024-06-15']);
+    $boxOutOfRange = Box::factory()->create(['disinfestation_date' => '2020-01-01']);
+
+    $inheritedIn = filt_makeDoc($repo->id, $series->id, ['disinfestation_date' => null, 'current_box_id' => $boxInRange->id]);
+    $ownIn = filt_makeDoc($repo->id, $series->id, ['disinfestation_date' => '2024-06-20']);
+    $inheritedOut = filt_makeDoc($repo->id, $series->id, ['disinfestation_date' => null, 'current_box_id' => $boxOutOfRange->id]);
+    $noneNoBox = filt_makeDoc($repo->id, $series->id, ['disinfestation_date' => null]);
+
+    $eff = DocumentResource::EFFECTIVE_DISINFESTATION_SQL;
+    $matched = Document::withoutGlobalScope(RepositoryScope::class)
+        ->whereRaw("$eff >= ?", ['2024-06-01'])
+        ->whereRaw("$eff <= ?", ['2024-06-30'])
+        ->pluck('id')->all();
+
+    expect($matched)->toContain($inheritedIn->id)   // inherits an in-range box date
+        ->toContain($ownIn->id)                     // own in-range date
+        ->not->toContain($inheritedOut->id)         // inherits an out-of-range box date
+        ->not->toContain($noneNoBox->id);           // no effective date at all
 });

@@ -60,6 +60,17 @@ class DocumentResource extends Resource
     use AppliesFieldPermissions;
 
     /**
+     * SQL expression for a document's EFFECTIVE disinfestation date — its own
+     * date, else its (non-deleted) box's — matching Document::
+     * effectiveDisinfestationDate(). Used by the disinfestation range filter so
+     * a document shown a "from box" date still filters on that inherited value.
+     */
+    public const string EFFECTIVE_DISINFESTATION_SQL =
+        'DATE(COALESCE(documents.disinfestation_date, '
+        . '(SELECT b.disinfestation_date FROM boxes b '
+        . 'WHERE b.id = documents.current_box_id AND b.deleted_at IS NULL)))';
+
+    /**
      * Config key used by App\Support\FieldPermissions to look up
      * the per-field, per-role read/write/hidden matrix (RFQ §3.1.8).
      */
@@ -1230,19 +1241,27 @@ class DocumentResource extends Resource
                     }),
 
                 // Disinfestation date range
+                // Two-level: filter on the EFFECTIVE date — the document's own,
+                // else its box's (matching Document::effectiveDisinfestationDate()
+                // and the list column). A document shown a "from box" date must
+                // still fall inside the range / count as disinfested.
                 Filter::make('disinfestation_range')
                     ->form([
                         Forms\Components\DatePicker::make('disinfested_from')->label('Disinfested from'),
                         Forms\Components\DatePicker::make('disinfested_to')->label('Disinfested to'),
                     ])
-                    ->query(fn (Builder $q, array $data) => $q
+                    // Compare against the EFFECTIVE date via a single COALESCE
+                    // expression — the document's own date, else its (non-deleted)
+                    // box's. One whereRaw per bound keeps the two bounds ANDed and
+                    // avoids the nested-closure builder pitfalls.
+                    ->query(fn (Builder $q, array $data): Builder => $q
                         ->when(
                             $data['disinfested_from'] ?? null,
-                            fn ($q, $v) => $q->whereDate('disinfestation_date', '>=', $v)
+                            fn (Builder $q, $v): Builder => $q->whereRaw(self::EFFECTIVE_DISINFESTATION_SQL . ' >= ?', [$v])
                         )
                         ->when(
                             $data['disinfested_to'] ?? null,
-                            fn ($q, $v) => $q->whereDate('disinfestation_date', '<=', $v)
+                            fn (Builder $q, $v): Builder => $q->whereRaw(self::EFFECTIVE_DISINFESTATION_SQL . ' <= ?', [$v])
                         )),
 
                 // Ternary filters
@@ -1252,9 +1271,14 @@ class DocumentResource extends Resource
                 TernaryFilter::make('disinfestation_date')
                     ->label('Disinfested?')->nullable()
                     ->trueLabel('Yes')->falseLabel('No')
+                    // Effective precedence: a document counts as disinfested when
+                    // it has its own date OR inherits one from its box.
                     ->queries(
-                        true: fn ($q) => $q->whereNotNull('disinfestation_date'),
-                        false: fn ($q) => $q->whereNull('disinfestation_date'),
+                        true: fn (Builder $q) => $q->where(fn (Builder $q) => $q
+                            ->whereNotNull('disinfestation_date')
+                            ->orWhereHas('currentBox', fn (Builder $b) => $b->whereNotNull('disinfestation_date'))),
+                        false: fn (Builder $q) => $q->whereNull('disinfestation_date')
+                            ->whereDoesntHave('currentBox', fn (Builder $b) => $b->whereNotNull('disinfestation_date')),
                     ),
 
                 // Workflow filter (RFQ App.1 #5 — disinfestation lifecycle).
