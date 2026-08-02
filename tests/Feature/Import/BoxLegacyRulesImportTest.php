@@ -230,3 +230,27 @@ it('the Boxes importer now exposes the Destroyed and Current Box Type columns', 
     expect($cols)->toContain('destroyed')
         ->and($cols)->toContain('current_box_type');
 });
+
+it('marks Destroyed = "1" as destroyed NOW, not the Excel serial 1900-01-01 (CodeRabbit)', function () {
+    foreach (['super_admin', 'admin', 'editor', 'viewer'] as $r) {
+        Role::firstOrCreate(['name' => $r, 'guard_name' => 'web']);
+    }
+    $repo = Repository::firstOrCreate(['code' => 'NRA'], ['name' => 'National Records Archive']);
+    $u = User::factory()->create(['is_active' => true, 'default_repository_id' => $repo->id, 'email' => 'blc1+' . uniqid() . '@test.local']);
+    $u->assignRole('super_admin');
+    test()->actingAs($u);
+    Batch::withoutGlobalScope(RepositoryScope::class)->firstOrCreate(['batch_number' => '1', 'repository_id' => $repo->id]);
+
+    $data = ['box_type' => 'RAS', 'box_number' => '950', 'batch_number' => '1', 'barcode' => 'LEG-950', 'barcode_status' => 'IN', 'destroyed' => '1'];
+    EntityResolver::flushMemo();
+    /** @var Import $imp */
+    $imp = Import::query()->create([
+        'completed_at' => null, 'file_name' => 'b.xlsx', 'file_path' => '/tmp/b.xlsx',
+        'importer' => BoxImporter::class, 'processed_rows' => 0, 'total_rows' => 1, 'successful_rows' => 0, 'user_id' => $u->id,
+    ]);
+    (new BoxImporter($imp, array_combine(array_keys($data), array_keys($data)), []))($data);
+
+    $box = Box::withoutGlobalScope(ThroughBatchRepositoryScope::class)->where('box_number', '950')->firstOrFail();
+    expect($box->destroyed_at)->not->toBeNull()
+        ->and((int) $box->destroyed_at->year)->toBeGreaterThan(2000); // NOW, not 1900
+});

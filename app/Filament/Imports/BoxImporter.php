@@ -552,11 +552,13 @@ class BoxImporter extends Importer
                         return;
                     }
                     $s = trim($state);
-                    $date = SpreadsheetParsers::parseDate($s);
-                    if ($date !== null) {
-                        $record->destroyed_at = Carbon::parse($date);
-                    } elseif (in_array(mb_strtolower($s), ['yes', 'y', '1', 'true', 'x', 'destroyed'], true)) {
+                    // Truthy flags FIRST — parseDate('1') would read "1" as the
+                    // Excel serial 1900-01-01, not a truthy "yes". Only fall back
+                    // to date parsing for a value that isn't a known flag.
+                    if (in_array(mb_strtolower($s), ['yes', 'y', '1', 'true', 'x', 'destroyed'], true)) {
                         $record->destroyed_at = now();
+                    } elseif (($date = SpreadsheetParsers::parseDate($s)) !== null) {
+                        $record->destroyed_at = Carbon::parse($date);
                     } else {
                         return;
                     }
