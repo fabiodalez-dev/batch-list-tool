@@ -429,16 +429,16 @@ test('DocumentImporter rejects forbidden batch_number 34 (RFQ App.1 #1); batch 3
         ->and($doc->batch_id)->not->toBeNull();
 });
 
-test('DocumentImporter requires disinfestation_date when status is PERM_OUT', function () {
+test('DocumentImporter allows PERM_OUT without disinfestation_date (loosened, client feedback 2026-08-01)', function () {
+    // RFQ App.1 #5 was loosened after client feedback (Charlene Ellul,
+    // 2026-08-01): legacy NAF documents are frequently PERM_OUT with no
+    // disinfestation date and must import as-is. Client feedback supersedes the
+    // RFQ because it is later.
     $repo = bi_repo();
     $u = bi_makeAdmin($repo->id);
     $this->actingAs($u);
     bi_series('REG');
 
-    // Bypass the column mapping for the legacy status — we drive
-    // status_1 directly through the data array because there's no
-    // dedicated ImportColumn for it (it's not on the canonical column
-    // list; it'd be mapped by the operator on a per-spreadsheet basis).
     $row = Import::query()->create([
         'file_name' => 'test.xlsx',
         'file_path' => '/tmp/test.xlsx',
@@ -453,25 +453,23 @@ test('DocumentImporter requires disinfestation_date when status is PERM_OUT', fu
         'series' => 'series',
     ], []);
 
-    try {
-        // We have to manually drive afterFill because the public path requires
-        // ImportColumns to flow values; here we want to assert the rule logic.
-        $reflection = new ReflectionClass($importer);
-        $recordProp = $reflection->getProperty('record');
-        $doc = new Document([
-            'identifier' => 'DOC-PERMOUT-1',
-            'series_id' => Series::first()->id,
-            'repository_id' => $repo->id,
-            'status_1' => 'PERM_OUT',
-            // disinfestation_date intentionally missing
-        ]);
-        $recordProp->setValue($importer, $doc);
+    // Drive afterFill directly (the public path needs ImportColumns to flow
+    // values; here we assert the rule logic no longer rejects the record).
+    $reflection = new ReflectionClass($importer);
+    $recordProp = $reflection->getProperty('record');
+    $doc = new Document([
+        'identifier' => 'DOC-PERMOUT-1',
+        'series_id' => Series::first()->id,
+        'repository_id' => $repo->id,
+        'status_1' => 'PERM_OUT',
+        // disinfestation_date intentionally missing — must be tolerated now.
+    ]);
+    $recordProp->setValue($importer, $doc);
 
-        $importer->afterFill();
-        $this->fail('Expected ValidationException for PERM_OUT without disinfestation_date');
-    } catch (ValidationException $validationException) {
-        expect($validationException->errors())->toHaveKey('disinfestation_date');
-    }
+    // Must NOT throw.
+    $importer->afterFill();
+
+    expect($doc->barcode_status)->toBe('PERM_OUT');
 });
 
 /* ─── BatchImporter ──────────────────────────────────────────────────── */

@@ -160,7 +160,7 @@ jobs:
           DB_DATABASE: nra_test
           DB_USERNAME: root
           DB_PASSWORD: root
-        run: php -d memory_limit=2G ./vendor/bin/pest tests/Feature/Import/BatchNonNumericImportTest.php --compact
+        run: php -d memory_limit=2G ./vendor/bin/pest tests/Feature/Import/BatchNonNumericImportTest.php tests/Feature/Boxes/BoxPermOutDocumentMirrorTest.php --compact
 
       - name: Run PHPStan (Larastan)
         run: ./vendor/bin/phpstan analyse --memory-limit=2G --no-progress

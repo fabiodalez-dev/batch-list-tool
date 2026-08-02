@@ -11,7 +11,6 @@ use App\Models\Scopes\RepositoryScope;
 use App\Models\Series;
 use App\Support\BulkImport\EntityResolver;
 use Illuminate\Foundation\Testing\RefreshDatabase;
-use Illuminate\Validation\ValidationException;
 
 /**
  * RFQ Appendix 1 — Validation Rules. The five rules:
@@ -129,9 +128,15 @@ it('§ App.1 #5: Box::canBePermOut() returns true with disinfestation_date', fun
     expect($box->canBePermOut())->toBeTrue();
 });
 
-/* ─────── RFQ-App1-R2-DOC — Document-level PERM_OUT requires disinfestation_date ──── */
+/* ─────── RFQ-App1-R2-DOC — LOOSENED: PERM_OUT no longer requires a date ──── */
+/*
+ * RFQ App.1 #5 mandated a disinfestation date for PERM_OUT. Client feedback
+ * (Charlene Ellul, 2026-08-01) loosened it: the legacy NAF export has many
+ * PERM_OUT records with no disinfestation date and must import as-is. Client
+ * feedback supersedes the RFQ because it is later.
+ */
 
-it('§ App.1 R2-DOC: Document cannot be set PERM_OUT without a disinfestation_date', function () {
+it('§ App.1 R2-DOC (loosened): Document CAN be set PERM_OUT without a disinfestation_date', function () {
     $repo = app1_makeRepo();
     $batch = app1_makeBatch($repo->id, 41);
     $series = Series::create([
@@ -141,14 +146,17 @@ it('§ App.1 R2-DOC: Document cannot be set PERM_OUT without a disinfestation_da
         'is_wills_series' => false,
     ]);
 
-    expect(fn () => Document::withoutGlobalScope(RepositoryScope::class)->create([
+    $doc = Document::withoutGlobalScope(RepositoryScope::class)->create([
         'identifier' => 'DOC-APP1R2-' . substr(uniqid(), -6),
         'batch_id' => $batch->id,
         'series_id' => $series->id,
         'barcode_status' => 'PERM_OUT',
         'disinfestation_date' => null,
         'repository_id' => $repo->id,
-    ]))->toThrow(ValidationException::class);
+    ]);
+
+    expect($doc->fresh()->barcode_status)->toBe('PERM_OUT')
+        ->and($doc->fresh()->disinfestation_date)->toBeNull();
 });
 
 it('§ App.1 R2-DOC: Document can be set PERM_OUT when disinfestation_date is present', function () {

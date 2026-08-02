@@ -76,31 +76,29 @@ it('writes a resolved status to the document column when there is no box (OUT)',
         ->and($doc->barcode_status)->toBe('OUT');
 });
 
-it('fails the row for PERM_OUT with no box and no disinfestation date (A1.2)', function (): void {
+it('writes PERM_OUT to the document column with no box and no disinfestation date (loosened, client feedback 2026-08-01)', function (): void {
     $repo = Repository::factory()->create();
     $u = sfb_makeAdmin($repo->id);
     $this->actingAs($u);
     Series::factory()->create(['code' => 'R']);
 
-    // afterFill throws (RFQ App.1 #5) before the row is persisted. The
-    // __invoke pipeline wraps it, so we assert the OUTCOME (row rejected,
-    // nothing persisted) rather than the concrete exception class — matching
-    // AccessionIntegrityTest's I2 case.
-    try {
-        sfb_runRow([
-            'identifier' => 'NOBOX-PERM-1',
-            'series' => 'R',
-            'status_1' => 'PERM_OUT',
-        ], $u->id);
-        $this->fail('Expected the PERM_OUT-without-date row to be rejected.');
-    } catch (Throwable) {
-        // expected — A1.2 rejection
-    }
+    // RFQ App.1 #5 was loosened after client feedback (Charlene Ellul,
+    // 2026-08-01): legacy NAF documents are frequently PERM_OUT with no
+    // disinfestation date and must import as-is. Client feedback supersedes the
+    // RFQ because it is later. The row is now accepted and persisted.
+    sfb_runRow([
+        'identifier' => 'NOBOX-PERM-1',
+        'series' => 'R',
+        'status_1' => 'PERM_OUT',
+    ], $u->id);
 
-    expect(
-        Document::withoutGlobalScope(RepositoryScope::class)
-            ->where('identifier', 'NOBOX-PERM-1')->exists()
-    )->toBeFalse();
+    $doc = Document::withoutGlobalScope(RepositoryScope::class)
+        ->where('identifier', 'NOBOX-PERM-1')->first();
+
+    expect($doc)->not->toBeNull()
+        ->and($doc->current_box_id)->toBeNull()
+        ->and($doc->barcode_status)->toBe('PERM_OUT')
+        ->and($doc->disinfestation_date)->toBeNull();
 });
 
 it('writes PERM_OUT to the document column when there is no box but a date is present (A1.2 satisfied)', function (): void {

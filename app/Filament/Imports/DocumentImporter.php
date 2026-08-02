@@ -390,14 +390,9 @@ class DocumentImporter extends Importer
         // wins (it is the strongest custody state), then OUT, then IN.
         $resolvedStatus = $this->resolveLegacyBarcodeStatus($record);
 
-        // RFQ App.1 #5 — PERM_OUT requires disinfestation_date.
-        if ($resolvedStatus === 'PERM_OUT' && $record->disinfestation_date === null) {
-            throw ValidationException::withMessages([
-                'disinfestation_date' => __(
-                    'Documents with a PERM_OUT status must carry a disinfestation_date (RFQ App.1 #5).'
-                ),
-            ]);
-        }
+        // RFQ App.1 #5 (PERM_OUT requires disinfestation_date) was REMOVED —
+        // client feedback 2026-08-01 (later than the RFQ). Consistent with the
+        // box: a PERM_OUT document may import without a disinfestation date.
 
         // The box is the authoritative source of truth for barcode status
         // (Task 7). When the document HAS a box, stash the resolved status and

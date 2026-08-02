@@ -937,7 +937,13 @@ class BoxResource extends Resource
                                 fn ($query) => $query
                                     ->active()
                                     ->forRepository(auth()->user()?->default_repository_id),
-                            ),
+                            )
+                                // A normal relocation must have a target location
+                                // (otherwise the action just updates the note and
+                                // moves nothing). It's optional ONLY when marking
+                                // PERM OUT — a perm-out/destroyed box no longer
+                                // needs a box-level location (client feedback 2026-08-01).
+                                ->required(fn (Get $get): bool => ! (bool) $get('set_perm_out')),
                             Forms\Components\Toggle::make('set_perm_out')
                                 ->label('Mark barcode as PERM OUT')
                                 ->live(),

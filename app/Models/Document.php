@@ -812,12 +812,12 @@ class Document extends Model implements AuditableContract, HasMedia, Sortable
                 }
             }
 
-            // A1.2 — a document cannot be PERM_OUT without a disinfestation date.
-            if ($document->barcode_status === 'PERM_OUT' && empty($document->disinfestation_date)) {
-                throw ValidationException::withMessages([
-                    'barcode_status' => 'A document cannot be PERM OUT without a disinfestation date (RFQ A1.2).',
-                ]);
-            }
+            // A1.2 PERM_OUT-requires-disinfestation was REMOVED here (client
+            // feedback 2026-08-01, later than the RFQ): the box is authoritative
+            // and mirrors PERM_OUT onto its documents, and a perm-out box no
+            // longer needs a disinfestation date — so a mirrored document may be
+            // PERM_OUT without one too. The document CHECK is dropped in the same
+            // migration that dropped the box CHECK's sibling.
 
             // RFQ App.1 #2 — Batch 50 is reserved for wills. Enforce centrally
             // (every path, not just the UI actions): a document placed in the

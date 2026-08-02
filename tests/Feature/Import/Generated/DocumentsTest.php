@@ -860,28 +860,35 @@ test('RFQ App.1 #2: placing a document in Batch 50 without a wills series is rej
     expect(Document::withoutGlobalScope(RepositoryScope::class)->where('catalogue_identifier', 'R47/001')->exists())->toBeFalse();
 });
 
-test('RFQ App.1 #5: PERM_OUT status without a disinfestation_date fails the row with a clear message', function () {
+test('RFQ App.1 #5 (loosened): PERM_OUT status without a disinfestation_date imports as-is (client feedback 2026-08-01)', function () {
     dgt_series('REG');
     $u = dgt_admin();
     $this->actingAs($u);
 
-    // Real Catalogue Identifier + Series (R52/002, REG). Status 1 is
-    // overridden to the "PERM_OUT" enum literal the importer's cast checks
-    // for — the client's real free text is "Perm Out" (a space, not an
-    // underscore), which the exact-match cast silently drops to null, so no
-    // real cell value can exercise this validation path at all (see
-    // DGT_ROW_R52_002's docblock). Disinfestation Date is left unmapped so
-    // the row is genuinely missing it, per the test's intent.
+    // RFQ App.1 #5 mandated a disinfestation date for PERM_OUT. Client feedback
+    // (Charlene Ellul, 2026-08-01) loosened it: the legacy NAF export has many
+    // PERM_OUT records with no disinfestation date and must import as-is. Client
+    // feedback supersedes the RFQ because it is later.
+    //
+    // Real Catalogue Identifier + Series (R52/002, REG). Status 1 is overridden
+    // to the "PERM_OUT" enum literal the importer's cast checks for — the
+    // client's real free text is "Perm Out" (a space, not an underscore), which
+    // the exact-match cast silently drops to null (see DGT_ROW_R52_002's
+    // docblock). Disinfestation Date is left unmapped so the row is genuinely
+    // missing it — which is now allowed.
     $import = dgt_run(
         [array_merge(DGT_ROW_R52_002, ['Status 1' => 'PERM_OUT'])],
         ['series' => 'Series', 'catalogue_identifier' => 'Catalogue Identifier', 'status_1' => 'Status 1'],
         $u->id,
     );
 
-    $failures = dgt_failures($import);
-    expect($failures)->toHaveCount(1)
-        ->and($failures[0])->not->toContain('generic_validation')
-        ->and(strtolower($failures[0]))->toContain('disinfestation');
+    expect(dgt_failures($import))->toHaveCount(0);
+
+    $doc = Document::withoutGlobalScope(RepositoryScope::class)
+        ->where('catalogue_identifier', 'R52/002')->first();
+    expect($doc)->not->toBeNull()
+        ->and($doc->barcode_status)->toBe('PERM_OUT')
+        ->and($doc->disinfestation_date)->toBeNull();
 });
 
 test('PERM_OUT status WITH a disinfestation_date succeeds and mirrors onto the current box (Task 8 B4)', function () {
