@@ -95,11 +95,12 @@ it('imports the real 7166-row box template with none of the loosened rules block
         } catch (Throwable $e) {
             $msg = strtolower($e->getMessage());
             foreach ($loosenedPatterns as $p) {
-                if (str_contains($msg, $p) && str_contains($msg, 'required')) {
-                    $loosenedHits++;
-                    break;
-                }
-                if (str_contains($msg, $p) && ! str_contains($p, 'box type')) {
+                // 'box type' also requires the word "required" (a bare "box type"
+                // can appear in unrelated messages); the other patterns match on
+                // their own.
+                $isMatch = str_contains($msg, $p)
+                    && ($p !== 'box type' || str_contains($msg, 'required'));
+                if ($isMatch) {
                     $loosenedHits++;
                     break;
                 }

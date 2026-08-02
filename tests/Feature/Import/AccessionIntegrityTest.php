@@ -248,38 +248,37 @@ test('B4: a PERM_OUT row sets the BOX to PERM_OUT (box carries disinfestation_da
 
 /* ─── Fix 5 (I2): box-status write must be safe / transactional ───────────── */
 
-test('I2: a PERM_OUT row missing a disinfestation_date is rejected BEFORE any save (no half-saved document)', function () {
+test('I2: a PERM_OUT row missing a disinfestation_date is now accepted and persisted (loosened, client feedback 2026-08-01)', function () {
     $repo = ait_repo();
     $u = ait_makeAdmin($repo->id);
     $this->actingAs($u);
     ait_series('REG');
 
-    // PERM_OUT but NO disinfestation_date → the App.1 #5 precondition must be
-    // validated in afterFill, before the document is ever persisted.
-    try {
-        ait_runDocImporter([
-            'identifier' => 'DOC-PERMOUT-NODATE',
-            'series' => 'REG',
-            'batch_number' => 12,
-            'current_box_number' => '4',
-            'status_1' => 'PERM_OUT',
-        ], $u->id, [
-            'identifier' => 'identifier',
-            'series' => 'series',
-            'batch_number' => 'batch_number',
-            'current_box_number' => 'current_box_number',
-            'status_1' => 'status_1',
-        ]);
-        $this->fail('Expected a ValidationException for PERM_OUT without disinfestation_date.');
-    } catch (ValidationException|RowImportFailedException) {
-        // either surface is acceptable — the row must fail.
-    }
+    // RFQ App.1 #5 was loosened after client feedback (Charlene Ellul,
+    // 2026-08-01): legacy NAF documents are frequently PERM_OUT with no
+    // disinfestation date and must import as-is. Client feedback supersedes the
+    // RFQ because it is later. The row no longer fails in afterFill.
+    ait_runDocImporter([
+        'identifier' => 'DOC-PERMOUT-NODATE',
+        'series' => 'REG',
+        'batch_number' => 12,
+        'current_box_number' => '4',
+        'status_1' => 'PERM_OUT',
+    ], $u->id, [
+        'identifier' => 'identifier',
+        'series' => 'series',
+        'batch_number' => 'batch_number',
+        'current_box_number' => 'current_box_number',
+        'status_1' => 'status_1',
+    ]);
 
-    // Nothing persisted: not the document.
-    expect(
-        Document::withoutGlobalScope(RepositoryScope::class)
-            ->where('identifier', 'DOC-PERMOUT-NODATE')->exists()
-    )->toBeFalse();
+    // The document is persisted with PERM_OUT and no disinfestation date.
+    $doc = Document::withoutGlobalScope(RepositoryScope::class)
+        ->where('identifier', 'DOC-PERMOUT-NODATE')->first();
+
+    expect($doc)->not->toBeNull()
+        ->and($doc->barcode_status)->toBe('PERM_OUT')
+        ->and($doc->disinfestation_date)->toBeNull();
 });
 
 test('I2: a failing box-status write rolls back the just-saved document (no half-saved row)', function () {

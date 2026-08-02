@@ -10,7 +10,6 @@ use App\Models\Series;
 use App\Models\User;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Support\Facades\DB;
-use Illuminate\Validation\ValidationException;
 
 use function Pest\Laravel\actingAs;
 
@@ -18,22 +17,34 @@ uses(RefreshDatabase::class);
 
 beforeEach(fn () => bl_seedShieldPermissions());
 
-it('rejects a document saved PERM_OUT without a disinfestation_date (model guard)', function (): void {
+/*
+ * RFQ App.1 #5 (PERM_OUT requires a disinfestation date) was LOOSENED after
+ * client feedback (Charlene Ellul, 2026-08-01) — the legacy NAF export has many
+ * PERM_OUT records with no disinfestation date and must import as-is. Client
+ * feedback supersedes the RFQ because it is later. The model guard and the DB
+ * CHECK were removed; these tests pin the loosened behaviour.
+ */
+
+it('allows a document saved PERM_OUT without a disinfestation_date (guard removed)', function (): void {
     actingAs(User::factory()->create()->assignRole('super_admin'));
 
     $repo = Repository::factory()->create();
     $series = Series::factory()->create();
 
-    expect(fn () => Document::factory()->create([
+    $doc = Document::factory()->create([
         'series_id' => $series->id,
         'repository_id' => $repo->id,
         'current_box_id' => null,
         'barcode_status' => 'PERM_OUT',
         'disinfestation_date' => null,
-    ]))->toThrow(ValidationException::class);
+    ]);
+
+    expect($doc->exists)->toBeTrue()
+        ->and($doc->fresh()->barcode_status)->toBe('PERM_OUT')
+        ->and($doc->fresh()->disinfestation_date)->toBeNull();
 });
 
-it('allows a document PERM_OUT once it has a disinfestation_date', function (): void {
+it('allows a document PERM_OUT together with a disinfestation_date', function (): void {
     actingAs(User::factory()->create()->assignRole('super_admin'));
 
     $repo = Repository::factory()->create();
@@ -51,7 +62,7 @@ it('allows a document PERM_OUT once it has a disinfestation_date', function (): 
     expect($doc->barcode_status)->toBe('PERM_OUT');
 });
 
-it('still rejects PERM_OUT-without-date even when the document sits in a box', function (): void {
+it('allows PERM_OUT-without-date even when the document sits in a box (mirror path)', function (): void {
     actingAs(User::factory()->create()->assignRole('super_admin'));
 
     $repo = Repository::factory()->create();
@@ -74,15 +85,16 @@ it('still rejects PERM_OUT-without-date even when the document sits in a box', f
 
     $doc->barcode_status = 'PERM_OUT';
     $doc->disinfestation_date = null;
+    $doc->save();
 
-    expect(fn () => $doc->save())->toThrow(ValidationException::class);
+    expect($doc->fresh()->barcode_status)->toBe('PERM_OUT')
+        ->and($doc->fresh()->disinfestation_date)->toBeNull();
 });
 
-it('documents the DB-level CHECK is mysql-only (skipped on sqlite test driver)', function (): void {
-    // F2: the chk_documents_permout_requires_disinfestation CHECK is added by
-    // a mysql-guarded migration as a second line of defence on MariaDB. On the
-    // SQLite test driver it is intentionally absent — the model guard above is
-    // the cross-driver enforcement. We just assert the driver assumption holds
-    // so the intent is documented and the test self-explains.
+it('confirms the DB-level CHECK is absent on the sqlite test driver', function (): void {
+    // The chk_documents_permout_requires_disinfestation CHECK was dropped by a
+    // mysql-guarded migration (2026_08_02_100000). On the SQLite test driver it
+    // never existed. The MySQL/MariaDB removal is covered by
+    // BoxPermOutDocumentMirrorTest in the CI's dedicated MariaDB step.
     expect(DB::connection()->getDriverName())->toBe('sqlite');
-})->skip(fn () => DB::connection()->getDriverName() !== 'sqlite', 'CHECK lives in DB on mysql/mariadb');
+})->skip(fn () => DB::connection()->getDriverName() !== 'sqlite', 'driver-specific assertion');
