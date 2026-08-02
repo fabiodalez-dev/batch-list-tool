@@ -19,7 +19,6 @@ use App\Support\Import\BatchListColumnMap;
 use Filament\Actions\Imports\Importer;
 use Filament\Actions\Imports\Models\Import;
 use Illuminate\Foundation\Testing\RefreshDatabase;
-use Illuminate\Validation\ValidationException;
 use Spatie\Permission\Models\Role;
 
 /**
@@ -217,26 +216,25 @@ describe('Gap B — box custody status', function () {
         expect(ar_box(ar_latestDoc())?->barcode_status)->toBe('OUT');
     });
 
-    // PERM_OUT boxes are forbidden without a disinfestation date (RFQ A1.2),
-    // and this sheet carries none — so a normalised PERM_OUT must surface that
-    // box-level rule. A literal, un-normalised "PERM OUT" would NOT trigger the
-    // PERM_OUT-specific rule, so the throw itself proves the value was mapped.
+    // PERM_OUT boxes no longer require a disinfestation date (RFQ #5 loosened,
+    // client feedback 2026-08-01), so the box now saves — assert the normalised
+    // barcode_status directly (was previously proved via the disinfestation throw).
     test('PERM OUT with a space is normalised to PERM_OUT', function () {
         $admin = ar_setup();
-        expect(fn () => ar_run(ar_row(['box_barcode' => 'BC-P1', 'box_barcode_status' => 'PERM OUT']), $admin->id))
-            ->toThrow(ValidationException::class, 'disinfestation');
+        ar_run(ar_row(['box_barcode' => 'BC-P1', 'box_barcode_status' => 'PERM OUT']), $admin->id);
+        expect(ar_box(ar_latestDoc())?->barcode_status)->toBe('PERM_OUT');
     });
 
     test('PERM-OUT with a hyphen is normalised to PERM_OUT', function () {
         $admin = ar_setup();
-        expect(fn () => ar_run(ar_row(['box_barcode' => 'BC-P2', 'box_barcode_status' => 'PERM-OUT']), $admin->id))
-            ->toThrow(ValidationException::class, 'disinfestation');
+        ar_run(ar_row(['box_barcode' => 'BC-P2', 'box_barcode_status' => 'PERM-OUT']), $admin->id);
+        expect(ar_box(ar_latestDoc())?->barcode_status)->toBe('PERM_OUT');
     });
 
     test('PERMOUT with no separator is normalised to PERM_OUT', function () {
         $admin = ar_setup();
-        expect(fn () => ar_run(ar_row(['box_barcode' => 'BC-P3', 'box_barcode_status' => 'PERMOUT']), $admin->id))
-            ->toThrow(ValidationException::class, 'disinfestation');
+        ar_run(ar_row(['box_barcode' => 'BC-P3', 'box_barcode_status' => 'PERMOUT']), $admin->id);
+        expect(ar_box(ar_latestDoc())?->barcode_status)->toBe('PERM_OUT');
     });
 
     test('lowercase "out" is upper-cased to OUT', function () {

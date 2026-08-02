@@ -13,7 +13,6 @@ use App\Models\Repository;
 use App\Models\Series;
 use App\Models\User;
 use Illuminate\Foundation\Testing\RefreshDatabase;
-use Illuminate\Validation\ValidationException;
 
 uses(RefreshDatabase::class);
 
@@ -107,13 +106,13 @@ test('changing box barcode_status mirrors onto every document in that box', func
 });
 
 // 4 ---------------------------------------------------------------------------
-test('setting a box to PERM_OUT with no disinfestation_date is rejected at the box level', function () {
+test('setting a box to PERM_OUT with no disinfestation_date is now allowed (RFQ #5 loosened — client feedback 2026-08-01)', function () {
     $box = bab_box(['barcode_status' => 'IN', 'disinfestation_date' => null]);
 
-    expect(fn () => $box->update(['barcode_status' => 'PERM_OUT']))
-        ->toThrow(ValidationException::class);
+    $box->update(['barcode_status' => 'PERM_OUT']);
 
-    expect($box->fresh()->barcode_status)->toBe('IN');
+    expect($box->fresh()->barcode_status)->toBe('PERM_OUT')
+        ->and($box->fresh()->disinfestation_date)->toBeNull();
 });
 
 // 5 ---------------------------------------------------------------------------

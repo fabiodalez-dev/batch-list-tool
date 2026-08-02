@@ -18,6 +18,7 @@ use Filament\Actions\Imports\ImportColumn;
 use Filament\Actions\Imports\Importer;
 use Filament\Actions\Imports\Models\Import;
 use Illuminate\Database\Eloquent\Collection as EloquentCollection;
+use Illuminate\Support\Carbon;
 use Illuminate\Support\Facades\Log;
 use Illuminate\Validation\ValidationException;
 
@@ -32,7 +33,8 @@ use Illuminate\Validation\ValidationException;
  *   - #4: MAV / STVC types cannot be created for new records, only existing
  *     legacy boxes can have those types — enforced as `is_legacy=true`
  *     when type ∈ {MAV, STVC}.
- *   - #5: a box marked PERM_OUT MUST have a non-null disinfestation_date.
+ *   - #5 (PERM_OUT requires disinfestation_date + location) was REMOVED per
+ *     the client's 2026-08-01 feedback (later than the RFQ, so it governs).
  *
  * The importer accepts a Batch via either its numeric id OR its
  * `batch_number` (the latter is what operators have on hand in the
@@ -189,7 +191,7 @@ class BoxImporter extends Importer
      *       parent_box_id null and let the row fail with an explicit
      *       validation message via the `before save` check.
      *  #4 — MAV / STVC force `is_legacy = true`.
-     *  #5 — PERM_OUT requires `disinfestation_date`.
+     *  (RFQ #5 PERM_OUT preconditions were dropped — client feedback 2026-08-01.)
      */
     public function afterFill(): void
     {
@@ -209,38 +211,26 @@ class BoxImporter extends Importer
             $record->is_legacy = false;
         }
 
-        if ($record->barcode_status === 'PERM_OUT' && $record->disinfestation_date === null) {
-            // Drain the stashes before throwing so the static maps do not grow
-            // unboundedly when many rows fail — afterSave() never runs for a
-            // row rejected here.
-            unset(
-                self::$rowRepositoryStash[spl_object_id($record)],
-                self::$rowCustomFieldStash[spl_object_id($record)],
-            );
-
-            // We refuse the row with a validation exception — this is what
-            // surfaces in the per-row failed export.
-            throw ValidationException::withMessages([
-                'disinfestation_date' => __('Boxes marked PERM_OUT must carry a disinfestation_date.'),
-            ]);
+        // Default barcode_status to 'IN' when the cell is blank — the column is
+        // NOT NULL DEFAULT 'IN', but the importer writes an explicit null for an
+        // empty cell, which fails the row. The "Unknown"/"NULL" catch-all boxes
+        // carry no status; treat a box with no recorded status as IN.
+        if ($record->barcode_status === null || $record->barcode_status === '') {
+            $record->barcode_status = 'IN';
         }
 
-        // #5b — A new box marked PERM_OUT must also carry a Location: a box that
-        // has permanently left storage has to record where it now lives. The
-        // model guard skips this for new records (and for the documented legacy
-        // mirror), so enforce it at the row level for fresh imports only.
-        if (! $record->exists && $record->barcode_status === 'PERM_OUT' && $record->location_id === null) {
-            // Drain the stashes before throwing — afterSave() never runs for a
-            // row rejected here.
-            unset(
-                self::$rowRepositoryStash[spl_object_id($record)],
-                self::$rowCustomFieldStash[spl_object_id($record)],
-            );
-
-            throw ValidationException::withMessages([
-                'location' => __('A box marked PERM OUT must have a location. Add a Location column (a valid location code for this repository) for this row.'),
-            ]);
+        // Attribute a bulk-imported destroyed state to the operator running the
+        // import (the `destroyed` column set destroyed_at/reason but has no
+        // instance context for the user).
+        if ($record->destroyed_at !== null && $record->destroyed_by_user_id === null) {
+            $record->destroyed_by_user_id = $this->import->user->getKey();
         }
+
+        // RFQ App.1 #5 PERM_OUT preconditions (disinfestation_date + Location)
+        // were REMOVED here per the client's 2026-08-01 feedback (later than the
+        // RFQ, so it governs): the legacy perm-out / destroyed boxes being loaded
+        // often have neither recorded, and location is now a document-level
+        // concept. A PERM_OUT box row imports without them.
 
         if (in_array($record->box_type, ['IN_SITU', 'NRA'], true) && $record->parent_box_id === null) {
             // Drain the stashes on this failure path too.
@@ -299,7 +289,9 @@ class BoxImporter extends Importer
                         default => $s,
                     };
                 })
-                ->rules(['required', 'in:RAS,IN_SITU,NRA,MAV,STVC']),
+                // Value now optional (was 'required'): the "Unknown"/"NULL"
+                // catch-all boxes carry no box type (client feedback 2026-08-01).
+                ->rules(['nullable', 'in:RAS,IN_SITU,NRA,MAV,STVC']),
 
             // Batch lookup by batch_number — the friendlier alternative to
             // forcing operators to type DB ids.
@@ -458,18 +450,31 @@ class BoxImporter extends Importer
                 // the model save, so legitimate bulk/seed/provisional creation of
                 // a not-yet-barcoded RAS record isn't blocked. Legacy MAV/STVC and
                 // provenance IN_SITU/NRA rows may import without a barcode.
-                ->rules(['nullable', 'string', 'max:64', 'required_if:box_type,RAS']),
+                // Barcode is now optional even for RAS boxes (was
+                // required_if:box_type,RAS): some legacy boxes lost their barcode
+                // trail or never had one (client feedback 2026-08-01).
+                ->rules(['nullable', 'string', 'max:64']),
 
             ImportColumn::make('barcode_status')
                 ->label('Barcode status (IN / OUT / PERM_OUT)')
                 ->guess(['Barcode status', 'Status', 'barcode_status'])
                 ->castStateUsing(function (?string $state): ?string {
-                    if ($state === null) {
+                    if ($state === null || trim($state) === '') {
+                        // Blank → null; afterFill() defaults it to 'IN'.
                         return null;
                     }
                     $s = strtoupper(trim($state));
+                    // Normalise common aliases from the legacy sheets.
+                    $s = match ($s) {
+                        'PERM OUT', 'PERMOUT', 'PERM-OUT' => 'PERM_OUT',
+                        default => $s,
+                    };
 
-                    return in_array($s, ['IN', 'OUT', 'PERM_OUT'], true) ? $s : null;
+                    // Keep a non-matching value AS-IS so the in: rule rejects it
+                    // with a clear message, rather than silently coercing it to
+                    // null (which the old code did, surfacing a misleading
+                    // "required value missing" error).
+                    return $s;
                 })
                 ->rules(['nullable', 'in:IN,OUT,PERM_OUT']),
 
@@ -532,6 +537,41 @@ class BoxImporter extends Importer
                     }
                     $record->location_id = $res['location_id'];
                 }),
+
+            // Client feedback 2026-08-01: 905 boxes were already destroyed during
+            // the first parent-box import — import the destroyed state in bulk
+            // instead of destroying one-by-one. A date cell → destroyed on that
+            // date; "Yes"/truthy → destroyed now (the legacy sheet has no per-box
+            // destroy date). destroyed_by is stamped to the importing user in
+            // afterFill(). Anything unrecognised leaves the box not-destroyed.
+            ImportColumn::make('destroyed')
+                ->label('Destroyed (Yes / a date / blank)')
+                ->guess(['Destroyed', 'destroyed', 'Box Destroyed', 'Destroyed?'])
+                ->fillRecordUsing(function (Box $record, ?string $state): void {
+                    if ($state === null || trim($state) === '') {
+                        return;
+                    }
+                    $s = trim($state);
+                    $date = SpreadsheetParsers::parseDate($s);
+                    if ($date !== null) {
+                        $record->destroyed_at = Carbon::parse($date);
+                    } elseif (in_array(mb_strtolower($s), ['yes', 'y', '1', 'true', 'x', 'destroyed'], true)) {
+                        $record->destroyed_at = now();
+                    } else {
+                        return;
+                    }
+                    if ($record->destroyed_reason === null || trim((string) $record->destroyed_reason) === '') {
+                        $record->destroyed_reason = 'Imported as already destroyed (legacy)';
+                    }
+                }),
+
+            // The physical container type (RAS Box / Big Brown Box / Small Brown
+            // Box / Standard Blue Box / …), distinct from the archival box_type.
+            // Client's source sheet carries it in a "Current Box" column.
+            ImportColumn::make('current_box_type')
+                ->label('Current box type (RAS Box / Big Brown Box / Small Brown Box / …)')
+                ->guess(['Current Box Type', 'current_box_type', 'Current Box', 'Current box'])
+                ->rules(['nullable', 'string', 'max:64']),
         ];
     }
 
