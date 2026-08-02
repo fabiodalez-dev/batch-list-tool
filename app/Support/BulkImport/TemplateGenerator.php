@@ -288,9 +288,10 @@ final class TemplateGenerator
             // F05 — Seal Number and Location added per client request.
             'Seal Number',       // optional physical seal id on the box
             'Location',          // location code / identifier (e.g. "SHELF-A3"); optional even for PERM_OUT
-            // Client feedback 2026-08-01.
-            'Current Box Type',  // physical container: RAS Box | Big Brown Box | Small Brown Box | Standard Blue Box | …
+            // Client feedback 2026-08-01. Order mirrors BoxImporter's columns
+            // (destroyed before current_box_type).
             'Destroyed',         // Yes / a date / blank — bulk-mark boxes already destroyed
+            'Current Box Type',  // physical container: RAS Box | Big Brown Box | Small Brown Box | Standard Blue Box | …
         ];
     }
 

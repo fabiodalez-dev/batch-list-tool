@@ -364,8 +364,8 @@ test('Box template uses synthesised headers that map 1:1 with BoxImporter column
         'notes',
         'Seal Number',
         'Location',
-        'Current Box Type',
         'Destroyed',
+        'Current Box Type',
     ]);
 
     // Cross-check: at least the canonical BoxImporter columns must each

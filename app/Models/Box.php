@@ -209,7 +209,11 @@ class Box extends Model implements AuditableContract, Sortable
         return $this->hasMany(BoxMovement::class, 'from_box_id');
     }
 
-    /** RFQ rule #5: PERM_OUT requires disinfestation_date */
+    /**
+     * Historical RFQ rule #5 predicate (PERM_OUT ⇒ disinfestation_date). The
+     * rule is no longer enforced on save (dropped per client feedback
+     * 2026-08-01); this remains only as a test/introspection helper.
+     */
     public function canBePermOut(): bool
     {
         return $this->disinfestation_date !== null;

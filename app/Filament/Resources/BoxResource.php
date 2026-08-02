@@ -937,17 +937,18 @@ class BoxResource extends Resource
                                 fn ($query) => $query
                                     ->active()
                                     ->forRepository(auth()->user()?->default_repository_id),
-                            )->required(fn (Get $get): bool => (bool) $get('set_perm_out')),
+                            ),
                             Forms\Components\Toggle::make('set_perm_out')
                                 ->label('Mark barcode as PERM OUT')
                                 ->live(),
-                            // RFQ Appendix-1 #2: a PERM_OUT box needs a disinfestation date
-                            // and a location. Enforce both here instead of bypassing them.
+                            // Location + disinfestation are OPTIONAL even when marking
+                            // PERM OUT — the RFQ App.1 #5 preconditions were dropped
+                            // (client feedback 2026-08-01, later than the RFQ). Both
+                            // fields stay available so an operator can still record
+                            // them, but a perm-out/destroyed box no longer needs them.
                             Forms\Components\DatePicker::make('disinfestation_date')
-                                ->label('Disinfestation date')
-                                ->helperText('Required when marking boxes PERM OUT (RFQ A1.2).')
-                                ->visible(fn (Get $get): bool => (bool) $get('set_perm_out'))
-                                ->required(fn (Get $get): bool => (bool) $get('set_perm_out')),
+                                ->label('Disinfestation date (optional)')
+                                ->visible(fn (Get $get): bool => (bool) $get('set_perm_out')),
                             Forms\Components\TextInput::make('tracking_note')
                                 ->label('Tracking note')
                                 ->maxLength(255),
