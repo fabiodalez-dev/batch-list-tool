@@ -276,18 +276,21 @@ final class TemplateGenerator
     private static function synthesiseBoxHeaders(): array
     {
         return [
-            'box_type',          // RAS | IN_SITU | NRA | MAV | STVC
+            'box_type',          // RAS | IN_SITU | NRA | MAV | STVC  (optional; blank for the Unknown/NULL catch-alls)
             'box_number',
             'batch_number',
             'parent_box_number', // barcode of the parent RAS box (IN_SITU/NRA require it — RFQ #3)
-            'barcode',
-            'barcode_status',    // IN | OUT | PERM_OUT  (PERM_OUT requires disinfestation_date)
+            'barcode',           // optional even for RAS (some legacy boxes lost the barcode trail)
+            'barcode_status',    // IN | OUT | PERM_OUT
             'disinfestation_date',
             'is_legacy',
             'notes',
             // F05 — Seal Number and Location added per client request.
             'Seal Number',       // optional physical seal id on the box
-            'Location',          // location code / identifier (e.g. "SHELF-A3")
+            'Location',          // location code / identifier (e.g. "SHELF-A3"); optional even for PERM_OUT
+            // Client feedback 2026-08-01.
+            'Current Box Type',  // physical container: RAS Box | Big Brown Box | Small Brown Box | Standard Blue Box | …
+            'Destroyed',         // Yes / a date / blank — bulk-mark boxes already destroyed
         ];
     }
 

@@ -59,7 +59,7 @@ class Box extends Model implements AuditableContract, Sortable
 
     protected $fillable = [
         'sort_order',
-        'box_type', 'box_number', 'batch_id', 'parent_box_id',
+        'box_type', 'current_box_type', 'box_number', 'batch_id', 'parent_box_id',
         // RFQ A1.3 — explicit NULL exception: when true the model guard allows
         // a null parent_box_id for IN_SITU / NRA boxes (provenance genuinely unknown).
         'provenance_unknown',
@@ -459,58 +459,15 @@ class Box extends Model implements AuditableContract, Sortable
             }
         });
 
-        // RFQ App.1 #5 (A1.2) at the BOX level — Task 7 (B1). The box is the
-        // authoritative source of truth for barcode status, so the PERM_OUT
-        // precondition is enforced here on the box. A box cannot be PERM_OUT
-        // unless it has a disinfestation_date (see canBePermOut()). MySQL also
-        // has a CHECK constraint (create_boxes_table migration), but SQLite
-        // cannot retro-fit one, so this PHP guard is the cross-driver gate.
-        // Mirror of the document-level A1.2 guard (kept too — expand, never
-        // restrict). Only assert when the status actually moves to PERM_OUT so
-        // unrelated saves stay cheap and legacy rows that already carry the
-        // value can still re-save.
-        static::saving(function (self $box): void {
-            if (! $box->isDirty('barcode_status')) {
-                return;
-            }
-            if ($box->barcode_status === 'PERM_OUT' && ! $box->canBePermOut()) {
-                throw ValidationException::withMessages([
-                    'barcode_status' => 'A box cannot be PERM OUT without a disinfestation date (RFQ A1.2, box level).',
-                ]);
-            }
-        });
-
-        // RFQ-3.1.7-A (review finding) — PERM OUT means the box has been
-        // permanently transferred to NRA. Per Appendix 2 §iv, a PERM_OUT box
-        // MUST have an NRA location associated with it: "PERM OUT: Taken out
-        // of their storage facility and thus should be at NRA and NRA Location
-        // should have a NRA location associated with it." This guard fires ONLY
-        // when barcode_status is being transitioned to PERM_OUT so:
-        //   - Legacy rows already at PERM_OUT but missing a location can be
-        //     re-saved as long as the status is not being touched (isDirty guard).
-        //   - The disinfestation_date check above remains the primary domain
-        //     constraint; this adds the linked-location dimension on top.
-        static::saving(function (self $box): void {
-            // Only block transitioning an *existing* box to PERM_OUT without a
-            // location. New records created directly at PERM_OUT (e.g. legacy
-            // data import) are not blocked here — the disinfestation_date guard
-            // above already applies to creates, and location is enforced at the
-            // UI level on the form for new records.
-            if (! $box->exists) {
-                return;
-            }
-            if ($box->skipPermOutGuard) {
-                return;
-            }
-            if (! $box->isDirty('barcode_status')) {
-                return;
-            }
-            if ($box->barcode_status === 'PERM_OUT' && $box->location_id === null) {
-                throw ValidationException::withMessages([
-                    'location_id' => 'A box cannot be set to PERM OUT without a location (RFQ §3.1.7 / Appendix 2 §iv).',
-                ]);
-            }
-        });
+        // RFQ App.1 #5 PERM_OUT preconditions (disinfestation_date + NRA
+        // location) were REMOVED here per the client's 2026-08-01 feedback,
+        // which is later than the RFQ and therefore governs: the legacy boxes
+        // being bulk-loaded pre-date those data-quality rules — many perm-out /
+        // destroyed boxes have no recorded disinfestation date, and with the
+        // two-level model the meaningful location now lives on the document, not
+        // the box. A PERM_OUT box may therefore be saved without either. The
+        // disinfestation_date is still propagated to documents WHEN present (see
+        // the syncBarcodeStatusToDocuments hook below).
 
         static::saving(function (self $box): void {
             if (! $box->requiresParent()) {

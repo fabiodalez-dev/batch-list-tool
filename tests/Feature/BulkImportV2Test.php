@@ -575,7 +575,7 @@ test('BoxImporter rejects IN_SITU box without a parent RAS box (RFQ #3)', functi
     }
 });
 
-test('BoxImporter rejects PERM_OUT box without disinfestation_date (RFQ #5)', function () {
+test('BoxImporter now imports a PERM_OUT box without disinfestation_date (RFQ #5 loosened — client feedback 2026-08-01)', function () {
     $repo = bi_repo();
     $u = bi_makeAdmin($repo->id);
     $this->actingAs($u);
@@ -586,15 +586,15 @@ test('BoxImporter rejects PERM_OUT box without disinfestation_date (RFQ #5)', fu
         'is_active' => true,
     ]);
 
-    try {
-        bi_runImporter(BoxImporter::class, [
-            'box_number' => 'PO-1',
-            'box_type' => 'RAS',
-            'batch_number' => 997,
-            'barcode_status' => 'PERM_OUT',
-        ], $u->id);
-        $this->fail('Expected ValidationException for PERM_OUT without disinfestation_date.');
-    } catch (ValidationException $validationException) {
-        expect($validationException->errors())->toHaveKey('disinfestation_date');
-    }
+    bi_runImporter(BoxImporter::class, [
+        'box_number' => 'PO-1',
+        'box_type' => 'RAS',
+        'batch_number' => 997,
+        'barcode_status' => 'PERM_OUT',
+    ], $u->id);
+
+    $box = Box::withoutGlobalScope(ThroughBatchRepositoryScope::class)->where('box_number', 'PO-1')->first();
+    expect($box)->not->toBeNull()
+        ->and($box->barcode_status)->toBe('PERM_OUT')
+        ->and($box->disinfestation_date)->toBeNull();
 });

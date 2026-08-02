@@ -11,7 +11,6 @@ use App\Models\User;
 use Filament\Facades\Filament;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Support\Facades\DB;
-use Illuminate\Validation\ValidationException;
 use Spatie\Permission\Models\Permission;
 use Spatie\Permission\Models\Role;
 
@@ -137,9 +136,11 @@ it('§ 3.1.7 barcode #1: PERM_OUT transition requires disinfestation_date (Box::
     ]);
     $box = s317_ras_box($batch->id, ['location_id' => $loc->id]);
 
-    // Without disinfestation_date → must throw.
-    expect(fn () => $box->update(['barcode_status' => 'PERM_OUT']))
-        ->toThrow(ValidationException::class);
+    // Without disinfestation_date → now allowed (RFQ #5 loosened, client
+    // feedback 2026-08-01).
+    $box->update(['barcode_status' => 'PERM_OUT']);
+
+    expect($box->fresh()->barcode_status)->toBe('PERM_OUT');
 });
 
 it('§ 3.1.7 barcode #2: PERM_OUT transition with disinfestation_date AND location succeeds', function () {
@@ -162,7 +163,7 @@ it('§ 3.1.7 barcode #2: PERM_OUT transition with disinfestation_date AND locati
     expect($box->barcode_status)->toBe('PERM_OUT');
 });
 
-it('§ 3.1.7 barcode #3: PERM_OUT transition without location throws (RFQ-3.1.7-A)', function () {
+it('§ 3.1.7 barcode #3: PERM_OUT transition without location is now allowed (client feedback 2026-08-01)', function () {
     $repo = s317_repo();
     $batch = s317_batch($repo->id, 52);
     $box = s317_ras_box($batch->id, [
@@ -170,8 +171,10 @@ it('§ 3.1.7 barcode #3: PERM_OUT transition without location throws (RFQ-3.1.7-
         'location_id' => null,
     ]);
 
-    expect(fn () => $box->update(['barcode_status' => 'PERM_OUT']))
-        ->toThrow(ValidationException::class);
+    $box->update(['barcode_status' => 'PERM_OUT']);
+
+    expect($box->fresh()->barcode_status)->toBe('PERM_OUT')
+        ->and($box->fresh()->location_id)->toBeNull();
 });
 
 it('§ 3.1.7 barcode #4: barcode history written on barcode change (Box::captureBarcodeTransition)', function () {

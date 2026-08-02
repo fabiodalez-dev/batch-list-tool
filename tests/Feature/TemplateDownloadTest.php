@@ -364,6 +364,8 @@ test('Box template uses synthesised headers that map 1:1 with BoxImporter column
         'notes',
         'Seal Number',
         'Location',
+        'Current Box Type',
+        'Destroyed',
     ]);
 
     // Cross-check: at least the canonical BoxImporter columns must each
@@ -378,6 +380,8 @@ test('Box template uses synthesised headers that map 1:1 with BoxImporter column
         'parent_box_number' => 'parent_barcode',
         'Seal Number' => 'seal_number',
         'Location' => 'location',
+        'Current Box Type' => 'current_box_type',
+        'Destroyed' => 'destroyed',
     ];
     foreach ($generated as $header) {
         $aliased = $aliases[$header] ?? $header;

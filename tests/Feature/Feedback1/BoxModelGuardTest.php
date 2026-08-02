@@ -69,15 +69,16 @@ it('allows a barcode-less RAS box at the model level (bulk/provisional path)', f
     expect($box->exists)->toBeTrue();
 });
 
-it('enforces RAS-requires-barcode at the importer boundary (F5)', function (): void {
-    // The importer is the API/bulk bypass the review flagged: its barcode
-    // column carries required_if:box_type,RAS so a RAS row without a barcode is
-    // rejected on import, while legacy MAV/STVC and IN_SITU/NRA may omit it.
+it('no longer requires a barcode for RAS boxes on import (client feedback 2026-08-01)', function (): void {
+    // The RAS-requires-barcode rule was dropped: some legacy boxes lost their
+    // barcode trail or never had one. The importer's barcode column is now
+    // simply nullable — no required_if:box_type,RAS.
     $barcodeColumn = collect(BoxImporter::getColumns())
         ->first(fn ($c) => $c->getName() === 'barcode');
 
     expect($barcodeColumn)->not->toBeNull()
-        ->and($barcodeColumn->getDataValidationRules())->toContain('required_if:box_type,RAS');
+        ->and($barcodeColumn->getDataValidationRules())->not->toContain('required_if:box_type,RAS')
+        ->and($barcodeColumn->getDataValidationRules())->toContain('nullable');
 });
 
 it('allows a valid RAS box (barcode present) and a valid IN_SITU box (location present)', function (): void {

@@ -413,7 +413,7 @@ test('batch_number arriving as a float from Excel (46.0) resolves the same as th
 // C — barcode conditional: required only for RAS, not IN_SITU/NRA/MAV/STVC
 // ═══════════════════════════════════════════════════════════════════════
 
-test('a RAS box without a barcode fails validation with a clear reason', function () {
+test('a RAS box without a barcode now imports (barcode optional — client feedback 2026-08-01)', function () {
     $repo = Repository::factory()->create(['code' => 'BXH']);
     $u = bxt_admin($repo->id);
     $this->actingAs($u);
@@ -426,21 +426,16 @@ test('a RAS box without a barcode fails validation with a clear reason', functio
     $row = $rows[0]; // real RAS row, with the one barcode cell blanked out
     $row['barcode'] = '';
 
-    // The vendor Importer only runs a column's ->rules() when that column is
-    // present in the columnMap (Importer::getValidationRules() skips blank
-    // mappings entirely) — so "barcode" must be explicitly mapped (to a
-    // blank cell) for the required_if:box_type,RAS rule to have a chance to run.
+    // Barcode is no longer required for RAS: some legacy boxes lost the barcode
+    // trail. The row imports with a null barcode.
     $import = bxt_run(
         [$row],
         ['box_number' => 'box_number', 'box_type' => 'box_type', 'batch_number' => 'batch_number', 'barcode' => 'barcode'],
         $u->id,
     );
 
-    $failures = bxt_failures($import);
-    expect($failures)->toHaveCount(1)
-        ->and($failures[0])->not->toContain('generic_validation')
-        ->and(strtolower($failures[0]))->toContain('barcode');
-    expect(Box::withoutGlobalScope(ThroughBatchRepositoryScope::class)->where('box_number', '1')->exists())->toBeFalse();
+    expect(bxt_failures($import))->toBe([]);
+    expect(Box::withoutGlobalScope(ThroughBatchRepositoryScope::class)->where('box_number', '1')->whereNull('barcode')->exists())->toBeTrue();
 });
 
 test('a RAS box WITH a barcode imports successfully', function () {
@@ -622,7 +617,7 @@ test('barcode_status "IN" imports and is stored verbatim', function () {
     expect($box->barcode_status)->toBe('IN');
 });
 
-test('BUG: an unrecognised barcode_status value is silently coerced to NULL and reported with a MISLEADING "required value missing" error', function () {
+test('an unrecognised barcode_status value fails with a clear invalid-value error (not the old misleading "required missing")', function () {
     $repo = Repository::factory()->create(['code' => 'BXO']);
     $u = bxt_admin($repo->id);
     $this->actingAs($u);
@@ -642,26 +637,20 @@ test('BUG: an unrecognised barcode_status value is silently coerced to NULL and 
         $u->id,
     );
 
-    // castStateUsing() maps any value not in ['IN','OUT','PERM_OUT'] to NULL
-    // BEFORE the ->rules(['nullable','in:...']) validation runs. Because the
-    // state is now null, the "nullable" rule short-circuits the "in" rule and
-    // Laravel-level validation passes silently — the operator's actual typed
-    // value ("OUT FOR REPAIR") is thrown away with no validation complaint.
-    // The row DOES still fail, but only downstream at the DB's NOT NULL
-    // constraint on `barcode_status` (no ->nullable() in the migration), and
-    // LogsImportRows::humaniseImportError() reports it as "A required value
-    // is missing for 'boxes.barcode_status'" — actively MISLEADING, since the
-    // operator DID fill that column; the real problem (their value is not one
-    // of IN/OUT/PERM_OUT) is never surfaced anywhere in the failed-rows report.
+    // The cast now KEEPS a non-empty, non-matching value (only a truly blank
+    // cell is nulled → defaulted to IN), so the ->rules(['nullable','in:...'])
+    // rejects "OUT FOR REPAIR" with a clear invalid-value message instead of the
+    // old misleading "required value missing" (the row was previously nulled and
+    // failed at the DB NOT NULL constraint).
     $failures = bxt_failures($import);
     expect($failures)->toHaveCount(1)
         ->and($failures[0])->not->toContain('generic_validation')
-        ->and(strtolower($failures[0]))->toContain('required')
-        ->and(strtolower($failures[0]))->not->toContain('out for repair');
+        ->and(strtolower($failures[0]))->not->toContain('required value is missing')
+        ->and(strtolower($failures[0]))->toContain('barcode status');
     expect(Box::withoutGlobalScope(ThroughBatchRepositoryScope::class)->where('barcode', 'AC54609')->exists())->toBeFalse();
 });
 
-test('barcode_status PERM_OUT without a disinfestation_date fails with a clear reason', function () {
+test('barcode_status PERM_OUT without a disinfestation_date now imports (RFQ #5 loosened — client feedback 2026-08-01)', function () {
     $repo = Repository::factory()->create(['code' => 'BXP']);
     $u = bxt_admin($repo->id);
     $this->actingAs($u);
@@ -682,13 +671,12 @@ test('barcode_status PERM_OUT without a disinfestation_date fails with a clear r
         $u->id,
     );
 
-    $failures = bxt_failures($import);
-    expect($failures)->toHaveCount(1)
-        ->and(strtolower($failures[0]))->toContain('disinfestation');
-    expect(Box::withoutGlobalScope(ThroughBatchRepositoryScope::class)->where('barcode', 'AC54609')->exists())->toBeFalse();
+    expect(bxt_failures($import))->toBe([]);
+    expect(Box::withoutGlobalScope(ThroughBatchRepositoryScope::class)
+        ->where('barcode', 'AC54609')->where('barcode_status', 'PERM_OUT')->whereNull('disinfestation_date')->exists())->toBeTrue();
 });
 
-test('barcode_status PERM_OUT with a disinfestation_date but no Location fails with a clear reason (new record)', function () {
+test('barcode_status PERM_OUT with no Location now imports (location no longer required — client feedback 2026-08-01)', function () {
     $repo = Repository::factory()->create(['code' => 'BXQ']);
     $u = bxt_admin($repo->id);
     $this->actingAs($u);
@@ -700,19 +688,17 @@ test('barcode_status PERM_OUT with a disinfestation_date but no Location fails w
     [, $rows] = bxt_readSample();
     $row = $rows[0];
     $row['barcode_status'] = 'PERM_OUT';
-    $row['disinfestation_date'] = '2026-01-15';
     // Location cell is left blank, as in the real row.
 
     $import = bxt_run(
         [$row],
-        ['box_number' => 'box_number', 'box_type' => 'box_type', 'batch_number' => 'batch_number', 'barcode' => 'barcode', 'barcode_status' => 'barcode_status', 'disinfestation_date' => 'disinfestation_date'],
+        ['box_number' => 'box_number', 'box_type' => 'box_type', 'batch_number' => 'batch_number', 'barcode' => 'barcode', 'barcode_status' => 'barcode_status'],
         $u->id,
     );
 
-    $failures = bxt_failures($import);
-    expect($failures)->toHaveCount(1)
-        ->and(strtolower($failures[0]))->toContain('location');
-    expect(Box::withoutGlobalScope(ThroughBatchRepositoryScope::class)->where('barcode', 'AC54609')->exists())->toBeFalse();
+    expect(bxt_failures($import))->toBe([]);
+    expect(Box::withoutGlobalScope(ThroughBatchRepositoryScope::class)
+        ->where('barcode', 'AC54609')->where('barcode_status', 'PERM_OUT')->whereNull('location_id')->exists())->toBeTrue();
 });
 
 test('barcode_status PERM_OUT with disinfestation_date AND Location imports successfully', function () {

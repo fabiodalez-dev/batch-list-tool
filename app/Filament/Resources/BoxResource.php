@@ -109,6 +109,13 @@ class BoxResource extends Resource
                                     $fail("Box type '{$value}' is a legacy type and cannot be assigned to new boxes (RFQ Appendix-1 rule #4). Allowed for create: " . implode(', ', array_diff(Box::TYPES, Box::LEGACY_TYPES)) . '.');
                                 }
                             })),
+                        // Physical container type (distinct from the archival
+                        // box_type). Free text — legacy values vary in casing
+                        // (RAS Box / RAS box) and wording (Standard Blue Box - Mould).
+                        $g(Forms\Components\TextInput::make('current_box_type')
+                            ->label('Current box type')
+                            ->maxLength(64)
+                            ->helperText('Physical container: RAS Box, Big Brown Box, Small Brown Box, Standard Blue Box, …')),
                         // Batches dropdown: ~30 rows in production, but kept on the
                         // SearchableSelects helper for label consistency.
                         // Feedback1 Wave B (B5) — `->live()` so box_number's
@@ -286,19 +293,11 @@ class BoxResource extends Resource
                             ->required()
                             ->live()
                             ->default('IN')),
-                        // RFQ Appendix-1 rule #2: a record cannot be marked PERM OUT
-                        // unless it has a disinfestation_date.
+                        // PERM_OUT no longer requires a disinfestation_date
+                        // (client feedback 2026-08-01 supersedes RFQ App.1 #5 for
+                        // the legacy data) — the field is always optional now.
                         $g(Forms\Components\DatePicker::make('disinfestation_date')
-                            ->required(fn (Get $get) => $get('barcode_status') === 'PERM_OUT')
-                            ->helperText(fn (Get $get) => $get('barcode_status') === 'PERM_OUT'
-                                ? 'Required when status is PERM OUT (RFQ Appendix-1 rule #2).'
-                                : null)
-                            ->columnSpanFull()
-                            ->rule(fn (Get $get) => function (string $attribute, $value, \Closure $fail) use ($get) {
-                                if ($get('barcode_status') === 'PERM_OUT' && empty($value)) {
-                                    $fail('Disinfestation date is required when status is PERM OUT (RFQ Appendix-1 rule #2).');
-                                }
-                            })),
+                            ->columnSpanFull()),
                     ]),
 
                 Section::make('Location')
@@ -319,14 +318,13 @@ class BoxResource extends Resource
                             ->label('Location (RFQ §3.1.9)')
                             // C2.1 — Location is mandatory for IN_SITU / NRA
                             // boxes (they live at a configured NRA location);
-                            // optional for RAS boxes (which live in a batch).
-                            // Also mandatory for any box marked PERM OUT: a box
-                            // that has permanently left storage must record where
-                            // it now lives (this widens the rule to RAS boxes set
-                            // to PERM_OUT, which would otherwise pass blank).
-                            ->required(fn (Get $get): bool => $isInSitu($get) || $get('barcode_status') === 'PERM_OUT')
-                            ->helperText(fn (Get $get): string => ($isInSitu($get) || $get('barcode_status') === 'PERM_OUT')
-                                ? 'Required for IN_SITU / NRA boxes and for any box marked PERM OUT. Repository / room / shelf / showcase / temp-holding hierarchy.'
+                            // optional for RAS boxes. It is NO LONGER required for
+                            // PERM_OUT boxes: client feedback 2026-08-01 — a
+                            // perm-out / destroyed box no longer needs a box-level
+                            // location (location is now a document-level concept).
+                            ->required(fn (Get $get): bool => $isInSitu($get))
+                            ->helperText(fn (Get $get): string => $isInSitu($get)
+                                ? 'Required for IN_SITU / NRA boxes. Repository / room / shelf / showcase / temp-holding hierarchy.'
                                 : 'Repository / room / shelf / showcase / temp-holding hierarchy.')
                             ->columnSpanFull()
                             ->rule(fn (Get $get) => function (string $attribute, $value, \Closure $fail) use ($get, $isInSitu) {
@@ -335,9 +333,6 @@ class BoxResource extends Resource
                                 // Filament Required validator.
                                 if ($isInSitu($get) && empty($value)) {
                                     $fail('IN_SITU / NRA boxes must reference a Location (RFQ Feedback1 C2.1).');
-                                }
-                                if ($get('barcode_status') === 'PERM_OUT' && empty($value)) {
-                                    $fail('A box marked PERM OUT must have a location.');
                                 }
                             })),
                     ]),
@@ -778,6 +773,11 @@ class BoxResource extends Resource
                     ->label('Box Type')
                     ->sortable()
                     ->toggleable()),
+                $gc(Tables\Columns\TextColumn::make('current_box_type')
+                    ->label('Current Box Type')
+                    ->placeholder('—')
+                    ->sortable()
+                    ->toggleable(isToggledHiddenByDefault: true)),
                 // The import template carries a `location` column (resolved by
                 // code), so operators can set where a box physically lives on
                 // import — surface it here too, otherwise that imported value is

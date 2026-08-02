@@ -342,7 +342,7 @@ it('F5.2: AuthorityResource and SeriesResource PHP sources call ->reorderableCol
 
 // ─── RFQ-3.1.7-A: Box PERM_OUT requires location_id ─────────────────────────
 
-it('RFQ-3.1.7-A.1: transitioning IN→PERM_OUT without location throws ValidationException', function (): void {
+it('RFQ-3.1.7-A.1: transitioning IN→PERM_OUT without location is now allowed (client feedback 2026-08-01)', function (): void {
     $repo = rfu_repo('PERMOUT_LOC');
     $batch = rfu_batch($repo->id, 10);
     $box = rfu_box($batch->id, [
@@ -350,8 +350,10 @@ it('RFQ-3.1.7-A.1: transitioning IN→PERM_OUT without location throws Validatio
         'location_id' => null,
     ]);
 
-    expect(fn () => $box->update(['barcode_status' => 'PERM_OUT']))
-        ->toThrow(ValidationException::class);
+    $box->update(['barcode_status' => 'PERM_OUT']);
+
+    expect($box->fresh()->barcode_status)->toBe('PERM_OUT')
+        ->and($box->fresh()->location_id)->toBeNull();
 });
 
 it('RFQ-3.1.7-A.2: transitioning IN→PERM_OUT with disinfestation_date AND location passes', function (): void {
