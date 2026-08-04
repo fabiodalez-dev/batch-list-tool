@@ -100,7 +100,11 @@ final class MoveBoxToLocationAction
                     // dedicated tracking_note (kept separate from the general
                     // note) so the movement context is human-readable in the box
                     // view without consulting the audit log.
-                    $existing = $record->tracking_note ? rtrim($record->tracking_note) . "\n" : '';
+                    // Explicit null/'' check: a literal "0" tracking note is a
+                    // real value and must not be treated as empty.
+                    $existing = ($record->tracking_note !== null && $record->tracking_note !== '')
+                        ? rtrim($record->tracking_note) . "\n"
+                        : '';
                     $record->tracking_note = $existing . '[Move] ' . $reason;
                 }
 

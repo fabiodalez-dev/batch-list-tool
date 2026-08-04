@@ -53,6 +53,17 @@ class DocumentLocationReport extends Page implements HasTable
 
     protected static ?string $slug = 'reports/document-locations';
 
+    /**
+     * Resolve a document's effective-location breadcrumb, memoised by location
+     * id for the lifetime of the request. Location::breadcrumb() runs an
+     * ancestors() query per call; the table renders 25 rows and the CSV/PDF
+     * exports thousands, but they share a handful of distinct locations — so
+     * caching by id collapses O(rows) ancestor queries to O(distinct locations).
+     *
+     * @var array<int, string|null>
+     */
+    private array $breadcrumbMemo = [];
+
     public static function canAccess(): bool
     {
         return (bool) auth()->user()?->can('view_any_report');
@@ -86,7 +97,7 @@ class DocumentLocationReport extends Page implements HasTable
 
                 Tables\Columns\TextColumn::make('effective_location')
                     ->label('Location')
-                    ->state(fn (Document $r): string => $r->effectiveLocation()?->breadcrumb() ?? '—')
+                    ->state(fn (Document $r): string => $this->breadcrumbFor($r) ?? '—')
                     ->wrap(),
 
                 Tables\Columns\TextColumn::make('location_source')
@@ -168,8 +179,11 @@ class DocumentLocationReport extends Page implements HasTable
                 'Location from' => 'location_source',
                 'In a box' => 'in_a_box',
             ],
-            query: $this->reportQuery()->orderBy('documents.identifier'),
-            rowMapper: fn (Document $r): array => self::locationRow($r),
+            // Honour the active table filters in the export, not just the table.
+            query: ($this->getFilteredTableQuery() ?? $this->reportQuery())
+                ->with(['currentBox.location', 'location'])
+                ->reorder('documents.identifier'),
+            rowMapper: fn (Document $r): array => $this->locationRow($r),
         );
     }
 
@@ -178,9 +192,13 @@ class DocumentLocationReport extends Page implements HasTable
         abort_unless(static::canAccess(), 403);
 
         $rows = [];
+        $query = ($this->getFilteredTableQuery() ?? $this->reportQuery())
+            ->with(['currentBox.location', 'location'])
+            ->reorder('documents.identifier')
+            ->limit(5000);
         /** @var Document $r */
-        foreach ($this->reportQuery()->orderBy('documents.identifier')->limit(5000)->get() as $r) {
-            $rows[] = self::locationRow($r);
+        foreach ($query->get() as $r) {
+            $rows[] = $this->locationRow($r);
         }
 
         return ReportRenderer::renderPdf(
@@ -217,7 +235,7 @@ class DocumentLocationReport extends Page implements HasTable
             'Identifier' => fn (Document $r) => $r->identifier,
             'Current box' => fn (Document $r) => $r->currentBox?->getAttribute('box_number'),
             'Box barcode' => fn (Document $r) => $r->currentBox?->getAttribute('barcode'),
-            'Location' => fn (Document $r) => $r->effectiveLocation()?->breadcrumb(),
+            'Location' => fn (Document $r) => $this->breadcrumbFor($r),
             'Location from' => fn (Document $r): ?string => $r->effectiveLocation() === null
                 ? null
                 : ($r->locationIsInherited() ? 'box' : 'document'),
@@ -254,13 +272,13 @@ class DocumentLocationReport extends Page implements HasTable
      *
      * @return array<int, scalar|null>
      */
-    protected static function locationRow(Document $r): array
+    protected function locationRow(Document $r): array
     {
         return [
             $r->identifier,
             $r->currentBox?->getAttribute('box_number'),
             $r->currentBox?->getAttribute('barcode'),
-            $r->effectiveLocation()?->breadcrumb(),
+            $this->breadcrumbFor($r),
             $r->effectiveLocation() === null
                 ? null
                 : ($r->locationIsInherited() ? 'box' : 'document'),
@@ -301,5 +319,15 @@ class DocumentLocationReport extends Page implements HasTable
         abort_unless(static::canAccess(), 403);
 
         return [];
+    }
+
+    private function breadcrumbFor(Document $r): ?string
+    {
+        $loc = $r->effectiveLocation();
+        if ($loc === null) {
+            return null;
+        }
+
+        return $this->breadcrumbMemo[(int) $loc->getKey()] ??= $loc->breadcrumb();
     }
 }

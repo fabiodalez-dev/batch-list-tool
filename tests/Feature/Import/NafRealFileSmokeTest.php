@@ -12,9 +12,11 @@ use App\Models\Scopes\RepositoryScope;
 use App\Models\Series;
 use App\Models\User;
 use App\Support\BulkImport\EntityResolver;
+use Filament\Actions\Imports\Exceptions\RowImportFailedException;
 use Filament\Actions\Imports\Models\Import;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Support\Facades\DB;
+use Illuminate\Validation\ValidationException;
 use PhpOffice\PhpSpreadsheet\IOFactory;
 use Spatie\Permission\Models\Role;
 
@@ -113,9 +115,11 @@ function nafsmoke_run(string $importer, array $headers, array $rows, int $userId
 
         try {
             (new $importer($imp, $map, []))($data);
-        } catch (Throwable) {
-            // Expected for rows whose references aren't seeded — skip, exactly
-            // as the streaming job does.
+        } catch (ValidationException|RowImportFailedException) {
+            // The ONLY two failures a real row is expected to hit on a clean DB
+            // (unseeded series / batch / parent box / location). Any other
+            // throwable — a TypeError, an SQL error, an importer regression —
+            // propagates and fails the test, instead of being silently hidden.
         }
         // Roll back any savepoint a failed row left open (importer beforeSave
         // opens one and afterSave commits; a throw between them leaks it).

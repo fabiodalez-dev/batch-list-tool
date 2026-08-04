@@ -151,6 +151,21 @@ it('A5: trims surrounding whitespace before resolving the Location code', functi
     expect(naf_doc('A5')?->location_id)->toBe($loc->id);
 });
 
+it('A6: re-importing with a blank Location clears a prior document-level override', function () {
+    [$repo, $u] = naf_admin();
+    Series::firstOrCreate(['code' => 'REG'], ['title' => 'Reg', 'is_active' => true, 'is_wills_series' => false]);
+    $loc = naf_loc($repo->id, 'SHELF-D9');
+
+    // First import sets a document-level location override.
+    naf_import(DocumentImporter::class, ['Identifier' => 'A6', 'Series' => 'REG', 'Location' => 'SHELF-D9'], $u->id);
+    expect(naf_doc('A6')?->location_id)->toBe($loc->id);
+
+    // Re-import the SAME identifier with a blank Location → override cleared, so
+    // the document falls back to its box's location.
+    naf_import(DocumentImporter::class, ['Identifier' => 'A6', 'Series' => 'REG', 'Location' => ''], $u->id);
+    expect(naf_doc('A6')?->location_id)->toBeNull();
+});
+
 /* ══════════════ C — Tracking Note (box + document) ══════════════ */
 
 it('C1: imports a box Tracking Note into boxes.tracking_note (header "Tracking Note")', function () {

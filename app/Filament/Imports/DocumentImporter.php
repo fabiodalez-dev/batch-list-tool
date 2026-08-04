@@ -1026,6 +1026,13 @@ class DocumentImporter extends Importer
                 ->guess(['Location', 'location', 'Location Code', 'Location Identifier'])
                 ->fillRecordUsing(function (Document $record, ?string $state): void {
                     if ($state === null || trim($state) === '') {
+                        // The Location column is mapped but this cell is blank:
+                        // clear any prior override so the document falls back to
+                        // its box's location (matters on re-import of an existing
+                        // document that previously carried a document-level
+                        // location). A fresh row starts null, so this is a no-op.
+                        $record->location_id = null;
+
                         return;
                     }
                     // Tenancy: location codes are unique per repository. Scope
