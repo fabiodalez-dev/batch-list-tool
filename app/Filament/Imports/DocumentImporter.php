@@ -56,8 +56,9 @@ use Spatie\SchemalessAttributes\SchemalessAttributes;
  *     code, falling back to title exact match.
  *
  *   - RFQ App.1 #1 (forbidden batches 34/36; batch 33 is reserved for old
- *     MAV boxes) and #5 (PERM_OUT requires disinfestation_date) are enforced
- *     by `afterFill` validation.
+ *     MAV boxes) is enforced by `afterFill` validation. #5 (PERM_OUT requires
+ *     disinfestation_date) was loosened 2026-08-01 (client feedback) and is no
+ *     longer enforced.
  *
  * Pivot writes (document_authority) happen in `afterSave` because they
  * need the freshly-saved `id`. Resolved authority ids are stashed on the
@@ -339,8 +340,10 @@ class DocumentImporter extends Importer
      * Post-fill validations and derived fields:
      *
      *  - Parse Year range from `dates` text into dates_year_start/end.
-     *  - PERM_OUT (legacy status_1 in {OUT, PERM_OUT, …}) requires
-     *    disinfestation_date — RFQ App.1 #5.
+     *  - PERM_OUT (legacy status_1 in {OUT, PERM_OUT, …}) no longer requires
+     *    disinfestation_date — RFQ App.1 #5 was loosened 2026-08-01 (client
+     *    feedback supersedes the RFQ); the row may persist without a date
+     *    (a box mirror may still backfill one — see applyBoxBarcodeStatus()).
      *  - When the operator supplies neither Identifier nor Catalogue
      *    Identifier we synthesise an AUTO id so the row can still be
      *    inserted (the spreadsheet column is often blank for new
@@ -406,10 +409,10 @@ class DocumentImporter extends Importer
             } else {
                 // Fallback (review F3): no box to be authoritative about, so
                 // write the resolved status directly onto the document column
-                // rather than silently dropping the operator's data. A1.2 still
-                // holds: PERM_OUT without a disinfestation_date already failed
-                // the row above, and the document-level saving guard re-checks
-                // it on persist — so an invalid state can never be stored.
+                // rather than silently dropping the operator's data. A1.2 was
+                // loosened 2026-08-01: a PERM_OUT document may persist without a
+                // disinfestation_date — neither this importer nor the model
+                // rejects that state any more.
                 $record->barcode_status = $resolvedStatus;
             }
         }
@@ -426,11 +429,10 @@ class DocumentImporter extends Importer
             $this->rowSavepointOpen = false;
         }
 
-        // The box-status precondition (PERM_OUT ⇒ disinfestation_date, RFQ
-        // App.1 #5) is already validated in afterFill() BEFORE we reach here,
-        // so a precondition failure never even attempts a save. This savepoint
-        // guards the residual risk: the box save() in afterSave() throwing
-        // (e.g. a model-level guard) AFTER the document row is already written.
+        // This savepoint guards the residual risk: the box save() in
+        // afterSave() throwing (e.g. a model-level guard such as the
+        // IN_SITU/NRA location requirement) AFTER the document row is already
+        // written, which would otherwise leave a half-saved row.
         DB::beginTransaction();
         $this->rowSavepointOpen = true;
     }
@@ -1306,10 +1308,11 @@ class DocumentImporter extends Importer
      * let its `updated` mirror propagate to every document inside it (this
      * document included, because `current_box_id` is already set by now).
      *
-     * For a PERM_OUT transition the box-level A1.2 guard requires the box to
-     * carry a `disinfestation_date`; we backfill it from the document's own
-     * disinfestation date when the box has none, so the guard passes and the
-     * data stays coherent (the document's date is the accession's date).
+     * For a PERM_OUT transition we backfill the box's `disinfestation_date`
+     * from the document's own date when the box has none, so the documents the
+     * box mirrors PERM_OUT onto stay aligned to a single accession date (the
+     * document's date is the accession's date). A1.2 was loosened 2026-08-01 —
+     * this is data-coherence backfill, not a guard/validation prerequisite.
      */
     protected function applyBoxBarcodeStatus(Document $record): void
     {
@@ -1326,8 +1329,10 @@ class DocumentImporter extends Importer
             return;
         }
 
-        // A1.2 at the box — PERM_OUT needs a disinfestation_date. Seed it from
-        // the document's date before flipping the status so the box guard passes.
+        // Data coherence (A1.2 loosened 2026-08-01): seed the box's
+        // disinfestation_date from the document's own date before flipping the
+        // status, so every document the box mirrors PERM_OUT onto shares one
+        // accession date. This is a backfill, not a guard prerequisite.
         if ($status === 'PERM_OUT'
             && $box->disinfestation_date === null
             && $record->disinfestation_date !== null
