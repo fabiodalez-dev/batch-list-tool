@@ -664,41 +664,33 @@ class Document extends Model implements AuditableContract, HasMedia, Sortable
 
         $dirty = false;
 
-        // The document's barcode_status BEFORE this sync — used to detect a
-        // transition OUT of PERM_OUT custody below.
-        $previousStatus = $this->getOriginal('barcode_status');
-
         if ($box->barcode_status !== null && $this->barcode_status !== $box->barcode_status) {
             $this->barcode_status = $box->barcode_status;
             $dirty = true;
         }
 
-        // A1.2 — keep the document's disinfestation_date in step with the box.
+        // Disinfestation date — GAP-FILL ONLY, never clobber or clear the
+        // document's own value (client feedback 2026-08-04).
         //
-        //   - Box PERM_OUT: realign the document to the box's date (the box
-        //     guard guarantees a PERM_OUT box carries one). Realign even when
-        //     the document already had a date — the box is authoritative for a
-        //     PERM_OUT custody, so a doc moving BETWEEN PERM_OUT boxes reflects
-        //     the destination's date and never drifts.
+        // disinfestation_date is now a DOCUMENT-level property: the client
+        // imports it per document, and effectiveDisinfestationDate() falls back
+        // to the box's date at read time (two-level, no data copied). RFQ App.1
+        // #5 (PERM_OUT requires a disinfestation_date) was loosened 2026-08-01,
+        // so the mirror no longer has to force a date onto PERM_OUT documents.
         //
-        //   - Box NOT PERM_OUT, and the document is LEAVING a PERM_OUT custody
-        //     (its prior status was PERM_OUT): the date it carried was the
-        //     mirror of the old PERM_OUT box, so clear it — it no longer
-        //     reflects the current box.
+        //   - Box PERM_OUT: backfill the box's date ONLY when the document has
+        //     none of its own — mirroring Box::mirrorBarcodeStatusToDocuments,
+        //     which already gap-fills (whereNull). A document that carries its
+        //     own imported date keeps it, even moving between PERM_OUT boxes.
         //
-        // We deliberately do NOT clear a date on a non-PERM_OUT box when the
-        // document was not previously PERM_OUT: a document can legitimately
-        // hold a disinfestation_date while sitting IN a box (it was disinfested
-        // but stays in storage — see MarkDisinfested and RFQ §3.1.4). Blanket
-        // clearing would destroy that genuine record.
-        if ($box->barcode_status === 'PERM_OUT') {
-            if ($box->disinfestation_date !== null
-                && (string) $this->disinfestation_date !== (string) $box->disinfestation_date) {
-                $this->disinfestation_date = $box->disinfestation_date;
-                $dirty = true;
-            }
-        } elseif ($previousStatus === 'PERM_OUT' && $this->disinfestation_date !== null) {
-            $this->disinfestation_date = null;
+        //   - Leaving PERM_OUT: we no longer clear the date. It may be the
+        //     document's own imported value; clearing it would destroy client
+        //     data. (Previously it was cleared because a PERM_OUT document was
+        //     assumed to only ever hold a mirrored box date — no longer true.)
+        if ($box->barcode_status === 'PERM_OUT'
+            && $this->disinfestation_date === null
+            && $box->disinfestation_date !== null) {
+            $this->disinfestation_date = $box->disinfestation_date;
             $dirty = true;
         }
 

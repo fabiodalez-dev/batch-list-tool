@@ -131,7 +131,7 @@ it('re-mirrors a document moved into a PERM_OUT box (reflects PERM_OUT + backfil
         ->and($after->disinfestation_date?->toDateString())->toBe('2026-02-20');
 });
 
-it('clears the disinfestation_date when a document moves out of a PERM_OUT box into a non-PERM_OUT box', function (): void {
+it('preserves the document own disinfestation_date when it moves out of a PERM_OUT box (client feedback 2026-08-04)', function (): void {
     actingAs(User::factory()->create()->assignRole('super_admin'));
 
     [$repo, $batchPerm, $boxPerm, $series] = dbmm_ctx('IN');
@@ -162,18 +162,19 @@ it('clears the disinfestation_date when a document moves out of a PERM_OUT box i
         'disinfestation_date' => '2026-02-20',
     ]);
 
-    // Move OUT of the PERM_OUT box into an IN box: the full re-mirror must drop
-    // both the PERM_OUT status and the now-irrelevant disinfestation_date.
+    // Move OUT of the PERM_OUT box into an IN box: the status re-mirrors to IN,
+    // but the document's OWN disinfestation_date is now preserved (no longer
+    // cleared) — RFQ App.1 #5 was loosened and the date is document-owned.
     $doc->current_box_id = $boxIn->id;
     $doc->save();
 
     $moved = Document::find($doc->id);
     expect($moved->barcode_status)->toBe('IN')
-        ->and($moved->disinfestation_date)->toBeNull()
+        ->and($moved->disinfestation_date?->toDateString())->toBe('2026-02-20')
         ->and((int) $moved->batch_id)->toBe((int) $boxIn->batch_id);
 });
 
-it('realigns the disinfestation_date to the destination PERM_OUT box even when the document already had a different date', function (): void {
+it('keeps the document own disinfestation_date when it moves into a PERM_OUT box (gap-fill only, client feedback 2026-08-04)', function (): void {
     actingAs(User::factory()->create()->assignRole('super_admin'));
 
     [$repo, $batchIn, $boxIn, $series] = dbmm_ctx('IN');
@@ -193,15 +194,17 @@ it('realigns the disinfestation_date to the destination PERM_OUT box even when t
         'series_id' => $series->id,
         'repository_id' => $repo->id,
         'barcode_status' => 'IN',
-        'disinfestation_date' => '2025-01-01', // a stale, different date
+        'disinfestation_date' => '2025-01-01', // the document's own date
     ]);
 
     $doc->current_box_id = $boxPerm->id;
     $doc->save();
 
+    // The status re-mirrors to PERM_OUT, but the document's own date survives —
+    // the mirror gap-fills (only when the document has none), never overwrites.
     $moved = Document::find($doc->id);
     expect($moved->barcode_status)->toBe('PERM_OUT')
-        ->and($moved->disinfestation_date?->toDateString())->toBe('2026-03-15');
+        ->and($moved->disinfestation_date?->toDateString())->toBe('2025-01-01');
 });
 
 it('does not create extra document barcode-history rows or recurse on a box move', function (): void {
