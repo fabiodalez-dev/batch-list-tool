@@ -7,6 +7,7 @@ namespace App\Filament\Pages;
 use App\Filament\Concerns\ExplainsPage;
 use App\Filament\Pages\Reports\BoxMovementHistoryReport;
 use App\Filament\Pages\Reports\DisinfestationCycleReport;
+use App\Filament\Pages\Reports\DocumentLocationReport;
 use App\Filament\Pages\Reports\DocumentsByBatchReport;
 use App\Filament\Pages\Reports\DocumentsByCreatorReport;
 use App\Filament\Pages\Reports\DocumentsBySeriesReport;
@@ -110,6 +111,14 @@ class Reports extends Page
                 'count' => $counts['documents'] . ' documents',
             ],
             [
+                'key' => 'document-locations',
+                'title' => 'Documents by location',
+                'description' => 'Every document with its effective location and the box it sits in (or just the location if it is no longer in a box).',
+                'icon' => 'heroicon-o-map-pin',
+                'url' => DocumentLocationReport::getUrl(),
+                'count' => $counts['documents'] . ' documents',
+            ],
+            [
                 'key' => 'pending-disinfestation',
                 'title' => 'Documents pending disinfestation',
                 'description' => 'Documents without a disinfestation date that are not PERM_OUT.',
@@ -189,6 +198,7 @@ class Reports extends Page
                 ReportTemplate::SOURCE_DOCUMENTS_BY_BATCH => DocumentsByBatchReport::class,
                 ReportTemplate::SOURCE_DOCUMENTS_BY_CREATOR => DocumentsByCreatorReport::class,
                 ReportTemplate::SOURCE_DOCUMENTS_BY_SERIES => DocumentsBySeriesReport::class,
+                ReportTemplate::SOURCE_DOCUMENT_LOCATIONS => DocumentLocationReport::class,
                 ReportTemplate::SOURCE_PENDING_DISINFESTATION => PendingDisinfestationReport::class,
                 ReportTemplate::SOURCE_DISINFESTATION_CYCLE => DisinfestationCycleReport::class,
                 ReportTemplate::SOURCE_RAS_NRA_RECONCILIATION => RasNraReconciliationReport::class,
@@ -223,6 +233,7 @@ class Reports extends Page
             ReportTemplate::SOURCE_DOCUMENTS_BY_BATCH => 'Documents by batch',
             ReportTemplate::SOURCE_DOCUMENTS_BY_CREATOR => 'Documents by creator',
             ReportTemplate::SOURCE_DOCUMENTS_BY_SERIES => 'Documents by series',
+            ReportTemplate::SOURCE_DOCUMENT_LOCATIONS => 'Documents by location',
             ReportTemplate::SOURCE_PENDING_DISINFESTATION => 'Pending disinfestation',
             ReportTemplate::SOURCE_DISINFESTATION_CYCLE => 'Disinfestation cycle plan',
             ReportTemplate::SOURCE_RAS_NRA_RECONCILIATION => 'RAS ↔ NRA reconciliation',

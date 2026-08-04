@@ -5,6 +5,7 @@ declare(strict_types=1);
 use App\Filament\Pages\Reports;
 use App\Filament\Pages\Reports\BoxMovementHistoryReport;
 use App\Filament\Pages\Reports\DisinfestationCycleReport;
+use App\Filament\Pages\Reports\DocumentLocationReport;
 use App\Filament\Pages\Reports\DocumentsByBatchReport;
 use App\Filament\Pages\Reports\DocumentsByCreatorReport;
 use App\Filament\Pages\Reports\DocumentsBySeriesReport;
@@ -160,6 +161,7 @@ test('All 5 report pages render 200 for admin', function () {
     Livewire::test(DocumentsByBatchReport::class)->assertOk();
     Livewire::test(DocumentsByCreatorReport::class)->assertOk();
     Livewire::test(DocumentsBySeriesReport::class)->assertOk();
+    Livewire::test(DocumentLocationReport::class)->assertOk();
     Livewire::test(PendingDisinfestationReport::class)->assertOk();
     Livewire::test(DisinfestationCycleReport::class)->assertOk();
     Livewire::test(RasNraReconciliationReport::class)->assertOk();
@@ -311,6 +313,83 @@ test('PendingDisinfestation filters out rows with disinfestation_date set', func
     $ids = $q->pluck('documents.id')->all();
     expect($ids)->toContain($pending->id)
         ->and($ids)->not->toContain($done->id);
+});
+
+/* ─── DocumentLocationReport (client feedback 2026-08-04) ──────────── */
+
+function rep_location(int $repoId, string $code, ?int $parentId = null): Location
+{
+    return Location::withoutGlobalScope(RepositoryScope::class)->create([
+        'code' => $code,
+        'name' => 'Loc ' . $code,
+        'type' => 'repository',
+        'is_active' => true,
+        'repository_id' => $repoId,
+        'parent_id' => $parentId,
+    ]);
+}
+
+test('DocumentLocation: a document in a box inherits the box location (from box)', function () {
+    $this->actingAs(rep_user('super_admin'));
+    $repo = rep_repo();
+    $series = rep_series();
+    $loc = rep_location($repo->id, 'SHELF-A');
+    $batch = rep_batch($repo->id);
+    $box = rep_box($batch->id);
+    $box->update(['location_id' => $loc->id]);
+
+    $doc = rep_doc($repo->id, $series->id, ['current_box_id' => $box->id, 'location_id' => null]);
+
+    expect($doc->effectiveLocation()?->id)->toBe($loc->id)
+        ->and($doc->locationIsInherited())->toBeTrue();
+});
+
+test('DocumentLocation: a document own location overrides the box (from document)', function () {
+    $this->actingAs(rep_user('super_admin'));
+    $repo = rep_repo();
+    $series = rep_series();
+    $boxLoc = rep_location($repo->id, 'BOX-LOC');
+    $docLoc = rep_location($repo->id, 'DOC-LOC');
+    $batch = rep_batch($repo->id);
+    $box = rep_box($batch->id);
+    $box->update(['location_id' => $boxLoc->id]);
+
+    $doc = rep_doc($repo->id, $series->id, ['current_box_id' => $box->id, 'location_id' => $docLoc->id]);
+
+    expect($doc->effectiveLocation()?->id)->toBe($docLoc->id)
+        ->and($doc->locationIsInherited())->toBeFalse();
+});
+
+test('DocumentLocation: a document no longer in a box shows its own location', function () {
+    $this->actingAs(rep_user('super_admin'));
+    $repo = rep_repo();
+    $series = rep_series();
+    $docLoc = rep_location($repo->id, 'ONLY-DOC');
+
+    $doc = rep_doc($repo->id, $series->id, ['current_box_id' => null, 'location_id' => $docLoc->id]);
+
+    expect($doc->effectiveLocation()?->id)->toBe($docLoc->id)
+        ->and($doc->locationIsInherited())->toBeFalse()
+        ->and($doc->current_box_id)->toBeNull();
+});
+
+test('DocumentLocation reportQuery returns both in-box and not-in-box documents', function () {
+    $this->actingAs(rep_user('super_admin'));
+    $repo = rep_repo();
+    $series = rep_series();
+    $batch = rep_batch($repo->id);
+    $box = rep_box($batch->id);
+
+    $inBox = rep_doc($repo->id, $series->id, ['current_box_id' => $box->id]);
+    $noBox = rep_doc($repo->id, $series->id, ['current_box_id' => null]);
+
+    $page = new DocumentLocationReport;
+    $method = new ReflectionMethod($page, 'reportQuery');
+    /** @var Builder $q */
+    $q = $method->invoke($page);
+
+    $ids = $q->pluck('documents.id')->all();
+    expect($ids)->toContain($inBox->id)->toContain($noBox->id);
 });
 
 /* ─── BoxMovementHistoryReport ─────────────────────────────────────── */
@@ -517,8 +596,9 @@ test('landing page caches counts for 60 seconds', function () {
 
     $page = new Reports;
     $cards1 = $page->cards();
-    // 6 canned reports + NAF Queries Q1 (cycle) + Q3 (reconciliation) + Q4 (stock take).
-    expect($cards1)->toHaveCount(9);
+    // 6 canned reports + Documents-by-location (client feedback 2026-08-04)
+    // + NAF Queries Q1 (cycle) + Q3 (reconciliation) + Q4 (stock take).
+    expect($cards1)->toHaveCount(10);
     $byKey = collect($cards1)->keyBy('key');
     expect($byKey['disinfestation-cycle']['count'])->toBe('1 boxes')
         ->and($byKey['ras-nra-reconciliation']['count'])->toBe('1 RAS-origin docs')
