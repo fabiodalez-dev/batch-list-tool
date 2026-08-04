@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace App\Filament\Pages\Reports;
 
 use App\Filament\Concerns\ExplainsPage;
+use App\Filament\Concerns\ResolvesEffectiveLocationBreadcrumb;
 use App\Filament\Pages\Reports\Concerns\CapsExportRows;
 use App\Filament\Pages\Reports\Concerns\HasReportTemplates;
 use App\Models\Document;
@@ -41,6 +42,7 @@ class DocumentLocationReport extends Page implements HasTable
     use ExplainsPage;
     use HasReportTemplates;
     use InteractsWithTable;
+    use ResolvesEffectiveLocationBreadcrumb;
 
     /** @see ReportTemplate::SOURCES */
     public const REPORT_SOURCE = ReportTemplate::SOURCE_DOCUMENT_LOCATIONS;
@@ -52,17 +54,6 @@ class DocumentLocationReport extends Page implements HasTable
     protected static ?string $title = 'Documents by location';
 
     protected static ?string $slug = 'reports/document-locations';
-
-    /**
-     * Resolve a document's effective-location breadcrumb, memoised by location
-     * id for the lifetime of the request. Location::breadcrumb() runs an
-     * ancestors() query per call; the table renders 25 rows and the CSV/PDF
-     * exports thousands, but they share a handful of distinct locations — so
-     * caching by id collapses O(rows) ancestor queries to O(distinct locations).
-     *
-     * @var array<int, string|null>
-     */
-    private array $breadcrumbMemo = [];
 
     public static function canAccess(): bool
     {
@@ -97,7 +88,7 @@ class DocumentLocationReport extends Page implements HasTable
 
                 Tables\Columns\TextColumn::make('effective_location')
                     ->label('Location')
-                    ->state(fn (Document $r): string => $this->breadcrumbFor($r) ?? '—')
+                    ->state(fn (Document $r): string => $this->effectiveLocationBreadcrumb($r) ?? '—')
                     ->wrap(),
 
                 Tables\Columns\TextColumn::make('location_source')
@@ -136,8 +127,12 @@ class DocumentLocationReport extends Page implements HasTable
                         return $query->whereIn('documents.repository_id', $values);
                     }),
 
-                // Effective-location filter: match the document's OWN location OR
-                // the location of the box it sits in (mirrors effectiveLocation()).
+                // Effective-location filter — mirrors Document::effectiveLocation(),
+                // which resolves the `location` RELATION (so a soft-deleted or
+                // orphaned documents.location_id does NOT count as an own location
+                // and falls back to the box). Testing the resolved relation with
+                // whereHas / whereDoesntHave — not the raw FK — keeps the filter in
+                // step with what the report actually displays.
                 Tables\Filters\SelectFilter::make('effective_location_id')
                     ->label('Location (effective)')
                     ->options(fn (): array => Location::query()
@@ -153,10 +148,12 @@ class DocumentLocationReport extends Page implements HasTable
                         }
 
                         return $query->where(function (Builder $q) use ($values): void {
-                            $q->whereIn('documents.location_id', $values)
-                                ->orWhereHas('currentBox', function (Builder $inner) use ($values): void {
-                                    $inner->whereNull('documents.location_id')
-                                        ->whereIn('location_id', $values);
+                            // Own resolved location in the set...
+                            $q->whereHas('location', fn (Builder $l): Builder => $l->whereIn('locations.id', $values))
+                                // ...or no resolved own location, so use the box's.
+                                ->orWhere(function (Builder $box) use ($values): void {
+                                    $box->whereDoesntHave('location')
+                                        ->whereHas('currentBox.location', fn (Builder $l): Builder => $l->whereIn('locations.id', $values));
                                 });
                         });
                     }),
@@ -235,7 +232,7 @@ class DocumentLocationReport extends Page implements HasTable
             'Identifier' => fn (Document $r) => $r->identifier,
             'Current box' => fn (Document $r) => $r->currentBox?->getAttribute('box_number'),
             'Box barcode' => fn (Document $r) => $r->currentBox?->getAttribute('barcode'),
-            'Location' => fn (Document $r) => $this->breadcrumbFor($r),
+            'Location' => fn (Document $r) => $this->effectiveLocationBreadcrumb($r),
             'Location from' => fn (Document $r): ?string => $r->effectiveLocation() === null
                 ? null
                 : ($r->locationIsInherited() ? 'box' : 'document'),
@@ -278,7 +275,7 @@ class DocumentLocationReport extends Page implements HasTable
             $r->identifier,
             $r->currentBox?->getAttribute('box_number'),
             $r->currentBox?->getAttribute('barcode'),
-            $this->breadcrumbFor($r),
+            $this->effectiveLocationBreadcrumb($r),
             $r->effectiveLocation() === null
                 ? null
                 : ($r->locationIsInherited() ? 'box' : 'document'),
@@ -319,15 +316,5 @@ class DocumentLocationReport extends Page implements HasTable
         abort_unless(static::canAccess(), 403);
 
         return [];
-    }
-
-    private function breadcrumbFor(Document $r): ?string
-    {
-        $loc = $r->effectiveLocation();
-        if ($loc === null) {
-            return null;
-        }
-
-        return $this->breadcrumbMemo[(int) $loc->getKey()] ??= $loc->breadcrumb();
     }
 }

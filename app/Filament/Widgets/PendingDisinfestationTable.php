@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace App\Filament\Widgets;
 
+use App\Filament\Concerns\ResolvesEffectiveLocationBreadcrumb;
 use App\Models\Document;
 use Filament\Actions\Action;
 use Filament\Forms;
@@ -25,6 +26,8 @@ use Illuminate\Support\Facades\Cache;
  */
 class PendingDisinfestationTable extends BaseWidget
 {
+    use ResolvesEffectiveLocationBreadcrumb;
+
     protected static ?int $sort = 2;
 
     protected static ?string $heading = 'Pending disinfestation — action required';
@@ -58,7 +61,7 @@ class PendingDisinfestationTable extends BaseWidget
                 // staff know where to find the box.
                 Tables\Columns\TextColumn::make('effective_location')
                     ->label('Location')
-                    ->state(fn (Document $record): string => $record->effectiveLocation()?->breadcrumb() ?? '—')
+                    ->state(fn (Document $record): string => $this->effectiveLocationBreadcrumb($record) ?? '—')
                     ->placeholder('—'),
 
                 Tables\Columns\TextColumn::make('authorities.surname')
