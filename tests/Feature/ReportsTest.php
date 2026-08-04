@@ -411,6 +411,47 @@ test('DocumentLocation reportQuery returns both in-box and not-in-box documents'
     expect($ids)->toContain($inBox->id)->toContain($noBox->id);
 });
 
+test('DocumentLocation effective-location filter mirrors effectiveLocation() for a soft-deleted own location', function () {
+    // CodeRabbit #188: effectiveLocation() resolves the location RELATION, so a
+    // document whose own location is soft-deleted falls back to its box. The
+    // filter must too — testing the resolved relation (whereHas /
+    // whereDoesntHave), not the raw documents.location_id FK.
+    $this->actingAs(rep_user('super_admin'));
+    $repo = rep_repo();
+    $series = rep_series();
+    $boxLoc = rep_location($repo->id, 'BOXLOC');
+    $orphanLoc = rep_location($repo->id, 'ORPHAN');
+    $batch = rep_batch($repo->id);
+    $box = rep_box($batch->id);
+    $box->update(['location_id' => $boxLoc->id]);
+
+    // Own location set, then soft-deleted → effectiveLocation() falls back to box.
+    $doc = rep_doc($repo->id, $series->id, ['current_box_id' => $box->id, 'location_id' => $orphanLoc->id]);
+    $orphanLoc->delete();
+
+    // A control document whose OWN location (not soft-deleted) is a different
+    // location must NOT match the box-location filter.
+    $otherLoc = rep_location($repo->id, 'OTHER');
+    $control = rep_doc($repo->id, $series->id, ['current_box_id' => null, 'location_id' => $otherLoc->id]);
+
+    expect($doc->fresh()->effectiveLocation()?->id)->toBe($boxLoc->id);
+
+    // Apply the report's own effective_location_id filter query directly (the
+    // full table view has an unrelated array_flip render quirk under Livewire
+    // testing, so we exercise the filter predicate itself, which is what the fix
+    // changed). Filtering on the BOX location must surface the fallback document
+    // even though its raw location_id still points at the soft-deleted location,
+    // and must exclude the control document with a different own location.
+    $instance = Livewire::test(DocumentLocationReport::class)->instance();
+    $filter = $instance->getTable()->getFilter('effective_location_id');
+    $query = Document::query();
+    $filter->apply($query, ['values' => [$boxLoc->id]]);
+    $ids = $query->pluck('documents.id')->all();
+
+    expect($ids)->toContain($doc->id)
+        ->and($ids)->not->toContain($control->id);
+});
+
 /* ─── BoxMovementHistoryReport ─────────────────────────────────────── */
 
 test('BoxMovementHistory date-range filter narrows by movement_date', function () {

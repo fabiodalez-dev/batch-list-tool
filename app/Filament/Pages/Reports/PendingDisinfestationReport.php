@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace App\Filament\Pages\Reports;
 
 use App\Filament\Concerns\ExplainsPage;
+use App\Filament\Concerns\ResolvesEffectiveLocationBreadcrumb;
 use App\Filament\Pages\Reports\Concerns\CapsExportRows;
 use App\Filament\Pages\Reports\Concerns\HasReportTemplates;
 use App\Filament\Pages\Reports\Filters\DateRangeFilter;
@@ -43,6 +44,7 @@ class PendingDisinfestationReport extends Page implements HasTable
     use ExplainsPage;
     use HasReportTemplates;
     use InteractsWithTable;
+    use ResolvesEffectiveLocationBreadcrumb;
 
     /** @see ReportTemplate::SOURCES */
     public const REPORT_SOURCE = ReportTemplate::SOURCE_PENDING_DISINFESTATION;
@@ -110,7 +112,7 @@ class PendingDisinfestationReport extends Page implements HasTable
                 // know where to find each box.
                 Tables\Columns\TextColumn::make('effective_location')
                     ->label('Location')
-                    ->state(fn (Document $r): string => $r->effectiveLocation()?->breadcrumb() ?? '—')
+                    ->state(fn (Document $r): string => $this->effectiveLocationBreadcrumb($r) ?? '—')
                     ->wrap(),
 
                 Tables\Columns\TextColumn::make('created_at')
@@ -299,7 +301,7 @@ class PendingDisinfestationReport extends Page implements HasTable
                 'Days waiting' => 'days_waiting',
             ],
             query: $this->reportQuery()->orderBy('documents.id'),
-            rowMapper: fn (Document $r): array => self::pendingRow($r),
+            rowMapper: fn (Document $r): array => $this->pendingRow($r),
         );
     }
 
@@ -310,7 +312,7 @@ class PendingDisinfestationReport extends Page implements HasTable
         $rows = [];
         /** @var Document $r */
         foreach ($this->reportQuery()->orderBy('documents.created_at')->limit(5000)->get() as $r) {
-            $rows[] = self::pendingRow($r);
+            $rows[] = $this->pendingRow($r);
         }
 
         return ReportRenderer::renderPdf(
@@ -353,7 +355,7 @@ class PendingDisinfestationReport extends Page implements HasTable
             'Current box' => fn (Document $r) => $r->currentBox?->getAttribute('box_number'),
             'Box barcode' => fn (Document $r) => $r->currentBox?->getAttribute('barcode'),
             'Box status' => fn (Document $r) => $r->currentBox?->getAttribute('barcode_status'),
-            'Location' => fn (Document $r) => $r->effectiveLocation()?->breadcrumb(),
+            'Location' => fn (Document $r) => $this->effectiveLocationBreadcrumb($r),
             'Created at' => fn (Document $r) => $r->created_at instanceof \DateTimeInterface ? $r->created_at->format('Y-m-d') : null,
             'Days waiting' => function (Document $r): int {
                 $created = $r->created_at;
@@ -402,7 +404,7 @@ class PendingDisinfestationReport extends Page implements HasTable
      *
      * @return array<int, scalar|null>
      */
-    protected static function pendingRow(Document $r): array
+    protected function pendingRow(Document $r): array
     {
         $created = $r->created_at;
         $days = $created instanceof \DateTimeInterface
@@ -417,7 +419,7 @@ class PendingDisinfestationReport extends Page implements HasTable
             $r->currentBox?->getAttribute('box_number'),
             $r->currentBox?->getAttribute('barcode'),
             $r->currentBox?->getAttribute('barcode_status'),
-            $r->effectiveLocation()?->breadcrumb(),
+            $this->effectiveLocationBreadcrumb($r),
             $created instanceof \DateTimeInterface ? $created->format('Y-m-d') : null,
             $days,
         ];
