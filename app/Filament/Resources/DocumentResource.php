@@ -377,7 +377,10 @@ class DocumentResource extends Resource
                         $g(Forms\Components\Toggle::make('torre')->columnSpanFull()),
                         $g(Forms\Components\TextInput::make('accession_code_legacy')->label('Accession (legacy text)')->maxLength(191)),
                         $g(Forms\Components\TextInput::make('object_reference_number')->maxLength(500)),
-                        $g(Forms\Components\TextInput::make('tracking')->maxLength(500)->columnSpanFull()),
+                        // Client feedback 2026-08-04: a Tracking Note distinct
+                        // from the general note (this is the existing `tracking`
+                        // column, relabelled and promoted to a multi-line field).
+                        $g(Forms\Components\Textarea::make('tracking')->label('Tracking Note')->rows(3)->maxLength(500)->columnSpanFull()),
                         $g(Forms\Components\TextInput::make('museum_reference')->maxLength(500)->columnSpanFull()),
                     ]),
 
@@ -912,7 +915,7 @@ class DocumentResource extends Resource
                         IconEntry::make('torre')->boolean(),
                         TextEntry::make('accession_code_legacy')->label('Accession (legacy)')->placeholder('—'),
                         TextEntry::make('object_reference_number')->label('Object reference #')->placeholder('—'),
-                        TextEntry::make('tracking')->placeholder('—')->columnSpanFull(),
+                        TextEntry::make('tracking')->label('Tracking Note')->placeholder('—')->columnSpanFull(),
                         TextEntry::make('museum_reference')->label('Museum reference')->placeholder('—')->columnSpanFull(),
                     ]),
 

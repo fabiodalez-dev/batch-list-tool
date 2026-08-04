@@ -48,6 +48,10 @@ class ReportTemplate extends Model implements AuditableContract
 
     public const SOURCE_DOCUMENTS_BY_SERIES = 'documents_by_series';
 
+    // Client feedback 2026-08-04: stock-take report of documents with their
+    // effective location (own, else the box's) and the box they sit in.
+    public const SOURCE_DOCUMENT_LOCATIONS = 'document_locations';
+
     public const SOURCE_PENDING_DISINFESTATION = 'pending_disinfestation';
 
     public const SOURCE_BOX_MOVEMENTS = 'box_movements';
@@ -72,6 +76,7 @@ class ReportTemplate extends Model implements AuditableContract
         self::SOURCE_DOCUMENTS_BY_BATCH,
         self::SOURCE_DOCUMENTS_BY_CREATOR,
         self::SOURCE_DOCUMENTS_BY_SERIES,
+        self::SOURCE_DOCUMENT_LOCATIONS,
         self::SOURCE_PENDING_DISINFESTATION,
         self::SOURCE_BOX_MOVEMENTS,
         self::SOURCE_FLAGS_BY_TYPE,

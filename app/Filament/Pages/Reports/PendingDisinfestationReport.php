@@ -106,6 +106,13 @@ class PendingDisinfestationReport extends Page implements HasTable
                     ->badge()
                     ->placeholder('—'),
 
+                // Client feedback 2026-08-04: the effective location so staff
+                // know where to find each box.
+                Tables\Columns\TextColumn::make('effective_location')
+                    ->label('Location')
+                    ->state(fn (Document $r): string => $r->effectiveLocation()?->breadcrumb() ?? '—')
+                    ->wrap(),
+
                 Tables\Columns\TextColumn::make('created_at')
                     ->label('Days waiting')
                     ->state(fn (Document $r): int => (int) round(now()->diffInDays($r->created_at, true)))
@@ -287,6 +294,7 @@ class PendingDisinfestationReport extends Page implements HasTable
                 'Current box' => 'current_box',
                 'Box barcode' => 'box_barcode',
                 'Box status' => 'box_status',
+                'Location' => 'location',
                 'Created at' => 'created_at',
                 'Days waiting' => 'days_waiting',
             ],
@@ -308,7 +316,7 @@ class PendingDisinfestationReport extends Page implements HasTable
         return ReportRenderer::renderPdf(
             title: 'Documents pending disinfestation',
             slug: 'pending-disinfestation',
-            headers: ['Identifier', 'Type', 'Series', 'Batch', 'Current box', 'Box barcode', 'Box status', 'Created at', 'Days waiting'],
+            headers: ['Identifier', 'Type', 'Series', 'Batch', 'Current box', 'Box barcode', 'Box status', 'Location', 'Created at', 'Days waiting'],
             rows: $rows,
         );
     }
@@ -345,6 +353,7 @@ class PendingDisinfestationReport extends Page implements HasTable
             'Current box' => fn (Document $r) => $r->currentBox?->getAttribute('box_number'),
             'Box barcode' => fn (Document $r) => $r->currentBox?->getAttribute('barcode'),
             'Box status' => fn (Document $r) => $r->currentBox?->getAttribute('barcode_status'),
+            'Location' => fn (Document $r) => $r->effectiveLocation()?->breadcrumb(),
             'Created at' => fn (Document $r) => $r->created_at instanceof \DateTimeInterface ? $r->created_at->format('Y-m-d') : null,
             'Days waiting' => function (Document $r): int {
                 $created = $r->created_at;
@@ -378,7 +387,7 @@ class PendingDisinfestationReport extends Page implements HasTable
     protected function reportQuery(): Builder
     {
         return Document::query()
-            ->with(['currentBox:id,box_number,barcode,barcode_status', 'batch:id,batch_number', 'series:id,code'])
+            ->with(['currentBox:id,box_number,barcode,barcode_status,location_id', 'currentBox.location', 'location', 'batch:id,batch_number', 'series:id,code'])
             ->whereNull('disinfestation_date')
             ->where(function (Builder $q): void {
                 $q->whereNull('current_box_id')
@@ -408,6 +417,7 @@ class PendingDisinfestationReport extends Page implements HasTable
             $r->currentBox?->getAttribute('box_number'),
             $r->currentBox?->getAttribute('barcode'),
             $r->currentBox?->getAttribute('barcode_status'),
+            $r->effectiveLocation()?->breadcrumb(),
             $created instanceof \DateTimeInterface ? $created->format('Y-m-d') : null,
             $days,
         ];

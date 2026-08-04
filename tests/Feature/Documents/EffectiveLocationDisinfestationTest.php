@@ -227,17 +227,17 @@ it('keeps the box-level location importable on the Boxes template', function () 
     expect($boxColumns)->toContain('location');
 });
 
-it('does NOT add a Location import column to the Documents template (override is a manual UI edit)', function () {
-    // The Documents template is a fixed, position-matched legacy layout. The
-    // document-level location override is set by hand on the form, so the
-    // importer must not gain a stray `location` column (that would break the
-    // header<->column round-trip and the legacy position match). Boxes DO
-    // import a location; Documents do NOT.
+it('adds a Location import column to BOTH the Box and Document templates (client feedback 2026-08-04)', function () {
+    // Client feedback 2026-08-04: Location moved onto the document template —
+    // the document's own location (documents.location_id, the two-level
+    // override) is now imported by code, exactly like the box. Both importers
+    // carry a `location` column (BoxImporter keeps it tolerant even though the
+    // generated box template no longer offers it — see slice 3).
     $boxColumns = collect(BoxImporter::getColumns())->map(fn ($c) => $c->getName());
     $docColumns = collect(DocumentImporter::getColumns())->map(fn ($c) => $c->getName());
 
     expect($boxColumns)->toContain('location')
-        ->and($docColumns)->not->toContain('location');
+        ->and($docColumns)->toContain('location');
 });
 
 it('still exposes legacy NRA / Museum location columns on the Documents template', function () {

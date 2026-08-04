@@ -1011,12 +1011,50 @@ class DocumentImporter extends Importer
                 ->label('Museum Location')
                 ->guess(['Museum Location', 'museum_location'])
                 ->rules(['nullable', 'string']),
-            // Note: the document's OWN location (the two-level override) is set
-            // by hand on the Documents form (the location_id select) — the
-            // archive amends only the few records that differ from their box.
-            // It is deliberately NOT an import column: the Documents template is
-            // a fixed, position-matched legacy layout, and a blank document
-            // simply inherits its box's location (see Document::effectiveLocation()).
+
+            // Client feedback 2026-08-04: the document's OWN location (the
+            // two-level override, documents.location_id) is now importable —
+            // Location + Disinfestation Date move from the box template onto the
+            // document. Resolved by code, exactly like BoxImporter, so it stays
+            // consistent with the deduplicated location lookup the client asked
+            // to keep as the source of truth. A blank cell still inherits the
+            // box's location (see Document::effectiveLocation()); an unknown code
+            // fails the row (per-row, like the box import) rather than silently
+            // dropping the operator's data.
+            ImportColumn::make('location')
+                ->label('Location (code / identifier)')
+                ->guess(['Location', 'location', 'Location Code', 'Location Identifier'])
+                ->fillRecordUsing(function (Document $record, ?string $state): void {
+                    if ($state === null || trim($state) === '') {
+                        // The Location column is mapped but this cell is blank:
+                        // clear any prior override so the document falls back to
+                        // its box's location (matters on re-import of an existing
+                        // document that previously carried a document-level
+                        // location). A fresh row starts null, so this is a no-op.
+                        $record->location_id = null;
+
+                        return;
+                    }
+                    // Tenancy: location codes are unique per repository. Scope
+                    // the lookup to the row's repository (stamped in
+                    // resolveRecord), falling back to the importing user's default.
+                    $repoId = $record->repository_id
+                        ?? (self::$rowRepositoryStash[spl_object_id($record)] ?? null);
+                    $repoId ??= auth()->user()?->default_repository_id;
+                    $repoId = $repoId !== null ? (int) $repoId : null;
+
+                    $res = EntityResolver::resolveLocation(trim($state), $repoId);
+                    if ($res === null) {
+                        $repoCode = $repoId !== null
+                            ? (Repository::query()->withoutGlobalScopes()->whereKey($repoId)->value('code') ?? (string) $repoId)
+                            : 'unknown';
+
+                        throw ValidationException::withMessages([
+                            'location' => "Unknown location code: '{$state}'. Ensure the location exists in repository '{$repoCode}' before importing.",
+                        ]);
+                    }
+                    $record->location_id = $res['location_id'];
+                }),
 
             // ── Current location (legacy POC text + new FK) ────────────
             ImportColumn::make('batch_number')
@@ -1144,8 +1182,11 @@ class DocumentImporter extends Importer
                 ->rules(['nullable', 'string']),
 
             ImportColumn::make('tracking')
-                ->label('Tracking')
-                ->guess(['Tracking', 'tracking'])
+                ->label('Tracking Note')
+                // Keep guessing the legacy 'Tracking' header (column 47 of the
+                // client's batch list) for backward compatibility with sheets
+                // already in circulation.
+                ->guess(['Tracking Note', 'Tracking', 'tracking'])
                 ->rules(['nullable', 'string']),
 
             ImportColumn::make('museum_reference')

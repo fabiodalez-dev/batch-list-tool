@@ -292,9 +292,13 @@ test('Document template preserves the duplicated provenance headers verbatim', f
     // repeated header names; the template MUST preserve that layout.
     expect($generated)->toEqual(TemplateGenerator::DOCUMENT_HEADERS);
 
-    // The Document sample has 48 populated columns (Seal Number was removed —
-    // it is a BOX field, not a document field).
-    expect(count($generated))->toBe(48);
+    // The Document sample has 49 populated columns (Seal Number was removed —
+    // it is a BOX field, not a document field; 'Location' was appended
+    // 2026-08-04 when Location moved onto the document template).
+    expect(count($generated))->toBe(49);
+
+    // Location is the last column, appended per client feedback 2026-08-04.
+    expect($generated[48])->toBe('Location');
 
     // Concrete duplicate-position assertions — these are the contract the
     // operator relies on.
@@ -352,6 +356,10 @@ test('Box template uses synthesised headers that map 1:1 with BoxImporter column
     // parent box's barcode, which is what the operator types). We
     // assert both the synthesised shape AND coverage of the canonical
     // BoxImporter columns most relevant to the operator.
+    // disinfestation_date and Location were moved OFF the box template onto the
+    // document template (client feedback 2026-08-04). BoxImporter still ACCEPTS
+    // both columns (tolerant), so they are intentionally absent here but present
+    // as importer columns — the cross-check below only walks header → column.
     expect($generated)->toBe([
         'box_type',
         'box_number',
@@ -359,11 +367,10 @@ test('Box template uses synthesised headers that map 1:1 with BoxImporter column
         'parent_box_number',
         'barcode',
         'barcode_status',
-        'disinfestation_date',
         'is_legacy',
         'notes',
+        'Tracking Note',
         'Seal Number',
-        'Location',
         'Destroyed',
         'Current Box Type',
     ]);
@@ -378,6 +385,7 @@ test('Box template uses synthesised headers that map 1:1 with BoxImporter column
     // Header-to-importer-column aliases (where template header differs from importer name).
     $aliases = [
         'parent_box_number' => 'parent_barcode',
+        'Tracking Note' => 'tracking_note',
         'Seal Number' => 'seal_number',
         'Location' => 'location',
         'Current Box Type' => 'current_box_type',

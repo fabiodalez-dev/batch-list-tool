@@ -765,6 +765,7 @@ class ImportWizard extends Page
             'barcode_status' => 'IN, OUT or PERM_OUT. Blank defaults to IN. "Perm Out" / "PERM-OUT" are accepted.',
             'disinfestation_date' => 'The box disinfestation date, if known. Optional (even for PERM_OUT).',
             'is_legacy' => 'yes for a legacy box, otherwise leave blank.',
+            'Tracking Note' => 'Movement / stock-take tracking, kept separate from the general note. Optional.',
             'Seal Number' => 'The physical seal id, if any.',
             'Location' => 'The location CODE (e.g. "SHELF-A3"), NOT the room name. Optional (even for PERM_OUT).',
             'Current Box Type' => 'The physical container: RAS Box, Big Brown Box, Small Brown Box, Standard Blue Box, … (distinct from box_type).',

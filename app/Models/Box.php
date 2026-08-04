@@ -65,6 +65,8 @@ class Box extends Model implements AuditableContract, Sortable
         'provenance_unknown',
         'barcode', 'seal_number', 'barcode_status', 'location_id', 'disinfestation_date',
         'is_legacy', 'notes',
+        // Client feedback 2026-08-04: a Tracking Note distinct from the general note.
+        'tracking_note',
         // RFQ Appendix 2 §vii — "box destroyed" business state.
         'destroyed_at', 'destroyed_by_user_id', 'destroyed_reason',
     ];
