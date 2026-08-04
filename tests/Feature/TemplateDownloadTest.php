@@ -356,6 +356,10 @@ test('Box template uses synthesised headers that map 1:1 with BoxImporter column
     // parent box's barcode, which is what the operator types). We
     // assert both the synthesised shape AND coverage of the canonical
     // BoxImporter columns most relevant to the operator.
+    // disinfestation_date and Location were moved OFF the box template onto the
+    // document template (client feedback 2026-08-04). BoxImporter still ACCEPTS
+    // both columns (tolerant), so they are intentionally absent here but present
+    // as importer columns — the cross-check below only walks header → column.
     expect($generated)->toBe([
         'box_type',
         'box_number',
@@ -363,12 +367,10 @@ test('Box template uses synthesised headers that map 1:1 with BoxImporter column
         'parent_box_number',
         'barcode',
         'barcode_status',
-        'disinfestation_date',
         'is_legacy',
         'notes',
         'Tracking Note',
         'Seal Number',
-        'Location',
         'Destroyed',
         'Current Box Type',
     ]);

@@ -119,7 +119,7 @@ final class TemplateGenerator
      * can detect a stale template at re-upload time and warn the operator.
      * Bump on any change to the header contract.
      */
-    public const string GENERATOR_VERSION = '1.5.0';
+    public const string GENERATOR_VERSION = '1.6.0';
 
     /**
      * Supported template entities. Headers come from the in-repo constants
@@ -286,15 +286,18 @@ final class TemplateGenerator
             'parent_box_number', // barcode of the parent RAS box (IN_SITU/NRA require it — RFQ #3)
             'barcode',           // optional even for RAS (some legacy boxes lost the barcode trail)
             'barcode_status',    // IN | OUT | PERM_OUT
-            'disinfestation_date',
+            // Client feedback 2026-08-04: disinfestation_date and Location moved
+            // OFF the box template and onto the document template — they are
+            // tracked at document level now. BoxImporter still ACCEPTS both
+            // columns (tolerant) so box sheets already in circulation import
+            // cleanly, but the generated box template no longer offers them.
             'is_legacy',
             'notes',
             // Client feedback 2026-08-04: a Tracking Note distinct from the
             // general note. Order mirrors BoxImporter's columns (after notes).
             'Tracking Note',
-            // F05 — Seal Number and Location added per client request.
+            // F05 — Seal Number added per client request.
             'Seal Number',       // optional physical seal id on the box
-            'Location',          // location code / identifier (e.g. "SHELF-A3"); optional even for PERM_OUT
             // Client feedback 2026-08-01. Order mirrors BoxImporter's columns
             // (destroyed before current_box_type).
             'Destroyed',         // Yes / a date / blank — bulk-mark boxes already destroyed
