@@ -108,6 +108,7 @@ it('claim 3b: bulk Relocate sets location, PERM OUT with disinfestation date and
         expect($fresh->location_id)->toBe($location->id)
             ->and($fresh->barcode_status)->toBe('PERM_OUT')
             ->and($fresh->disinfestation_date)->not->toBeNull()
-            ->and((string) $fresh->notes)->toContain('Moved to NRA — walkthrough claim');
+            // Client feedback 2026-08-04: relocation note goes to tracking_note.
+            ->and((string) $fresh->tracking_note)->toContain('Moved to NRA — walkthrough claim');
     }
 });

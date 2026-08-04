@@ -115,7 +115,7 @@ final class TemplateGenerator
      * can detect a stale template at re-upload time and warn the operator.
      * Bump on any change to the header contract.
      */
-    public const string GENERATOR_VERSION = '1.3.0';
+    public const string GENERATOR_VERSION = '1.4.0';
 
     /**
      * Supported template entities. Headers come from the in-repo constants
@@ -285,6 +285,9 @@ final class TemplateGenerator
             'disinfestation_date',
             'is_legacy',
             'notes',
+            // Client feedback 2026-08-04: a Tracking Note distinct from the
+            // general note. Order mirrors BoxImporter's columns (after notes).
+            'Tracking Note',
             // F05 — Seal Number and Location added per client request.
             'Seal Number',       // optional physical seal id on the box
             'Location',          // location code / identifier (e.g. "SHELF-A3"); optional even for PERM_OUT

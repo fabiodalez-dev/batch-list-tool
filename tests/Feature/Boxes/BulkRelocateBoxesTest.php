@@ -52,7 +52,10 @@ it('bulk-relocates several selected boxes to a new location (location only, no P
         expect($fresh->location_id)->toBe($location->id)
             // A pure relocate must NOT touch custody status.
             ->and($fresh->barcode_status)->toBe($originalStatus)
-            ->and((string) $fresh->notes)->toContain('Moved shelf A → shelf B');
+            // Client feedback 2026-08-04: the relocation note now lands on the
+            // dedicated tracking_note, no longer on the general note.
+            ->and((string) $fresh->tracking_note)->toContain('Moved shelf A → shelf B')
+            ->and((string) $fresh->notes)->not->toContain('Moved shelf A → shelf B');
     }
 });
 

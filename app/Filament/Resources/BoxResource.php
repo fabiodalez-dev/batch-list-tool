@@ -458,6 +458,13 @@ class BoxResource extends Resource
                         $g(Forms\Components\Textarea::make('notes')
                             ->rows(3)
                             ->columnSpanFull()),
+                        // Client feedback 2026-08-04: a Tracking Note kept
+                        // separate from the general note (movement / stock-take).
+                        $g(Forms\Components\Textarea::make('tracking_note')
+                            ->label('Tracking Note')
+                            ->helperText('Movement / stock-take tracking, kept separate from the general note.')
+                            ->rows(3)
+                            ->columnSpanFull()),
                     ]),
 
                 // Custom fields (EAV, per-repository).
@@ -632,6 +639,13 @@ class BoxResource extends Resource
                             ->hiddenLabel()
                             ->prose()
                             ->placeholder('No notes.')
+                            ->columnSpanFull(),
+                        // Client feedback 2026-08-04: Tracking Note, separate
+                        // from the general note (movement / stock-take).
+                        TextEntry::make('tracking_note')
+                            ->label('Tracking Note')
+                            ->prose()
+                            ->placeholder('No tracking note.')
                             ->columnSpanFull(),
                     ]),
 
@@ -1012,8 +1026,11 @@ class BoxResource extends Resource
                                 }
 
                                 if (filled($data['tracking_note'] ?? null)) {
-                                    $existing = trim((string) ($record->notes ?? ''));
-                                    $update['notes'] = $existing !== ''
+                                    // Client feedback 2026-08-04: relocation notes
+                                    // go to the dedicated tracking_note, no longer
+                                    // appended to the general note.
+                                    $existing = trim((string) ($record->tracking_note ?? ''));
+                                    $update['tracking_note'] = $existing !== ''
                                         ? $existing . "\n" . $data['tracking_note']
                                         : $data['tracking_note'];
                                 }

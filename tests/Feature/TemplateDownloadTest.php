@@ -362,6 +362,7 @@ test('Box template uses synthesised headers that map 1:1 with BoxImporter column
         'disinfestation_date',
         'is_legacy',
         'notes',
+        'Tracking Note',
         'Seal Number',
         'Location',
         'Destroyed',
@@ -378,6 +379,7 @@ test('Box template uses synthesised headers that map 1:1 with BoxImporter column
     // Header-to-importer-column aliases (where template header differs from importer name).
     $aliases = [
         'parent_box_number' => 'parent_barcode',
+        'Tracking Note' => 'tracking_note',
         'Seal Number' => 'seal_number',
         'Location' => 'location',
         'Current Box Type' => 'current_box_type',

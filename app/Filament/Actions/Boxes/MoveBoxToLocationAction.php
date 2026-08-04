@@ -18,9 +18,9 @@ use Filament\Notifications\Notification;
  * in Box::$fillable and not excluded, so every save that changes it produces
  * an `updated` audit row automatically — no manual audit write needed).
  *
- * An optional free-text reason is appended to box.notes so the operator's
- * comment survives long after any audit retention window, while the precise
- * field-level change (old/new location_id) lives in the audits table.
+ * An optional free-text reason is appended to box.tracking_note so the
+ * operator's comment survives long after any audit retention window, while the
+ * precise field-level change (old/new location_id) lives in the audits table.
  *
  * Authorization: mirrors the `update_box` Shield permission used throughout
  * BoxResource. Destroying a location assignment is a subset of box editing,
@@ -96,10 +96,12 @@ final class MoveBoxToLocationAction
                 $record->location_id = $location->getKey();
 
                 if ($reason !== null) {
-                    // Prepend reason to notes so the context is human-readable
-                    // in the box view without consulting the audit log.
-                    $existing = $record->notes ? rtrim($record->notes) . "\n" : '';
-                    $record->notes = $existing . '[Move] ' . $reason;
+                    // Client feedback 2026-08-04: the move reason goes to the
+                    // dedicated tracking_note (kept separate from the general
+                    // note) so the movement context is human-readable in the box
+                    // view without consulting the audit log.
+                    $existing = $record->tracking_note ? rtrim($record->tracking_note) . "\n" : '';
+                    $record->tracking_note = $existing . '[Move] ' . $reason;
                 }
 
                 $record->save();

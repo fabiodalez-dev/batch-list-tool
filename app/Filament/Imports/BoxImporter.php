@@ -495,6 +495,13 @@ class BoxImporter extends Importer
                 ->guess(['Notes', 'notes', 'Note'])
                 ->rules(['nullable', 'string']),
 
+            // Client feedback 2026-08-04: a Tracking Note distinct from the
+            // general note (movement / stock-take context).
+            ImportColumn::make('tracking_note')
+                ->label('Tracking Note')
+                ->guess(['Tracking Note', 'tracking_note', 'Tracking note'])
+                ->rules(['nullable', 'string']),
+
             // F05 (feedback review) — Seal Number and Location columns added
             // per client request ("The following fields should also be part
             // of the importation process: Seal Number, Location").

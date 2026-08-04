@@ -1144,8 +1144,11 @@ class DocumentImporter extends Importer
                 ->rules(['nullable', 'string']),
 
             ImportColumn::make('tracking')
-                ->label('Tracking')
-                ->guess(['Tracking', 'tracking'])
+                ->label('Tracking Note')
+                // Keep guessing the legacy 'Tracking' header (column 47 of the
+                // client's batch list) for backward compatibility with sheets
+                // already in circulation.
+                ->guess(['Tracking Note', 'Tracking', 'tracking'])
                 ->rules(['nullable', 'string']),
 
             ImportColumn::make('museum_reference')
