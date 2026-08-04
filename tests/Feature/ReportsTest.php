@@ -315,6 +315,25 @@ test('PendingDisinfestation filters out rows with disinfestation_date set', func
         ->and($ids)->not->toContain($done->id);
 });
 
+test('PendingDisinfestation report exposes the effective location in its export columns', function () {
+    $this->actingAs(rep_user('super_admin'));
+    $repo = rep_repo();
+    $series = rep_series();
+    $loc = rep_location($repo->id, 'PEND-LOC');
+    $batch = rep_batch($repo->id);
+    $box = rep_box($batch->id);
+    $box->update(['location_id' => $loc->id]);
+
+    $doc = rep_doc($repo->id, $series->id, [
+        'current_box_id' => $box->id,
+        'disinfestation_date' => null,
+    ]);
+
+    $columns = (new PendingDisinfestationReport)->getXlsxColumns();
+    expect($columns)->toHaveKey('Location')
+        ->and($columns['Location']($doc->fresh()))->toBe($loc->breadcrumb());
+});
+
 /* ─── DocumentLocationReport (client feedback 2026-08-04) ──────────── */
 
 function rep_location(int $repoId, string $code, ?int $parentId = null): Location

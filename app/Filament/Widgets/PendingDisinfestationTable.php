@@ -54,6 +54,13 @@ class PendingDisinfestationTable extends BaseWidget
                     ->color('gray')
                     ->placeholder('—'),
 
+                // Client feedback 2026-08-04: show the effective location so
+                // staff know where to find the box.
+                Tables\Columns\TextColumn::make('effective_location')
+                    ->label('Location')
+                    ->state(fn (Document $record): string => $record->effectiveLocation()?->breadcrumb() ?? '—')
+                    ->placeholder('—'),
+
                 Tables\Columns\TextColumn::make('authorities.surname')
                     ->label('Creator')
                     ->limit(40)
@@ -112,7 +119,7 @@ class PendingDisinfestationTable extends BaseWidget
     public static function pendingQuery(): Builder
     {
         return Document::query()
-            ->with(['currentBox:id,box_number,barcode_status', 'batch:id,batch_number', 'authorities:id,surname'])
+            ->with(['currentBox:id,box_number,barcode_status,location_id', 'currentBox.location', 'location', 'batch:id,batch_number', 'authorities:id,surname'])
             ->whereNull('disinfestation_date')
             ->where(function (Builder $q): void {
                 $q->whereNull('current_box_id')
