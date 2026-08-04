@@ -107,6 +107,10 @@ final class TemplateGenerator
         'Dates', 'Deeds', 'Document Type', 'Series', 'Current Box', 'Note',
         'Digitised', 'Torre', 'Accession', 'Object Reference Number',
         'Tracking', 'Museum Reference',
+        // Client feedback 2026-08-04: Location moves onto the document template
+        // (documents.location_id, code-resolved). Appended in place — the
+        // document layout is position-matched legacy, so new columns go last.
+        'Location',
     ];
 
     /**
@@ -115,7 +119,7 @@ final class TemplateGenerator
      * can detect a stale template at re-upload time and warn the operator.
      * Bump on any change to the header contract.
      */
-    public const string GENERATOR_VERSION = '1.4.0';
+    public const string GENERATOR_VERSION = '1.5.0';
 
     /**
      * Supported template entities. Headers come from the in-repo constants
