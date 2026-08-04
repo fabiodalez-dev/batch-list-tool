@@ -772,6 +772,17 @@ input.fi-input {
     box-shadow: 0 8px 24px -12px oklch(40% 0.05 48 / 0.18);
 }
 
+/* Dropdown panels (bulk actions, filters, row actions) MUST float above the
+   sticky table header, which this theme sets to z-index: 20 (see
+   `.fi-ta-table thead th` earlier). At an equal z-index the sticky header wins
+   and paints over the lower half of a dropdown that opens across it — which is
+   exactly why the bulk-actions "Delete selected" item was invisible while
+   "Relocate boxes" (above the header line) showed. Filament modals sit at
+   z-index 40+, so 30 stays safely below them. */
+.fi-dropdown-panel {
+    z-index: 30;
+}
+
 .fi-dropdown-list-item-button:hover {
     background-color: var(--cream-100);
 }
