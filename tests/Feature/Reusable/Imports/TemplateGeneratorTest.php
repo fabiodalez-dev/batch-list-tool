@@ -26,11 +26,15 @@ it('TemplateGenerator: headersFor("batch") returns the synthetic Batch header se
         ->and($headers)->toContain('repository_code');
 });
 
-it('TemplateGenerator: headersFor("box") includes parent_box_number and barcode_status', function () {
+it('TemplateGenerator: headersFor("box") includes parent_box_number and barcode_status, no longer disinfestation_date/Location', function () {
+    // Client feedback 2026-08-04: disinfestation_date and Location moved OFF the
+    // box template onto the document template.
     $headers = TemplateGenerator::headersFor('box');
     expect($headers)->toContain('parent_box_number')
         ->and($headers)->toContain('barcode_status')
-        ->and($headers)->toContain('disinfestation_date');
+        ->and($headers)->toContain('Tracking Note')
+        ->and($headers)->not->toContain('disinfestation_date')
+        ->and($headers)->not->toContain('Location');
 });
 
 it('TemplateGenerator: headersFor("authority") returns the in-repo legacy contract', function () {
@@ -51,7 +55,8 @@ it('TemplateGenerator: headersFor("series") starts at Identifier and includes th
 it('TemplateGenerator: headersFor("document") preserves the duplicated provenance headers', function () {
     $headers = TemplateGenerator::headersFor('document');
     expect($headers)->toEqual(TemplateGenerator::DOCUMENT_HEADERS)
-        ->and($headers)->toHaveCount(48)
+        // 49 = 48 + 'Location' appended 2026-08-04 (moved onto the document).
+        ->and($headers)->toHaveCount(49)
         // "Barcode (IN)" appears at columns 13 and 22 (0-based 12 / 21)
         ->and($headers[12])->toBe('Barcode (IN)')
         ->and($headers[21])->toBe('Barcode (IN)');

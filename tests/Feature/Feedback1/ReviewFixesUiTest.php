@@ -188,11 +188,13 @@ it('F05.1: BoxImporter::getColumns() includes seal_number and location columns',
         ->and($cols)->toContain('location');
 });
 
-it('F05.2: TemplateGenerator box headers include Seal Number and Location', function (): void {
+it('F05.2: TemplateGenerator box headers include Seal Number; Location moved to the document template (2026-08-04)', function (): void {
     $headers = TemplateGenerator::headersFor('box');
 
+    // Seal Number stays on the box template; Location moved onto the document
+    // template per client feedback 2026-08-04 (BoxImporter stays tolerant).
     expect($headers)->toContain('Seal Number')
-        ->and($headers)->toContain('Location');
+        ->and($headers)->not->toContain('Location');
 });
 
 it('F05.3: BoxImporter seal_number column persists the value on the Box record', function (): void {
