@@ -56,8 +56,9 @@ use Spatie\SchemalessAttributes\SchemalessAttributes;
  *     code, falling back to title exact match.
  *
  *   - RFQ App.1 #1 (forbidden batches 34/36; batch 33 is reserved for old
- *     MAV boxes) and #5 (PERM_OUT requires disinfestation_date) are enforced
- *     by `afterFill` validation.
+ *     MAV boxes) is enforced by `afterFill` validation. #5 (PERM_OUT requires
+ *     disinfestation_date) was loosened 2026-08-01 (client feedback) and is no
+ *     longer enforced.
  *
  * Pivot writes (document_authority) happen in `afterSave` because they
  * need the freshly-saved `id`. Resolved authority ids are stashed on the
@@ -341,7 +342,8 @@ class DocumentImporter extends Importer
      *  - Parse Year range from `dates` text into dates_year_start/end.
      *  - PERM_OUT (legacy status_1 in {OUT, PERM_OUT, …}) no longer requires
      *    disinfestation_date — RFQ App.1 #5 was loosened 2026-08-01 (client
-     *    feedback supersedes the RFQ); the row persists with a null date.
+     *    feedback supersedes the RFQ); the row may persist without a date
+     *    (a box mirror may still backfill one — see applyBoxBarcodeStatus()).
      *  - When the operator supplies neither Identifier nor Catalogue
      *    Identifier we synthesise an AUTO id so the row can still be
      *    inserted (the spreadsheet column is often blank for new
@@ -427,11 +429,10 @@ class DocumentImporter extends Importer
             $this->rowSavepointOpen = false;
         }
 
-        // The box-status precondition (PERM_OUT ⇒ disinfestation_date, RFQ
-        // App.1 #5) is already validated in afterFill() BEFORE we reach here,
-        // so a precondition failure never even attempts a save. This savepoint
-        // guards the residual risk: the box save() in afterSave() throwing
-        // (e.g. a model-level guard) AFTER the document row is already written.
+        // This savepoint guards the residual risk: the box save() in
+        // afterSave() throwing (e.g. a model-level guard such as the
+        // IN_SITU/NRA location requirement) AFTER the document row is already
+        // written, which would otherwise leave a half-saved row.
         DB::beginTransaction();
         $this->rowSavepointOpen = true;
     }
@@ -1328,8 +1329,10 @@ class DocumentImporter extends Importer
             return;
         }
 
-        // A1.2 at the box — PERM_OUT needs a disinfestation_date. Seed it from
-        // the document's date before flipping the status so the box guard passes.
+        // Data coherence (A1.2 loosened 2026-08-01): seed the box's
+        // disinfestation_date from the document's own date before flipping the
+        // status, so every document the box mirrors PERM_OUT onto shares one
+        // accession date. This is a backfill, not a guard prerequisite.
         if ($status === 'PERM_OUT'
             && $box->disinfestation_date === null
             && $record->disinfestation_date !== null
