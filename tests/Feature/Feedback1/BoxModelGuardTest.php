@@ -9,7 +9,6 @@ use App\Models\Location;
 use App\Models\Repository;
 use App\Models\User;
 use Illuminate\Foundation\Testing\RefreshDatabase;
-use Illuminate\Validation\ValidationException;
 
 use function Pest\Laravel\actingAs;
 
@@ -29,7 +28,10 @@ function bmg_ctx(): array
     return [$repo, $batch, $location];
 }
 
-it('rejects creating an IN_SITU box with no location (F5)', function (): void {
+it('allows creating an IN_SITU box with no location (location optional, client feedback 2026-08-05)', function (): void {
+    // The model guard that required IN_SITU / NRA boxes to carry a location was
+    // removed — location is optional for every box type now (it is moving to the
+    // document level). An IN_SITU box still needs its parent RAS box (RFQ #3).
     actingAs(User::factory()->create()->assignRole('super_admin'));
     [$repo, $batch, $location] = bmg_ctx();
 
@@ -40,13 +42,16 @@ it('rejects creating an IN_SITU box with no location (F5)', function (): void {
         'barcode' => 'BC-G-RAS-1',
     ]);
 
-    expect(fn () => Box::create([
+    $inSitu = Box::create([
         'box_type' => 'IN_SITU',
         'box_number' => 'IS-G1',
         'batch_id' => $batch->id,
         'parent_box_id' => $ras->id,
         'location_id' => null,
-    ]))->toThrow(ValidationException::class);
+    ]);
+
+    expect($inSitu->exists)->toBeTrue()
+        ->and($inSitu->location_id)->toBeNull();
 });
 
 it('allows a barcode-less RAS box at the model level (bulk/provisional path)', function (): void {
@@ -54,8 +59,8 @@ it('allows a barcode-less RAS box at the model level (bulk/provisional path)', f
     // user-input boundaries (Filament form + BoxImporter), NOT in the model
     // save: the barcode sticker is a later operational step, so a RAS record
     // may legitimately be created (bulk import / seed / provisional) before it
-    // is assigned. The model only blocks the structurally-meaningless cases
-    // (IN_SITU/NRA without a location, the parent-RAS rule).
+    // is assigned. (The old IN_SITU/NRA-requires-location model guard was
+    // removed 2026-08-05 — location is optional for every box type now.)
     actingAs(User::factory()->create()->assignRole('super_admin'));
     [$repo, $batch] = bmg_ctx();
 

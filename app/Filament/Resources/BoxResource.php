@@ -316,25 +316,15 @@ class BoxResource extends Resource
                                 ->forRepository(auth()->user()?->default_repository_id),
                         )
                             ->label('Location (RFQ §3.1.9)')
-                            // C2.1 — Location is mandatory for IN_SITU / NRA
-                            // boxes (they live at a configured NRA location);
-                            // optional for RAS boxes. It is NO LONGER required for
-                            // PERM_OUT boxes: client feedback 2026-08-01 — a
-                            // perm-out / destroyed box no longer needs a box-level
-                            // location (location is now a document-level concept).
-                            ->required(fn (Get $get): bool => $isInSitu($get))
-                            ->helperText(fn (Get $get): string => $isInSitu($get)
-                                ? 'Required for IN_SITU / NRA boxes. Repository / room / shelf / showcase / temp-holding hierarchy.'
-                                : 'Repository / room / shelf / showcase / temp-holding hierarchy.')
-                            ->columnSpanFull()
-                            ->rule(fn (Get $get) => function (string $attribute, $value, \Closure $fail) use ($get, $isInSitu) {
-                                // Defence-in-depth beyond ->required(): covers
-                                // API / bulk-import paths that bypass the
-                                // Filament Required validator.
-                                if ($isInSitu($get) && empty($value)) {
-                                    $fail('IN_SITU / NRA boxes must reference a Location (RFQ Feedback1 C2.1).');
-                                }
-                            })),
+                            // Client feedback 2026-08-05 (Charlene): Location is
+                            // now OPTIONAL for every box type, IN_SITU / NRA
+                            // included (it used to be mandatory for those). It is
+                            // moving to the document level; kept optional on the
+                            // box for now so IN_SITU boxes can be imported without
+                            // one, to be removed from the box entirely later if a
+                            // document-level location proves sufficient.
+                            ->helperText('Optional. Repository / room / shelf / showcase / temp-holding hierarchy.')
+                            ->columnSpanFull()),
                     ]),
 
                 // F3 (review finding) — the barcode-history log is an
