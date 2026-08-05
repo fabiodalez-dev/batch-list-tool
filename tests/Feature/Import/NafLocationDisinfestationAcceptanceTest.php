@@ -298,9 +298,12 @@ it('B7: an IN_SITU box imports WITHOUT a location now (location optional, client
         'parent_box_number' => 'BC-PARENT-1',
     ], $u->id);
 
+    $parent = naf_boxByNumber('PARENT-1');
     $box = naf_boxByNumber('INSITU-1');
+    expect($parent)->not->toBeNull();
     expect($box)->not->toBeNull()
         ->and($box->box_type)->toBe('IN_SITU')
+        ->and($box->parent_box_id)->toBe($parent->id) // parent RAS resolved by barcode (RFQ #3 unchanged)
         ->and($box->location_id)->toBeNull();
 });
 
