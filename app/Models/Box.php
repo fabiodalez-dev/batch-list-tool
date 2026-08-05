@@ -616,48 +616,15 @@ class Box extends Model implements AuditableContract, Sortable
             }
         });
 
-        // F5 (review finding) — structural integrity guards that until now
-        // lived only in the Filament form, so the importer / console / API
-        // could create boxes that violate C2.1:
-        //   - IN_SITU / NRA boxes (the provenance types, requiresParent())
-        //     MUST reference a Location.
-        //   - RAS / MAV / STVC boxes MUST carry a non-blank barcode.
-        // Gated so pre-existing seeded/imported rows are never retro-broken:
-        // we only enforce on the INSERT path, or when the box_type itself
-        // changes (which re-qualifies the box for the rule). A bare update of
-        // an unrelated column on a legacy row is never blocked.
-        static::saving(function (self $box): void {
-            $isCreate = ! $box->exists;
-            $typeChanged = $box->isDirty('box_type');
-            // F2 (review finding) — also re-check when location_id itself
-            // changes: an update that NULLs the location_id of an existing
-            // IN_SITU / NRA box would otherwise slip past the create/type gate
-            // and leave a provenance box without the Location that defines it.
-            $locationChanged = $box->isDirty('location_id');
-            if (! $isCreate && ! $typeChanged && ! $locationChanged) {
-                return;
-            }
-
-            // IN_SITU / NRA require a Location — its location IS the box's
-            // identity, so a provenance box with none is structurally
-            // meaningless. This is enforced at the model level (every path).
-            if (in_array($box->box_type, ['IN_SITU', 'NRA'], true) && $box->location_id === null) {
-                throw ValidationException::withMessages([
-                    'location_id' => 'IN_SITU / NRA boxes must reference a Location (RFQ Feedback1 C2.1).',
-                ]);
-            }
-
-            // NOTE: the "RAS box requires a barcode" rule (Feedback1 C2.1) is
-            // enforced at the USER-INPUT boundaries — the Filament form
-            // (->required on RAS) and the BoxImporter validation — NOT here at
-            // the model save. A blanket model guard would wrongly reject the
-            // legitimate bulk/seed/provisional paths that create a RAS box
-            // record before its physical barcode sticker is assigned (the
-            // barcode is a later operational step, unlike the location which
-            // defines an In-Situ box). Enforcing it on save broke seeders,
-            // performance fixtures and tenant-scope fixtures across the suite
-            // without protecting any real-world gap the form+importer don't.
-        });
+        // Client feedback 2026-08-05 (Charlene): the model-level guard that
+        // required IN_SITU / NRA boxes to reference a Location (RFQ Feedback1
+        // C2.1) was REMOVED — location is optional for every box type now, so
+        // IN_SITU boxes can be imported without one (location is moving to the
+        // document level; it may be removed from the box entirely later). The
+        // "RAS box requires a barcode" rule was never enforced here anyway — it
+        // lives at the user-input boundaries (the Filament form + BoxImporter),
+        // deliberately, so bulk/seed/provisional paths that create a RAS row
+        // before its physical barcode sticker is assigned are not broken.
 
         static::updating(function (self $box): void {
             $box->captureBarcodeTransition();

@@ -280,6 +280,30 @@ it('B6: the document template offers Location (appended) and the importer maps i
         ->and($cols)->toContain('location');
 });
 
+it('B7: an IN_SITU box imports WITHOUT a location now (location optional, client feedback 2026-08-05)', function () {
+    // Charlene needs to import In-Situ boxes; the model guard that required them
+    // to carry a location was removed (location is optional for every box type).
+    // The parent-RAS-box requirement (RFQ #3) is unchanged.
+    [$repo, $u] = naf_admin();
+    naf_box($repo->id);
+
+    // Parent RAS box first.
+    naf_import(BoxImporter::class, [
+        'box_type' => 'RAS', 'box_number' => 'PARENT-1', 'batch_number' => '1', 'barcode' => 'BC-PARENT-1',
+    ], $u->id);
+
+    // IN_SITU box referencing the parent by barcode, with NO location.
+    naf_import(BoxImporter::class, [
+        'box_type' => 'IN_SITU', 'box_number' => 'INSITU-1', 'batch_number' => '1',
+        'parent_box_number' => 'BC-PARENT-1',
+    ], $u->id);
+
+    $box = naf_boxByNumber('INSITU-1');
+    expect($box)->not->toBeNull()
+        ->and($box->box_type)->toBe('IN_SITU')
+        ->and($box->location_id)->toBeNull();
+});
+
 /* ══════════════ D — Mirror gap-fill (document own date survives PERM_OUT) ══════════════ */
 
 it('D1: a document own disinfestation_date survives creation inside a PERM_OUT box', function () {
