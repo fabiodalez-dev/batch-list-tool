@@ -11,6 +11,7 @@ use App\Models\Batch;
 use App\Models\Box;
 use App\Models\Document;
 use App\Models\Location;
+use App\Models\Lookup\BoxType;
 use App\Models\Repository;
 use App\Models\Scopes\RepositoryScope;
 use App\Models\Scopes\ThroughBatchRepositoryScope;
@@ -343,7 +344,7 @@ it('B9: a box_type added to the Box Types lookup imports, even if it is not a bu
     [$repo, $u] = naf_admin();
     naf_box($repo->id);
 
-    \App\Models\Lookup\BoxType::query()->create([
+    BoxType::query()->create([
         'code' => 'MUS', 'label' => 'Museum', 'sort_order' => 99, 'is_active' => true, 'is_legacy' => false,
     ]);
 
