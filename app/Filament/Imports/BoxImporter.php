@@ -9,6 +9,7 @@ use App\Filament\Imports\Concerns\SkipsExistingRows;
 use App\Models\Batch;
 use App\Models\Box;
 use App\Models\CustomFieldDefinition;
+use App\Models\Lookup\BoxType;
 use App\Models\Repository;
 use App\Models\Scopes\ThroughBatchRepositoryScope;
 use App\Support\BulkImport\EntityResolver;
@@ -183,16 +184,6 @@ class BoxImporter extends Importer
         return $record;
     }
 
-    /**
-     * Apply the three RFQ rules that depend on multiple fields:
-     *
-     *  #3 — IN_SITU and NRA require a parent RAS box. If the operator
-     *       supplied no parent barcode we cannot proceed safely; we leave
-     *       parent_box_id null and let the row fail with an explicit
-     *       validation message via the `before save` check.
-     *  #4 — MAV / STVC force `is_legacy = true`.
-     *  (RFQ #5 PERM_OUT preconditions were dropped — client feedback 2026-08-01.)
-     */
     public function afterFill(): void
     {
         /** @var Box $record */
@@ -280,7 +271,7 @@ class BoxImporter extends Importer
                 ->rules(['required', 'string', 'max:32']),
 
             ImportColumn::make('box_type')
-                ->label('Box type (RAS / IN_SITU / NRA / MAV / STVC)')
+                ->label('Box type')
                 ->requiredMappingForNewRecordsOnly()
                 ->guess(['Box type', 'Type', 'box_type'])
                 ->castStateUsing(function (?string $state): ?string {
@@ -298,7 +289,24 @@ class BoxImporter extends Importer
                 })
                 // Value now optional (was 'required'): the "Unknown"/"NULL"
                 // catch-all boxes carry no box type (client feedback 2026-08-01).
-                ->rules(['nullable', 'in:RAS,IN_SITU,NRA,MAV,STVC']),
+                //
+                // Client 2026-08-10: box_type is driven by the Box Types LOOKUP
+                // (the create form uses BoxType::optionsWith() and the model
+                // enforces Lookups::assertActive(BoxType::class, …)), so an
+                // operator who adds a new type (e.g. MUS) via the Box Types
+                // admin can import it. Validate against the active lookup codes
+                // instead of a hardcoded list; Box::TYPES is unioned in as a
+                // fallback for bootstraps where the lookup is not seeded.
+                ->rules(['nullable', function (string $attribute, mixed $value, \Closure $fail): void {
+                    $code = strtoupper(trim((string) $value));
+                    if ($code === '') {
+                        return; // nullable — the "Unknown"/"NULL" catch-alls
+                    }
+                    if (! in_array($code, self::allowedBoxTypeCodes(), true)) {
+                        $fail('The selected Box type is invalid. Add it under Box Types first, or use one of: '
+                            . implode(', ', self::allowedBoxTypeCodes()) . '.');
+                    }
+                }]),
 
             // Batch lookup by batch_number — the friendlier alternative to
             // forcing operators to type DB ids.
@@ -637,5 +645,40 @@ class BoxImporter extends Importer
         }
 
         return $columns;
+    }
+
+    /**
+     * Apply the three RFQ rules that depend on multiple fields:
+     *
+     *  #3 — IN_SITU and NRA require a parent RAS box. If the operator
+     *       supplied no parent barcode we cannot proceed safely; we leave
+     *       parent_box_id null and let the row fail with an explicit
+     *       validation message via the `before save` check.
+     *  #4 — MAV / STVC force `is_legacy = true`.
+     *  (RFQ #5 PERM_OUT preconditions were dropped — client feedback 2026-08-01.)
+     */
+    /**
+     * The box_type codes accepted on import: the active Box Types lookup values
+     * (so an operator can add a new type — e.g. MUS — and import it) UNIONed
+     * with the canonical Box::TYPES as a fallback for bootstraps where the
+     * lookup table is empty (minimal tests). All upper-cased to match the
+     * castStateUsing() normalisation.
+     *
+     * @return list<string>
+     */
+    private static function allowedBoxTypeCodes(): array
+    {
+        $codes = Box::TYPES;
+
+        try {
+            $codes = array_merge($codes, array_keys(BoxType::options()));
+        } catch (\Throwable) {
+            // Lookup table unavailable — fall back to the canonical set.
+        }
+
+        return array_values(array_unique(array_map(
+            static fn ($c): string => strtoupper((string) $c),
+            $codes,
+        )));
     }
 }

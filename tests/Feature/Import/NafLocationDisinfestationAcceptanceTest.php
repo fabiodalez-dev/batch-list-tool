@@ -336,6 +336,33 @@ it('B8: an IN_SITU/NRA box imports with NO parent when provenance_unknown is set
     expect(naf_boxByNumber('NRA-NP'))->toBeNull();
 });
 
+it('B9: a box_type added to the Box Types lookup imports, even if it is not a built-in type (client 2026-08-10, MUS)', function () {
+    // box_type is lookup-driven (the create form uses BoxType::optionsWith and
+    // the model enforces Lookups::assertActive) — the importer must honour the
+    // same lookup instead of a hardcoded RAS/IN_SITU/NRA/MAV/STVC list.
+    [$repo, $u] = naf_admin();
+    naf_box($repo->id);
+
+    \App\Models\Lookup\BoxType::query()->create([
+        'code' => 'MUS', 'label' => 'Museum', 'sort_order' => 99, 'is_active' => true, 'is_legacy' => false,
+    ]);
+
+    naf_import(BoxImporter::class, [
+        'box_type' => 'MUS', 'box_number' => 'MUS-1', 'batch_number' => '1', 'barcode' => 'BC-MUS-1',
+    ], $u->id);
+
+    $box = naf_boxByNumber('MUS-1');
+    expect($box)->not->toBeNull()
+        ->and($box->box_type)->toBe('MUS');
+
+    // A code that is NOT in the lookup is still rejected, and nothing inserted.
+    expect(fn () => naf_import(BoxImporter::class, [
+        'box_type' => 'ZZZ', 'box_number' => 'ZZZ-1', 'batch_number' => '1', 'barcode' => 'BC-ZZZ-1',
+    ], $u->id))->toThrow(ValidationException::class);
+
+    expect(naf_boxByNumber('ZZZ-1'))->toBeNull();
+});
+
 /* ══════════════ D — Mirror gap-fill (document own date survives PERM_OUT) ══════════════ */
 
 it('D1: a document own disinfestation_date survives creation inside a PERM_OUT box', function () {
