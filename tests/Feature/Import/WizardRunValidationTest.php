@@ -3,7 +3,9 @@
 declare(strict_types=1);
 
 use App\Filament\Imports\AuthorityImporter;
+use App\Filament\Imports\BoxImporter;
 use App\Filament\Pages\ImportWizard;
+use App\Models\Lookup\BoxType;
 use App\Models\User;
 use Filament\Schemas\Components\Wizard;
 use Illuminate\Foundation\Testing\RefreshDatabase;
@@ -119,4 +121,29 @@ test('preflight applies the column cast before validating — no false error on 
     // in:PERSON,INSTITUTION rule (before the fix it was falsely reported invalid).
     expect($result['invalid'])->toBe(0)
         ->and($result['valid'])->toBe(2);
+});
+
+test('preflight flags an unknown box_type but accepts one added to the Box Types lookup (MUS)', function () {
+    $this->actingAs(wrv_admin());
+
+    // CodeRabbit (PR #194): box_type is validated by a ValidationRule OBJECT
+    // (ValidBoxTypeCode), NOT a Closure — so it participates in the preflight
+    // preview the operator relies on, not only at import time. An operator adds
+    // MUS under Box Types; the preflight must accept MUS and still reject ZZZ.
+    BoxType::query()->create([
+        'code' => 'MUS', 'label' => 'Museum', 'sort_order' => 99, 'is_active' => true, 'is_legacy' => false,
+    ]);
+
+    $columnMap = ['box_type' => 'box_type'];
+    $rows = [
+        ['box_type' => 'MUS'], // spreadsheet row 2 — valid (lookup)
+        ['box_type' => 'ZZZ'], // spreadsheet row 3 — invalid
+    ];
+
+    $result = ImportWizard::validateRows(BoxImporter::class, $rows, $columnMap);
+
+    $flaggedRows = collect($result['errors'])->where('field', 'Box type')->pluck('row')->all();
+
+    expect($flaggedRows)->toContain(3)      // ZZZ flagged in the preview
+        ->and($flaggedRows)->not->toContain(2); // MUS accepted
 });
