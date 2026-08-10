@@ -7,6 +7,7 @@ use App\Filament\Pages\ImportStatus;
 use App\Models\User;
 use Filament\Actions\Imports\Models\Import;
 use Illuminate\Foundation\Testing\RefreshDatabase;
+use Illuminate\Support\Facades\DB;
 use Livewire\Livewire;
 
 /**
@@ -141,6 +142,73 @@ it('surfaces processed and total row counts', function () {
 // 5. Stalled detection — a long-pending import flags the dead queue worker
 //    (NAF Feedback-1 comment #3: "did not import at all / not shown")
 // ---------------------------------------------------------------------------
+
+// ---------------------------------------------------------------------------
+// 6. Every failure carries a visible reason, grouped by message
+//    (Charlene 2026-08-10: "there must be an error for every failure")
+// ---------------------------------------------------------------------------
+
+it('surfaces the reason for every failed row, grouped by message', function () {
+    $admin = is_makeUser('admin');
+    $this->actingAs($admin);
+
+    $import = is_makeImport($admin, [
+        'total_rows' => 3,
+        'successful_rows' => 1, // → 2 failed
+        'completed_at' => now()->timestamp,
+    ]);
+
+    // Two identical skips + one JSON-encoded validation error.
+    DB::table('failed_import_rows')->insert([
+        [
+            'import_id' => $import->id,
+            'data' => json_encode(['box_number' => '3']),
+            'validation_error' => 'Skipped — row already exists (skip duplicates enabled).',
+            'created_at' => now(), 'updated_at' => now(),
+        ],
+        [
+            'import_id' => $import->id,
+            'data' => json_encode(['box_number' => '4']),
+            'validation_error' => 'Skipped — row already exists (skip duplicates enabled).',
+            'created_at' => now(), 'updated_at' => now(),
+        ],
+        [
+            'import_id' => $import->id,
+            'data' => json_encode(['box_number' => '5']),
+            'validation_error' => json_encode(['box_number' => ['The box number field is required.']]),
+            'created_at' => now(), 'updated_at' => now(),
+        ],
+    ]);
+
+    $found = collect((new ImportStatus)->getImports())->firstWhere('id', $import->id);
+
+    expect($found['failure_reasons'])->toHaveCount(2); // two DISTINCT reasons
+
+    // The duplicated skip is collapsed to one line with count 2.
+    $skip = collect($found['failure_reasons'])
+        ->firstWhere('reason', 'Skipped — row already exists (skip duplicates enabled).');
+    expect($skip)->not->toBeNull()
+        ->and($skip['count'])->toBe(2);
+
+    // A JSON field=>messages error is flattened to a readable sentence.
+    $req = collect($found['failure_reasons'])->firstWhere('count', 1);
+    expect($req['reason'])->toContain('The box number field is required.');
+});
+
+it('exposes no failure_reasons for a clean import', function () {
+    $admin = is_makeUser('admin');
+    $this->actingAs($admin);
+
+    $import = is_makeImport($admin, [
+        'total_rows' => 5,
+        'successful_rows' => 5,
+        'completed_at' => now()->timestamp,
+    ]);
+
+    $found = collect((new ImportStatus)->getImports())->firstWhere('id', $import->id);
+    expect($found['failed_rows'])->toBe(0)
+        ->and($found['failure_reasons'])->toBe([]);
+});
 
 it('flags a long-pending import as stalled but not a fresh one', function () {
     $admin = is_makeUser('admin');

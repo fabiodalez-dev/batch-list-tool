@@ -58,12 +58,22 @@
                                 </span>
                             </td>
 
-                            {{-- Failed --}}
-                            <td class="px-4 py-3 text-right tabular-nums">
+                            {{-- Failed (+ the reason for every failure, grouped) --}}
+                            <td class="px-4 py-3 text-right tabular-nums align-top">
                                 @if ($row['failed_rows'] > 0)
                                     <span class="text-red-600 dark:text-red-400 font-medium">
                                         {{ number_format($row['failed_rows']) }}
                                     </span>
+                                    @if (!empty($row['failure_reasons']))
+                                        <ul class="mt-1 text-left text-[11px] font-normal leading-snug text-gray-500 dark:text-gray-400 space-y-0.5 max-w-xs ml-auto">
+                                            @foreach ($row['failure_reasons'] as $fr)
+                                                <li>
+                                                    <span class="tabular-nums font-medium text-gray-600 dark:text-gray-300">{{ number_format($fr['count']) }}&times;</span>
+                                                    {{ $fr['reason'] }}
+                                                </li>
+                                            @endforeach
+                                        </ul>
+                                    @endif
                                 @else
                                     <span class="text-gray-400">0</span>
                                 @endif

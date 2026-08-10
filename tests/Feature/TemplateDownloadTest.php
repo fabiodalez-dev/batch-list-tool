@@ -368,6 +368,7 @@ test('Box template uses synthesised headers that map 1:1 with BoxImporter column
         'barcode',
         'barcode_status',
         'is_legacy',
+        'Provenance Unknown',
         'notes',
         'Tracking Note',
         'Seal Number',
@@ -390,6 +391,7 @@ test('Box template uses synthesised headers that map 1:1 with BoxImporter column
         'Location' => 'location',
         'Current Box Type' => 'current_box_type',
         'Destroyed' => 'destroyed',
+        'Provenance Unknown' => 'provenance_unknown',
     ];
     foreach ($generated as $header) {
         $aliased = $aliases[$header] ?? $header;

@@ -58,6 +58,25 @@ function ba_batchFor(User $user): Batch
 }
 
 // ---------------------------------------------------------------------------
+// Sorting — the Box column orders numerically (Charlene 2026-08-10)
+// ---------------------------------------------------------------------------
+
+it('sorts the Box column numerically: 1, 2, 10 — not 1, 10, 2', function (): void {
+    $user = ba_actor();
+    $this->actingAs($user);
+    $batch = ba_batchFor($user);
+
+    // box_number is a string; a lexicographic sort would give 1, 10, 2.
+    $b1 = Box::factory()->create(['batch_id' => $batch->id, 'box_type' => 'RAS', 'box_number' => '1', 'barcode' => 'BC-SORT-1']);
+    $b2 = Box::factory()->create(['batch_id' => $batch->id, 'box_type' => 'RAS', 'box_number' => '2', 'barcode' => 'BC-SORT-2']);
+    $b10 = Box::factory()->create(['batch_id' => $batch->id, 'box_type' => 'RAS', 'box_number' => '10', 'barcode' => 'BC-SORT-10']);
+
+    Livewire::test(ListBoxes::class)
+        ->sortTable('box_number')
+        ->assertCanSeeTableRecords([$b1, $b2, $b10], inOrder: true);
+});
+
+// ---------------------------------------------------------------------------
 // A10 — Barcode required
 // ---------------------------------------------------------------------------
 
