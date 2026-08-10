@@ -232,7 +232,10 @@ class BoxImporter extends Importer
         // often have neither recorded, and location is now a document-level
         // concept. A PERM_OUT box row imports without them.
 
-        if (in_array($record->box_type, ['IN_SITU', 'NRA'], true) && $record->parent_box_id === null) {
+        if (in_array($record->box_type, ['IN_SITU', 'NRA'], true)
+            && $record->parent_box_id === null
+            && $record->provenance_unknown !== true
+        ) {
             // Drain the stashes on this failure path too.
             unset(
                 self::$rowRepositoryStash[spl_object_id($record)],
@@ -240,9 +243,13 @@ class BoxImporter extends Importer
             );
 
             // RFQ #3 — IN_SITU / NRA boxes MUST reference a parent RAS box.
-            // Reject the row instead of inserting an orphan.
+            // Reject the row instead of inserting an orphan — UNLESS the row
+            // sets provenance_unknown=true, the same escape hatch the create
+            // form offers (client 2026-08-10: importing In-Situ / NRA boxes
+            // that genuinely have no RAS parent). Mirrors the model saving()
+            // guard, which already allows a null parent when provenance_unknown.
             throw ValidationException::withMessages([
-                'parent_box_id' => __('IN_SITU and NRA boxes must reference a parent RAS box (via its barcode or an unambiguous RAS box number).'),
+                'parent_box_id' => __('IN_SITU and NRA boxes must reference a parent RAS box (via its barcode or an unambiguous RAS box number), or set "Provenance unknown" to Yes when there is genuinely no RAS parent.'),
             ]);
         }
     }
@@ -487,6 +494,15 @@ class BoxImporter extends Importer
             ImportColumn::make('is_legacy')
                 ->label('Is legacy box?')
                 ->guess(['Is legacy', 'is_legacy', 'Legacy'])
+                ->boolean()
+                ->rules(['nullable', 'boolean']),
+
+            // Client 2026-08-10 — In-Situ / NRA boxes that genuinely have no RAS
+            // parent. Yes here lets the row skip the parent-RAS requirement
+            // (see afterFill()), the same escape hatch the create form exposes.
+            ImportColumn::make('provenance_unknown')
+                ->label('Provenance unknown (no RAS parent)')
+                ->guess(['Provenance unknown', 'provenance_unknown', 'Provenance Unknown', 'No RAS parent', 'No parent'])
                 ->boolean()
                 ->rules(['nullable', 'boolean']),
 

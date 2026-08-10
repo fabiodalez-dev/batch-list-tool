@@ -755,9 +755,19 @@ class BoxResource extends Resource
                     ->searchable()
                     // Bug #2 — a combined "Batch then Box" sort: clicking Box orders
                     // by the parent batch number first, then the box number.
-                    ->sortable(query: fn (Builder $query, string $direction): Builder => $query
-                        ->orderByLeftPowerJoins('batch.batch_number', $direction)
-                        ->orderBy('box_number', $direction))
+                    // Client 2026-08-10 — box_number is a string, so a plain
+                    // lexicographic sort gives 1, 10, 11, 2, … Cast to an integer
+                    // so the numbers order naturally (1, 2, 3, …, 10, 11); the raw
+                    // box_number is the tie-breaker for the handful of non-numeric
+                    // ids (1A, 2A, "NULL", which cast to their leading integer / 0).
+                    ->sortable(query: function (Builder $query, string $direction): Builder {
+                        $dir = strtolower($direction) === 'desc' ? 'desc' : 'asc';
+
+                        return $query
+                            ->orderByLeftPowerJoins('batch.batch_number', $direction)
+                            ->orderByRaw("CAST(box_number AS UNSIGNED) {$dir}")
+                            ->orderBy('box_number', $direction);
+                    })
                     ->toggleable()),
                 $gc(Tables\Columns\TextColumn::make('barcode')
                     ->label('Barcode')

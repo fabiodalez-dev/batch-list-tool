@@ -119,7 +119,7 @@ final class TemplateGenerator
      * can detect a stale template at re-upload time and warn the operator.
      * Bump on any change to the header contract.
      */
-    public const string GENERATOR_VERSION = '1.6.0';
+    public const string GENERATOR_VERSION = '1.7.0';
 
     /**
      * Supported template entities. Headers come from the in-repo constants
@@ -292,6 +292,10 @@ final class TemplateGenerator
             // columns (tolerant) so box sheets already in circulation import
             // cleanly, but the generated box template no longer offers them.
             'is_legacy',
+            // Client 2026-08-10: In-Situ / NRA boxes that genuinely have no RAS
+            // parent. Yes lets the row skip the parent-RAS requirement (RFQ #3);
+            // blank/No keeps it enforced. Mirrors the create form's toggle.
+            'Provenance Unknown',
             'notes',
             // Client feedback 2026-08-04: a Tracking Note distinct from the
             // general note. Order mirrors BoxImporter's columns (after notes).

@@ -761,6 +761,7 @@ class ImportWizard extends Page
             'box_type' => 'One of: RAS, IN_SITU, NRA, MAV, STVC.',
             'box_number' => "This box's own number.",
             'parent_box_number' => 'For IN_SITU / NRA boxes: the parent RAS box\'s NUMBER (e.g. "1") or its barcode. Leave blank for RAS boxes.',
+            'Provenance Unknown' => 'Yes for an IN_SITU / NRA box that genuinely has NO parent RAS box; blank/No keeps the parent required. Ignored for RAS boxes.',
             'barcode' => 'The physical barcode. Optional — leave blank if the box never had one or the trail was lost.',
             'barcode_status' => 'IN, OUT or PERM_OUT. Blank defaults to IN. "Perm Out" / "PERM-OUT" are accepted.',
             'disinfestation_date' => 'The box disinfestation date, if known. Optional (even for PERM_OUT).',

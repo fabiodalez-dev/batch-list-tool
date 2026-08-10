@@ -257,7 +257,7 @@ it('B3: a legacy box sheet with Location + Disinfestation Date still imports cle
 });
 
 it('B4: the generator version was bumped for the template contract change', function () {
-    expect(TemplateGenerator::GENERATOR_VERSION)->toBe('1.6.0');
+    expect(TemplateGenerator::GENERATOR_VERSION)->toBe('1.7.0');
 });
 
 it('B5: every generated box header still maps to a BoxImporter column (round-trip)', function () {
@@ -266,6 +266,7 @@ it('B5: every generated box header still maps to a BoxImporter column (round-tri
     $aliases = [
         'parent_box_number' => 'parent_barcode', 'Tracking Note' => 'tracking_note',
         'Seal Number' => 'seal_number', 'Current Box Type' => 'current_box_type', 'Destroyed' => 'destroyed',
+        'Provenance Unknown' => 'provenance_unknown',
     ];
     foreach ($headers as $h) {
         expect($cols)->toContain($aliases[$h] ?? $h);
@@ -305,6 +306,34 @@ it('B7: an IN_SITU box imports WITHOUT a location now (location optional, client
         ->and($box->box_type)->toBe('IN_SITU')
         ->and($box->parent_box_id)->toBe($parent->id) // parent RAS resolved by barcode (RFQ #3 unchanged)
         ->and($box->location_id)->toBeNull();
+});
+
+it('B8: an IN_SITU/NRA box imports with NO parent when provenance_unknown is set (client 2026-08-10)', function () {
+    // Charlene is importing In-Situ / NRA boxes that genuinely have no RAS
+    // parent. The importer now honours provenance_unknown (the same escape hatch
+    // the create form offers), mirroring the model saving() guard.
+    [$repo, $u] = naf_admin();
+    naf_box($repo->id);
+
+    // IN_SITU box, no parent, provenance unknown → allowed.
+    naf_import(BoxImporter::class, [
+        'box_type' => 'IN_SITU', 'box_number' => 'INSITU-NP', 'batch_number' => '1',
+        'provenance_unknown' => 'yes',
+    ], $u->id);
+
+    $box = naf_boxByNumber('INSITU-NP');
+    expect($box)->not->toBeNull()
+        ->and($box->box_type)->toBe('IN_SITU')
+        ->and($box->parent_box_id)->toBeNull()
+        ->and($box->provenance_unknown)->toBeTrue();
+
+    // Guard intact: an NRA box with neither a parent nor provenance_unknown is
+    // still rejected (RFQ #3), and nothing is inserted.
+    expect(fn () => naf_import(BoxImporter::class, [
+        'box_type' => 'NRA', 'box_number' => 'NRA-NP', 'batch_number' => '1',
+    ], $u->id))->toThrow(ValidationException::class);
+
+    expect(naf_boxByNumber('NRA-NP'))->toBeNull();
 });
 
 /* ══════════════ D — Mirror gap-fill (document own date survives PERM_OUT) ══════════════ */

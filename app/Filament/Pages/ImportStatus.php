@@ -7,6 +7,7 @@ namespace App\Filament\Pages;
 use App\Models\User;
 use Filament\Actions\Imports\Models\Import;
 use Filament\Pages\Page;
+use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\URL;
 
 /**
@@ -121,6 +122,39 @@ class ImportStatus extends Page
                     }
                 }
 
+                // Client 2026-08-10 (Charlene): every failure must show WHY —
+                // the errors CSV lives in the last column and scrolls off-screen,
+                // so surface the reason(s) inline. Group the import's
+                // failed_import_rows by their stored message so one line covers
+                // any number of identical failures ("N × <reason>").
+                $failureReasons = [];
+                if ($failedCount > 0) {
+                    $failureReasons = DB::table('failed_import_rows')
+                        ->where('import_id', $import->getKey())
+                        ->selectRaw('validation_error as reason, COUNT(*) as count')
+                        ->groupBy('validation_error')
+                        ->orderByDesc('count')
+                        ->limit(20)
+                        ->get()
+                        ->map(function (object $r): array {
+                            // Filament may store the error as a JSON map of
+                            // field => [messages]; flatten it to a sentence.
+                            // Plain-string reasons (e.g. the "Skipped — row
+                            // already exists" note) pass through unchanged.
+                            $reason = (string) ($r->reason ?? '');
+                            $decoded = json_decode($reason, true);
+                            if (is_array($decoded)) {
+                                $reason = collect($decoded)->flatten()->implode(' ');
+                            }
+
+                            return [
+                                'reason' => $reason !== '' ? $reason : 'Unknown error',
+                                'count' => (int) $r->count,
+                            ];
+                        })
+                        ->all();
+                }
+
                 // Short importer class name (strip namespace) for display.
                 $importerShort = class_exists($import->importer)
                     ? new \ReflectionClass($import->importer)->getShortName()
@@ -144,6 +178,7 @@ class ImportStatus extends Page
                     'total_rows' => $import->total_rows,
                     'successful_rows' => $import->successful_rows,
                     'failed_rows' => $failedCount,
+                    'failure_reasons' => $failureReasons,
                     'completed_at' => $import->completed_at,
                     'is_stalled' => $isStalled,
                     'inputter' => $inputterName,
