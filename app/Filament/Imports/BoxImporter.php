@@ -11,6 +11,7 @@ use App\Models\Box;
 use App\Models\CustomFieldDefinition;
 use App\Models\Repository;
 use App\Models\Scopes\ThroughBatchRepositoryScope;
+use App\Rules\ValidBoxTypeCode;
 use App\Support\BulkImport\EntityResolver;
 use App\Support\BulkImport\SpreadsheetParsers;
 use App\Support\CustomFields\CustomFieldResolver;
@@ -280,7 +281,7 @@ class BoxImporter extends Importer
                 ->rules(['required', 'string', 'max:32']),
 
             ImportColumn::make('box_type')
-                ->label('Box type (RAS / IN_SITU / NRA / MAV / STVC)')
+                ->label('Box type')
                 ->requiredMappingForNewRecordsOnly()
                 ->guess(['Box type', 'Type', 'box_type'])
                 ->castStateUsing(function (?string $state): ?string {
@@ -298,7 +299,17 @@ class BoxImporter extends Importer
                 })
                 // Value now optional (was 'required'): the "Unknown"/"NULL"
                 // catch-all boxes carry no box type (client feedback 2026-08-01).
-                ->rules(['nullable', 'in:RAS,IN_SITU,NRA,MAV,STVC']),
+                //
+                // Client 2026-08-10: box_type is driven by the Box Types LOOKUP
+                // (the create form uses BoxType::optionsWith() and the model
+                // enforces Lookups::assertActive(BoxType::class, …)), so an
+                // operator who adds a new type (e.g. MUS) via the Box Types
+                // admin can import it. ValidBoxTypeCode is a ValidationRule
+                // OBJECT (not a Closure) on purpose: the ImportWizard preflight
+                // preview keeps string / array / ValidationRule rules and drops
+                // Closures, so a Closure would validate at import time but stay
+                // INVISIBLE in the "N rows would fail validation" preview.
+                ->rules(['nullable', new ValidBoxTypeCode]),
 
             // Batch lookup by batch_number — the friendlier alternative to
             // forcing operators to type DB ids.

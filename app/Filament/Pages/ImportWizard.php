@@ -758,7 +758,7 @@ class ImportWizard extends Page
     {
         return [
             // Boxes
-            'box_type' => 'One of: RAS, IN_SITU, NRA, MAV, STVC.',
+            'box_type' => 'A code from the Box Types lookup (RAS, IN_SITU, NRA, MAV, STVC out of the box). Add a new type under Box Types to import it. Blank for the Unknown / NULL catch-alls.',
             'box_number' => "This box's own number.",
             'parent_box_number' => 'For IN_SITU / NRA boxes: the parent RAS box\'s NUMBER (e.g. "1") or its barcode. Leave blank for RAS boxes.',
             'Provenance Unknown' => 'Yes for an IN_SITU / NRA box that genuinely has NO parent RAS box; blank/No keeps the parent required. Ignored for RAS boxes.',
