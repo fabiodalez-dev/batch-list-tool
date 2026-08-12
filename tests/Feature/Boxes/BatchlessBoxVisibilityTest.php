@@ -95,7 +95,8 @@ it('stamps a batch-less box IMPORT with the import user repository so it is visi
     $repoA = Repository::factory()->create();
     $user = User::factory()->create(['default_repository_id' => $repoA->id]);
     $user->assignRole('admin');
-    actingAs($user);
+    // Deliberately NOT actingAs — a queued import job runs with no auth() user,
+    // so the repository must come from the Import's user, not auth() (CodeRabbit).
 
     // batch_number is present in the template (so the column is mapped) but left
     // blank — exactly Charlene's file — so batch_id resolves to null.
@@ -115,7 +116,35 @@ it('stamps a batch-less box IMPORT with the import user repository so it is visi
         ->and($box->batch_id)->toBeNull()
         ->and($box->repository_id)->toBe($repoA->id);
 
-    // Visible in the tenant-scoped list under repoA.
+    // Visible in the tenant-scoped list under repoA once a user views it.
+    actingAs($user);
     app(ActiveRepository::class)->set($repoA->id);
     expect(Box::where('box_number', 'MB1')->exists())->toBeTrue();
+});
+
+it('normalises repository_id: null for a batched box, even if one was set', function (): void {
+    actingAs(User::factory()->create()->assignRole('admin'));
+
+    $repoA = Repository::factory()->create();
+    $repoB = Repository::factory()->create();
+    $batchB = Batch::factory()->create(['repository_id' => $repoB->id]);
+
+    // A box created WITH a batch AND an explicit (divergent) own repository_id:
+    // the saving hook must force repository_id null so tenancy comes only from
+    // the batch (client 2026-08-12 invariant / CodeRabbit).
+    $box = Box::create([
+        'box_type' => 'RAS',
+        'box_number' => 'NRB1',
+        'batch_id' => $batchB->id,
+        'barcode' => 'BC-NRB1',
+        'repository_id' => $repoA->id,
+    ]);
+
+    expect($box->fresh()->repository_id)->toBeNull();
+
+    // Visible under the BATCH's repo (repoB), not the stale own repo (repoA).
+    app(ActiveRepository::class)->set($repoB->id);
+    expect(Box::count())->toBe(1);
+    app(ActiveRepository::class)->set($repoA->id);
+    expect(Box::count())->toBe(0);
 });

@@ -31,9 +31,10 @@ class ListBoxes extends ListRecords
      * custom-field columns for the 'box' entity type in the active
      * repository (CustomFieldResolver::definitionsFor).
      *
-     * Note: repo is derived via the batch relation (or the box own repository_id
-     * batch relation. Custom-field resolution uses the active repo from the
-     * request context (topbar switcher / user default).
+     * Note: the box repository is derived from the batch relation, or — for
+     * batch-less boxes — from the box's own repository_id (client 2026-08-12).
+     * Custom-field resolution uses the active repo from the request context
+     * (topbar switcher / user default).
      *
      * Value formatting: boolean→1/0, date→Y-m-d, datetime→Y-m-d H:i:s,
      * else (string). User-controlled strings are sanitised against CSV

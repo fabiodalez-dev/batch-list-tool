@@ -136,6 +136,28 @@ class Box extends Model implements AuditableContract, Sortable
         return $this->repository_id !== null ? (int) $this->repository_id : null;
     }
 
+    /**
+     * The single source of truth for "which repository does this box belong to"
+     * across every tenant-sensitive flow (history rows, cross-tenant guards,
+     * custom fields): the batch's repository, or — for batch-less boxes
+     * (client 2026-08-12) — the box's own repository_id.
+     *
+     * Reads the batch repository via a scope-free FK lookup so it is correct in
+     * the queue / from an unscoped context and never widened or narrowed by the
+     * caller's active repository.
+     */
+    public function effectiveRepositoryId(): ?int
+    {
+        if ($this->batch_id !== null) {
+            $repo = Batch::withoutGlobalScopes()->whereKey($this->batch_id)->value('repository_id');
+            if ($repo !== null) {
+                return (int) $repo;
+            }
+        }
+
+        return $this->repository_id !== null ? (int) $this->repository_id : null;
+    }
+
     public function batch(): BelongsTo
     {
         return $this->belongsTo(Batch::class);
@@ -410,7 +432,7 @@ class Box extends Model implements AuditableContract, Sortable
             'changed_at' => now(),
             'changed_by_user_id' => Auth::id(),
             'reason' => $reason,
-            'repository_id' => $this->batch?->repository_id,
+            'repository_id' => $this->effectiveRepositoryId(),
         ]);
     }
 
@@ -429,7 +451,7 @@ class Box extends Model implements AuditableContract, Sortable
             'changed_by_user_id' => Auth::id(),
             'changed_at' => now(),
             'notes' => $notes,
-            'repository_id' => $this->batch?->repository_id,
+            'repository_id' => $this->effectiveRepositoryId(),
         ]);
     }
 
@@ -458,13 +480,19 @@ class Box extends Model implements AuditableContract, Sortable
             ownRepositoryKey: 'repository_id',
         ));
 
-        // Stamp a batch-less box with the active repository so it is visible in
-        // the tenant-scoped list. Batched boxes derive tenancy from their batch
-        // and keep repository_id null. The importer sets this explicitly from
-        // the import user's repository (queue context has no active repo), so
-        // this hook mainly covers the create form / console paths.
-        static::creating(function (self $box): void {
-            if ($box->batch_id === null && $box->repository_id === null) {
+        // Normalise the own repository_id invariant on EVERY save, and FIRST so
+        // the later saving guards (F030) see the settled value:
+        //   - a batched box resolves tenancy via its batch → force repository_id
+        //     null (never let a stale own repo diverge from the batch, e.g. a
+        //     batch-less box later moved into a batch);
+        //   - a batch-less box is stamped with the active repository so it stays
+        //     visible in the tenant-scoped list. The importer sets this
+        //     explicitly from the import user (queue has no active repo); this
+        //     hook covers the create form / console paths.
+        static::saving(function (self $box): void {
+            if ($box->batch_id !== null) {
+                $box->repository_id = null;
+            } elseif ($box->repository_id === null) {
                 $box->repository_id = app(ActiveRepository::class)->id()
                     ?? auth()->user()?->default_repository_id;
             }
@@ -550,8 +578,8 @@ class Box extends Model implements AuditableContract, Sortable
             // F030 defence-in-depth: cross-tenant parent guard. Both sides must
             // resolve non-null for the check to fire — legacy data with a null
             // batch on either side is silently allowed (expand, never restrict).
-            $parentRepoId = $parent->batch()->withoutGlobalScopes()->value('repository_id');
-            $boxRepoId = $box->batch()->withoutGlobalScopes()->value('repository_id');
+            $parentRepoId = $parent->effectiveRepositoryId();
+            $boxRepoId = $box->effectiveRepositoryId();
             if ($parentRepoId !== null && $boxRepoId !== null && (int) $parentRepoId !== (int) $boxRepoId) {
                 throw new \DomainException(
                     "Box type {$box->box_type}: the parent RAS box belongs to a different repository (F030)."
