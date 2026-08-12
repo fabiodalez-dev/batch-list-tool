@@ -262,21 +262,23 @@ test('BoxResource barcode is unique (DB constraint)', function () {
 });
 
 /*
- * 28. Multi-tenant scope via batch.repository_id (Box has no repository_id).
+ * 28. Multi-tenant scope via ThroughBatchRepositoryScope.
  *
- * Box itself is NOT repository-scoped. Per the model docstring, scoping
- * happens at the consumer level (the Filament Box list must filter by
- * batch.repository_id manually). We document this contract here and assert
- * the inverse — Box::query() returns rows across all repositories — so any
- * future addition of an automatic scope is caught.
+ * Box does NOT use the standard BelongsToRepository trait / RepositoryScope —
+ * tenancy is applied by ThroughBatchRepositoryScope (batch.repository_id).
+ * Client 2026-08-12: boxes now ALSO carry an own `repository_id`, but ONLY as
+ * the tenant key for BATCH-LESS boxes; batched boxes still resolve via their
+ * batch. We assert the trait is absent and that an unauthenticated (unscoped)
+ * query still returns boxes across all repositories.
  */
-test('Box has no global RepositoryScope; tenant separation must come from batch.repository_id', function () {
+test('Box uses ThroughBatchRepositoryScope, not the BelongsToRepository trait', function () {
     expect(in_array(
         BelongsToRepository::class,
         class_uses_recursive(Box::class),
         true,
     ))->toBeFalse();
-    expect(Schema::hasColumn('boxes', 'repository_id'))->toBeFalse();
+    // The own repository_id was added for batch-less boxes (client 2026-08-12).
+    expect(Schema::hasColumn('boxes', 'repository_id'))->toBeTrue();
 
     // Sanity: two boxes in different repos via their batches — both visible
     // to an unauthenticated query.

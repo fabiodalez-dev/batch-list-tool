@@ -32,6 +32,13 @@ class ThroughBatchRepositoryScope implements Scope
     public function __construct(
         private string $foreignTable = 'batches',
         private string $foreignKey = 'batch_id',
+        /**
+         * Optional own tenant key on the child table itself. When set, a row
+         * whose $foreignKey is NULL (no parent to derive tenancy from) is still
+         * matched by its OWN repository column. Lets batch-less boxes be visible
+         * under the repository they were stamped with (client 2026-08-12).
+         */
+        private ?string $ownRepositoryKey = null,
     ) {}
 
     public function apply(Builder $builder, Model $model): void
@@ -85,12 +92,31 @@ class ThroughBatchRepositoryScope implements Scope
         $foreignTable = $this->foreignTable;
         $foreignKey = $this->foreignKey;
         $childTable = $model->getTable();
+        $ownRepositoryKey = $this->ownRepositoryKey;
 
-        $builder->whereExists(function ($query) use ($foreignTable, $foreignKey, $childTable, $repositoryIds) {
+        $existsClosure = function ($query) use ($foreignTable, $foreignKey, $childTable, $repositoryIds) {
             $query->select($foreignTable . '.id')
                 ->from($foreignTable)
                 ->whereColumn($foreignTable . '.id', $childTable . '.' . $foreignKey)
                 ->whereIn($foreignTable . '.repository_id', $repositoryIds);
+        };
+
+        if ($ownRepositoryKey === null) {
+            $builder->whereExists($existsClosure);
+
+            return;
+        }
+
+        // Match EITHER a row whose parent (batch) is in an allowed repository,
+        // OR a parent-less row (foreignKey NULL) stamped with an allowed OWN
+        // repository. Wrapped in a single where() so the OR cannot leak past an
+        // outer AND (e.g. a status filter) into an unscoped disjunction.
+        $builder->where(function ($outer) use ($existsClosure, $childTable, $foreignKey, $ownRepositoryKey, $repositoryIds) {
+            $outer->whereExists($existsClosure)
+                ->orWhere(function ($own) use ($childTable, $foreignKey, $ownRepositoryKey, $repositoryIds) {
+                    $own->whereNull($childTable . '.' . $foreignKey)
+                        ->whereIn($childTable . '.' . $ownRepositoryKey, $repositoryIds);
+                });
         });
     }
 }

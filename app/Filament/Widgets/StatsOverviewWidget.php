@@ -142,8 +142,8 @@ class StatsOverviewWidget extends BaseStatsOverviewWidget
             })
             ->count();
 
-        // Boxes in archive (Box has no repository_id — restrict via batch.repository_id
-        // for non-admin users by joining batches and intersecting with allowed repos).
+        // Boxes in archive — tenant-correct: batched boxes via batch.repository_id,
+        // batch-less boxes via their own repository_id (see the helper below).
         $boxesIn = $this->countBoxesInRespectingScope();
 
         // Repositories — count is global (Repository does NOT use BelongsToRepository,
@@ -175,8 +175,9 @@ class StatsOverviewWidget extends BaseStatsOverviewWidget
     }
 
     /**
-     * Box has no `repository_id`. For admin users count all IN boxes; for tenant
-     * users restrict to boxes whose batch belongs to one of their repositories.
+     * For admin users count all IN boxes; for tenant users restrict to boxes in
+     * one of their repositories — a box belongs to a repository via its batch,
+     * or (batch-less boxes, client 2026-08-12) via its own repository_id.
      */
     protected function countBoxesInRespectingScope(): int
     {
@@ -193,7 +194,13 @@ class StatsOverviewWidget extends BaseStatsOverviewWidget
 
         return Box::query()
             ->where('barcode_status', 'IN')
-            ->whereHas('batch', fn ($q) => $q->whereIn('repository_id', $allowed))
+            ->where(function ($q) use ($allowed) {
+                // Batched boxes: repo via batch. Batch-less boxes (client
+                // 2026-08-12): repo via their own repository_id — count both so
+                // In-Situ / legacy boxes are not silently dropped from the stat.
+                $q->whereHas('batch', fn ($b) => $b->whereIn('repository_id', $allowed))
+                    ->orWhere(fn ($b) => $b->whereNull('batch_id')->whereIn('repository_id', $allowed));
+            })
             ->count();
     }
 

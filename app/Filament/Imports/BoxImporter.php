@@ -227,6 +227,15 @@ class BoxImporter extends Importer
             $record->destroyed_by_user_id = $this->import->user->getKey();
         }
 
+        // Client 2026-08-12: a box with no batch (IN_SITU / NRA / MAV / STVC /
+        // MUS may legitimately have none) would otherwise be invisible — tenancy
+        // is derived from the batch. Stamp its OWN repository_id from the import
+        // user's repository (the queue has no active-repository context, so the
+        // model's creating() hook cannot resolve it here) so it stays visible.
+        if ($record->batch_id === null && $record->repository_id === null) {
+            $record->repository_id = self::$rowRepositoryStash[spl_object_id($record)] ?? null;
+        }
+
         // RFQ App.1 #5 PERM_OUT preconditions (disinfestation_date + Location)
         // were REMOVED here per the client's 2026-08-01 feedback (later than the
         // RFQ, so it governs): the legacy perm-out / destroyed boxes being loaded

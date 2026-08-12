@@ -31,7 +31,7 @@ class ListBoxes extends ListRecords
      * custom-field columns for the 'box' entity type in the active
      * repository (CustomFieldResolver::definitionsFor).
      *
-     * Note: Box has no direct repository_id — the repo is derived via the
+     * Note: repo is derived via the batch relation (or the box own repository_id
      * batch relation. Custom-field resolution uses the active repo from the
      * request context (topbar switcher / user default).
      *
