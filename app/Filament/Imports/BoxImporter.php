@@ -11,6 +11,7 @@ use App\Models\Box;
 use App\Models\CustomFieldDefinition;
 use App\Models\Repository;
 use App\Models\Scopes\ThroughBatchRepositoryScope;
+use App\Models\User;
 use App\Rules\ValidBoxTypeCode;
 use App\Support\BulkImport\EntityResolver;
 use App\Support\BulkImport\SpreadsheetParsers;
@@ -137,8 +138,14 @@ class BoxImporter extends Importer
      */
     public function resolveRecord(): ?Box
     {
-        $user = auth()->user();
-        $repoId = $user?->default_repository_id !== null ? (int) $user->default_repository_id : null;
+        // The importing user — from the Import record, NOT auth()->user(): the
+        // import runs in a queued job with no authenticated context, so
+        // auth()->user() is null there and a batch-less box would be stamped
+        // with a null repository_id and stay invisible (CodeRabbit, PR #195).
+        $user = $this->import->user;
+        $repoId = $user instanceof User && $user->default_repository_id !== null
+            ? (int) $user->default_repository_id
+            : null;
 
         $barcode = $this->data['barcode'] ?? null;
         if ($barcode !== null && trim((string) $barcode) !== '') {
@@ -225,6 +232,15 @@ class BoxImporter extends Importer
         // instance context for the user).
         if ($record->destroyed_at !== null && $record->destroyed_by_user_id === null) {
             $record->destroyed_by_user_id = $this->import->user->getKey();
+        }
+
+        // Client 2026-08-12: a box with no batch (IN_SITU / NRA / MAV / STVC /
+        // MUS may legitimately have none) would otherwise be invisible — tenancy
+        // is derived from the batch. Stamp its OWN repository_id from the import
+        // user's repository (the queue has no active-repository context, so the
+        // model's creating() hook cannot resolve it here) so it stays visible.
+        if ($record->batch_id === null && $record->repository_id === null) {
+            $record->repository_id = self::$rowRepositoryStash[spl_object_id($record)] ?? null;
         }
 
         // RFQ App.1 #5 PERM_OUT preconditions (disinfestation_date + Location)

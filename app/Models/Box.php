@@ -6,6 +6,7 @@ use App\Models\Concerns\HasCustomFields;
 use App\Models\Lookup\BarcodeStatus;
 use App\Models\Lookup\BoxType;
 use App\Models\Scopes\ThroughBatchRepositoryScope;
+use App\Support\ActiveRepository;
 use App\Support\Lookups;
 use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Database\Eloquent\Factories\HasFactory;
@@ -31,8 +32,10 @@ class Box extends Model implements AuditableContract, Sortable
     use SoftDeletes;
     use SortableTrait;
 
-    // NOTE: Box has no direct repository_id column — scoping derives via batch.repository_id.
-    // Filament Resource for Box should filter on batch.repository_id manually if needed.
+    // NOTE: tenancy derives via batch.repository_id (ThroughBatchRepositoryScope).
+    // Since 2026-08-12 boxes ALSO carry an own repository_id, but ONLY as the
+    // tenant key for BATCH-LESS boxes; batched boxes keep it null and resolve
+    // via their batch.
 
     public const TYPES = ['RAS', 'IN_SITU', 'NRA', 'MAV', 'STVC'];
 
@@ -60,6 +63,10 @@ class Box extends Model implements AuditableContract, Sortable
     protected $fillable = [
         'sort_order',
         'box_type', 'current_box_type', 'box_number', 'batch_id', 'parent_box_id',
+        // Own tenant key for batch-less boxes (client 2026-08-12). Stamped from
+        // the active repository on create/import when there is no batch to
+        // derive tenancy from; left null for batched boxes (they resolve via batch).
+        'repository_id',
         // RFQ A1.3 — explicit NULL exception: when true the model guard allows
         // a null parent_box_id for IN_SITU / NRA boxes (provenance genuinely unknown).
         'provenance_unknown',
@@ -98,8 +105,9 @@ class Box extends Model implements AuditableContract, Sortable
     }
 
     /**
-     * Box has no direct repository_id column — derive it from the parent batch
-     * so custom-field definitions are scoped to the correct repository.
+     * Resolve the repository for custom-field scoping: from the parent batch,
+     * falling back to the box's own repository_id for batch-less boxes
+     * (client 2026-08-12).
      *
      * Guards against stale eager-loaded relations: if batch_id changed after the
      * `batch` relation was loaded (e.g. the field was re-assigned in memory before
@@ -120,12 +128,48 @@ class Box extends Model implements AuditableContract, Sortable
         // Use already-loaded relation when available; fall back to a fresh load.
         $batch = $this->relationLoaded('batch') ? $this->batch : $this->batch()->first();
 
-        return $batch?->repository_id !== null ? (int) $batch->repository_id : null;
+        if ($batch?->repository_id !== null) {
+            return (int) $batch->repository_id;
+        }
+
+        // Batch-less box (client 2026-08-12): fall back to its own repository_id.
+        return $this->repository_id !== null ? (int) $this->repository_id : null;
+    }
+
+    /**
+     * The single source of truth for "which repository does this box belong to"
+     * across every tenant-sensitive flow (history rows, cross-tenant guards,
+     * custom fields): the batch's repository, or — for batch-less boxes
+     * (client 2026-08-12) — the box's own repository_id.
+     *
+     * Reads the batch repository via a scope-free FK lookup so it is correct in
+     * the queue / from an unscoped context and never widened or narrowed by the
+     * caller's active repository.
+     */
+    public function effectiveRepositoryId(): ?int
+    {
+        if ($this->batch_id !== null) {
+            $repo = Batch::withoutGlobalScopes()->whereKey($this->batch_id)->value('repository_id');
+            if ($repo !== null) {
+                return (int) $repo;
+            }
+        }
+
+        return $this->repository_id !== null ? (int) $this->repository_id : null;
     }
 
     public function batch(): BelongsTo
     {
         return $this->belongsTo(Batch::class);
+    }
+
+    /**
+     * Own repository — set only for batch-less boxes (client 2026-08-12).
+     * Batched boxes leave this null and derive their repository from the batch.
+     */
+    public function repository(): BelongsTo
+    {
+        return $this->belongsTo(Repository::class);
     }
 
     public function parent(): BelongsTo
@@ -388,7 +432,7 @@ class Box extends Model implements AuditableContract, Sortable
             'changed_at' => now(),
             'changed_by_user_id' => Auth::id(),
             'reason' => $reason,
-            'repository_id' => $this->batch?->repository_id,
+            'repository_id' => $this->effectiveRepositoryId(),
         ]);
     }
 
@@ -407,16 +451,17 @@ class Box extends Model implements AuditableContract, Sortable
             'changed_by_user_id' => Auth::id(),
             'changed_at' => now(),
             'notes' => $notes,
-            'repository_id' => $this->batch?->repository_id,
+            'repository_id' => $this->effectiveRepositoryId(),
         ]);
     }
 
     /**
      * Multi-tenant scoping (RFQ §3.5.1).
      *
-     * `boxes` has no `repository_id` column — tenancy is derived from
-     * `boxes.batch_id → batches.repository_id`. The scope restricts queries
-     * to the repositories the authenticated user has been assigned to.
+     * Tenancy is derived from `boxes.batch_id → batches.repository_id`, and for
+     * BATCH-LESS boxes (client 2026-08-12) from the box's own `repository_id`.
+     * The scope restricts queries to the repositories the authenticated user
+     * has been assigned to.
      * Admin / super_admin bypass the scope (cross-repo oversight).
      *
      * Also wires the barcode-history observer (RFQ §3.1.5): every change to
@@ -429,7 +474,29 @@ class Box extends Model implements AuditableContract, Sortable
         static::addGlobalScope(new ThroughBatchRepositoryScope(
             foreignTable: 'batches',
             foreignKey: 'batch_id',
+            // A batch-less box (IN_SITU / NRA / MAV / STVC / MUS may have no
+            // batch) is matched by its OWN repository_id so it stays visible
+            // under the archive it was imported into (client 2026-08-12).
+            ownRepositoryKey: 'repository_id',
         ));
+
+        // Normalise the own repository_id invariant on EVERY save, and FIRST so
+        // the later saving guards (F030) see the settled value:
+        //   - a batched box resolves tenancy via its batch → force repository_id
+        //     null (never let a stale own repo diverge from the batch, e.g. a
+        //     batch-less box later moved into a batch);
+        //   - a batch-less box is stamped with the active repository so it stays
+        //     visible in the tenant-scoped list. The importer sets this
+        //     explicitly from the import user (queue has no active repo); this
+        //     hook covers the create form / console paths.
+        static::saving(function (self $box): void {
+            if ($box->batch_id !== null) {
+                $box->repository_id = null;
+            } elseif ($box->repository_id === null) {
+                $box->repository_id = app(ActiveRepository::class)->id()
+                    ?? auth()->user()?->default_repository_id;
+            }
+        });
 
         // RFQ App.1 #4 — Legacy box types (MAV, STVC) cannot be created as NEW
         // records. Historical legacy boxes are still importable, but ONLY when
@@ -511,8 +578,8 @@ class Box extends Model implements AuditableContract, Sortable
             // F030 defence-in-depth: cross-tenant parent guard. Both sides must
             // resolve non-null for the check to fire — legacy data with a null
             // batch on either side is silently allowed (expand, never restrict).
-            $parentRepoId = $parent->batch()->withoutGlobalScopes()->value('repository_id');
-            $boxRepoId = $box->batch()->withoutGlobalScopes()->value('repository_id');
+            $parentRepoId = $parent->effectiveRepositoryId();
+            $boxRepoId = $box->effectiveRepositoryId();
             if ($parentRepoId !== null && $boxRepoId !== null && (int) $parentRepoId !== (int) $boxRepoId) {
                 throw new \DomainException(
                     "Box type {$box->box_type}: the parent RAS box belongs to a different repository (F030)."
