@@ -458,6 +458,44 @@ it('B13: matches the LIVE box over a soft-deleted one of the same identity — n
     expect($stillDeleted->trashed())->toBeTrue();
 });
 
+it('B14: the batch-less match is REPOSITORY-scoped — a same-key box in another repo is untouched (CodeRabbit)', function () {
+    // Proves the repository_id filter is load-bearing: two batch-less boxes
+    // share (box_type, box_number) across two repositories. Re-importing for
+    // repo A must update ONLY repo A's box, never repo B's, and never duplicate.
+    [$repoA, $u] = naf_admin();
+    $repoB = Repository::factory()->create();
+
+    $inB = Box::create(['box_type' => 'IN_SITU', 'box_number' => 'COLL-1', 'provenance_unknown' => true, 'repository_id' => $repoB->id, 'notes' => 'B-orig']);
+
+    $data = ['box_type' => 'IN_SITU', 'box_number' => 'COLL-1', 'batch_number' => '', 'provenance_unknown' => 'yes'];
+    naf_import(BoxImporter::class, array_merge($data, ['notes' => 'A-first']), $u->id, ['skip_duplicates' => false]);   // creates repo A's box
+    naf_import(BoxImporter::class, array_merge($data, ['notes' => 'A-updated']), $u->id, ['skip_duplicates' => false]); // updates repo A's box
+
+    $all = Box::withoutGlobalScope(ThroughBatchRepositoryScope::class)->where('box_number', 'COLL-1')->get();
+    expect($all)->toHaveCount(2); // one per repository, no duplicate
+    expect($all->firstWhere('repository_id', $repoA->id)->notes)->toBe('A-updated'); // repo A matched + updated
+    expect($inB->fresh()->notes)->toBe('B-orig');                                    // repo B untouched
+});
+
+it('B15: the batched match is BATCH-scoped — a same-number box in another batch is untouched (CodeRabbit)', function () {
+    // Proves the batch_id filter is load-bearing: two RAS boxes share box_number
+    // across two batches. Re-importing for batch 1 must update ONLY batch 1's box.
+    [$repo, $u] = naf_admin();
+    [$batch1] = naf_box($repo->id); // batch_number '1'
+    $batch2 = Batch::withoutGlobalScope(RepositoryScope::class)->firstOrCreate(['batch_number' => '2', 'repository_id' => $repo->id]);
+
+    $inB2 = Box::create(['box_type' => 'RAS', 'box_number' => 'RC-1', 'batch_id' => $batch2->id, 'notes' => 'B2-orig']);
+
+    $data = ['box_type' => 'RAS', 'box_number' => 'RC-1', 'batch_number' => '1'];
+    naf_import(BoxImporter::class, array_merge($data, ['notes' => 'B1-first']), $u->id, ['skip_duplicates' => false]);
+    naf_import(BoxImporter::class, array_merge($data, ['notes' => 'B1-updated']), $u->id, ['skip_duplicates' => false]);
+
+    $all = Box::withoutGlobalScope(ThroughBatchRepositoryScope::class)->where('box_number', 'RC-1')->get();
+    expect($all)->toHaveCount(2); // one per batch, no duplicate
+    expect($all->firstWhere('batch_id', $batch1->id)->notes)->toBe('B1-updated'); // batch 1 matched + updated
+    expect($inB2->fresh()->notes)->toBe('B2-orig');                               // batch 2 untouched
+});
+
 /* ══════════════ D — Mirror gap-fill (document own date survives PERM_OUT) ══════════════ */
 
 it('D1: a document own disinfestation_date survives creation inside a PERM_OUT box', function () {
