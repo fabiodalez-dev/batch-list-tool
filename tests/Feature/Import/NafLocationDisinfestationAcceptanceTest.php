@@ -364,6 +364,39 @@ it('B9: a box_type added to the Box Types lookup imports, even if it is not a bu
     expect(naf_boxByNumber('ZZZ-1'))->toBeNull();
 });
 
+it('B10: re-importing a batch-less box UPDATES it instead of duplicating (client 2026-08-12)', function () {
+    // Charlene ran the same file through the wizard AND the page → duplicates.
+    // A barcode-less batch-less box is now matched by (repository, box_type,
+    // box_number) so the second import updates the same row.
+    [$repo, $u] = naf_admin();
+    naf_box($repo->id);
+
+    $data = ['box_type' => 'IN_SITU', 'box_number' => 'DUP-1', 'batch_number' => '', 'provenance_unknown' => 'yes', 'notes' => 'first'];
+    naf_import(BoxImporter::class, $data, $u->id);
+    naf_import(BoxImporter::class, array_merge($data, ['notes' => 'second']), $u->id);
+
+    $matches = Box::withoutGlobalScope(ThroughBatchRepositoryScope::class)
+        ->where('box_type', 'IN_SITU')->where('box_number', 'DUP-1')->get();
+
+    expect($matches)->toHaveCount(1)               // updated, NOT duplicated
+        ->and($matches->first()->notes)->toBe('second'); // and it was updated
+});
+
+it('B11: re-importing a barcode-less BATCHED box UPDATES it instead of duplicating', function () {
+    [$repo, $u] = naf_admin();
+    naf_box($repo->id); // batch_number '1'
+
+    // A RAS box with a batch but NO barcode — matched by (batch_id, box_number).
+    $data = ['box_type' => 'RAS', 'box_number' => 'RDUP-1', 'batch_number' => '1'];
+    naf_import(BoxImporter::class, $data, $u->id);
+    naf_import(BoxImporter::class, $data, $u->id);
+
+    $matches = Box::withoutGlobalScope(ThroughBatchRepositoryScope::class)
+        ->where('box_number', 'RDUP-1')->get();
+
+    expect($matches)->toHaveCount(1);
+});
+
 /* ══════════════ D — Mirror gap-fill (document own date survives PERM_OUT) ══════════════ */
 
 it('D1: a document own disinfestation_date survives creation inside a PERM_OUT box', function () {
