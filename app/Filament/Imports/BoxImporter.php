@@ -19,6 +19,7 @@ use App\Support\CustomFields\CustomFieldResolver;
 use Filament\Actions\Imports\ImportColumn;
 use Filament\Actions\Imports\Importer;
 use Filament\Actions\Imports\Models\Import;
+use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Database\Eloquent\Collection as EloquentCollection;
 use Illuminate\Support\Carbon;
 use Illuminate\Support\Facades\Log;
@@ -128,10 +129,12 @@ class BoxImporter extends Importer
     }
 
     /**
-     * Idempotent matching: only the (unique) barcode is used for duplicate
-     * detection. A (batch_id, box_number) fallback is NOT implemented — see the
-     * note in the body: batch_id is resolved later in the column fill closures,
-     * not here, so barcode-less rows always insert a new Box.
+     * Idempotent matching so a re-import (or the same file through the wizard
+     * AND the resource page) updates the existing box instead of duplicating it:
+     *   1. barcode — the DB-unique key;
+     *   2. barcode-less batched box — (batch_id, box_number);
+     *   3. barcode-less batch-less box — (repository_id, box_type, box_number).
+     * A row that matches none inserts a new Box.
      *
      * F023: Resolves and stashes the acting user's repository id once per row
      * so the batch_number and parent_barcode closures can use a tenant-scoped id.
@@ -147,6 +150,7 @@ class BoxImporter extends Importer
             ? (int) $user->default_repository_id
             : null;
 
+        // 1) barcode — the DB-unique key. Match first (existing behaviour).
         $barcode = $this->data['barcode'] ?? null;
         if ($barcode !== null && trim((string) $barcode) !== '') {
             $existing = Box::query()
@@ -155,35 +159,25 @@ class BoxImporter extends Importer
                 ->where('barcode', trim((string) $barcode))
                 ->first();
             if ($existing !== null) {
-                // F023: stash repo id so the static closures can use it.
-                self::$rowRepositoryStash[spl_object_id($existing)] = $repoId;
-
-                // Soft-deleted barcode hit: the operator is re-importing a box
-                // they deleted. Restore + update it rather than INSERT a new row
-                // that would collide with the (soft-deleted) unique barcode
-                // (NAF Feedback-1 comment #3 — re-import not working).
-                if ($existing->trashed()) {
-                    // Defer the un-delete to saveRecord() (resolveRecord runs
-                    // before validateData) so a row that fails validation
-                    // doesn't leave the box restored — see SeriesImporter.
-                    $existing->{$existing->getDeletedAtColumn()} = null;
-
-                    return $existing;
-                }
-
-                // RFQ §3.1.3 — honour the "skip duplicates" checkbox for the
-                // ONE case we can detect an existing box: a (live) barcode hit.
-                $this->skipIfDuplicate($existing);
-
-                return $existing;
+                return $this->finaliseExistingMatch($existing, $repoId);
             }
         }
 
-        // note: skip_duplicates is a no-op for barcode-less rows. The only
-        // idempotent key BoxImporter can match on is the (unique) barcode;
-        // a (batch_id + box_number) lookup is not possible here because
-        // batch_id is resolved later, in the column fill closures, not in
-        // resolveRecord(). Such rows always insert a new Box.
+        // 2) barcode-less rows: match on the box's natural identity so a
+        //    re-import (or the same file through the wizard AND the page)
+        //    UPDATES the existing box instead of inserting a duplicate
+        //    (client 2026-08-12). The identity is:
+        //      - batched  → (batch_id, box_number), and
+        //      - batch-less → (repository_id, box_type, box_number).
+        $boxNumber = trim((string) ($this->data['box_number'] ?? ''));
+        if ($boxNumber !== '') {
+            $existing = $this->matchBarcodelessBox($boxNumber, $repoId);
+            if ($existing !== null) {
+                return $this->finaliseExistingMatch($existing, $repoId);
+            }
+        }
+
+        // 3) no match → a new box.
         $record = new Box;
         // F023: stash repo id so the static closures can use it.
         self::$rowRepositoryStash[spl_object_id($record)] = $repoId;
@@ -664,5 +658,78 @@ class BoxImporter extends Importer
         }
 
         return $columns;
+    }
+
+    /**
+     * Locate an existing barcode-less box by its natural identity: a batched
+     * row by (batch_id, box_number), a batch-less row by
+     * (repository_id, box_type, box_number). Returns null when the row cannot be
+     * matched (unknown batch, no repository, missing type) — the caller then
+     * inserts a new box, exactly as before.
+     */
+    private function matchBarcodelessBox(string $boxNumber, ?int $repoId): ?Box
+    {
+        $base = fn (): Builder => Box::query()
+            ->withoutGlobalScope(ThroughBatchRepositoryScope::class)
+            ->withTrashed()
+            ->where('box_number', $boxNumber)
+            // Prefer a LIVE match over a soft-deleted one: the natural key has no
+            // unique constraint, so an active and a soft-deleted box can share
+            // it. Restoring the deleted one while a live duplicate exists would
+            // leave two active rows (CodeRabbit, PR #196). Active rows
+            // (deleted_at IS NULL) sort first; the oldest id breaks ties.
+            ->orderByRaw('(deleted_at is null) desc')
+            ->orderBy('id');
+
+        $batchNumber = SpreadsheetParsers::parseInt($this->data['batch_number'] ?? null);
+        if ($batchNumber !== null) {
+            $res = EntityResolver::resolveBatch($batchNumber, $repoId);
+            if ($res === null || isset($res['forbidden'])) {
+                return null; // unknown/forbidden batch → let the row insert + fail as before
+            }
+
+            return $base()->where('batch_id', $res['batch_id'])->first();
+        }
+
+        // Batch-less: (repository_id, box_type, box_number). box_type is already
+        // upper-cased by its castStateUsing(); a row with no type or no
+        // repository cannot be matched, so it inserts a new box.
+        $boxType = strtoupper(trim((string) ($this->data['box_type'] ?? '')));
+        if ($repoId === null || $boxType === '') {
+            return null;
+        }
+
+        return $base()
+            ->whereNull('batch_id')
+            ->where('repository_id', $repoId)
+            ->where('box_type', $boxType)
+            ->first();
+    }
+
+    /**
+     * Shared handling for a matched existing box: stash the repo id, restore it
+     * if it was soft-deleted (re-import of a deleted box), otherwise honour the
+     * "skip duplicates" checkbox. Returns the box to update in place.
+     */
+    private function finaliseExistingMatch(Box $existing, ?int $repoId): Box
+    {
+        // F023: stash repo id so the static closures can use it.
+        self::$rowRepositoryStash[spl_object_id($existing)] = $repoId;
+
+        // Soft-deleted hit: the operator is re-importing a box they deleted.
+        // Restore + update it rather than INSERT a colliding row (NAF
+        // Feedback-1 comment #3). Defer the un-delete to saveRecord()
+        // (resolveRecord runs before validateData) so a row that fails
+        // validation doesn't leave the box restored — see SeriesImporter.
+        if ($existing->trashed()) {
+            $existing->{$existing->getDeletedAtColumn()} = null;
+
+            return $existing;
+        }
+
+        // RFQ §3.1.3 — honour the "skip duplicates" checkbox on a live hit.
+        $this->skipIfDuplicate($existing);
+
+        return $existing;
     }
 }

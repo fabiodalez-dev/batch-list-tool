@@ -19,6 +19,7 @@ use App\Models\Series;
 use App\Models\User;
 use App\Support\BulkImport\EntityResolver;
 use App\Support\BulkImport\TemplateGenerator;
+use Filament\Actions\Imports\Exceptions\RowImportFailedException;
 use Filament\Actions\Imports\Models\Import;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Validation\ValidationException;
@@ -69,8 +70,11 @@ function naf_loc(int $repoId, string $code, ?string $name = null): Location
     ]);
 }
 
-/** @param array<string,string|int|null> $data */
-function naf_import(string $importer, array $data, int $userId): void
+/**
+ * @param array<string,string|int|null> $data
+ * @param array<string,mixed> $options importer options (e.g. skip_duplicates)
+ */
+function naf_import(string $importer, array $data, int $userId, array $options = []): void
 {
     $map = ImportWizard::guessColumnMap($importer, array_keys($data));
     EntityResolver::flushMemo();
@@ -80,7 +84,7 @@ function naf_import(string $importer, array $data, int $userId): void
         'importer' => $importer, 'processed_rows' => 0, 'total_rows' => 1,
         'successful_rows' => 0, 'user_id' => $userId,
     ]);
-    (new $importer($imp, $map, []))($data);
+    (new $importer($imp, $map, $options))($data);
 }
 
 function naf_box(int $repoId): array
@@ -362,6 +366,96 @@ it('B9: a box_type added to the Box Types lookup imports, even if it is not a bu
     ], $u->id))->toThrow(ValidationException::class);
 
     expect(naf_boxByNumber('ZZZ-1'))->toBeNull();
+});
+
+it('B10: a re-imported batch-less box is SKIPPED by default — never duplicated, never rewritten (client 2026-08-13)', function () {
+    // Charlene ran the same file through the wizard AND the page → duplicates.
+    // A barcode-less batch-less box is now matched by (repository, box_type,
+    // box_number); with the default (overwrite OFF → skip_duplicates TRUE) the
+    // second import is SKIPPED: one row, and the original data is untouched.
+    [$repo, $u] = naf_admin();
+    naf_box($repo->id);
+
+    $data = ['box_type' => 'IN_SITU', 'box_number' => 'DUP-1', 'batch_number' => '', 'provenance_unknown' => 'yes', 'notes' => 'first'];
+    naf_import(BoxImporter::class, $data, $u->id, ['skip_duplicates' => true]);
+
+    // The second import matches → is skipped. The real job catches this signal
+    // and records the row in the "failed/skipped rows" CSV; here it surfaces as
+    // the RowImportFailedException that skipIfDuplicate() throws.
+    try {
+        naf_import(BoxImporter::class, array_merge($data, ['notes' => 'second']), $u->id, ['skip_duplicates' => true]);
+    } catch (RowImportFailedException) {
+        // expected — the row was skipped, not imported
+    }
+
+    $matches = Box::withoutGlobalScope(ThroughBatchRepositoryScope::class)
+        ->where('box_type', 'IN_SITU')->where('box_number', 'DUP-1')->get();
+
+    expect($matches)->toHaveCount(1)                  // no duplicate
+        ->and($matches->first()->notes)->toBe('first'); // and NOT overwritten
+});
+
+it('B11: with the Overwrite option ON, a re-imported batch-less box is UPDATED (deliberate mass-update)', function () {
+    // Overwrite ON (wizard checkbox → skip_duplicates FALSE): the same match
+    // updates the existing box instead of skipping. Still exactly one row.
+    [$repo, $u] = naf_admin();
+    naf_box($repo->id);
+
+    $data = ['box_type' => 'IN_SITU', 'box_number' => 'DUP-2', 'batch_number' => '', 'provenance_unknown' => 'yes', 'notes' => 'first'];
+    naf_import(BoxImporter::class, $data, $u->id, ['skip_duplicates' => false]);
+    naf_import(BoxImporter::class, array_merge($data, ['notes' => 'second']), $u->id, ['skip_duplicates' => false]);
+
+    $matches = Box::withoutGlobalScope(ThroughBatchRepositoryScope::class)
+        ->where('box_type', 'IN_SITU')->where('box_number', 'DUP-2')->get();
+
+    expect($matches)->toHaveCount(1)                   // no duplicate
+        ->and($matches->first()->notes)->toBe('second'); // overwritten on purpose
+});
+
+it('B12: a barcode-less BATCHED box is matched by (batch, box_number) — no duplicate on re-import', function () {
+    [$repo, $u] = naf_admin();
+    naf_box($repo->id); // batch_number '1'
+
+    // A RAS box with a batch but NO barcode — matched by (batch_id, box_number).
+    $data = ['box_type' => 'RAS', 'box_number' => 'RDUP-1', 'batch_number' => '1'];
+    naf_import(BoxImporter::class, $data, $u->id, ['skip_duplicates' => true]);
+
+    try {
+        naf_import(BoxImporter::class, $data, $u->id, ['skip_duplicates' => true]);
+    } catch (RowImportFailedException) {
+        // expected — the row matched an existing box and was skipped
+    }
+
+    $matches = Box::withoutGlobalScope(ThroughBatchRepositoryScope::class)
+        ->where('box_number', 'RDUP-1')->get();
+
+    expect($matches)->toHaveCount(1);
+});
+
+it('B13: matches the LIVE box over a soft-deleted one of the same identity — never restores a duplicate', function () {
+    // The natural key has no unique constraint, so a live AND a soft-deleted box
+    // can share it. The match must prefer the live one, never restore the
+    // deleted one while a live duplicate exists (CodeRabbit, PR #196).
+    [$repo, $u] = naf_admin();
+    naf_box($repo->id);
+
+    $deleted = Box::create(['box_type' => 'IN_SITU', 'box_number' => 'DUP-3', 'provenance_unknown' => true, 'repository_id' => $repo->id]);
+    $deleted->delete(); // soft-delete
+    $live = Box::create(['box_type' => 'IN_SITU', 'box_number' => 'DUP-3', 'provenance_unknown' => true, 'repository_id' => $repo->id]);
+
+    // Overwrite ON → update the matched box; it must be the LIVE one.
+    naf_import(BoxImporter::class, [
+        'box_type' => 'IN_SITU', 'box_number' => 'DUP-3', 'batch_number' => '', 'provenance_unknown' => 'yes', 'notes' => 'updated',
+    ], $u->id, ['skip_duplicates' => false]);
+
+    $active = Box::withoutGlobalScope(ThroughBatchRepositoryScope::class)->where('box_number', 'DUP-3')->get();
+    expect($active)->toHaveCount(1)                    // still exactly one live box
+        ->and($active->first()->id)->toBe($live->id)  // the LIVE one was matched
+        ->and($active->first()->notes)->toBe('updated');
+
+    // The soft-deleted box is still trashed (not restored).
+    $stillDeleted = Box::withoutGlobalScope(ThroughBatchRepositoryScope::class)->withTrashed()->find($deleted->id);
+    expect($stillDeleted->trashed())->toBeTrue();
 });
 
 /* ══════════════ D — Mirror gap-fill (document own date survives PERM_OUT) ══════════════ */
