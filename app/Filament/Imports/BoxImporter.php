@@ -672,7 +672,14 @@ class BoxImporter extends Importer
         $base = fn (): Builder => Box::query()
             ->withoutGlobalScope(ThroughBatchRepositoryScope::class)
             ->withTrashed()
-            ->where('box_number', $boxNumber);
+            ->where('box_number', $boxNumber)
+            // Prefer a LIVE match over a soft-deleted one: the natural key has no
+            // unique constraint, so an active and a soft-deleted box can share
+            // it. Restoring the deleted one while a live duplicate exists would
+            // leave two active rows (CodeRabbit, PR #196). Active rows
+            // (deleted_at IS NULL) sort first; the oldest id breaks ties.
+            ->orderByRaw('(deleted_at is null) desc')
+            ->orderBy('id');
 
         $batchNumber = SpreadsheetParsers::parseInt($this->data['batch_number'] ?? null);
         if ($batchNumber !== null) {

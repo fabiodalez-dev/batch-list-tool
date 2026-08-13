@@ -432,6 +432,32 @@ it('B12: a barcode-less BATCHED box is matched by (batch, box_number) — no dup
     expect($matches)->toHaveCount(1);
 });
 
+it('B13: matches the LIVE box over a soft-deleted one of the same identity — never restores a duplicate', function () {
+    // The natural key has no unique constraint, so a live AND a soft-deleted box
+    // can share it. The match must prefer the live one, never restore the
+    // deleted one while a live duplicate exists (CodeRabbit, PR #196).
+    [$repo, $u] = naf_admin();
+    naf_box($repo->id);
+
+    $deleted = Box::create(['box_type' => 'IN_SITU', 'box_number' => 'DUP-3', 'provenance_unknown' => true, 'repository_id' => $repo->id]);
+    $deleted->delete(); // soft-delete
+    $live = Box::create(['box_type' => 'IN_SITU', 'box_number' => 'DUP-3', 'provenance_unknown' => true, 'repository_id' => $repo->id]);
+
+    // Overwrite ON → update the matched box; it must be the LIVE one.
+    naf_import(BoxImporter::class, [
+        'box_type' => 'IN_SITU', 'box_number' => 'DUP-3', 'batch_number' => '', 'provenance_unknown' => 'yes', 'notes' => 'updated',
+    ], $u->id, ['skip_duplicates' => false]);
+
+    $active = Box::withoutGlobalScope(ThroughBatchRepositoryScope::class)->where('box_number', 'DUP-3')->get();
+    expect($active)->toHaveCount(1)                    // still exactly one live box
+        ->and($active->first()->id)->toBe($live->id)  // the LIVE one was matched
+        ->and($active->first()->notes)->toBe('updated');
+
+    // The soft-deleted box is still trashed (not restored).
+    $stillDeleted = Box::withoutGlobalScope(ThroughBatchRepositoryScope::class)->withTrashed()->find($deleted->id);
+    expect($stillDeleted->trashed())->toBeTrue();
+});
+
 /* ══════════════ D — Mirror gap-fill (document own date survives PERM_OUT) ══════════════ */
 
 it('D1: a document own disinfestation_date survives creation inside a PERM_OUT box', function () {
