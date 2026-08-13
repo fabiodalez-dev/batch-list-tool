@@ -348,7 +348,7 @@ class ImportWizard extends Page
         abort_unless(static::canAccess(), 403);
 
         $initial = [
-            'skip_duplicates' => true,
+            'overwrite_existing' => false,
         ];
 
         // ?profile=N — preload a saved mapping. We only honour profiles the
@@ -520,7 +520,7 @@ class ImportWizard extends Page
                 filePath: $csvPath,
                 rows: $rows,
                 columnMap: $columnMap,
-                options: ['skip_duplicates' => (bool) ($state['skip_duplicates'] ?? true)],
+                options: ['skip_duplicates' => ! (bool) ($state['overwrite_existing'] ?? false)],
             );
         } catch (\Throwable $throwable) {
             $this->notifyDanger('Import dispatch failed: ' . $throwable->getMessage());
@@ -545,7 +545,7 @@ class ImportWizard extends Page
         // may not be registered in this panel, and accepting any user-shaped
         // URL here would be an open-redirect risk.
         $this->data = [];
-        $this->form->fill(['skip_duplicates' => true]);
+        $this->form->fill(['overwrite_existing' => false]);
 
         // Surface the Import ID on the page so the "Download failed rows"
         // header action becomes visible once the batch has produced any
@@ -1773,9 +1773,18 @@ class ImportWizard extends Page
                     ->required()
                     ->accepted(),
 
-                Checkbox::make('skip_duplicates')
-                    ->label("Skip rows that already exist (matched by the importer's resolveRecord).")
-                    ->default(true),
+                // Client 2026-08-13 (Charlene): overwriting must be an explicit,
+                // opt-in choice — a mass import never rewrites existing records,
+                // but a deliberate correction / mass-update can. Default OFF: a
+                // row that matches an existing record (by the importer's natural
+                // key) is SKIPPED. Ticked: the existing record is UPDATED. This
+                // is the inverse of the internal `skip_duplicates` option every
+                // importer already honours, so it applies to boxes AND documents
+                // (and every other entity) with no per-importer change.
+                Checkbox::make('overwrite_existing')
+                    ->label('Overwrite existing records (update rows that already exist instead of skipping them)')
+                    ->helperText('Leave unticked for a normal import: rows that already exist are skipped, never rewritten. Tick only to deliberately update existing records from the file.')
+                    ->default(false),
 
                 Checkbox::make('save_as_profile')
                     ->label('Save this column mapping as a reusable profile')
