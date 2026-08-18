@@ -77,6 +77,28 @@ it('sorts the Box column numerically: 1, 2, 10 — not 1, 10, 2', function (): v
 });
 
 // ---------------------------------------------------------------------------
+// Destroyed column shows a boolean Yes/No, not the datetime (Charlene 2026-08-18)
+// ---------------------------------------------------------------------------
+
+it('renders the Destroyed column as Yes / No, not a date', function (): void {
+    $user = ba_actor();
+    $this->actingAs($user);
+    $batch = ba_batchFor($user);
+
+    $destroyed = Box::factory()->create([
+        'batch_id' => $batch->id, 'box_type' => 'RAS', 'box_number' => 'D1', 'barcode' => 'BC-D1',
+        'destroyed_at' => now(), 'destroyed_reason' => 'Crushed at depot',
+    ]);
+    $active = Box::factory()->create([
+        'batch_id' => $batch->id, 'box_type' => 'RAS', 'box_number' => 'D2', 'barcode' => 'BC-D2',
+    ]);
+
+    Livewire::test(ListBoxes::class)
+        ->assertTableColumnStateSet('destroyed_at', 'Yes', record: $destroyed)
+        ->assertTableColumnStateSet('destroyed_at', 'No', record: $active);
+});
+
+// ---------------------------------------------------------------------------
 // A10 — Barcode required
 // ---------------------------------------------------------------------------
 
