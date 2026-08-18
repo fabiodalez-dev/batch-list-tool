@@ -94,8 +94,11 @@ final class TemplateGenerator
     public const array DOCUMENT_HEADERS = [
         'RAS Batch 1', 'RAS Box 1', 'RAS Batch 2', 'RAS Box 2',
         'In Situ Box 1', 'In Situ Box 2', 'In Situ Box 3',
-        'RAS 1 Box Destroyed', 'RAS 2 Box Destroyed', 'In Situ Box 1 Destroyed',
-        'In Situ Box 2 Destroyed', 'In Situ Box 3 Destroyed', 'Barcode (IN)',
+        // Client 2026-08-18 (#2): the five "…Box Destroyed" columns were removed
+        // from the document template — "Destroyed" is a BOX property, imported
+        // with the box. Old sheets that still carry those columns import fine
+        // (the importer simply has no column for them).
+        'Barcode (IN)',
         'Barcode RAS 1', 'Status 1', 'Barcode RAS 2', 'Status 2',
         'Barcode RAS 3', 'Status 3', 'Barcode RAS 4', 'Status 4',
         'Barcode (IN)', 'Barcode RAS 2', 'Status 1', 'Barcode RAS 2', 'Status 2',
@@ -105,12 +108,14 @@ final class TemplateGenerator
         'Disinfestation Date', 'Catalogue Identifier', 'NRA Location',
         'Museum Location', 'Identifier', 'Practice', 'Volume', 'Creator',
         'Dates', 'Deeds', 'Document Type', 'Series', 'Current Box', 'Note',
-        'Digitised', 'Torre', 'Accession', 'Object Reference Number',
+        'Digitised', 'Torre', 'Accession', 'Conservation Object Reference Number',
         'Tracking', 'Museum Reference',
         // Client feedback 2026-08-04: Location moves onto the document template
         // (documents.location_id, code-resolved). Appended in place — the
         // document layout is position-matched legacy, so new columns go last.
         'Location',
+        // Client 2026-08-18: new free-text document columns.
+        'Temporary Identifier', 'Citation Reference',
     ];
 
     /**
@@ -119,7 +124,7 @@ final class TemplateGenerator
      * can detect a stale template at re-upload time and warn the operator.
      * Bump on any change to the header contract.
      */
-    public const string GENERATOR_VERSION = '1.7.0';
+    public const string GENERATOR_VERSION = '1.8.0';
 
     /**
      * Supported template entities. Headers come from the in-repo constants

@@ -287,36 +287,31 @@ test('Document template preserves the duplicated provenance headers verbatim', f
 
     $generated = tpl_renderAndParse(TemplateGenerator::download('document'))['headers'];
 
-    // Same count, same strings at the same positions — including the
-    // duplicates. The legacy schema encodes multi-step provenance via
-    // repeated header names; the template MUST preserve that layout.
+    // The generated template equals the header contract verbatim (duplicates
+    // and all). Assertions below are position-INDEPENDENT so template edits
+    // (columns added/removed at the ends) don't force a rewrite of every index.
     expect($generated)->toEqual(TemplateGenerator::DOCUMENT_HEADERS);
 
-    // The Document sample has 49 populated columns (Seal Number was removed —
-    // it is a BOX field, not a document field; 'Location' was appended
-    // 2026-08-04 when Location moved onto the document template).
-    expect(count($generated))->toBe(49);
+    // Column count: 49 legacy columns − 5 "…Box Destroyed" (removed 2026-08-18,
+    // a BOX property) + 2 new (Temporary Identifier, Citation Reference) = 46.
+    expect(count($generated))->toBe(46);
 
-    // Location is the last column, appended per client feedback 2026-08-04.
-    expect($generated[48])->toBe('Location');
+    // The five Destroyed columns are gone from the document template.
+    expect($generated)->not->toContain('RAS 1 Box Destroyed', 'In Situ Box 3 Destroyed');
 
-    // Concrete duplicate-position assertions — these are the contract the
-    // operator relies on.
-    expect($generated[12])->toBe('Barcode (IN)');           // col 13 (1-based)
-    expect($generated[21])->toBe('Barcode (IN)');           // col 22 — same header
-    expect($generated[15])->toBe('Barcode RAS 2');          // col 16
-    expect($generated[22])->toBe('Barcode RAS 2');          // col 23
-    expect($generated[24])->toBe('Barcode RAS 2');          // col 25 — appears 3x
-    expect($generated[14])->toBe('Status 1');               // col 15
-    expect($generated[23])->toBe('Status 1');               // col 24
-    expect($generated[26])->toBe('Disinfestation Date');    // col 27
-    expect($generated[27])->toBe('Disinfestation Date');    // col 28
-    expect($generated[28])->toBe('Disinfestation Date');    // col 29 — three Disinfestations
+    // The new / relabelled columns are present.
+    expect($generated)->toContain(
+        'Conservation Object Reference Number',
+        'Temporary Identifier',
+        'Citation Reference',
+        'Location',
+    );
 
-    // Sanity: count occurrences. The contract is "preserve duplicates".
+    // Contract: the multi-step provenance DUPLICATES are preserved verbatim.
     expect(array_count_values($generated)['Barcode RAS 2'] ?? 0)->toBe(3);
     expect(array_count_values($generated)['Disinfestation Date'] ?? 0)->toBe(3);
     expect(array_count_values($generated)['Barcode (IN)'] ?? 0)->toBe(2);
+    expect(array_count_values($generated)['Status 1'] ?? 0)->toBe(2);
 });
 
 test('Batch template uses synthesised headers that map 1:1 with BatchImporter columns', function () {

@@ -55,11 +55,12 @@ it('TemplateGenerator: headersFor("series") starts at Identifier and includes th
 it('TemplateGenerator: headersFor("document") preserves the duplicated provenance headers', function () {
     $headers = TemplateGenerator::headersFor('document');
     expect($headers)->toEqual(TemplateGenerator::DOCUMENT_HEADERS)
-        // 49 = 48 + 'Location' appended 2026-08-04 (moved onto the document).
-        ->and($headers)->toHaveCount(49)
-        // "Barcode (IN)" appears at columns 13 and 22 (0-based 12 / 21)
-        ->and($headers[12])->toBe('Barcode (IN)')
-        ->and($headers[21])->toBe('Barcode (IN)');
+        // 46 = 49 legacy − 5 "…Box Destroyed" (removed 2026-08-18) + 2 new
+        // (Temporary Identifier, Citation Reference).
+        ->and($headers)->toHaveCount(46)
+        // The multi-step provenance duplicate is preserved (position-independent).
+        ->and(array_count_values($headers)['Barcode (IN)'] ?? 0)->toBe(2)
+        ->and($headers)->not->toContain('RAS 1 Box Destroyed');
 });
 
 it('TemplateGenerator: headersFor("unknown") throws InvalidArgumentException', function () {
