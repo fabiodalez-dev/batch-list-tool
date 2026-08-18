@@ -51,7 +51,10 @@ final class DateRangeNormalizer
         }
 
         // ── 1. Explicit "undated" sentinels ────────────────────────────────
-        if (preg_match('/^\s*(?:n\.?\s*d\.?|s\.?\s*d\.?|undated|sine\s+die)\s*$/iu', $s)) {
+        // Client 2026-08-18: added "unknown" / "n/a" / "?" to the set — they
+        // appear verbatim in the client's date column and must resolve to "no
+        // years" (the free-text `dates` value is still stored as-is).
+        if (preg_match('/^\s*(?:n\.?\s*d\.?|s\.?\s*d\.?|undated|sine\s+die|unknown|n\/?a|\?+)\s*$/iu', $s)) {
             return $none;
         }
 
@@ -127,6 +130,14 @@ final class DateRangeNormalizer
 
         $min = min($years);
         $max = max($years);
+
+        // Client 2026-08-18: an OPEN-ENDED range — the string ends with a dash
+        // and no closing year, e.g. "1750 -" — means "from that year onward".
+        // Keep the end NULL rather than defaulting it to the start year, so the
+        // range is genuinely open (searchable as ">= start").
+        if (preg_match('/[-–—]\s*$/u', $s)) {
+            return ['year_start' => $min, 'year_end' => null];
+        }
 
         return self::pair($min, $max);
     }
