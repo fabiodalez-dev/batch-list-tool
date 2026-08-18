@@ -12,8 +12,10 @@ use App\Models\Authority;
 use App\Models\Batch;
 use App\Models\Box;
 use App\Models\Document;
+use App\Models\DocumentType;
 use App\Models\Location;
 use App\Models\Lookup\BoxType;
+use App\Models\Practice;
 use App\Models\Repository;
 use App\Models\Scopes\RepositoryScope;
 use App\Models\Scopes\ThroughBatchRepositoryScope;
@@ -380,6 +382,35 @@ it('MV1: RAS / In-Situ movement columns are captured verbatim in the legacy colu
         ->and($doc->ras_box_2)->toBe('7')
         ->and($doc->in_situ_box_1)->toBe('Small Box 12')
         ->and($doc->in_situ_box_2)->toBe('NRA 3');
+});
+
+it('DTP1: links document_type_id AND practice_id from the lookups, keeps the free-text (#12/#17)', function () {
+    [$repo, $u] = naf_admin();
+    Series::firstOrCreate(['code' => 'REG'], ['title' => 'Reg', 'is_active' => true, 'is_wills_series' => false]);
+    $dt = DocumentType::create(['identifier' => 'DEED', 'name' => 'Deed of Sale', 'is_active' => true]);
+    $pr = Practice::create(['identifier' => 'PRAC-1', 'name' => 'Notary X', 'is_active' => true, 'repository_id' => $repo->id]);
+
+    naf_import(DocumentImporter::class, ['Identifier' => 'DTP1', 'Series' => 'REG', 'Document Type' => 'DEED', 'Practice' => 'PRAC-1'], $u->id);
+
+    $doc = naf_doc('DTP1');
+    expect($doc->document_type)->toBe('DEED')          // free text kept
+        ->and($doc->document_type_id)->toBe($dt->id)   // AND linked
+        ->and($doc->practice)->toBe('PRAC-1')
+        ->and($doc->practice_id)->toBe($pr->id);
+});
+
+it('DTP2: an unknown Document Type / Practice leaves the FK null and the row still succeeds', function () {
+    [$repo, $u] = naf_admin();
+    Series::firstOrCreate(['code' => 'REG'], ['title' => 'Reg', 'is_active' => true, 'is_wills_series' => false]);
+
+    naf_import(DocumentImporter::class, ['Identifier' => 'DTP2', 'Series' => 'REG', 'Document Type' => 'NoSuchType', 'Practice' => 'NoSuchPractice'], $u->id);
+
+    $doc = naf_doc('DTP2');
+    expect($doc)->not->toBeNull()
+        ->and($doc->document_type)->toBe('NoSuchType')   // text stands
+        ->and($doc->document_type_id)->toBeNull()        // FK not forced
+        ->and($doc->practice)->toBe('NoSuchPractice')
+        ->and($doc->practice_id)->toBeNull();
 });
 
 it('B7: an IN_SITU box imports WITHOUT a location now (location optional, client feedback 2026-08-05)', function () {
