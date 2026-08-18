@@ -25,6 +25,7 @@ use Filament\Actions\Imports\Models\Import;
 use Illuminate\Database\Eloquent\Collection as EloquentCollection;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Support\Facades\DB;
+use Illuminate\Validation\Rule;
 use Illuminate\Validation\ValidationException;
 use Spatie\SchemalessAttributes\SchemalessAttributes;
 
@@ -353,6 +354,24 @@ class DocumentImporter extends Importer
     {
         /** @var Document $record */
         $record = $this->record;
+
+        // Client 2026-08-18 (#26): Temporary Identifier must be UNIQUE. Reject
+        // the row if a DIFFERENT document already carries this value (the row's
+        // own record is ignored so a re-import / overwrite doesn't self-collide).
+        // The DB unique index is the last-resort guarantee under concurrency.
+        $tempId = trim((string) ($record->temporary_identifier ?? ''));
+        if ($tempId !== '') {
+            $clash = Document::withTrashed()
+                ->withoutGlobalScope(RepositoryScope::class)
+                ->where('temporary_identifier', $tempId)
+                ->when($record->exists, fn ($q) => $q->whereKeyNot($record->getKey()))
+                ->exists();
+            if ($clash) {
+                throw new RowImportFailedException(
+                    "Temporary Identifier '{$tempId}' is already used by another document (it must be unique)."
+                );
+            }
+        }
 
         // Year range derived from free-text "Dates" column.
         if (! empty($record->dates) && $record->dates_year_start === null) {
@@ -1176,9 +1195,32 @@ class DocumentImporter extends Importer
                 ->guess(['Accession', 'accession', 'accession_code_legacy'])
                 ->rules(['nullable', 'string', 'max:191']),
 
+            // Client 2026-08-18 (#27): this IS the Conservation Object Reference
+            // Number (StockTakeReport already exports it under that alias). NOT
+            // unique — a single conservation-project reference / range can be
+            // shared across many documents. Stored verbatim.
             ImportColumn::make('object_reference_number')
-                ->label('Object Reference Number')
-                ->guess(['Object Reference Number', 'object_reference_number'])
+                ->label('Conservation Object Reference Number')
+                ->guess(['Conservation Object Reference Number', 'Conservation Object Ref', 'Object Reference Number', 'object_reference_number'])
+                ->rules(['nullable', 'string', 'max:500']),
+
+            // Client 2026-08-18 (#26): a free-text Temporary Identifier that must
+            // be UNIQUE per document. The DB carries a unique index; here we also
+            // validate (ignoring the row's own record on re-import) so a clash is
+            // a clean row failure rather than a DB error.
+            ImportColumn::make('temporary_identifier')
+                ->label('Temporary Identifier')
+                ->guess(['Temporary Identifier', 'Temp Identifier', 'temporary_identifier'])
+                // Uniqueness is enforced in afterFill() (an instance context that
+                // can ignore the row's own record on re-import) + the DB unique
+                // index — getStaticColumns() is static, so a Rule::unique closure
+                // here could not reference $this->record.
+                ->rules(['nullable', 'string', 'max:191']),
+
+            // Client 2026-08-18 (#28): free-text Citation Reference, no constraints.
+            ImportColumn::make('citation_reference')
+                ->label('Citation Reference')
+                ->guess(['Citation Reference', 'Citation Ref', 'citation_reference'])
                 ->rules(['nullable', 'string']),
 
             ImportColumn::make('tracking')

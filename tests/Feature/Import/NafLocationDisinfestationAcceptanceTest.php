@@ -262,7 +262,7 @@ it('B3: a legacy box sheet with Location + Disinfestation Date still imports cle
 });
 
 it('B4: the generator version was bumped for the template contract change', function () {
-    expect(TemplateGenerator::GENERATOR_VERSION)->toBe('1.7.0');
+    expect(TemplateGenerator::GENERATOR_VERSION)->toBe('1.8.0');
 });
 
 it('B5: every generated box header still maps to a BoxImporter column (round-trip)', function () {
@@ -282,8 +282,45 @@ it('B6: the document template offers Location (appended) and the importer maps i
     $headers = TemplateGenerator::headersFor('document');
     $cols = collect(DocumentImporter::getColumns())->map(fn ($c) => $c->getName())->all();
     expect($headers)->toContain('Location')
-        ->and($headers[array_key_last($headers)])->toBe('Location')
-        ->and($cols)->toContain('location');
+        ->and($cols)->toContain('location')
+        // Client 2026-08-18: Temporary Identifier + Citation Reference are the
+        // new trailing columns (Location is no longer last).
+        ->and($headers)->toContain('Temporary Identifier', 'Citation Reference')
+        ->and($cols)->toContain('temporary_identifier', 'citation_reference');
+});
+
+it('NC1: imports Temporary Identifier / Citation Reference / Conservation Object Ref (client 2026-08-18)', function () {
+    [$repo, $u] = naf_admin();
+    Series::firstOrCreate(['code' => 'REG'], ['title' => 'Reg', 'is_active' => true, 'is_wills_series' => false]);
+
+    naf_import(DocumentImporter::class, [
+        'Identifier' => 'NC1', 'Series' => 'REG',
+        'Temporary Identifier' => 'TMP-1',
+        'Citation Reference' => 'Cite ABC 2026',
+        'Conservation Object Reference Number' => 'COR 120-135',
+    ], $u->id);
+
+    $doc = naf_doc('NC1');
+    expect($doc)->not->toBeNull()
+        ->and($doc->temporary_identifier)->toBe('TMP-1')
+        ->and($doc->citation_reference)->toBe('Cite ABC 2026')
+        ->and($doc->object_reference_number)->toBe('COR 120-135'); // #27 = existing column, relabelled
+});
+
+it('NC2: Temporary Identifier must be unique — a clash on a DIFFERENT document fails the row', function () {
+    [$repo, $u] = naf_admin();
+    Series::firstOrCreate(['code' => 'REG'], ['title' => 'Reg', 'is_active' => true, 'is_wills_series' => false]);
+
+    naf_import(DocumentImporter::class, ['Identifier' => 'NC2A', 'Series' => 'REG', 'Temporary Identifier' => 'DUP-T'], $u->id);
+
+    // A second, different document reusing the same Temporary Identifier is rejected.
+    expect(fn () => naf_import(DocumentImporter::class, ['Identifier' => 'NC2B', 'Series' => 'REG', 'Temporary Identifier' => 'DUP-T'], $u->id))
+        ->toThrow(RowImportFailedException::class);
+    expect(naf_doc('NC2B'))->toBeNull();
+
+    // Re-importing the SAME document with its own Temporary Identifier is fine (ignores self).
+    naf_import(DocumentImporter::class, ['Identifier' => 'NC2A', 'Series' => 'REG', 'Temporary Identifier' => 'DUP-T', 'Note' => 'again'], $u->id);
+    expect(naf_doc('NC2A')?->notes)->toBe('again');
 });
 
 it('B7: an IN_SITU box imports WITHOUT a location now (location optional, client feedback 2026-08-05)', function () {

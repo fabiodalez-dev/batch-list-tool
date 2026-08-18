@@ -137,6 +137,8 @@ class Document extends Model implements AuditableContract, HasMedia, Sortable
         'catalogue_identifier', 'nra_location', 'museum_location', 'practice',
         'dates', 'deeds', 'number_of_acts', 'pages_folios', 'current_box_type', 'colour_code', 'digitised', 'torre',
         'accession_code_legacy', 'object_reference_number', 'tracking', 'museum_reference',
+        // Client 2026-08-18: temporary_identifier (unique, free text) + citation_reference.
+        'temporary_identifier', 'citation_reference',
         'custom_fields', 'metadata',
     ];
 
