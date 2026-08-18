@@ -7,6 +7,8 @@ use App\Filament\Imports\DocumentImporter;
 use App\Filament\Pages\ImportWizard;
 use App\Filament\Pages\Reports\DocumentLocationReport;
 use App\Filament\Pages\Reports\PendingDisinfestationReport;
+use App\Models\Accession;
+use App\Models\Authority;
 use App\Models\Batch;
 use App\Models\Box;
 use App\Models\Document;
@@ -321,6 +323,63 @@ it('NC2: Temporary Identifier must be unique — a clash on a DIFFERENT document
     // Re-importing the SAME document with its own Temporary Identifier is fine (ignores self).
     naf_import(DocumentImporter::class, ['Identifier' => 'NC2A', 'Series' => 'REG', 'Temporary Identifier' => 'DUP-T', 'Note' => 'again'], $u->id);
     expect(naf_doc('NC2A')?->notes)->toBe('again');
+});
+
+it('AC1: imports Accession by NAME — creates it + links accession_id, keeps the legacy text (client 2026-08-18)', function () {
+    [$repo, $u] = naf_admin();
+    Series::firstOrCreate(['code' => 'REG'], ['title' => 'Reg', 'is_active' => true, 'is_wills_series' => false]);
+
+    naf_import(DocumentImporter::class, ['Identifier' => 'AC1', 'Series' => 'REG', 'Accession' => 'Hugh Grima Accession'], $u->id);
+
+    $acc = Accession::withoutGlobalScopes()->where('code', 'Hugh Grima Accession')->first();
+    expect($acc)->not->toBeNull()
+        ->and($acc->accession_number)->toBeNull();
+    expect(naf_doc('AC1')?->accession_id)->toBe($acc->id)
+        ->and(naf_doc('AC1')?->accession_code_legacy)->toBe('Hugh Grima Accession');
+});
+
+it('AC2: imports Accession by NUMBER — creates it, and a second document with the same number reuses it', function () {
+    [$repo, $u] = naf_admin();
+    Series::firstOrCreate(['code' => 'REG'], ['title' => 'Reg', 'is_active' => true, 'is_wills_series' => false]);
+
+    naf_import(DocumentImporter::class, ['Identifier' => 'AC2', 'Series' => 'REG', 'Accession' => '2025-124'], $u->id);
+    $acc = Accession::withoutGlobalScopes()->where('accession_number', '2025-124')->first();
+    expect($acc)->not->toBeNull();
+    expect(naf_doc('AC2')?->accession_id)->toBe($acc->id);
+
+    naf_import(DocumentImporter::class, ['Identifier' => 'AC2B', 'Series' => 'REG', 'Accession' => '2025-124'], $u->id);
+    expect(naf_doc('AC2B')?->accession_id)->toBe($acc->id)
+        ->and(Accession::withoutGlobalScopes()->where('accession_number', '2025-124')->count())->toBe(1);
+});
+
+it('AI1: "Actual Identifier" sets the document identifier AND links the matching Authority (#9)', function () {
+    [$repo, $u] = naf_admin();
+    Series::firstOrCreate(['code' => 'REG'], ['title' => 'Reg', 'is_active' => true, 'is_wills_series' => false]);
+    $auth = Authority::create(['identifier' => 'R77', 'surname' => 'Grima', 'entity_type' => 'PERSON']);
+
+    naf_import(DocumentImporter::class, ['Actual Identifier' => 'R77', 'Series' => 'REG'], $u->id);
+
+    $doc = naf_doc('R77');
+    expect($doc)->not->toBeNull()
+        ->and($doc->identifier)->toBe('R77')
+        ->and($doc->authorities()->pluck('authorities.id')->all())->toContain($auth->id);
+});
+
+it('MV1: RAS / In-Situ movement columns are captured verbatim in the legacy columns (#1)', function () {
+    [$repo, $u] = naf_admin();
+    Series::firstOrCreate(['code' => 'REG'], ['title' => 'Reg', 'is_active' => true, 'is_wills_series' => false]);
+
+    naf_import(DocumentImporter::class, [
+        'Identifier' => 'MV1', 'Series' => 'REG',
+        'RAS Batch 2' => '5', 'RAS Box 2' => '7',
+        'In Situ Box 1' => 'Small Box 12', 'In Situ Box 2' => 'NRA 3',
+    ], $u->id);
+
+    $doc = naf_doc('MV1');
+    expect($doc->ras_batch_2)->toBe('5')
+        ->and($doc->ras_box_2)->toBe('7')
+        ->and($doc->in_situ_box_1)->toBe('Small Box 12')
+        ->and($doc->in_situ_box_2)->toBe('NRA 3');
 });
 
 it('B7: an IN_SITU box imports WITHOUT a location now (location optional, client feedback 2026-08-05)', function () {
