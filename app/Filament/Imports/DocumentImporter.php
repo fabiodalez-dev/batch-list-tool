@@ -7,6 +7,7 @@ namespace App\Filament\Imports;
 use App\Filament\Imports\Concerns\LogsImportRows;
 use App\Filament\Imports\Concerns\SkipsExistingRows;
 use App\Filament\Pages\ImportWizard;
+use App\Models\Accession;
 use App\Models\Authority;
 use App\Models\Box;
 use App\Models\CustomFieldDefinition;
@@ -402,6 +403,19 @@ class DocumentImporter extends Importer
                 ?? $this->generateDocumentIdentifier($record);
         }
 
+        // Client 2026-08-18 (#9): when the row carried NO explicit Authority
+        // column but its (Actual) Identifier IS an Authority identifier, link
+        // that Authority. Match-only by identifier — never creates, silent on a
+        // miss, and never overrides an Authority already linked from its own
+        // column (so a catalogue-identifier document is unaffected).
+        $aKey = spl_object_id($record);
+        if ((self::$rowAuthorityStash[$aKey] ?? []) === [] && ! empty($record->identifier)) {
+            $res = EntityResolver::resolveAuthority(trim((string) $record->identifier));
+            if (is_array($res) && isset($res['authority_id'])) {
+                self::stashAuthority($record, (int) $res['authority_id']);
+            }
+        }
+
         // Task 8 (B5) — resolve the current box now that the document's batch
         // is known, then validate batch/box consistency BEFORE save.
         $this->resolveCurrentBox($record);
@@ -788,9 +802,13 @@ class DocumentImporter extends Importer
             // the importer auto-creates one from Repository + Series + Document Type
             // (see afterFill()), so a mass upload by Series doesn't need pre-assigned
             // R-codes. A supplied value still wins.
+            // Client 2026-08-18 (#9): "Actual Identifier" is the DOCUMENT's own
+            // identifier — its value happens to be the same number as the
+            // Authority record, so afterFill() also links that Authority when no
+            // explicit Authority column was given (see the guarded fallback).
             ImportColumn::make('identifier')
                 ->label('Document identifier (optional — auto-created from Repository/Series/Type when blank)')
-                ->guess(['identifier', 'Document Identifier', 'Doc ID'])
+                ->guess(['identifier', 'Document Identifier', 'Doc ID', 'Actual Identifier'])
                 ->rules(['nullable', 'string', 'max:64']),
 
             ImportColumn::make('catalogue_identifier')
@@ -1149,6 +1167,35 @@ class DocumentImporter extends Importer
                     self::$rowBoxBarcodeStash[spl_object_id($record)] = trim($state);
                 }),
 
+            // ── Movement history (legacy, verbatim) ─────────────────────
+            // Client 2026-08-18 (#1): capture the box-provenance columns as-is.
+            // "RAS Batch 1"/"RAS Box 1" already drive the CURRENT box above; the
+            // remaining boxes are stored verbatim in their legacy columns so no
+            // data is lost. A RAS box is (Batch + Box number); an In-Situ box is
+            // (Box Type + Box number) — write In-Situ cells as "<Box Type>
+            // <number>" (e.g. "Small Box 12"). A real movement TIMELINE is
+            // deferred until the client tells us how each move should be dated.
+            ImportColumn::make('ras_batch_2')
+                ->label('RAS Batch 2')
+                ->guess(['RAS Batch 2', 'ras_batch_2'])
+                ->rules(['nullable', 'string', 'max:50']),
+            ImportColumn::make('ras_box_2')
+                ->label('RAS Box 2')
+                ->guess(['RAS Box 2', 'ras_box_2'])
+                ->rules(['nullable', 'string', 'max:50']),
+            ImportColumn::make('in_situ_box_1')
+                ->label('In Situ Box 1')
+                ->guess(['In Situ Box 1', 'in_situ_box_1'])
+                ->rules(['nullable', 'string', 'max:50']),
+            ImportColumn::make('in_situ_box_2')
+                ->label('In Situ Box 2')
+                ->guess(['In Situ Box 2', 'in_situ_box_2'])
+                ->rules(['nullable', 'string', 'max:50']),
+            ImportColumn::make('in_situ_box_3')
+                ->label('In Situ Box 3')
+                ->guess(['In Situ Box 3', 'in_situ_box_3'])
+                ->rules(['nullable', 'string', 'max:50']),
+
             // ── Barcodes ───────────────────────────────────────────────
             ImportColumn::make('barcode_in')
                 ->label('Barcode (IN)')
@@ -1190,9 +1237,29 @@ class DocumentImporter extends Importer
                 ->boolean()
                 ->rules(['nullable', 'boolean']),
 
+            // Client 2026-08-18 (#23): the "Accession" cell may be either a name
+            // ("Hugh Grima Accession" = Accession.code) OR a number ("2025-124"
+            // = Accession.accession_number). Resolve accession_id match-or-create
+            // (number → code → create); the raw value is ALSO kept verbatim in
+            // accession_code_legacy for audit (dual-write). No need to pre-fill
+            // the Notary Accessions page — a named accession is auto-created and
+            // can be enriched (date, authority) there afterwards.
             ImportColumn::make('accession_code_legacy')
-                ->label('Accession (legacy code)')
-                ->guess(['Accession', 'accession', 'accession_code_legacy'])
+                ->label('Accession (name or number)')
+                ->guess(['Accession', 'accession', 'Accession Number', 'Accession Code', 'Notary Accession', 'accession_code_legacy'])
+                ->fillRecordUsing(function (Document $record, mixed $state): void {
+                    $value = trim((string) ($state ?? ''));
+                    $record->accession_code_legacy = $value !== '' ? $value : null;
+
+                    if ($value === '') {
+                        return;
+                    }
+                    $repoId = self::$rowRepositoryStash[spl_object_id($record)] ?? null;
+                    if ($repoId === null) {
+                        return; // no tenant context → leave accession_id untouched
+                    }
+                    $record->accession_id = self::resolveOrCreateAccession($value, (int) $repoId);
+                })
                 ->rules(['nullable', 'string', 'max:191']),
 
             // Client 2026-08-18 (#27): this IS the Conservation Object Reference
@@ -1335,20 +1402,6 @@ class DocumentImporter extends Importer
         };
     }
 
-    /**
-     * Task 8 (B5) — resolve the current box for this row and enforce
-     * batch/box consistency.
-     *
-     * Two resolution paths, in priority order:
-     *   1. by barcode (`current_box_barcode`) — names a specific existing
-     *      box; never created on a miss.
-     *   2. by number (`current_box_number`) — create-if-absent inside the
-     *      document's resolved batch (the accession may bring a brand-new box).
-     *
-     * Consistency (B5): whichever path resolves the box, the resolved box's
-     * `batch_id` MUST equal the document's `batch_id`. A mismatch is a failed
-     * row (RowImportFailedException) — never silently saved.
-     */
     protected function resolveCurrentBox(Document $record): void
     {
         $key = spl_object_id($record);
@@ -1434,5 +1487,57 @@ class DocumentImporter extends Importer
             $box->skipPermOutGuard = true;
             $box->save(); // triggers the Task-7 mirror onto the document(s)
         }
+    }
+
+    /**
+     * Task 8 (B5) — resolve the current box for this row and enforce
+     * batch/box consistency.
+     *
+     * Two resolution paths, in priority order:
+     *   1. by barcode (`current_box_barcode`) — names a specific existing
+     *      box; never created on a miss.
+     *   2. by number (`current_box_number`) — create-if-absent inside the
+     *      document's resolved batch (the accession may bring a brand-new box).
+     *
+     * Consistency (B5): whichever path resolves the box, the resolved box's
+     * `batch_id` MUST equal the document's `batch_id`. A mismatch is a failed
+     * row (RowImportFailedException) — never silently saved.
+     */
+    /**
+     * Resolve an accession by name OR number, creating it if it does not yet
+     * exist (client 2026-08-18 #23). Repository-scoped. Order:
+     *   1. exact accession_number match ("2025-124");
+     *   2. exact code match, case-insensitive ("Hugh Grima Accession");
+     *   3. create — a "YYYY-N" value becomes accession_number (and code, which
+     *      is NOT NULL), otherwise the value becomes the code.
+     *
+     * Within one import (one DB transaction) a just-created accession is visible
+     * to the next row's lookup, so the same name/number never duplicates.
+     */
+    private static function resolveOrCreateAccession(string $value, int $repoId): int
+    {
+        $byNumber = Accession::withoutGlobalScopes()
+            ->where('repository_id', $repoId)
+            ->where('accession_number', $value)
+            ->value('id');
+        if ($byNumber !== null) {
+            return (int) $byNumber;
+        }
+
+        $byCode = Accession::withoutGlobalScopes()
+            ->where('repository_id', $repoId)
+            ->whereRaw('LOWER(code) = ?', [mb_strtolower($value)])
+            ->value('id');
+        if ($byCode !== null) {
+            return (int) $byCode;
+        }
+
+        $isNumber = (bool) preg_match('/^\d{4}-\d+$/', $value);
+
+        return (int) Accession::create([
+            'code' => $value,                        // NOT NULL — mirror the value
+            'accession_number' => $isNumber ? $value : null,
+            'repository_id' => $repoId,
+        ])->getKey();
     }
 }
