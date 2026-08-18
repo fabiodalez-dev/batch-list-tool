@@ -814,12 +814,15 @@ class BoxResource extends Resource
                 // physically no longer exist without opening the record.
                 // Hidden when null (no badge at all) to keep the table
                 // visually quiet for the common "active" case.
+                // Client 2026-08-18 (Charlene): show a boolean Yes/No, not the
+                // raw destroyed_at datetime (the exact date is on the View page).
+                // getStateUsing() fires for every row, so an active box (null
+                // destroyed_at) correctly reads "No" instead of a blank cell.
                 Tables\Columns\TextColumn::make('destroyed_at')
                     ->label('Destroyed')
-                    ->dateTime()
                     ->badge()
-                    ->color('danger')
-                    ->placeholder('')
+                    ->getStateUsing(fn (Box $record): string => $record->isDestroyed() ? 'Yes' : 'No')
+                    ->color(fn (string $state): string => $state === 'Yes' ? 'danger' : 'gray')
                     ->sortable()
                     ->toggleable(),
                 $gc(Tables\Columns\TextColumn::make('parent_box_id')
