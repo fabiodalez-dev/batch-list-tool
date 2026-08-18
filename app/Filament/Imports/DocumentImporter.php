@@ -816,14 +816,44 @@ class DocumentImporter extends Importer
                 ->guess(['Catalogue Identifier', 'catalogue_identifier', 'Catalogue ID'])
                 ->rules(['nullable', 'string', 'max:191']),
 
+            // Client 2026-08-18 (#17): keep the free-text document_type AND, when
+            // the value matches a Document Type by identifier or name, link the
+            // lookup (document_type_id). Match-only — a value that doesn't
+            // resolve leaves the FK null and the text stands, so the row never
+            // fails (types must be created first, in the UI or their importer).
             ImportColumn::make('document_type')
                 ->label('Document Type')
                 ->guess(['Document Type', 'document_type', 'Type'])
+                ->fillRecordUsing(function (Document $record, ?string $state): void {
+                    $value = trim((string) ($state ?? ''));
+                    $record->document_type = $value !== '' ? $value : null;
+                    if ($value === '') {
+                        return;
+                    }
+                    $res = EntityResolver::resolveDocumentType($value);
+                    if (is_array($res) && isset($res['document_type_id'])) {
+                        $record->document_type_id = $res['document_type_id'];
+                    }
+                })
                 ->rules(['nullable', 'string', 'max:64']),
 
+            // Client 2026-08-18 (#12): same pattern for Practice (repository-scoped
+            // resolution by identifier / name).
             ImportColumn::make('practice')
                 ->label('Practice')
                 ->guess(['Practice', 'practice'])
+                ->fillRecordUsing(function (Document $record, ?string $state): void {
+                    $value = trim((string) ($state ?? ''));
+                    $record->practice = $value !== '' ? $value : null;
+                    if ($value === '') {
+                        return;
+                    }
+                    $repoId = self::$rowRepositoryStash[spl_object_id($record)] ?? null;
+                    $res = EntityResolver::resolvePractice($value, $repoId !== null ? (int) $repoId : null);
+                    if (is_array($res) && isset($res['practice_id'])) {
+                        $record->practice_id = $res['practice_id'];
+                    }
+                })
                 ->rules(['nullable', 'string', 'max:100']),
 
             ImportColumn::make('volume_number')

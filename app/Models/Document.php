@@ -121,6 +121,9 @@ class Document extends Model implements AuditableContract, HasMedia, Sortable
         'sort_order',
         // Normalised columns
         'identifier', 'document_type', 'series_id', 'accession_id',
+        // Client 2026-08-18 (#12/#17): optional FK links to the Document Types /
+        // Practices lookups (dual-written alongside the free-text columns).
+        'document_type_id', 'practice_id',
         'current_box_id', 'location_id', 'batch_id', 'repository_id', 'volume_number', 'part_number',
         'dates_start', 'dates_end', 'dates_year_start', 'dates_year_end',
         'disinfestation_date', 'is_in_disinfestation', 'extra', 'notes',
@@ -199,6 +202,21 @@ class Document extends Model implements AuditableContract, HasMedia, Sortable
     public function accession(): BelongsTo
     {
         return $this->belongsTo(Accession::class);
+    }
+
+    /**
+     * Optional lookup link (client 2026-08-18). Named *Ref to avoid clashing
+     * with the free-text `document_type` / `practice` string attributes, which
+     * keep being written alongside the FK.
+     */
+    public function documentTypeRef(): BelongsTo
+    {
+        return $this->belongsTo(DocumentType::class, 'document_type_id');
+    }
+
+    public function practiceRef(): BelongsTo
+    {
+        return $this->belongsTo(Practice::class, 'practice_id');
     }
 
     public function currentBox(): BelongsTo
