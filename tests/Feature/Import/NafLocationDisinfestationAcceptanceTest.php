@@ -818,3 +818,48 @@ it('AUTH3: multiple authorities via ";" (R-code + alternate key) all attach (#9/
     $ids = $doc->authorities()->get()->pluck('id')->all();
     expect($ids)->toContain($a1->id)->toContain($a2->id);
 });
+
+/* ══════════════ #23 — documents row links Batch ↔ Accession (pivot) ══════════════ */
+
+it('ACB1: a documents row naming BOTH a Batch and an Accession writes the accession_batch pivot, idempotently (#23)', function () {
+    [$repo, $u] = naf_admin();
+    Series::firstOrCreate(['code' => 'REG'], ['title' => 'Reg', 'is_active' => true, 'is_wills_series' => false]);
+
+    naf_import(DocumentImporter::class, [
+        'Document Identifier' => 'ACB-1', 'Series' => 'REG',
+        'Batch number' => '7', 'Accession' => '2025-777',
+    ], $u->id);
+
+    $doc = naf_doc('ACB-1');
+    expect($doc)->not->toBeNull()
+        ->and($doc->batch_id)->not->toBeNull()
+        ->and($doc->accession_id)->not->toBeNull();
+
+    $acc = Accession::withoutGlobalScopes()->whereKey($doc->accession_id)->first();
+    expect($acc->batches()->get()->modelKeys())->toContain($doc->batch_id);
+
+    // Re-import the identical row → the pivot is NOT duplicated (unique key +
+    // syncWithoutDetaching): the accession still has exactly one linked batch.
+    naf_import(DocumentImporter::class, [
+        'Document Identifier' => 'ACB-1', 'Series' => 'REG',
+        'Batch number' => '7', 'Accession' => '2025-777',
+    ], $u->id);
+
+    expect($acc->batches()->count())->toBe(1);
+});
+
+it('ACB2: a documents row with an Accession but NO Batch writes no pivot (#23)', function () {
+    [$repo, $u] = naf_admin();
+    Series::firstOrCreate(['code' => 'REG'], ['title' => 'Reg', 'is_active' => true, 'is_wills_series' => false]);
+
+    naf_import(DocumentImporter::class, [
+        'Document Identifier' => 'ACB-2', 'Series' => 'REG', 'Accession' => '2025-888',
+    ], $u->id);
+
+    $doc = naf_doc('ACB-2');
+    expect($doc?->accession_id)->not->toBeNull()
+        ->and($doc->batch_id)->toBeNull();
+
+    $acc = Accession::withoutGlobalScopes()->whereKey($doc->accession_id)->first();
+    expect($acc->batches()->count())->toBe(0);
+});

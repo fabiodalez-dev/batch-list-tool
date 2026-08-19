@@ -1429,6 +1429,22 @@ class DocumentImporter extends Importer
             );
         }
 
+        // Client 2026-08-18 (#23): when the row resolved BOTH an Accession and a
+        // Batch, record the link in the `accession_batch` pivot (the batch↔accession
+        // many-to-many: a batch can hold several accessions and an accession can
+        // span several batches). Additive + idempotent — the pivot is unique on
+        // (accession_id, batch_id) and syncWithoutDetaching never removes existing
+        // links. This mirrors AccessionRowImporter, so a plain documents sheet that
+        // names both a Batch and an Accession links them the same way the dedicated
+        // accession sheet does (previously this pivot was left unwritten here).
+        if ($record->accession_id !== null && $record->batch_id !== null) {
+            Accession::withoutGlobalScopes()
+                ->whereKey($record->accession_id)
+                ->first()
+                ?->batches()
+                ->syncWithoutDetaching([$record->batch_id]);
+        }
+
         // Custom fields (EAV) — persist stashed key→value pairs via the trait.
         // The stash is populated by the dynamic custom-field ImportColumn closures.
         //
