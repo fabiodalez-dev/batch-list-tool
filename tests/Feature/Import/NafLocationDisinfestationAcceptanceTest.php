@@ -12,6 +12,7 @@ use App\Models\Authority;
 use App\Models\Batch;
 use App\Models\Box;
 use App\Models\Document;
+use App\Models\DocumentIdentifierHistory;
 use App\Models\DocumentType;
 use App\Models\Location;
 use App\Models\Lookup\BoxType;
@@ -266,7 +267,7 @@ it('B3: a legacy box sheet with Location + Disinfestation Date still imports cle
 });
 
 it('B4: the generator version was bumped for the template contract change', function () {
-    expect(TemplateGenerator::GENERATOR_VERSION)->toBe('1.8.0');
+    expect(TemplateGenerator::GENERATOR_VERSION)->toBe('1.9.0');
 });
 
 it('B5: every generated box header still maps to a BoxImporter column (round-trip)', function () {
@@ -411,6 +412,34 @@ it('DTP2: an unknown Document Type / Practice leaves the FK null and the row sti
         ->and($doc->document_type_id)->toBeNull()        // FK not forced
         ->and($doc->practice)->toBe('NoSuchPractice')
         ->and($doc->practice_id)->toBeNull();
+});
+
+it('PA1: Prev Attributed Identifier / Volume are recorded in the identifier history, idempotently (#8)', function () {
+    [$repo, $u] = naf_admin();
+    Series::firstOrCreate(['code' => 'REG'], ['title' => 'Reg', 'is_active' => true, 'is_wills_series' => false]);
+
+    naf_import(DocumentImporter::class, [
+        'Identifier' => 'PA1', 'Series' => 'REG',
+        'Prev Attributed Identifier' => 'OLD-ID-1', 'Prev Attributed Volume' => 'V-3',
+    ], $u->id);
+
+    $doc = naf_doc('PA1');
+    $hist = DocumentIdentifierHistory::withoutGlobalScopes()
+        ->where('document_id', $doc->id)->where('previous_identifier', 'OLD-ID-1')->first();
+    expect($hist)->not->toBeNull()
+        ->and($hist->previous_volume)->toBe('V-3')
+        ->and($hist->new_identifier)->toBe('PA1');
+
+    // Re-import the same document → the SAME history row is updated, not duplicated.
+    naf_import(DocumentImporter::class, [
+        'Identifier' => 'PA1', 'Series' => 'REG',
+        'Prev Attributed Identifier' => 'OLD-ID-1', 'Prev Attributed Volume' => 'V-4',
+    ], $u->id);
+
+    $rows = DocumentIdentifierHistory::withoutGlobalScopes()
+        ->where('document_id', $doc->id)->where('previous_identifier', 'OLD-ID-1')->get();
+    expect($rows)->toHaveCount(1)
+        ->and($rows->first()->previous_volume)->toBe('V-4');
 });
 
 it('B7: an IN_SITU box imports WITHOUT a location now (location optional, client feedback 2026-08-05)', function () {
