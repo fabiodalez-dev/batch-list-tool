@@ -90,6 +90,17 @@ final class TemplateGenerator
         'Repository',
     ];
 
+    /**
+     * Client 2026-08-18 (#17) — Document Type controlled vocabulary. Identifier
+     * is the code the document sheet references (documents."Document Type" →
+     * document_type_id); Name is the human label.
+     *
+     * @var array<int, string>
+     */
+    public const array DOCUMENT_TYPE_HEADERS = [
+        'Identifier', 'Name', 'Description', 'Is active',
+    ];
+
     /** @var array<int, string> */
     public const array DOCUMENT_HEADERS = [
         'RAS Batch 1', 'RAS Box 1', 'RAS Batch 2', 'RAS Box 2',
@@ -130,7 +141,7 @@ final class TemplateGenerator
      * can detect a stale template at re-upload time and warn the operator.
      * Bump on any change to the header contract.
      */
-    public const string GENERATOR_VERSION = '1.10.0';
+    public const string GENERATOR_VERSION = '1.11.0';
 
     /**
      * Supported template entities. Headers come from the in-repo constants
@@ -148,6 +159,7 @@ final class TemplateGenerator
         'batch' => [],
         'box' => [],
         'location' => [],
+        'documentType' => [],
         'document' => [],
         'volume' => [],
         'accession' => [],
@@ -222,6 +234,7 @@ final class TemplateGenerator
         $staticHeaders = match ($entity) {
             'authority' => self::AUTHORITY_HEADERS,
             'series' => self::SERIES_HEADERS,
+            'documentType' => self::DOCUMENT_TYPE_HEADERS,
             'document' => self::DOCUMENT_HEADERS,
             'batch' => self::synthesiseBatchHeaders(),
             'box' => self::synthesiseBoxHeaders(),
@@ -236,7 +249,7 @@ final class TemplateGenerator
         // Authority, series, and location have no custom fields — skip the
         // resolver call entirely (avoids an unnecessary DB query on every
         // template download for these entities).
-        if (in_array($entity, ['authority', 'series', 'location'], strict: true)) {
+        if (in_array($entity, ['authority', 'series', 'location', 'documentType'], strict: true)) {
             return $staticHeaders;
         }
 
@@ -486,7 +499,7 @@ final class TemplateGenerator
         // this template, so the _template_meta sheet can list them explicitly.
         // Authority, series, and location carry no custom fields — skip.
         $customFieldKeys = [];
-        if (! in_array($entity, ['authority', 'series', 'location'], strict: true)) {
+        if (! in_array($entity, ['authority', 'series', 'location', 'documentType'], strict: true)) {
             $customFieldKeys = CustomFieldResolver::definitionsFor($entity)
                 ->map(fn ($def) => 'cf_' . $def->key)
                 ->all();
@@ -528,6 +541,7 @@ final class TemplateGenerator
             'batch' => 'Batches',
             'box' => 'Boxes',
             'location' => 'Locations',
+            'documentType' => 'Document Types',
             'document' => 'Documents',
             'volume' => 'Volumes',
             'accession' => 'Accession Import',

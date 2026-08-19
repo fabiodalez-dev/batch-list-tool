@@ -92,7 +92,8 @@ test('IMPORTERS map covers every advertised wizard option', function () {
     // sync with ImportWizard::IMPORTERS / TEMPLATE_KEYS so a future drop
     // or rename of an entity surfaces as a hard test failure.
     // 'accessions' added in Wave C (AccessionRowImporter) — bottom-up cascade importer.
-    $expected = ['series', 'authorities', 'locations', 'batches', 'boxes', 'documents', 'accessions'];
+    // 'documentTypes' added 2026-08-18 (#17) — must precede 'documents' in the map.
+    $expected = ['series', 'authorities', 'locations', 'batches', 'boxes', 'documentTypes', 'documents', 'accessions'];
 
     expect(array_keys(ImportWizard::IMPORTERS))
         ->toEqualCanonicalizing($expected)

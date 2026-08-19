@@ -10,6 +10,7 @@ use App\Filament\Imports\AuthorityImporter;
 use App\Filament\Imports\BatchImporter;
 use App\Filament\Imports\BoxImporter;
 use App\Filament\Imports\DocumentImporter;
+use App\Filament\Imports\DocumentTypeImporter;
 use App\Filament\Imports\LocationImporter;
 use App\Filament\Imports\SeriesImporter;
 use App\Models\ImportProfile;
@@ -106,6 +107,11 @@ class ImportWizard extends Page
         'locations' => LocationImporter::class,
         'batches' => BatchImporter::class,
         'boxes' => BoxImporter::class,
+        // Client 2026-08-18 (#17): Document Types must be importable in bulk
+        // (there are many) and BEFORE documents — the documents sheet links to
+        // them (document_type_id). Ordered before 'documents' so the wizard
+        // dropdown presents it as the earlier step.
+        'documentTypes' => DocumentTypeImporter::class,
         'documents' => DocumentImporter::class,
         'accessions' => AccessionRowImporter::class,
     ];
@@ -122,6 +128,7 @@ class ImportWizard extends Page
         'locations' => 'location',
         'batches' => 'batch',
         'boxes' => 'box',
+        'documentTypes' => 'documentType',
         'documents' => 'document',
         'accessions' => 'accession',
     ];
@@ -1145,6 +1152,7 @@ class ImportWizard extends Page
                         'locations' => 'Locations (physical/logical hierarchy)',
                         'batches' => 'Batches (numbered groupings)',
                         'boxes' => 'Boxes (physical containers)',
+                        'documentTypes' => 'Document Types (controlled vocabulary — import BEFORE documents)',
                         'documents' => 'Documents (the main entity — 3,113 rows in sample)',
                     ])
                     ->descriptions([
@@ -1154,7 +1162,8 @@ class ImportWizard extends Page
                         'locations' => 'Depends on: at least one Repository AND a matching Location Type — the "type" column must be one of the configured location types (built-in ones like room / shelf / showcase always work). Parents must be imported before their children (re-run after fixing order if parent not found).',
                         'batches' => 'Depends on: at least one Repository.',
                         'boxes' => 'Depends on: at least one Batch. Import the RAS parent boxes first, then the boxes inside them. In "parent_box_number" put the parent RAS box\'s NUMBER (e.g. "1") or its barcode — every IN_SITU / NRA box needs a RAS parent. "Location" is a location CODE (e.g. "SHELF-A3"), not the room name.',
-                        'documents' => 'Depends on: Series + Authorities + Batches + Boxes.',
+                        'documentTypes' => 'Depends on: nothing. Import this BEFORE documents — the documents sheet links each row to a Document Type by its Identifier.',
+                        'documents' => 'Depends on: Series + Authorities + Batches + Boxes + Document Types.',
                     ])
                     ->required()
                     ->live()
