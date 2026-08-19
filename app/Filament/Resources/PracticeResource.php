@@ -76,14 +76,16 @@ class PracticeResource extends Resource
             // Feedback1 Wave A (A6) — drag-and-drop column reordering.
             ->reorderableColumns()
             ->columns([
-                // D4 — identifier column, toggleable (off by default to keep
-                // the default grid compact for day-to-day use).
+                // D4 — identifier column. Client 2026-08-18 #12: surfaced by
+                // default (was hidden) so the Practice identifier is visible in
+                // the list without toggling the column dropdown. Mirrors
+                // DocumentTypeResource, whose identifier is visible by default.
                 Tables\Columns\TextColumn::make('identifier')
                     ->label('Identifier')
                     ->placeholder('—')
                     ->searchable()
                     ->sortable()
-                    ->toggleable(isToggledHiddenByDefault: true),
+                    ->toggleable(),
                 Tables\Columns\TextColumn::make('name')->searchable()->sortable(),
                 Tables\Columns\TextColumn::make('description')->limit(60)->sortable()->toggleable(),
                 Tables\Columns\IconColumn::make('is_active')->boolean()->sortable()->toggleable(),
