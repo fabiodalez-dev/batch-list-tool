@@ -37,6 +37,48 @@ it('EntityResolver: resolveAuthority by exact identifier returns authority_id wi
         ->and($res['method'])->toBe('identifier');
 });
 
+it('EntityResolver: resolveAuthority by alternative_identifier returns method=alternative_identifier (#9)', function () {
+    // Charlene #9: a document can link to its Authority by the alternate key
+    // (e.g. an MS-number "997"), not just the canonical R-code.
+    $a = Authority::create([
+        'identifier' => 'R-ALT-' . uniqid(),
+        'alternative_identifier' => 'MS-' . uniqid(),
+        'surname' => 'Grima',
+        'entity_type' => 'PERSON',
+    ]);
+    $res = EntityResolver::resolveAuthority($a->alternative_identifier);
+    expect($res)->not->toBeNull()
+        ->and($res['authority_id'])->toBe($a->id)
+        ->and($res['method'])->toBe('alternative_identifier');
+});
+
+it('EntityResolver: resolveAuthority prefers identifier over alternative_identifier (#9)', function () {
+    // If a value is BOTH some authority's R-code and another's alternate key,
+    // the canonical unique identifier wins (Strategy 1 before Strategy 1b).
+    $shared = 'DUP-' . uniqid();
+    $canonical = Authority::create(['identifier' => $shared, 'surname' => 'Canon', 'entity_type' => 'PERSON']);
+    Authority::create(['identifier' => 'R-OTHER-' . uniqid(), 'alternative_identifier' => $shared, 'surname' => 'Alt', 'entity_type' => 'PERSON']);
+
+    $res = EntityResolver::resolveAuthority($shared);
+    expect($res)->not->toBeNull()
+        ->and($res['authority_id'])->toBe($canonical->id)
+        ->and($res['method'])->toBe('identifier');
+});
+
+it('EntityResolver: resolveAuthority returns ambiguous_count when an alternate key collides (#9)', function () {
+    // alternative_identifier is indexed but NOT unique — a collision must be
+    // reported as ambiguous (never auto-assigned), like the surname strategy.
+    $alt = 'COLL-' . uniqid();
+    $x = Authority::create(['identifier' => 'R-C1-' . uniqid(), 'alternative_identifier' => $alt, 'surname' => 'One', 'entity_type' => 'PERSON']);
+    $y = Authority::create(['identifier' => 'R-C2-' . uniqid(), 'alternative_identifier' => $alt, 'surname' => 'Two', 'entity_type' => 'PERSON']);
+
+    $res = EntityResolver::resolveAuthority($alt);
+    expect($res)->not->toBeNull()
+        ->and($res['ambiguous_count'] ?? null)->toBe(2)
+        ->and($res['candidates'] ?? [])->toContain($x->id)
+        ->and($res['candidates'] ?? [])->toContain($y->id);
+});
+
 it('EntityResolver: resolveAuthority by surname+given returns surname_given method', function () {
     $a = Authority::create([
         'identifier' => 'R-SG-' . uniqid(),

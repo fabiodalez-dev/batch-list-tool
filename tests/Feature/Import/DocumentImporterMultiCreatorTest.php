@@ -217,3 +217,69 @@ test('multi-creator: unknown first piece "R999; R520" attaches only R520 as prim
         ->and($attached->first()->id)->toBe($a->id)
         ->and((bool) $attached->first()->pivot->is_primary)->toBeTrue();
 });
+
+test('multi-creator (#9): resolves an authority by its alternative_identifier', function () {
+    $repo = mcr_repo();
+    $u = mcr_makeAdmin($repo->id);
+    $this->actingAs($u);
+    mcr_series('REG');
+    // Charlene #9: the document links to the notary by the R-code OR the
+    // alternate key (here "997"). Both must retrieve the same Authority.
+    $a = Authority::create([
+        'identifier' => 'R390',
+        'alternative_identifier' => '997',
+        'surname' => 'Grima',
+        'entity_type' => 'PERSON',
+    ]);
+
+    mcr_runImporter([
+        'identifier' => 'DOC-MCR-ALT',
+        'series' => 'REG',
+        'authority_identifier' => '997',
+    ], $u->id);
+
+    $doc = Document::withoutGlobalScope(RepositoryScope::class)
+        ->where('identifier', 'DOC-MCR-ALT')
+        ->firstOrFail();
+
+    $attached = $doc->authorities()->get();
+    expect($attached->count())->toBe(1)
+        ->and($attached->first()->id)->toBe($a->id)
+        ->and((bool) $attached->first()->pivot->is_primary)->toBeTrue();
+});
+
+test('multi-creator (#9): a ";"-list mixing R-code and alternate key attaches both', function () {
+    $repo = mcr_repo();
+    $u = mcr_makeAdmin($repo->id);
+    $this->actingAs($u);
+    mcr_series('REG');
+    $a1 = Authority::create([
+        'identifier' => 'R390',
+        'alternative_identifier' => '997',
+        'surname' => 'Grima',
+        'entity_type' => 'PERSON',
+    ]);
+    $a2 = Authority::create([
+        'identifier' => 'R362A',
+        'surname' => 'Cauchi',
+        'entity_type' => 'PERSON',
+    ]);
+
+    // First piece resolves by alternate key, second by R-code.
+    mcr_runImporter([
+        'identifier' => 'DOC-MCR-MIX',
+        'series' => 'REG',
+        'authority_identifier' => '997; R362A',
+    ], $u->id);
+
+    $doc = Document::withoutGlobalScope(RepositoryScope::class)
+        ->where('identifier', 'DOC-MCR-MIX')
+        ->firstOrFail();
+
+    $attached = $doc->authorities()->get()->keyBy('id');
+    expect($attached->count())->toBe(2)
+        ->and($attached->has($a1->id))->toBeTrue()
+        ->and($attached->has($a2->id))->toBeTrue()
+        ->and((bool) $attached->get($a1->id)->pivot->is_primary)->toBeTrue()
+        ->and((bool) $attached->get($a2->id)->pivot->is_primary)->toBeFalse();
+});

@@ -106,7 +106,11 @@ final class TemplateGenerator
         // field — intentionally NOT emitted in the document template.
         'Disinfestation Date', 'Disinfestation Date',
         'Disinfestation Date', 'Catalogue Identifier', 'NRA Location',
-        'Museum Location', 'Identifier', 'Practice', 'Volume', 'Creator',
+        // Client 2026-08-18 #9: this legacy 'Identifier' column is the link to
+        // the Authority (R-code OR alternate key, ";"-separated for multiple
+        // notaries) — renamed to the client's wording. The importer's guess
+        // list still accepts the legacy 'Identifier'/'Actual Identifier' headers.
+        'Museum Location', 'Authority Identifier', 'Practice', 'Volume', 'Creator',
         'Dates', 'Deeds', 'Document Type', 'Series', 'Current Box', 'Note',
         'Digitised', 'Torre', 'Accession', 'Conservation Object Reference Number',
         'Tracking', 'Museum Reference',
@@ -126,7 +130,7 @@ final class TemplateGenerator
      * can detect a stale template at re-upload time and warn the operator.
      * Bump on any change to the header contract.
      */
-    public const string GENERATOR_VERSION = '1.9.0';
+    public const string GENERATOR_VERSION = '1.10.0';
 
     /**
      * Supported template entities. Headers come from the in-repo constants
