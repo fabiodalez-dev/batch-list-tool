@@ -9,6 +9,7 @@ use App\Models\Batch;
 use App\Models\Box;
 use App\Models\DocumentType;
 use App\Models\Location;
+use App\Models\Lookup\BoxType;
 use App\Models\Practice;
 use App\Models\Repository;
 use App\Models\Scopes\RepositoryScope;
@@ -447,6 +448,94 @@ final class EntityResolver
         }
 
         return null;
+    }
+
+    /**
+     * Resolve a BATCH-LESS box referenced by an In-Situ provenance cell —
+     * client 2026-08-18 (#1), backing the legacy movement TIMELINE.
+     *
+     * In-Situ boxes are (Box Type + Box number) and carry NO batch: they derive
+     * tenancy from their OWN `repository_id` (see {@see Box::booted}), so we
+     * match/scope by (repository_id, box_type, box_number) exactly like the
+     * batch-less path in BoxImporter.
+     *
+     * The `$rawType` is normalised (spaces → underscores, upper-cased) and
+     * validated against BOTH {@see Box::TYPES} and the ACTIVE `box_types`
+     * lookup. An unknown or inactive type falls back to `IN_SITU` and the raw
+     * label is stashed into the box's free-text `current_box_type` column so no
+     * information is lost. Validating first is required because creating a box
+     * with a dirty `box_type` triggers {@see Lookups::assertActive}, which would
+     * throw on an unknown archival type.
+     *
+     * A created box is flagged `is_legacy = true` and `provenance_unknown =
+     * true` — the latter is REQUIRED because the Box saving() guard rejects an
+     * IN_SITU/NRA box with no parent RAS box unless provenance is explicitly
+     * unknown.
+     *
+     * Memoised like {@see resolveBox()}; a lookup-only (create=false) miss can
+     * still be created by a later create=true call for the same key.
+     *
+     * @return array{box_id:int}|null
+     */
+    public static function resolveInSituBox(
+        string $rawType,
+        string $number,
+        int $repositoryId,
+        bool $create = true,
+    ): ?array {
+        // Normalise the box number: trim, then drop Excel float artefacts
+        // ('3.0' → '3'), consistent with DocumentImporter's current_box_number.
+        $number = self::normaliseString($number);
+        if ($number !== null && preg_match('/^(\d+)\.0+$/', $number, $m) === 1) {
+            $number = $m[1];
+        }
+        if ($number === null) {
+            return null;
+        }
+
+        // Normalise + validate the archival type. Unknown/inactive → IN_SITU,
+        // keeping the raw label for the box's free-text current_box_type column.
+        $type = strtoupper(trim(str_replace(' ', '_', $rawType)));
+        $rawLabel = null;
+        $isKnownActive = in_array($type, Box::TYPES, true)
+            && BoxType::query()->where('code', $type)->where('is_active', true)->exists();
+        if (! $isKnownActive) {
+            $trimmed = trim($rawType);
+            $rawLabel = $trimmed !== '' ? $trimmed : null;
+            $type = 'IN_SITU';
+        }
+
+        $key = "insitu_box:{$repositoryId}|{$type}|{$number}";
+        if (! array_key_exists($key, self::$memo)) {
+            // withoutGlobalScopes() also drops SoftDeletingScope, so exclude
+            // trashed rows explicitly.
+            $box = Box::query()
+                ->withoutGlobalScopes()
+                ->whereNull('deleted_at')
+                ->where('repository_id', $repositoryId)
+                ->where('box_type', $type)
+                ->where('box_number', $number)
+                ->first();
+            self::$memo[$key] = $box !== null ? ['box_id' => (int) $box->id] : null;
+        }
+
+        if (self::$memo[$key] === null && $create) {
+            $attrs = [
+                'box_type' => $type,
+                'box_number' => $number,
+                'batch_id' => null,
+                'repository_id' => $repositoryId,
+                'is_legacy' => true,
+                'provenance_unknown' => true,
+            ];
+            if ($rawLabel !== null) {
+                $attrs['current_box_type'] = $rawLabel;
+            }
+            $box = Box::query()->create($attrs);
+            self::$memo[$key] = ['box_id' => (int) $box->id];
+        }
+
+        return self::$memo[$key];
     }
 
     /**

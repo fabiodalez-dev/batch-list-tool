@@ -10,6 +10,7 @@ use App\Filament\Pages\ImportWizard;
 use App\Models\Accession;
 use App\Models\Authority;
 use App\Models\Box;
+use App\Models\BoxMovement;
 use App\Models\CustomFieldDefinition;
 use App\Models\Document;
 use App\Models\DocumentIdentifierHistory;
@@ -105,6 +106,26 @@ class DocumentImporter extends Importer
      * in {@see buildAutoIdentifier()}.
      */
     public const SOURCE_ROW_KEY = SpreadsheetHeaders::SOURCE_ROW_KEY;
+
+    /**
+     * Post-save side effects (box-status reconciliation + authority pivot
+     * writes). Extracted from {@see afterSave()} so they run inside the per-row
+     * savepoint and roll back atomically with the document on any failure.
+     *
+     * Reads from the static stash keyed by `spl_object_id` of the record —
+     * populated inside the column closures during fill.
+     */
+    /**
+     * The legacy provenance chain, earliest → latest. Client-confirmed order
+     * (Charlene 2026-08-19): the RAS boxes are the OLDEST, then the In-Situ
+     * boxes — "RAS Box 1 → RAS Box 2 → In Situ 1 → In Situ 2 → In Situ 3"
+     * (In Situ 3 not yet in use). 'CURRENT' is the RAS Box 1 box, already
+     * resolved into current_box_id. This ordering is the single assumption of
+     * the whole feature — kept here so it stays flippable in one place.
+     *
+     * @var list<string>
+     */
+    private const LEGACY_MOVE_CHAIN = ['CURRENT', 'ras_box_2', 'in_situ_box_1', 'in_situ_box_2', 'in_situ_box_3'];
 
     protected static ?string $model = Document::class;
 
@@ -1252,8 +1273,15 @@ class DocumentImporter extends Importer
             // remaining boxes are stored verbatim in their legacy columns so no
             // data is lost. A RAS box is (Batch + Box number); an In-Situ box is
             // (Box Type + Box number) — write In-Situ cells as "<Box Type>
-            // <number>" (e.g. "Small Box 12"). A real movement TIMELINE is
-            // deferred until the client tells us how each move should be dated.
+            // <number>" (e.g. "Small Box 12"). These verbatim columns are KEPT.
+            //
+            // The movement TIMELINE is now built from these columns in
+            // {@see buildLegacyMovementChain()} (called from
+            // persistRowSideEffects): each resolved box becomes a NULL-dated
+            // 'legacy_import' BoxMovement — the client cannot date legacy moves,
+            // so they are stored undated, flagged, and sorted first. An operator
+            // can later type a real date, which auto-flips the row to 'recorded'
+            // (BoxMovement saving() invariant).
             ImportColumn::make('ras_batch_2')
                 ->label('RAS Batch 2')
                 ->guess(['RAS Batch 2', 'ras_batch_2'])
@@ -1385,13 +1413,138 @@ class DocumentImporter extends Importer
     }
 
     /**
-     * Post-save side effects (box-status reconciliation + authority pivot
-     * writes). Extracted from {@see afterSave()} so they run inside the per-row
-     * savepoint and roll back atomically with the document on any failure.
+     * Client 2026-08-18 (#1) — reconstruct the box-movement TIMELINE from the
+     * verbatim provenance columns as NULL-dated 'legacy_import' moves.
      *
-     * Reads from the static stash keyed by `spl_object_id` of the record —
-     * populated inside the column closures during fill.
+     * Delete-and-rebuild: our own legacy rows are dropped first, then the fresh
+     * chain is inserted, so a re-import whose cells were corrected or emptied
+     * ends with the right chain (never duplicated, never stale). 'recorded'
+     * moves (made via MoveToBoxAction, or a legacy row an operator dated) are
+     * NEVER touched.
+     *
+     * A single resolved box is a location, not a move → fewer than two hops
+     * yields no movements. Otherwise one BoxMovement per ARRIVAL is created, the
+     * final move's to_box being the current box (matching MoveToBoxAction
+     * semantics).
      */
+    protected function buildLegacyMovementChain(Document $record): void
+    {
+        $repoId = (int) $record->repository_id;
+
+        // Resolve each chain step to a box id, in order, compacting away empty
+        // cells and unresolvable steps (no gap rows).
+        $boxIds = [];
+        foreach (self::LEGACY_MOVE_CHAIN as $step) {
+            $boxId = match ($step) {
+                'CURRENT' => $record->current_box_id !== null ? (int) $record->current_box_id : null,
+                'ras_box_2' => $this->resolveRasBox2Step($record, $repoId),
+                default => $this->resolveInSituStep((string) ($record->{$step} ?? ''), $repoId),
+            };
+            if ($boxId !== null) {
+                $boxIds[] = $boxId;
+            }
+        }
+
+        // Idempotency (delete-and-rebuild): remove ONLY this document's legacy
+        // moves before inserting the fresh chain. Never touches 'recorded' rows.
+        BoxMovement::query()
+            ->withoutGlobalScopes()
+            ->where('document_id', $record->getKey())
+            ->where('date_source', BoxMovement::DATE_SOURCE_LEGACY)
+            ->delete();
+
+        // A single current box is a location, not a move.
+        if (count($boxIds) < 2) {
+            return;
+        }
+
+        foreach ($boxIds as $i => $toBoxId) {
+            BoxMovement::query()->create([
+                'document_id' => $record->getKey(),
+                'repository_id' => $record->repository_id,
+                'from_box_id' => $i === 0 ? null : $boxIds[$i - 1],
+                'to_box_id' => $toBoxId,
+                'movement_date' => null,
+                'date_source' => BoxMovement::DATE_SOURCE_LEGACY,
+                'sequence' => $i + 1,
+                'reason' => 'Legacy import — provenance from batch sheet',
+                'user_id' => $this->import->user->getKey(),
+            ]);
+        }
+    }
+
+    /**
+     * Parse an In-Situ provenance cell ("NRA 3", "Small Box 12", "NRA3", "5")
+     * into (type, number) and resolve it to a batch-less box id. Returns null
+     * when the cell is empty or carries no usable box number (kept verbatim in
+     * its own column; the row is never failed by this).
+     */
+    protected function resolveInSituStep(string $raw, int $repoId): ?int
+    {
+        $raw = trim($raw);
+        if ($raw === '') {
+            return null;
+        }
+
+        $type = 'IN_SITU';
+        if (preg_match('/^(.*\S)\s+(\S+)$/u', $raw, $m) === 1) {
+            // Trailing token is the number, everything before it the type.
+            [$type, $number] = [$m[1], $m[2]];
+        } elseif (preg_match('/^([A-Za-z]+)(\d+)$/', $raw, $m) === 1) {
+            // No separating space, e.g. "NRA3".
+            [$type, $number] = [$m[1], $m[2]];
+        } elseif (preg_match('/^\d/', $raw) === 1) {
+            // Bare number, e.g. "5" → default IN_SITU type.
+            $number = $raw;
+        } else {
+            return null; // unparseable (no number) → skip, keep verbatim
+        }
+
+        $resolved = EntityResolver::resolveInSituBox($type, $number, $repoId, create: true);
+
+        return $resolved !== null ? (int) $resolved['box_id'] : null;
+    }
+
+    /**
+     * Resolve the prior RAS box (RAS Box 2). Its batch is RAS Batch 2 when
+     * present, otherwise the document's own batch. Returns null (skip) when no
+     * batch is resolvable or the batch is reserved/forbidden.
+     */
+    protected function resolveRasBox2Step(Document $record, int $repoId): ?int
+    {
+        $rasBox2 = trim((string) ($record->ras_box_2 ?? ''));
+        if ($rasBox2 === '') {
+            return null;
+        }
+        // Drop Excel float artefacts ('7.0' → '7').
+        if (preg_match('/^(\d+)\.0+$/', $rasBox2, $m) === 1) {
+            $rasBox2 = $m[1];
+        }
+
+        $batchId = null;
+        $rasBatch2 = trim((string) ($record->ras_batch_2 ?? ''));
+        if ($rasBatch2 !== '') {
+            if (! is_numeric($rasBatch2)) {
+                return null; // a batch is named but is not a number → cannot resolve
+            }
+            $batch = EntityResolver::resolveBatch((int) $rasBatch2, $repoId, create: true);
+            if ($batch === null || isset($batch['forbidden'])) {
+                return null; // unresolvable or reserved batch → skip this step
+            }
+            $batchId = (int) $batch['batch_id'];
+        } elseif ($record->batch_id !== null) {
+            $batchId = (int) $record->batch_id;
+        }
+
+        if ($batchId === null) {
+            return null;
+        }
+
+        $box = EntityResolver::resolveBox(null, $batchId, $rasBox2, create: true, boxType: 'RAS');
+
+        return $box !== null ? (int) $box['box_id'] : null;
+    }
+
     protected function persistRowSideEffects(): void
     {
         /** @var Document $record */
@@ -1444,6 +1597,11 @@ class DocumentImporter extends Importer
                 ?->batches()
                 ->syncWithoutDetaching([$record->batch_id]);
         }
+
+        // Client 2026-08-18 (#1): rebuild the legacy box-movement TIMELINE from
+        // the provenance columns. Runs here because it needs the saved document
+        // id AND the resolved current_box_id (set in afterFill/afterSave).
+        $this->buildLegacyMovementChain($record);
 
         // Custom fields (EAV) — persist stashed key→value pairs via the trait.
         // The stash is populated by the dynamic custom-field ImportColumn closures.

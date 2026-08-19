@@ -1404,6 +1404,8 @@ class DocumentResource extends Resource
             DocumentResource\RelationManagers\IdentifierHistoryRelationManager::class,
             DocumentResource\RelationManagers\FlagsRelationManager::class,
             DocumentResource\RelationManagers\BarcodeHistoryRelationManager::class,
+            // Client 2026-08-18 (#1) — box-movement timeline (legacy + recorded).
+            DocumentResource\RelationManagers\BoxMovementsRelationManager::class,
             // NAF Queries Q5 — box itemisation.
             DocumentResource\RelationManagers\ItemsRelationManager::class,
         ];
