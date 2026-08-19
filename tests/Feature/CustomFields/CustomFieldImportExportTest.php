@@ -322,7 +322,7 @@ test('[Template/Document] headersFor appends active text+date custom labels afte
     $headers = TemplateGenerator::headersFor('document');
 
     // Static headers must come first (spot-check using known DOCUMENT_HEADERS content).
-    expect($headers)->toContain('Identifier')
+    expect($headers)->toContain('Authority Identifier')
         ->and($headers)->toContain('Document Type')
         ->and($headers)->toContain('Series');
 
