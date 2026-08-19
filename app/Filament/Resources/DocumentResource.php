@@ -102,6 +102,8 @@ class DocumentResource extends Resource
         'museum_location',
         'accession_code_legacy',
         'object_reference_number',
+        'temporary_identifier',
+        'citation_reference',
         'tracking',
         'museum_reference',
         // POC legacy columns (parity with raw-PHP schema) — still surfaced
@@ -376,7 +378,20 @@ class DocumentResource extends Resource
                             ->helperText('Digitisation source per RFQ APP2-xiii.')),
                         $g(Forms\Components\Toggle::make('torre')->columnSpanFull()),
                         $g(Forms\Components\TextInput::make('accession_code_legacy')->label('Accession (legacy text)')->maxLength(191)),
-                        $g(Forms\Components\TextInput::make('object_reference_number')->maxLength(500)),
+                        // Client feedback 2026-08-18 #27: relabel to the client's
+                        // wording. This is NOT guaranteed unique (multiple documents
+                        // may share a conservation object), so it stays free-text.
+                        $g(Forms\Components\TextInput::make('object_reference_number')->label('Conservation Object Reference Number')->maxLength(500)),
+                        // Client feedback 2026-08-18 #26: a per-document temporary
+                        // identifier, unique across the archive (enforced by a DB
+                        // unique index + the importer's afterFill check).
+                        $g(Forms\Components\TextInput::make('temporary_identifier')
+                            ->label('Temporary Identifier')
+                            ->maxLength(191)
+                            ->unique(ignoreRecord: true)
+                            ->nullable()),
+                        // Client feedback 2026-08-18 #28: free-text citation reference.
+                        $g(Forms\Components\Textarea::make('citation_reference')->label('Citation Reference')->rows(2)->columnSpanFull()),
                         // Client feedback 2026-08-04: a Tracking Note distinct
                         // from the general note (this is the existing `tracking`
                         // column, relabelled and promoted to a multi-line field).
@@ -914,7 +929,9 @@ class DocumentResource extends Resource
                         TextEntry::make('digitised')->placeholder('—'),
                         IconEntry::make('torre')->boolean(),
                         TextEntry::make('accession_code_legacy')->label('Accession (legacy)')->placeholder('—'),
-                        TextEntry::make('object_reference_number')->label('Object reference #')->placeholder('—'),
+                        TextEntry::make('object_reference_number')->label('Conservation Object Reference Number')->placeholder('—'),
+                        TextEntry::make('temporary_identifier')->label('Temporary Identifier')->copyable()->placeholder('—'),
+                        TextEntry::make('citation_reference')->label('Citation Reference')->placeholder('—')->columnSpanFull(),
                         TextEntry::make('tracking')->label('Tracking Note')->placeholder('—')->columnSpanFull(),
                         TextEntry::make('museum_reference')->label('Museum reference')->placeholder('—')->columnSpanFull(),
                     ]),
@@ -1084,6 +1101,7 @@ class DocumentResource extends Resource
                 $gc(Tables\Columns\TextColumn::make('pages_folios')->label('Pages/Folios')->sortable()->toggleable(isToggledHiddenByDefault: true)),
                 $gc(Tables\Columns\TextColumn::make('barcode_in')->label('Barcode (IN)')->sortable()->toggleable(isToggledHiddenByDefault: true)),
                 $gc(Tables\Columns\TextColumn::make('catalogue_identifier')->label('Catalogue ID')->sortable()->toggleable(isToggledHiddenByDefault: true)),
+                $gc(Tables\Columns\TextColumn::make('temporary_identifier')->label('Temporary ID')->searchable()->sortable()->toggleable(isToggledHiddenByDefault: true)),
                 // Bug #31 — Notes visible by default: some documents can only be
                 // identified by the note (no known creator, date or type). Hideable
                 // via the column picker; truncated with the full text on hover.

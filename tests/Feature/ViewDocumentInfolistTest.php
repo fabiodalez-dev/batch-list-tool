@@ -385,3 +385,24 @@ it('DocumentResource::infolist() schema is populated (regression: not the form s
     expect($built->getComponents())->not->toBeEmpty();
     expect(count($built->getComponents()))->toBeGreaterThanOrEqual(8);
 });
+
+/* ---------------------------------------------------------------------------
+ |  Client 2026-08-18 #26/#28 — new columns surfaced on the View page
+ * -------------------------------------------------------------------------*/
+
+it('ViewDocument page renders the Temporary Identifier and Citation Reference (#26/#28)', function () {
+    $this->actingAs(vdt_actAsSuperAdmin());
+    $repo = vdt_makeRepo();
+    $series = vdt_makeSeries();
+    $doc = vdt_makeDoc($repo->id, $series->id, [
+        'temporary_identifier' => 'TEMP-XYZ-9',
+        'citation_reference' => 'Cited in Vol IV p.12',
+    ]);
+
+    Livewire::test(ViewDocument::class, ['record' => $doc->getRouteKey()])
+        ->assertOk()
+        ->assertSee('Temporary Identifier')
+        ->assertSee('TEMP-XYZ-9')
+        ->assertSee('Citation Reference')
+        ->assertSee('Cited in Vol IV p.12');
+});
