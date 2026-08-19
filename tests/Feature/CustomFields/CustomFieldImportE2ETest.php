@@ -116,7 +116,7 @@ it('writes the active repository custom-field column into the real Document .xls
     // 1–3. Generate the genuine .xlsx and confirm the custom column is in the header row.
     [$path, $headers] = cfe2e_downloadTemplate('document');
 
-    expect($headers)->toContain('Identifier')          // a static legacy header survives
+    expect($headers)->toContain('Authority Identifier') // a static legacy header survives (renamed from 'Identifier', #9)
         ->and($headers)->toContain('OCR State');        // the custom column was appended
 
     // 4. Drive the real importer with a row keyed by the template headers.
@@ -184,6 +184,6 @@ it('does not append a custom column to the .xlsx when no active repository is se
 
     [$path, $headers] = cfe2e_downloadTemplate('document');
 
-    expect($headers)->toContain('Identifier')
+    expect($headers)->toContain('Authority Identifier')
         ->and($headers)->not->toContain('OCR State');
 });
