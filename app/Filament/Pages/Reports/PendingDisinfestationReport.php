@@ -394,7 +394,13 @@ class PendingDisinfestationReport extends Page implements HasTable
             ->where(function (Builder $q): void {
                 $q->whereNull('current_box_id')
                     ->orWhereHas('currentBox', function (Builder $q): void {
-                        $q->where('barcode_status', '!=', 'PERM_OUT');
+                        // A null-status current box (an In-Situ box) is NOT
+                        // perm-out and must stay pending. SQL `NULL != 'PERM_OUT'`
+                        // is UNKNOWN, so a bare `!=` silently drops those rows —
+                        // widen the predicate to treat null as "not perm-out".
+                        $q->where(fn (Builder $b): Builder => $b
+                            ->whereNull('barcode_status')
+                            ->orWhere('barcode_status', '!=', 'PERM_OUT'));
                     });
             });
     }

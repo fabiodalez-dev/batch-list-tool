@@ -1471,6 +1471,29 @@ class DocumentImporter extends Importer
                 'user_id' => $this->import->user->getKey(),
             ]);
         }
+
+        // Repoint current_box_id onto the NEWEST box of the timeline (the last
+        // arrival), so the document points at its ACTUAL current physical
+        // position instead of the archival RAS Box 1 that resolveCurrentBox()
+        // assigned. batch_id STAYS the archival RAS batch: batch_id and
+        // current_box_id are now ALLOWED to diverge — tenancy of a batch-less
+        // (or other-batch) box resolves via its own repository_id, so this is
+        // safe. saveQuietly() is deliberate: save() would fire the F1 `updated`
+        // hook → syncCustodyFromCurrentBox(), which realigns batch_id to the
+        // newest (batched) box's batch — exactly what the design forbids.
+        //
+        // count($boxIds) >= 2 is guaranteed here (the `< 2` early return above),
+        // so the timeline always has a newest box. A lone RAS Box 1 row returned
+        // early and correctly keeps current_box_id on RAS Box 1 (no repoint).
+        $newest = (int) end($boxIds);
+        if ($newest !== (int) $record->current_box_id) {
+            // saveQuietly() below bypasses the F1 destroyed-box guard, so re-check here.
+            $newestBox = Box::withoutGlobalScopes()->withTrashed()->find($newest);
+            if ($newestBox !== null && ! $newestBox->trashed() && ! $newestBox->isDestroyed()) {
+                $record->current_box_id = $newest;
+                $record->saveQuietly();
+            }
+        }
     }
 
     /**
@@ -1779,6 +1802,16 @@ class DocumentImporter extends Importer
      * Consistency (B5): whichever path resolves the box, the resolved box's
      * `batch_id` MUST equal the document's `batch_id`. A mismatch is a failed
      * row (RowImportFailedException) — never silently saved.
+     *
+     * SCOPE: B5 governs ONLY this initial RAS-Box-1 assignment (the archival
+     * position). It intentionally does NOT constrain the document's final
+     * `current_box_id`: buildLegacyMovementChain() may later REPOINT
+     * `current_box_id` onto the newest box of the movement timeline — a
+     * batch-less In-Situ box, or a box in a different batch — via
+     * saveQuietly(). From that point `documents.batch_id` (archival RAS batch)
+     * and `documents.current_box_id` (actual physical position) are allowed to
+     * diverge; the B5 batch==box invariant applies only to the RAS-Box-1 step
+     * checked here.
      */
     /**
      * Resolve an accession by name OR number, creating it if it does not yet

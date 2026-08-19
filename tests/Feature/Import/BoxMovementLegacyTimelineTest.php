@@ -4,10 +4,12 @@ declare(strict_types=1);
 
 use App\Filament\Imports\DocumentImporter;
 use App\Filament\Pages\ImportWizard;
+use App\Filament\Pages\Reports\PendingDisinfestationReport;
 use App\Models\Batch;
 use App\Models\Box;
 use App\Models\BoxMovement;
 use App\Models\Document;
+use App\Models\Location;
 use App\Models\Repository;
 use App\Models\Scopes\RepositoryScope;
 use App\Models\Scopes\ThroughBatchRepositoryScope;
@@ -15,8 +17,11 @@ use App\Models\Series;
 use App\Models\User;
 use App\Support\BulkImport\EntityResolver;
 use Filament\Actions\Imports\Models\Import;
+use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Database\Eloquent\Collection;
+use Illuminate\Database\QueryException;
 use Illuminate\Foundation\Testing\RefreshDatabase;
+use Illuminate\Support\Facades\DB;
 use Spatie\Permission\Models\Role;
 
 /**
@@ -135,12 +140,14 @@ it('MV1: In-Situ 1/2/3 + current box build an ordered NULL-dated legacy chain', 
     expect($moves)->toHaveCount(4)
         ->and($moves->pluck('sequence')->all())->toBe([1, 2, 3, 4]);
 
-    // The RAS current box is the OLDEST arrival: first move enters custody
-    // (no from_box) and lands in the current box; the newest arrival is the
-    // last In-Situ box ("Old Box 7" → IN_SITU number 7).
+    // The RAS Box 1 is the OLDEST arrival: first move enters custody (no
+    // from_box) and lands in RAS Box 1; the newest arrival is the last In-Situ
+    // box ("Old Box 7" → IN_SITU number 7). current_box_id now follows the
+    // NEWEST box (the document's actual physical position), NOT RAS Box 1.
     expect($moves->first()->from_box_id)->toBeNull()
-        ->and($moves->first()->to_box_id)->toBe($doc->current_box_id)
-        ->and($moves->last()->to_box_id)->toBe(mv_box('IN_SITU', '7')->id);
+        ->and($moves->first()->to_box_id)->toBe(mv_box('RAS', '100')->id)
+        ->and($moves->last()->to_box_id)->toBe(mv_box('IN_SITU', '7')->id)
+        ->and($doc->current_box_id)->toBe($moves->last()->to_box_id);
 
     // Chain continuity: each from_box is the previous arrival's to_box.
     $ids = $moves->pluck('to_box_id')->all();
@@ -224,12 +231,18 @@ it('MV4: re-importing does not duplicate legacy moves and keeps recorded ones', 
     ]);
     expect($recorded->fresh()->date_source)->toBe(BoxMovement::DATE_SOURCE_RECORDED);
 
+    // Repoint landed on the newest box (In-Situ 2), not RAS Box 1.
+    expect($doc->fresh()->current_box_id)->toBe(mv_box('IN_SITU', '2')->id);
+
     // Re-import the identical row.
     mv_import($row, $u->id);
 
     $legacyAfter = BoxMovement::withoutGlobalScopes()
         ->where('document_id', $doc->id)->where('date_source', BoxMovement::DATE_SOURCE_LEGACY)->count();
     expect($legacyAfter)->toBe(3);                               // rebuilt, not doubled
+
+    // Repoint is idempotent: current_box_id stays on the same newest box.
+    expect($doc->fresh()->current_box_id)->toBe(mv_box('IN_SITU', '2')->id);
 
     // The recorded move is untouched.
     expect(BoxMovement::withoutGlobalScopes()->find($recorded->id))->not->toBeNull()
@@ -263,7 +276,10 @@ it('MV5: emptying a previously-populated In-Situ cell shrinks the chain on re-im
 
     $moves = mv_moves($doc->id);
     expect($moves)->toHaveCount(2)                              // CURRENT → in_situ_1
-        ->and($moves->first()->to_box_id)->toBe($doc->fresh()->current_box_id);
+        // current_box_id follows the NEW newest box (In-Situ 1), which is now
+        // the LAST move's to_box — not the first (RAS Box 1).
+        ->and($moves->last()->to_box_id)->toBe($doc->fresh()->current_box_id)
+        ->and($doc->fresh()->current_box_id)->toBe(mv_box('IN_SITU', '1')->id);
 });
 
 /* ══════════════ MV6 — model invariant + scope ══════════════ */
@@ -325,12 +341,230 @@ it('MV7: a bare number resolves to an IN_SITU box; unparseable/blank cells are s
         ->and($insitu5->provenance_unknown)->toBeTrue();
 
     // Only the current box + the bare-number step resolved → exactly two
-    // arrivals: CURRENT (oldest, first) then the IN_SITU box (newest, last).
+    // arrivals: RAS Box 1 (oldest, first) then the IN_SITU box (newest, last).
+    // current_box_id now follows the newest = the bare-number IN_SITU box.
     $moves = mv_moves($doc->id);
     expect($moves)->toHaveCount(2)
-        ->and($moves->first()->to_box_id)->toBe($doc->current_box_id)
-        ->and($moves->last()->to_box_id)->toBe($insitu5->id);
+        ->and($moves->first()->to_box_id)->toBe(mv_box('RAS', '700')->id)
+        ->and($moves->last()->to_box_id)->toBe($insitu5->id)
+        ->and($doc->current_box_id)->toBe($insitu5->id);
 
     // The unparseable cell created no box.
     expect(mv_box('IN_SITU', 'NoNumberHere'))->toBeNull();
+});
+
+/* ══════════════ current_box_id repoint (feat/current-box-follows-newest) ══════════════ */
+
+/* RP1 — batch_id stays the archival RAS batch while current_box_id follows the newest box. */
+
+it('RP1: batch_id stays the archival RAS batch even though current_box_id follows the newest box', function () {
+    [$repo, $u] = mv_admin();
+    $batch1 = mv_batch($repo->id, '1');
+
+    mv_import(mv_row([
+        'Identifier' => 'RP1',
+        'RAS Batch 1' => '1', 'RAS Box 1' => '11',
+        'In Situ Box 1' => 'Small Box 1',
+        'In Situ Box 2' => 'NRA 2',
+    ]), $u->id);
+
+    $doc = mv_doc('RP1');
+    // Archival batch is unchanged; the newest (In-Situ) box the document now
+    // points at is batch-less — the intentional, safe divergence.
+    expect($doc->batch_id)->toBe($batch1->id)
+        ->and($doc->currentBox->batch_id)->toBeNull();
+});
+
+/* RP2 — a BATCHED newest box: current_box_id diverges to RAS Box 2, batch_id stays RAS Batch 1. */
+
+it('RP2: current_box_id follows a batched RAS Box 2 while batch_id stays RAS Batch 1', function () {
+    [$repo, $u] = mv_admin();
+    $batch1 = mv_batch($repo->id, '1');
+
+    // RAS Batch 1 / Box 1 (current) + RAS Batch 2 / Box 2, no in-situ cells.
+    mv_import(mv_row([
+        'Identifier' => 'RP2',
+        'RAS Batch 1' => '1', 'RAS Box 1' => '10',
+        'RAS Batch 2' => '2', 'RAS Box 2' => '20',
+    ]), $u->id);
+
+    $doc = mv_doc('RP2');
+    $rasBox2 = mv_box('RAS', '20');
+    expect($rasBox2)->not->toBeNull()
+        ->and($rasBox2->batch_id)->not->toBe($batch1->id);       // it lives in RAS Batch 2
+
+    // current_box_id repointed onto RAS Box 2 (the newest arrival)...
+    expect($doc->current_box_id)->toBe($rasBox2->id)
+        // ...yet batch_id STILL the archival RAS Batch 1 — proving saveQuietly
+        // defeated the F1 batch realignment that save() would have triggered.
+        ->and($doc->batch_id)->toBe($batch1->id);
+});
+
+/* RP3 — effectiveLocation follows the newest box's location; a document override still wins. */
+
+it('RP3: effectiveLocation follows the newest In-Situ box, and a document-level override still wins', function () {
+    [$repo, $u] = mv_admin();
+    mv_batch($repo->id, '1');
+
+    // Pre-create the In-Situ box the row resolves to, WITH a location, so the
+    // repointed current box carries one.
+    $loc = Location::factory()->create();
+    $insitu = Box::factory()->create([
+        'box_type' => 'IN_SITU', 'box_number' => '77',
+        'batch_id' => null, 'repository_id' => $repo->id, 'location_id' => $loc->id,
+        'provenance_unknown' => true,   // batch-less In-Situ box, no parent RAS box
+    ]);
+
+    mv_import(mv_row([
+        'Identifier' => 'RP3',
+        'RAS Batch 1' => '1', 'RAS Box 1' => '111',
+        'In Situ Box 1' => '77',           // bare number → IN_SITU 77 (the pre-created box)
+    ]), $u->id);
+
+    $doc = mv_doc('RP3');
+    expect($doc->current_box_id)->toBe($insitu->id)                     // repointed to newest
+        ->and($doc->fresh()->effectiveLocation()?->id)->toBe($loc->id)   // inherited from the box
+        ->and($doc->fresh()->locationIsInherited())->toBeTrue();
+
+    // A document-level override wins over the inherited box location.
+    $own = Location::factory()->create();
+    $doc->location_id = $own->id;
+    $doc->saveQuietly();
+    expect($doc->fresh()->effectiveLocation()?->id)->toBe($own->id)
+        ->and($doc->fresh()->locationIsInherited())->toBeFalse();
+});
+
+/* RP4 — the RAS status mirror survives the repoint (PERM_OUT + disinfestation date not nulled). */
+
+it('RP4: the RAS PERM_OUT status and disinfestation date survive the repoint onto a null-status box', function () {
+    [$repo, $u] = mv_admin();
+    mv_batch($repo->id, '1');
+
+    mv_import(mv_row([
+        'Identifier' => 'RP4',
+        'RAS Batch 1' => '1', 'RAS Box 1' => '222',
+        'In Situ Box 1' => 'Small Box 9',   // newest, batch-less, null-status box
+        'Status 1' => 'PERM_OUT',
+        'Disinfestation Date' => '2026-01-15',
+    ]), $u->id);
+
+    $doc = mv_doc('RP4')->fresh();
+    // current_box_id repointed onto the newest In-Situ box (which has null status)...
+    expect($doc->current_box_id)->toBe(mv_box('IN_SITU', '9')->id);
+    // ...but the RAS-resolved custody the box mirror wrote onto the document
+    // while it still sat in RAS Box 1 is NOT clobbered by the quiet repoint.
+    expect($doc->barcode_status)->toBe('PERM_OUT')
+        ->and($doc->disinfestation_date)->not->toBeNull();
+});
+
+/* RP5 — a destroyed newest box is skipped; current_box_id stays on RAS Box 1 and the row succeeds. */
+
+it('RP5: a destroyed newest box is not repointed onto — current_box_id stays on RAS Box 1', function () {
+    [$repo, $u] = mv_admin();
+    mv_batch($repo->id, '1');
+
+    // Pre-create the In-Situ box the row resolves to, already DESTROYED.
+    $destroyed = Box::factory()->create([
+        'box_type' => 'IN_SITU', 'box_number' => '88',
+        'batch_id' => null, 'repository_id' => $repo->id,
+        'location_id' => Location::factory()->create()->id,
+        'provenance_unknown' => true,   // batch-less In-Situ box, no parent RAS box
+        'destroyed_at' => now(),
+    ]);
+
+    mv_import(mv_row([
+        'Identifier' => 'RP5',
+        'RAS Batch 1' => '1', 'RAS Box 1' => '333',
+        'In Situ Box 1' => '88',           // resolves to the pre-created DESTROYED box
+    ]), $u->id);
+
+    $doc = mv_doc('RP5');
+    expect($doc)->not->toBeNull()                                       // row did NOT fail
+        ->and($doc->current_box_id)->toBe(mv_box('RAS', '333')->id)      // stayed on RAS Box 1
+        ->and($doc->current_box_id)->not->toBe($destroyed->id);         // never repointed to destroyed
+});
+
+/*
+ * RP6 — report regression: a document repointed into a batch-less, non-PERM_OUT
+ * In-Situ current box with no disinfestation_date must STILL be reported as
+ * pending, driven through the report's real reportQuery().
+ *
+ * NOTE on the fix: boxes.barcode_status is NOT NULL DEFAULT 'IN' on every
+ * driver, so a resolved In-Situ box carries 'IN', never NULL. The added
+ * whereNull('barcode_status') branch is therefore purely defensive for a box
+ * (which can never hold NULL); the != 'PERM_OUT' branch is what keeps this
+ * In-Situ document pending. This asserts the repoint does not silently drop the
+ * document from the pending report.
+ */
+
+it('RP6: a document in a batch-less non-PERM_OUT In-Situ box stays in the pending-disinfestation report', function () {
+    [$repo, $u] = mv_admin();
+    mv_batch($repo->id, '1');
+
+    // The repoint lands current_box_id on a batch-less In-Situ box; the
+    // document has no disinfestation_date.
+    mv_import(mv_row([
+        'Identifier' => 'RP6',
+        'RAS Batch 1' => '1', 'RAS Box 1' => '444',
+        'In Situ Box 1' => 'Small Box 6',
+    ]), $u->id);
+
+    $doc = mv_doc('RP6');
+    $box = Box::withoutGlobalScope(ThroughBatchRepositoryScope::class)->find($doc->current_box_id);
+    expect($box->batch_id)->toBeNull()                                  // batch-less In-Situ box
+        ->and($box->barcode_status)->not->toBe('PERM_OUT')             // not perm-out → still pending
+        ->and($doc->disinfestation_date)->toBeNull();
+
+    // reportQuery must include this document.
+    $page = new PendingDisinfestationReport;
+    $method = new ReflectionMethod($page, 'reportQuery');
+    /** @var Builder $q */
+    $q = $method->invoke($page);
+    expect($q->pluck('documents.id')->all())->toContain($doc->id);
+});
+
+/*
+ * RP6b — the widened predicate proven at the QUERY level. boxes.barcode_status
+ * cannot be NULL via the model, so a raw INSERT with an explicit NULL isolates
+ * the exact `NULL != 'PERM_OUT'` → UNKNOWN case the fix guards against: the bare
+ * `!=` dropped the document; `whereNull(...) OR !=` keeps it.
+ */
+
+it('RP6b: reportQuery keeps a document whose current box has a NULL barcode_status', function () {
+    [$repo, $u] = mv_admin();
+    $batch = mv_batch($repo->id, '1');
+
+    // Raw insert a box with an explicit NULL barcode_status, bypassing the
+    // model default. Skip on a schema that forbids the NULL (NOT NULL column).
+    try {
+        $boxId = (int) DB::table('boxes')->insertGetId([
+            'box_type' => 'IN_SITU',
+            'box_number' => 'NULLST',
+            'batch_id' => null,
+            'repository_id' => $repo->id,
+            'barcode_status' => null,
+            'provenance_unknown' => true,
+            'is_legacy' => true,
+            'created_at' => now(),
+            'updated_at' => now(),
+        ]);
+    } catch (QueryException $e) {
+        // barcode_status is NOT NULL on this driver → the NULL branch is
+        // unreachable here; the != 'PERM_OUT' path (RP6) already covers it.
+        expect($e)->toBeInstanceOf(QueryException::class);
+
+        return;
+    }
+
+    $doc = Document::withoutGlobalScopes()->create([
+        'identifier' => 'RP6b', 'document_type' => 'T',
+        'series_id' => Series::firstOrCreate(['code' => 'REG'], ['title' => 'Reg', 'is_active' => true, 'is_wills_series' => false])->id,
+        'repository_id' => $repo->id, 'batch_id' => $batch->id,
+        'current_box_id' => $boxId, 'disinfestation_date' => null, 'barcode_status' => null,
+    ]);
+
+    $method = new ReflectionMethod(new PendingDisinfestationReport, 'reportQuery');
+    /** @var Builder $q */
+    $q = $method->invoke(new PendingDisinfestationReport);
+    expect($q->pluck('documents.id')->all())->toContain($doc->id);
 });

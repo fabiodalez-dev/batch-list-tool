@@ -36,8 +36,12 @@ use Illuminate\Support\Facades\DB;
  * target via the Select).
  *
  * Invariant safety (review H-5): the target box must have a non-null
- * `batch_id`. Assigning a document to an orphan box would break the
- * `documents.batch_id ↔ documents.currentBox.batch_id` invariant.
+ * `batch_id`. This is a guard for the interactive move action specifically;
+ * it is NOT a universal invariant. The importer may legitimately leave
+ * `documents.batch_id` (the archival RAS batch) diverging from the
+ * current box's batch when it repoints `current_box_id` onto a batch-less
+ * In-Situ box of the movement timeline (see DocumentImporter). Tenancy of
+ * such a box resolves via its own `repository_id`, so the divergence is safe.
  *
  * Both the single-record and bulk variants share the same form (target box
  * + optional reason) and the same writer body — only the way `records` is
