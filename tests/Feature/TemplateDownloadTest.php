@@ -294,7 +294,7 @@ test('Document template preserves the duplicated provenance headers verbatim', f
 
     // Column count: 49 legacy columns − 5 "…Box Destroyed" (removed 2026-08-18,
     // a BOX property) + 2 new (Temporary Identifier, Citation Reference) = 46.
-    expect(count($generated))->toBe(46);
+    expect(count($generated))->toBe(48);
 
     // The five Destroyed columns are gone from the document template.
     expect($generated)->not->toContain('RAS 1 Box Destroyed', 'In Situ Box 3 Destroyed');

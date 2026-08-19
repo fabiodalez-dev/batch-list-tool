@@ -12,6 +12,7 @@ use App\Models\Authority;
 use App\Models\Box;
 use App\Models\CustomFieldDefinition;
 use App\Models\Document;
+use App\Models\DocumentIdentifierHistory;
 use App\Models\Repository;
 use App\Models\Scopes\RepositoryScope;
 use App\Support\BulkImport\EntityResolver;
@@ -151,6 +152,20 @@ class DocumentImporter extends Importer
      * @var array<int, string>
      */
     protected static array $rowBoxStatusStash = [];
+
+    /**
+     * Per-row stash for the "Prev Attributed Identifier" / "Prev Attributed
+     * Volume" columns (client 2026-08-18 #8). These describe a PAST attribution
+     * of the document, so they are recorded as a `document_identifier_history`
+     * row in {@see persistRowSideEffects()} (needs the saved document id), not
+     * on the live document. Keyed by `spl_object_id` of the record.
+     *
+     * @var array<int, string>
+     */
+    protected static array $rowPrevIdentifierStash = [];
+
+    /** @var array<int, string> */
+    protected static array $rowPrevVolumeStash = [];
 
     /**
      * Per-row stash for custom-field key→value data extracted from columns
@@ -816,6 +831,31 @@ class DocumentImporter extends Importer
                 ->guess(['Catalogue Identifier', 'catalogue_identifier', 'Catalogue ID'])
                 ->rules(['nullable', 'string', 'max:191']),
 
+            // Client 2026-08-18 (#8): the document's PAST attribution. Not stored
+            // on the live document — recorded as a document_identifier_history
+            // row in persistRowSideEffects() (needs the saved id). Kept the
+            // legacy "Prev Attibuted" typo alias (it's in real client sheets).
+            ImportColumn::make('prev_attributed_identifier')
+                ->label('Prev Attributed Identifier')
+                ->guess(['Prev Attributed Identifier', 'Previous Identifier', 'prev_attributed_identifier', 'prev_identifier'])
+                ->fillRecordUsing(function (Document $record, ?string $state): void {
+                    $v = trim((string) ($state ?? ''));
+                    if ($v !== '') {
+                        self::$rowPrevIdentifierStash[spl_object_id($record)] = $v;
+                    }
+                })
+                ->rules(['nullable', 'string', 'max:64']),
+            ImportColumn::make('prev_attributed_volume')
+                ->label('Prev Attributed Volume')
+                ->guess(['Prev Attributed Volume', 'Prev Attibuted Volume', 'Previous Volume', 'prev_attributed_volume', 'prev_volume'])
+                ->fillRecordUsing(function (Document $record, ?string $state): void {
+                    $v = trim((string) ($state ?? ''));
+                    if ($v !== '') {
+                        self::$rowPrevVolumeStash[spl_object_id($record)] = $v;
+                    }
+                })
+                ->rules(['nullable', 'string', 'max:64']),
+
             // Client 2026-08-18 (#17): keep the free-text document_type AND, when
             // the value matches a Document Type by identifier or name, link the
             // lookup (document_type_id). Match-only — a value that doesn't
@@ -1355,6 +1395,30 @@ class DocumentImporter extends Importer
         // document. We never write documents.barcode_status directly: the
         // box's `updated`/`created` hooks own the mirror.
         $this->applyBoxBarcodeStatus($record);
+
+        // Client 2026-08-18 (#8): record the document's PAST attribution as a
+        // document_identifier_history row. previous_identifier is NOT NULL, so
+        // when only a Prev Volume is given we anchor on the document's current
+        // identifier. Idempotent on (document_id, previous_identifier) so a
+        // re-import updates the same row instead of piling up duplicates.
+        $prevId = self::$rowPrevIdentifierStash[$key] ?? null;
+        $prevVol = self::$rowPrevVolumeStash[$key] ?? null;
+        unset(self::$rowPrevIdentifierStash[$key], self::$rowPrevVolumeStash[$key]);
+        if ($prevId !== null || $prevVol !== null) {
+            DocumentIdentifierHistory::updateOrCreate(
+                [
+                    'document_id' => $record->getKey(),
+                    'previous_identifier' => $prevId ?? (string) $record->identifier,
+                ],
+                [
+                    'previous_volume' => $prevVol,
+                    'new_identifier' => $record->identifier,
+                    'repository_id' => $record->repository_id,
+                    'changed_by_user_id' => $this->import->user->getKey(),
+                    'reason' => 'Imported — previously attributed',
+                ],
+            );
+        }
 
         // Custom fields (EAV) — persist stashed key→value pairs via the trait.
         // The stash is populated by the dynamic custom-field ImportColumn closures.

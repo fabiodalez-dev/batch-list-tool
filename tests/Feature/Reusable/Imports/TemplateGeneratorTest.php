@@ -55,9 +55,9 @@ it('TemplateGenerator: headersFor("series") starts at Identifier and includes th
 it('TemplateGenerator: headersFor("document") preserves the duplicated provenance headers', function () {
     $headers = TemplateGenerator::headersFor('document');
     expect($headers)->toEqual(TemplateGenerator::DOCUMENT_HEADERS)
-        // 46 = 49 legacy − 5 "…Box Destroyed" (removed 2026-08-18) + 2 new
+        // 48 = 49 legacy − 5 Destroyed + 4 new (Temp Id, Citation, Prev Id, Prev Vol)
         // (Temporary Identifier, Citation Reference).
-        ->and($headers)->toHaveCount(46)
+        ->and($headers)->toHaveCount(48)
         // The multi-step provenance duplicate is preserved (position-independent).
         ->and(array_count_values($headers)['Barcode (IN)'] ?? 0)->toBe(2)
         ->and($headers)->not->toContain('RAS 1 Box Destroyed');

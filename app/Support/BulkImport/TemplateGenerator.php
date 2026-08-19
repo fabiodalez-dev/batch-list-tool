@@ -116,6 +116,8 @@ final class TemplateGenerator
         'Location',
         // Client 2026-08-18: new free-text document columns.
         'Temporary Identifier', 'Citation Reference',
+        // Client 2026-08-18 (#8): past attribution → document_identifier_history.
+        'Prev Attributed Identifier', 'Prev Attributed Volume',
     ];
 
     /**
@@ -124,7 +126,7 @@ final class TemplateGenerator
      * can detect a stale template at re-upload time and warn the operator.
      * Bump on any change to the header contract.
      */
-    public const string GENERATOR_VERSION = '1.8.0';
+    public const string GENERATOR_VERSION = '1.9.0';
 
     /**
      * Supported template entities. Headers come from the in-repo constants
