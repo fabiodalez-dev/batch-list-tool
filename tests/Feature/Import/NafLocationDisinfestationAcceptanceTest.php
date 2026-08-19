@@ -267,7 +267,7 @@ it('B3: a legacy box sheet with Location + Disinfestation Date still imports cle
 });
 
 it('B4: the generator version was bumped for the template contract change', function () {
-    expect(TemplateGenerator::GENERATOR_VERSION)->toBe('1.9.0');
+    expect(TemplateGenerator::GENERATOR_VERSION)->toBe('1.10.0');
 });
 
 it('B5: every generated box header still maps to a BoxImporter column (round-trip)', function () {
@@ -355,17 +355,22 @@ it('AC2: imports Accession by NUMBER — creates it, and a second document with 
         ->and(Accession::withoutGlobalScopes()->where('accession_number', '2025-124')->count())->toBe(1);
 });
 
-it('AI1: "Actual Identifier" sets the document identifier AND links the matching Authority (#9)', function () {
+it('AI1: "Actual Identifier" links the matching Authority and does NOT become the document identifier (#9, corrected)', function () {
+    // Charlene 2026-08-18 #9 (refined): "Actual Identifier" is the Authority
+    // link, NOT the document's own identifier — the PR#201 reading was wrong.
     [$repo, $u] = naf_admin();
     Series::firstOrCreate(['code' => 'REG'], ['title' => 'Reg', 'is_active' => true, 'is_wills_series' => false]);
     $auth = Authority::create(['identifier' => 'R77', 'surname' => 'Grima', 'entity_type' => 'PERSON']);
 
     naf_import(DocumentImporter::class, ['Actual Identifier' => 'R77', 'Series' => 'REG'], $u->id);
 
-    $doc = naf_doc('R77');
+    // Only one document was created; its identifier is auto-generated, NOT 'R77'.
+    $doc = Document::withoutGlobalScope(RepositoryScope::class)->latest('id')->first();
     expect($doc)->not->toBeNull()
-        ->and($doc->identifier)->toBe('R77')
+        ->and($doc->identifier)->not->toBe('R77')
         ->and($doc->authorities()->pluck('authorities.id')->all())->toContain($auth->id);
+    // The R-code never leaked into the document identifier column.
+    expect(naf_doc('R77'))->toBeNull();
 });
 
 it('MV1: RAS / In-Situ movement columns are captured verbatim in the legacy columns (#1)', function () {
@@ -762,4 +767,54 @@ it('R5: the pending-disinfestation query still keys off the document own (raw) d
     $m = new ReflectionMethod(PendingDisinfestationReport::class, 'reportQuery');
     $ids = $m->invoke(new PendingDisinfestationReport)->pluck('documents.id')->all();
     expect($ids)->toContain($pending->id)->not->toContain($done->id);
+});
+
+/* ══════════════ #9 — Authority Identifier (rename + alternate key + multi) ══════════════ */
+
+it('AUTH1: the "Authority Identifier" header links the document to its Authority by alternate key (#9)', function () {
+    [$repo, $u] = naf_admin();
+    Series::firstOrCreate(['code' => 'REG'], ['title' => 'Reg', 'is_active' => true, 'is_wills_series' => false]);
+    $auth = Authority::create(['identifier' => 'R390', 'alternative_identifier' => '997', 'surname' => 'Grima', 'entity_type' => 'PERSON']);
+
+    naf_import(DocumentImporter::class, [
+        'Document Identifier' => 'AUTH-DOC-1', 'Series' => 'REG', 'Authority Identifier' => '997',
+    ], $u->id);
+
+    $doc = naf_doc('AUTH-DOC-1');
+    expect($doc)->not->toBeNull();
+    $attached = $doc->authorities()->get();
+    expect($attached->count())->toBe(1)
+        ->and($attached->first()->id)->toBe($auth->id);
+});
+
+it('AUTH2: the legacy "Actual Identifier" header maps to the Authority link, not the document identifier (#9)', function () {
+    [$repo, $u] = naf_admin();
+    Series::firstOrCreate(['code' => 'REG'], ['title' => 'Reg', 'is_active' => true, 'is_wills_series' => false]);
+    $auth = Authority::create(['identifier' => 'R533', 'surname' => 'Gatt', 'entity_type' => 'PERSON']);
+
+    naf_import(DocumentImporter::class, [
+        'Document Identifier' => 'AUTH-DOC-2', 'Series' => 'REG', 'Actual Identifier' => 'R533',
+    ], $u->id);
+
+    $doc = naf_doc('AUTH-DOC-2');
+    expect($doc)->not->toBeNull()
+        ->and($doc->identifier)->toBe('AUTH-DOC-2'); // NOT 'R533' — that's the authority key
+    expect($doc->authorities()->get()->pluck('id')->all())->toContain($auth->id);
+});
+
+it('AUTH3: multiple authorities via ";" (R-code + alternate key) all attach (#9/#13)', function () {
+    [$repo, $u] = naf_admin();
+    Series::firstOrCreate(['code' => 'REG'], ['title' => 'Reg', 'is_active' => true, 'is_wills_series' => false]);
+    $a1 = Authority::create(['identifier' => 'R533', 'surname' => 'Gatt', 'entity_type' => 'PERSON']);
+    $a2 = Authority::create(['identifier' => 'R538', 'alternative_identifier' => '362', 'surname' => 'Grech', 'entity_type' => 'PERSON']);
+
+    // "Calcedonio Gatt; Giuseppe Grech" is shown as two creators — here the two
+    // notaries are given as R-code + alternate key.
+    naf_import(DocumentImporter::class, [
+        'Document Identifier' => 'AUTH-DOC-3', 'Series' => 'REG', 'Authority Identifier' => 'R533; 362',
+    ], $u->id);
+
+    $doc = naf_doc('AUTH-DOC-3');
+    $ids = $doc->authorities()->get()->pluck('id')->all();
+    expect($ids)->toContain($a1->id)->toContain($a2->id);
 });

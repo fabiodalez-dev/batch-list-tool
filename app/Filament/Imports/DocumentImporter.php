@@ -418,11 +418,14 @@ class DocumentImporter extends Importer
                 ?? $this->generateDocumentIdentifier($record);
         }
 
-        // Client 2026-08-18 (#9): when the row carried NO explicit Authority
-        // column but its (Actual) Identifier IS an Authority identifier, link
-        // that Authority. Match-only by identifier — never creates, silent on a
-        // miss, and never overrides an Authority already linked from its own
-        // column (so a catalogue-identifier document is unaffected).
+        // Client 2026-08-18 (#9, refined): last-resort fallback. The Authority
+        // link normally arrives via the `authority_identifier` column (which now
+        // accepts the 'Actual Identifier'/'Authority Identifier' headers and
+        // resolves by R-code OR alternate key). Only when the row mapped NO
+        // Authority column at all AND the document's own identifier happens to
+        // resolve to an Authority do we link it here — match-only (identifier or
+        // alternate key, via resolveAuthority), never creates, silent on a miss,
+        // and never overrides an Authority already linked from its own column.
         $aKey = spl_object_id($record);
         if ((self::$rowAuthorityStash[$aKey] ?? []) === [] && ! empty($record->identifier)) {
             $res = EntityResolver::resolveAuthority(trim((string) $record->identifier));
@@ -817,13 +820,14 @@ class DocumentImporter extends Importer
             // the importer auto-creates one from Repository + Series + Document Type
             // (see afterFill()), so a mass upload by Series doesn't need pre-assigned
             // R-codes. A supplied value still wins.
-            // Client 2026-08-18 (#9): "Actual Identifier" is the DOCUMENT's own
-            // identifier — its value happens to be the same number as the
-            // Authority record, so afterFill() also links that Authority when no
-            // explicit Authority column was given (see the guarded fallback).
+            // Client 2026-08-18 (#9, refined): "Actual Identifier" is NOT the
+            // document's own identifier — it is the Authority link (the R-code
+            // OR the alternate key of the notary). It is therefore mapped by the
+            // `authority_identifier` column below, NOT here. Keeping it out of
+            // this guess list avoids re-introducing the F-004 mis-mapping.
             ImportColumn::make('identifier')
                 ->label('Document identifier (optional — auto-created from Repository/Series/Type when blank)')
-                ->guess(['identifier', 'Document Identifier', 'Doc ID', 'Actual Identifier'])
+                ->guess(['identifier', 'Document Identifier', 'Doc ID'])
                 ->rules(['nullable', 'string', 'max:64']),
 
             ImportColumn::make('catalogue_identifier')
@@ -981,13 +985,18 @@ class DocumentImporter extends Importer
             // every subsequent successful match attaches as a co-creator.
             // Empty / whitespace-only pieces are skipped silently.
             ImportColumn::make('authority_identifier')
-                ->label('Authority identifier (R-code, optionally ";"-separated)')
+                ->label('Authority Identifier (R-code or alternate key, optionally ";"-separated)')
                 // F-004: 'Identifier' is the column header in legacy Batch_List_Sample.xlsx
                 // for the Authority R-code (col 33). Now that the Document.identifier
                 // column no longer claims this guess, mapping it here gives operators
                 // the correct auto-mapping: 'Identifier' → authority_identifier.
+                // Client 2026-08-18 #9 (refined): this is the link between the
+                // document and its Authority — the operator's sheet may call it
+                // "Actual Identifier" or "Authority Identifier", and each piece
+                // resolves by R-code OR by the Authority's alternate key (997 /
+                // MS511), with ";" separating multiple notaries (533; 538; 362A).
                 // 'Creator code' covers other legacy naming conventions.
-                ->guess(['Identifier', 'Authority identifier', 'Authority code', 'Creator code'])
+                ->guess(['Identifier', 'Authority Identifier', 'Authority identifier', 'Actual Identifier', 'actual_identifier', 'authority_identifier', 'Authority code', 'Creator code'])
                 ->fillRecordUsing(function (Document $record, ?string $state): void {
                     if ($state === null || trim($state) === '') {
                         return;
