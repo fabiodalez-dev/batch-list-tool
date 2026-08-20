@@ -10,6 +10,7 @@ use App\Filament\Pages\ImportWizard;
 use App\Models\Accession;
 use App\Models\Authority;
 use App\Models\Box;
+use App\Models\BoxBarcodeHistory;
 use App\Models\BoxMovement;
 use App\Models\CustomFieldDefinition;
 use App\Models\Document;
@@ -127,6 +128,29 @@ class DocumentImporter extends Importer
      */
     private const LEGACY_MOVE_CHAIN = ['CURRENT', 'ras_box_2', 'in_situ_box_1', 'in_situ_box_2', 'in_situ_box_3'];
 
+    /**
+     * Client #3 — the importer FIELD names that carry RAS Box 1's barcode chain
+     * (block 1). Used to detect whether the row mapped ANY block-1 barcode/status
+     * column: a partial sheet that maps none must NOT wipe a fuller sheet's
+     * legacy history for that box.
+     *
+     * @var list<string>
+     */
+    private const BLOCK1_HISTORY_COLUMNS = [
+        'barcode_in', 'barcode_ras_1', 'status_1', 'barcode_ras_2', 'status_2',
+        'barcode_ras_3', 'status_3', 'barcode_ras_4', 'status_4',
+    ];
+
+    /**
+     * Client #3 — the importer FIELD names that carry RAS Box 2's barcode chain
+     * (block 2, the deduped "* (2)/(3)" duplicate columns).
+     *
+     * @var list<string>
+     */
+    private const BLOCK2_HISTORY_COLUMNS = [
+        'barcode_in_2', 'barcode_ras_2_alt', 'status_1_alt', 'barcode_ras_2_alt2', 'status_2_alt',
+    ];
+
     protected static ?string $model = Document::class;
 
     /**
@@ -164,13 +188,14 @@ class DocumentImporter extends Importer
     protected static array $rowBoxNumberStash = [];
 
     /**
-     * Per-row stash for the box barcode status (B4) derived from the legacy
-     * `status_*` columns. Applied to the BOX (authoritative since Task 7) in
-     * {@see afterSave} once the document carries a `current_box_id`; the Task-7
-     * mirror then propagates the value down onto the document. Keyed by
-     * `spl_object_id` of the record.
+     * Per-row stash for the block-1 TERMINAL barcode/status pair — the box's
+     * CURRENT state derived from RAS Box 1's legacy chain (barcode_in→'IN', else
+     * the last past barcode + its status, else a bare status with no barcode).
+     * Applied to the BOX (authoritative since Task 7) in {@see afterSave} once
+     * the document carries a `current_box_id`; the Task-7 mirror then propagates
+     * the value down onto the document. Keyed by `spl_object_id` of the record.
      *
-     * @var array<int, string>
+     * @var array<int, array{barcode: ?string, status: ?string}>
      */
     protected static array $rowBoxStatusStash = [];
 
@@ -459,34 +484,29 @@ class DocumentImporter extends Importer
         // is known, then validate batch/box consistency BEFORE save.
         $this->resolveCurrentBox($record);
 
-        // Task 8 (B4) — reconcile the legacy `status_*` columns to a single
-        // authoritative barcode status. The legacy spreadsheet encodes status
-        // in several columns (status_1..4, *_alt); we collapse them: PERM_OUT
-        // wins (it is the strongest custody state), then OUT, then IN.
-        $resolvedStatus = $this->resolveLegacyBarcodeStatus($record);
-
+        // Client #3 — derive RAS Box 1's TERMINAL (current) barcode + status
+        // from its legacy chain (barcode_in→'IN', else last past barcode + its
+        // status, else a bare status with no barcode). The box is the
+        // authoritative source of truth for barcode status (Task 7): when the
+        // document HAS a box, stash the terminal pair and push it onto the BOX
+        // in afterSave (the document already points at the box so the Task-7
+        // mirror propagates the value back down). We deliberately do NOT write
+        // documents.barcode_status here in that case — the box mirror owns it.
+        //
         // RFQ App.1 #5 (PERM_OUT requires disinfestation_date) was REMOVED —
-        // client feedback 2026-08-01 (later than the RFQ). Consistent with the
-        // box: a PERM_OUT document may import without a disinfestation date.
-
-        // The box is the authoritative source of truth for barcode status
-        // (Task 7). When the document HAS a box, stash the resolved status and
-        // apply it to the BOX in afterSave (the document must already point at
-        // the box so the Task-7 mirror can propagate the value back down). We
-        // deliberately do NOT write documents.barcode_status here in that case —
-        // the box mirror owns it.
-        if ($resolvedStatus !== null) {
-            if ($record->current_box_id !== null) {
-                self::$rowBoxStatusStash[spl_object_id($record)] = $resolvedStatus;
-            } else {
-                // Fallback (review F3): no box to be authoritative about, so
-                // write the resolved status directly onto the document column
-                // rather than silently dropping the operator's data. A1.2 was
-                // loosened 2026-08-01: a PERM_OUT document may persist without a
-                // disinfestation_date — neither this importer nor the model
-                // rejects that state any more.
-                $record->barcode_status = $resolvedStatus;
+        // client feedback 2026-08-01 (later than the RFQ). A PERM_OUT document
+        // may import without a disinfestation date.
+        $terminal = self::block1Terminal($record);
+        if ($record->current_box_id !== null) {
+            if ($terminal['barcode'] !== null || $terminal['status'] !== null) {
+                self::$rowBoxStatusStash[spl_object_id($record)] = $terminal;
             }
+        } elseif ($terminal['status'] !== null) {
+            // Fallback (review F3): no box to be authoritative about, so write
+            // the resolved status directly onto the document column rather than
+            // silently dropping the operator's data. A status without any
+            // barcode (a bare "Status 1 = PERM_OUT" legacy row) still lands here.
+            $record->barcode_status = $terminal['status'];
         }
     }
 
@@ -1317,14 +1337,74 @@ class DocumentImporter extends Importer
             ImportColumn::make('status_1')
                 ->label('Status (IN / OUT / PERM_OUT)')
                 ->guess(['Status 1', 'status_1', 'Status', 'Barcode status'])
-                ->castStateUsing(function (?string $state): ?string {
-                    if ($state === null) {
-                        return null;
-                    }
-                    $s = strtoupper(trim($state));
+                ->castStateUsing(fn (?string $state): ?string => self::normaliseBarcodeStatus($state))
+                ->rules(['nullable', 'in:IN,OUT,PERM_OUT']),
 
-                    return in_array($s, ['IN', 'OUT', 'PERM_OUT'], true) ? $s : null;
-                })
+            // ── Client #3: the legacy barcode-history columns ──────────────
+            // The document sheet carries the FULL barcode chain of the box(es)
+            // it lived in, oldest→newest: "Barcode RAS 1" (oldest) → RAS 2 → RAS
+            // 3 → RAS 4 → "Barcode (IN)" (newest, the box's current barcode when
+            // IN). It appears TWICE: block 1 = RAS Box 1's chain (the columns
+            // just above + the ras_2/3/4 here), block 2 = RAS Box 2's chain (the
+            // "* (2)/(3)" deduped duplicates). buildLegacyBarcodeHistory() turns
+            // each block into box_barcode_history rows; the status cells reuse
+            // the shared PERM_OUT-tolerant cast so "PERM OUT" (Charlene's
+            // spelling, with a space) is not silently dropped.
+            ImportColumn::make('barcode_ras_1')
+                ->label('Barcode RAS 1')
+                ->guess(['Barcode RAS 1', 'barcode_ras_1'])
+                ->rules(['nullable', 'string', 'max:50']),
+            ImportColumn::make('barcode_ras_2')
+                ->label('Barcode RAS 2')
+                ->guess(['Barcode RAS 2', 'barcode_ras_2'])
+                ->rules(['nullable', 'string', 'max:50']),
+            ImportColumn::make('status_2')
+                ->label('Status 2')
+                ->guess(['Status 2', 'status_2'])
+                ->castStateUsing(fn (?string $state): ?string => self::normaliseBarcodeStatus($state))
+                ->rules(['nullable', 'in:IN,OUT,PERM_OUT']),
+            ImportColumn::make('barcode_ras_3')
+                ->label('Barcode RAS 3')
+                ->guess(['Barcode RAS 3', 'barcode_ras_3'])
+                ->rules(['nullable', 'string', 'max:50']),
+            ImportColumn::make('status_3')
+                ->label('Status 3')
+                ->guess(['Status 3', 'status_3'])
+                ->castStateUsing(fn (?string $state): ?string => self::normaliseBarcodeStatus($state))
+                ->rules(['nullable', 'in:IN,OUT,PERM_OUT']),
+            ImportColumn::make('barcode_ras_4')
+                ->label('Barcode RAS 4')
+                ->guess(['Barcode RAS 4', 'barcode_ras_4'])
+                ->rules(['nullable', 'string', 'max:50']),
+            ImportColumn::make('status_4')
+                ->label('Status 4')
+                ->guess(['Status 4', 'status_4'])
+                ->castStateUsing(fn (?string $state): ?string => self::normaliseBarcodeStatus($state))
+                ->rules(['nullable', 'in:IN,OUT,PERM_OUT']),
+            // Block 2 (RAS Box 2's chain) — the deduped duplicate headers
+            // (SpreadsheetHeaders::dedupe suffixes the 2nd/3rd occurrence with
+            // " (2)"/" (3)"). The guess strings MUST be those exact deduped keys.
+            ImportColumn::make('barcode_in_2')
+                ->label('Barcode (IN) (2)')
+                ->guess(['Barcode (IN) (2)', 'Barcode IN 2', 'barcode_in_2'])
+                ->rules(['nullable', 'string', 'max:50']),
+            ImportColumn::make('barcode_ras_2_alt')
+                ->label('Barcode RAS 2 (2)')
+                ->guess(['Barcode RAS 2 (2)', 'barcode_ras_2_alt'])
+                ->rules(['nullable', 'string', 'max:50']),
+            ImportColumn::make('status_1_alt')
+                ->label('Status 1 (2)')
+                ->guess(['Status 1 (2)', 'status_1_alt'])
+                ->castStateUsing(fn (?string $state): ?string => self::normaliseBarcodeStatus($state))
+                ->rules(['nullable', 'in:IN,OUT,PERM_OUT']),
+            ImportColumn::make('barcode_ras_2_alt2')
+                ->label('Barcode RAS 2 (3)')
+                ->guess(['Barcode RAS 2 (3)', 'barcode_ras_2_alt2'])
+                ->rules(['nullable', 'string', 'max:50']),
+            ImportColumn::make('status_2_alt')
+                ->label('Status 2 (2)')
+                ->guess(['Status 2 (2)', 'status_2_alt'])
+                ->castStateUsing(fn (?string $state): ?string => self::normaliseBarcodeStatus($state))
                 ->rules(['nullable', 'in:IN,OUT,PERM_OUT']),
 
             // ── Notes & free-form ──────────────────────────────────────
@@ -1497,6 +1577,165 @@ class DocumentImporter extends Importer
     }
 
     /**
+     * Client #3 — reconstruct each RAS box's HISTORICAL barcode chain from the
+     * document sheet into `box_barcode_history` as undated 'legacy_import' rows.
+     *
+     * The sheet carries TWO barcode blocks per document row: block 1 = RAS Box
+     * 1's chain (Barcode RAS 1..4 / Status 1..4 + Barcode (IN)), block 2 = RAS
+     * Box 2's chain (the deduped "* (2)/(3)" columns + Barcode (IN) (2)). Each
+     * block, oldest→newest, becomes one transition row per hop (n barcodes →
+     * n-1 rows). In-Situ boxes never carry barcodes and are skipped.
+     *
+     * Runs BEFORE buildLegacyMovementChain() so block 1 still attaches to
+     * `current_box_id` while it points at RAS Box 1 (the movement chain repoints
+     * it onto the newest box afterwards).
+     */
+    protected function buildLegacyBarcodeHistory(Document $record): void
+    {
+        // Block 1 → the box the document currently sits in (still RAS Box 1
+        // here), but ONLY if it is a RAS box (belt-and-braces: never attach a
+        // barcode history to an In-Situ box, which has none). Its CURRENT state
+        // is owned by applyBoxBarcodeState() + the Task-7 mirror, so we do NOT
+        // re-set it here — only the history rows.
+        $block1BoxId = null;
+        if ($record->current_box_id !== null) {
+            $box = Box::withoutGlobalScopes()->find($record->current_box_id);
+            if ($box !== null && $box->box_type === 'RAS') {
+                $block1BoxId = (int) $box->getKey();
+            }
+        }
+        $this->rebuildBlockBarcodeHistory(
+            $record,
+            $block1BoxId,
+            self::BLOCK1_HISTORY_COLUMNS,
+            [
+                [$record->barcode_ras_1, $record->status_1],
+                [$record->barcode_ras_2, $record->status_2],
+                [$record->barcode_ras_3, $record->status_3],
+                [$record->barcode_ras_4, $record->status_4],
+            ],
+            $record->barcode_in,
+            setBoxState: false,
+        );
+
+        // Block 2 → RAS Box 2 (resolve-or-create; the movement chain resolves it
+        // again harmlessly). No live document sits in this prior RAS box for this
+        // row, so its CURRENT barcode/status is set HERE from the block terminal.
+        $block2BoxId = $this->resolveRasBox2Step($record, (int) $record->repository_id);
+        $this->rebuildBlockBarcodeHistory(
+            $record,
+            $block2BoxId,
+            self::BLOCK2_HISTORY_COLUMNS,
+            [
+                [$record->barcode_ras_2_alt, $record->status_1_alt],
+                [$record->barcode_ras_2_alt2, $record->status_2_alt],
+            ],
+            $record->barcode_in_2,
+            setBoxState: true,
+        );
+    }
+
+    /**
+     * Delete-and-rebuild one block's 'legacy_import' barcode history for one box.
+     *
+     * SKIPS entirely (not even the delete) when the row mapped NO barcode/status
+     * column for this block — a partial sheet must never wipe a fuller sheet's
+     * history. Otherwise drops this box's 'legacy_import' rows (never 'recorded'
+     * ones) and inserts the fresh chain (n barcodes → n-1 rows). When
+     * $setBoxState is true the box's CURRENT barcode/status is also set from the
+     * chain terminal (block 2 only; block 1 is owned by applyBoxBarcodeState()).
+     *
+     * @param list<string> $mapColumns importer field names for this block
+     * @param array<int, array{0: mixed, 1: mixed}> $pastPairs oldest→newest [barcode, status] cells
+     */
+    protected function rebuildBlockBarcodeHistory(
+        Document $record,
+        ?int $boxId,
+        array $mapColumns,
+        array $pastPairs,
+        mixed $inBarcode,
+        bool $setBoxState,
+    ): void {
+        // Partial-sheet guard: if none of this block's columns were mapped in
+        // this import run, leave the box's legacy history untouched.
+        if (! $this->anyColumnMapped($mapColumns)) {
+            return;
+        }
+        if ($boxId === null) {
+            return; // no resolvable box for this block (e.g. In-Situ current box)
+        }
+
+        $chain = self::blockBarcodeChain($pastPairs, $inBarcode);
+
+        // Idempotency (delete-and-rebuild): remove ONLY this box's legacy
+        // barcode-history rows before inserting the fresh chain. Never touches
+        // 'recorded' operator/observer rows.
+        BoxBarcodeHistory::query()
+            ->withoutGlobalScopes()
+            ->where('box_id', $boxId)
+            ->where('source', BoxBarcodeHistory::SOURCE_LEGACY)
+            ->delete();
+
+        $box = Box::withoutGlobalScopes()->find($boxId);
+
+        // Set this box's CURRENT barcode/status from the chain terminal (block 2
+        // only — block 1's current state is owned by applyBoxBarcodeState()).
+        if ($setBoxState && $box !== null && $chain !== []) {
+            $last = end($chain);
+            if ($last['barcode'] !== null && (string) $box->barcode !== $last['barcode']) {
+                $box->barcode = $last['barcode'];
+            }
+            if ($last['status'] !== null && $box->barcode_status !== $last['status']) {
+                $box->barcode_status = $last['status'];
+            }
+            if ($box->isDirty()) {
+                $box->skipPermOutGuard = true;
+                $box->suppressBarcodeHistory = true;
+                $box->save();
+                $box->suppressBarcodeHistory = false;
+            }
+        }
+
+        // n barcodes → n-1 transition rows. changed_at is NULL (undated legacy),
+        // repository_id mirrors the box's effective repository (mirrors how
+        // buildLegacyMovementChain sets it).
+        $repoId = $box?->effectiveRepositoryId() ?? (int) $record->repository_id;
+        $count = count($chain);
+        for ($i = 0; $i + 1 < $count; $i++) {
+            BoxBarcodeHistory::query()->create([
+                'box_id' => $boxId,
+                'previous_barcode' => $chain[$i]['barcode'],
+                'new_barcode' => $chain[$i + 1]['barcode'],
+                'previous_status' => $chain[$i]['status'],
+                'new_status' => $chain[$i + 1]['status'],
+                'changed_at' => null,
+                'source' => BoxBarcodeHistory::SOURCE_LEGACY,
+                'reason' => 'Legacy import — barcode history from batch sheet',
+                'changed_by_user_id' => $this->import->user->getKey(),
+                'repository_id' => $repoId,
+            ]);
+        }
+    }
+
+    /**
+     * True when at least one of the given importer FIELD names was mapped to a
+     * spreadsheet header in this import run (the base importer stores the map in
+     * $this->columnMap, blank/absent for an unmapped column).
+     *
+     * @param list<string> $columns
+     */
+    protected function anyColumnMapped(array $columns): bool
+    {
+        foreach ($columns as $column) {
+            if (filled($this->columnMap[$column] ?? null)) {
+                return true;
+            }
+        }
+
+        return false;
+    }
+
+    /**
      * Parse an In-Situ provenance cell ("NRA 3", "Small Box 12", "NRA3", "5")
      * into (type, number) and resolve it to a batch-less box id. Returns null
      * when the cell is empty or carries no usable box number (kept verbatim in
@@ -1574,12 +1813,12 @@ class DocumentImporter extends Importer
         $record = $this->record;
         $key = spl_object_id($record);
 
-        // Task 8 (B4) — apply the reconciled barcode status to the BOX (the
-        // authoritative source since Task 7). Done here, after the document
-        // has its `current_box_id`, so the box→documents mirror reaches this
-        // document. We never write documents.barcode_status directly: the
-        // box's `updated`/`created` hooks own the mirror.
-        $this->applyBoxBarcodeStatus($record);
+        // Task 8 (B4) + client #3 — push RAS Box 1's TERMINAL (current) barcode
+        // + status onto the BOX (the authoritative source since Task 7). Done
+        // here, after the document has its `current_box_id`, so the box→documents
+        // mirror reaches this document. We never write documents.barcode_status
+        // directly: the box's `updated`/`created` hooks own the mirror.
+        $this->applyBoxBarcodeState($record);
 
         // Client 2026-08-18 (#8): record the document's PAST attribution as a
         // document_identifier_history row. previous_identifier is NOT NULL, so
@@ -1620,6 +1859,12 @@ class DocumentImporter extends Importer
                 ?->batches()
                 ->syncWithoutDetaching([$record->batch_id]);
         }
+
+        // Client #3: reconstruct each RAS box's historical BARCODE chain into
+        // box_barcode_history. Runs BEFORE buildLegacyMovementChain() so block 1
+        // still attaches to `current_box_id` while it points at RAS Box 1 (the
+        // movement chain repoints it onto the newest box afterwards).
+        $this->buildLegacyBarcodeHistory($record);
 
         // Client 2026-08-18 (#1): rebuild the legacy box-movement TIMELINE from
         // the provenance columns. Runs here because it needs the saved document
@@ -1671,37 +1916,6 @@ class DocumentImporter extends Importer
         $record->authorities()->syncWithoutDetaching($pivot);
     }
 
-    /**
-     * Collapse the legacy `status_*` columns into ONE barcode status, or null
-     * when none of them carries a recognised value. PERM_OUT outranks OUT,
-     * OUT outranks IN — the strongest custody state for the document/box wins.
-     */
-    protected function resolveLegacyBarcodeStatus(Document $record): ?string
-    {
-        $statuses = [
-            $record->status_1, $record->status_2, $record->status_3, $record->status_4,
-            $record->status_1_alt, $record->status_2_alt,
-        ];
-
-        $found = [];
-        foreach ($statuses as $s) {
-            if (! is_string($s)) {
-                continue;
-            }
-            $v = strtoupper(trim($s));
-            if (in_array($v, ['IN', 'OUT', 'PERM_OUT'], true)) {
-                $found[$v] = true;
-            }
-        }
-
-        return match (true) {
-            isset($found['PERM_OUT']) => 'PERM_OUT',
-            isset($found['OUT']) => 'OUT',
-            isset($found['IN']) => 'IN',
-            default => null,
-        };
-    }
-
     protected function resolveCurrentBox(Document $record): void
     {
         $key = spl_object_id($record);
@@ -1749,14 +1963,25 @@ class DocumentImporter extends Importer
      * box mirrors PERM_OUT onto stay aligned to a single accession date (the
      * document's date is the accession's date). A1.2 was loosened 2026-08-01 —
      * this is data-coherence backfill, not a guard/validation prerequisite.
+     *
+     * Client #3 — this now sets the box's `barcode` AND `barcode_status`
+     * TOGETHER from RAS Box 1's TERMINAL state (not the old PERM_OUT-wins
+     * collapse). A box that is currently IN (it has a "Barcode (IN)") keeps
+     * status IN even when it holds PERM_OUT past barcodes — those live in the
+     * history, not the current state. The barcode is written only when the
+     * terminal carries one (a bare-status legacy row leaves the barcode
+     * untouched). The write is wrapped in `suppressBarcodeHistory` so the
+     * observer does not ALSO log a spurious 'recorded' row — buildLegacyBarcodeHistory()
+     * writes this box's history as 'legacy_import' rows itself — while the real
+     * save() still fires the Task-7 mirror onto the document(s).
      */
-    protected function applyBoxBarcodeStatus(Document $record): void
+    protected function applyBoxBarcodeState(Document $record): void
     {
         $key = spl_object_id($record);
-        $status = self::$rowBoxStatusStash[$key] ?? null;
+        $terminal = self::$rowBoxStatusStash[$key] ?? null;
         unset(self::$rowBoxStatusStash[$key]);
 
-        if ($status === null || $record->current_box_id === null) {
+        if ($terminal === null || $record->current_box_id === null) {
             return;
         }
 
@@ -1764,6 +1989,9 @@ class DocumentImporter extends Importer
         if ($box === null) {
             return;
         }
+
+        $barcode = $terminal['barcode'];
+        $status = $terminal['status'];
 
         // Data coherence (A1.2 loosened 2026-08-01): seed the box's
         // disinfestation_date from the document's own date before flipping the
@@ -1776,7 +2004,14 @@ class DocumentImporter extends Importer
             $box->disinfestation_date = $record->disinfestation_date;
         }
 
-        if ($box->barcode_status !== $status) {
+        // Set the barcode only when the terminal carries one (never null out an
+        // existing box barcode from a bare-status legacy row) AND the current
+        // box is a RAS box — barcodes are a RAS concept (client #3: In-Situ
+        // boxes have none). A non-RAS current box keeps its barcode untouched.
+        if ($barcode !== null && $box->box_type === 'RAS' && (string) $box->barcode !== $barcode) {
+            $box->barcode = $barcode;
+        }
+        if ($status !== null && $box->barcode_status !== $status) {
             $box->barcode_status = $status;
         }
 
@@ -1784,9 +2019,112 @@ class DocumentImporter extends Importer
             // Import pipeline — legacy rows may lack a location; bypass the
             // PERM_OUT location guard (RFQ §3.1.7-A) for this programmatic
             // write while still allowing the Task-7 mirror observer to fire.
+            // suppressBarcodeHistory keeps the observer from double-logging the
+            // change we already record as 'legacy_import' history.
             $box->skipPermOutGuard = true;
+            $box->suppressBarcodeHistory = true;
             $box->save(); // triggers the Task-7 mirror onto the document(s)
+            $box->suppressBarcodeHistory = false;
         }
+    }
+
+    /**
+     * Normalise a raw legacy barcode-status cell to a canonical token
+     * (IN / OUT / PERM_OUT), or null when it carries no recognised value.
+     *
+     * Shared by every status ImportColumn cast AND the terminal-state / history
+     * builders. The key job is tolerating Charlene's PERM_OUT spellings — the
+     * source sheet writes "PERM OUT" (with a space); before this helper the
+     * status_1 cast only accepted the exact "PERM_OUT" token, so a spaced value
+     * was SILENTLY dropped. "PERM OUT", "PERM-OUT", "PERMOUT", lower/mixed case,
+     * and surrounding whitespace all normalise to the canonical "PERM_OUT".
+     */
+    private static function normaliseBarcodeStatus(?string $state): ?string
+    {
+        if ($state === null) {
+            return null;
+        }
+        $s = strtoupper(trim($state));
+
+        // Collapse the PERM_OUT spelling variants ("PERM OUT" / "PERM-OUT" /
+        // "PERMOUT" / "PERM_OUT") to the canonical token BEFORE the membership
+        // check.
+        if (str_replace([' ', '-', '_'], '', $s) === 'PERMOUT') {
+            return 'PERM_OUT';
+        }
+
+        return in_array($s, ['IN', 'OUT', 'PERM_OUT'], true) ? $s : null;
+    }
+
+    /**
+     * Assemble a barcode block's chain oldest→newest as
+     * `[['barcode'=>string,'status'=>?string], ...]`.
+     *
+     * Each past `[barcode, status]` pair whose BARCODE cell is BLANK is skipped
+     * (a status with no barcode is ignored for the chain; a barcode with no
+     * status keeps a null status). When the block's IN barcode is non-blank it
+     * is appended as the newest entry with status 'IN'.
+     *
+     * @param array<int, array{0: mixed, 1: mixed}> $pastPairs oldest→newest [barcode, status] cells
+     * @return array<int, array{barcode: string, status: ?string}>
+     */
+    private static function blockBarcodeChain(array $pastPairs, mixed $inBarcode): array
+    {
+        $chain = [];
+        foreach ($pastPairs as [$barcode, $status]) {
+            $b = trim((string) ($barcode ?? ''));
+            if ($b === '') {
+                continue;
+            }
+            $chain[] = [
+                'barcode' => $b,
+                'status' => self::normaliseBarcodeStatus($status === null ? null : (string) $status),
+            ];
+        }
+
+        $in = trim((string) ($inBarcode ?? ''));
+        if ($in !== '') {
+            $chain[] = ['barcode' => $in, 'status' => 'IN'];
+        }
+
+        return $chain;
+    }
+
+    /**
+     * RAS Box 1's TERMINAL (current) barcode + status from its legacy chain:
+     *   - barcode_in present            → [barcode_in, 'IN']
+     *   - else last past barcode present → [that barcode, its status]
+     *   - else (a status but no barcode) → [null, that bare status]
+     *   - else                           → [null, null]
+     *
+     * @return array{barcode: ?string, status: ?string}
+     */
+    private static function block1Terminal(Document $record): array
+    {
+        $chain = self::blockBarcodeChain([
+            [$record->barcode_ras_1, $record->status_1],
+            [$record->barcode_ras_2, $record->status_2],
+            [$record->barcode_ras_3, $record->status_3],
+            [$record->barcode_ras_4, $record->status_4],
+        ], $record->barcode_in);
+
+        if ($chain !== []) {
+            $last = end($chain);
+
+            return ['barcode' => $last['barcode'], 'status' => $last['status']];
+        }
+
+        // No barcode anywhere in block 1, but a legacy row may still carry only
+        // a bare "Status 1 = PERM_OUT". Surface it (newest column wins) so the
+        // box status / no-box document fallback is not lost.
+        foreach ([$record->status_4, $record->status_3, $record->status_2, $record->status_1] as $s) {
+            $status = self::normaliseBarcodeStatus($s === null ? null : (string) $s);
+            if ($status !== null) {
+                return ['barcode' => null, 'status' => $status];
+            }
+        }
+
+        return ['barcode' => null, 'status' => null];
     }
 
     /**

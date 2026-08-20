@@ -60,6 +60,18 @@ class Box extends Model implements AuditableContract, Sortable
      */
     public bool $skipPermOutGuard = false;
 
+    /**
+     * Transient (never persisted) flag that suppresses the barcode-history
+     * observer for THIS instance's next save. DocumentImporter sets it while
+     * pushing a box's CURRENT barcode/status from the legacy sheet, because it
+     * writes the box's full historical barcode chain into `box_barcode_history`
+     * itself (with source='legacy_import') — letting the observer ALSO log that
+     * same programmatic change would double-count it as a spurious 'recorded'
+     * row. It is reset by the importer right after the save; an ordinary
+     * operator change never sets it, so the live audit hook keeps working.
+     */
+    public bool $suppressBarcodeHistory = false;
+
     protected $fillable = [
         'sort_order',
         'box_type', 'current_box_type', 'box_number', 'batch_id', 'parent_box_id',
@@ -200,12 +212,20 @@ class Box extends Model implements AuditableContract, Sortable
 
     /**
      * Append-only log of barcode / barcode_status transitions for this box
-     * (RFQ §3.1.5). Returns rows ordered descending by `changed_at` so the
-     * most recent change is first — callers can override with `->orderBy(...)`.
+     * (RFQ §3.1.5). Returns rows ordered descending by `changed_at`, then by
+     * `id`, so the most recent change is first — callers can override with
+     * `->orderBy(...)`.
+     *
+     * The `id` tiebreaker keeps a legacy-import chain internally ordered (its
+     * rows all share a NULL `changed_at`), and — because MySQL/MariaDB and
+     * SQLite all sort NULLs LAST in a DESC order — sinks the undated
+     * 'legacy_import' rows below the dated 'recorded' hook rows (client #3).
      */
     public function barcodeHistory(): HasMany
     {
-        return $this->hasMany(BoxBarcodeHistory::class)->latest('changed_at');
+        return $this->hasMany(BoxBarcodeHistory::class)
+            ->orderByDesc('changed_at')
+            ->orderByDesc('id');
     }
 
     /**
@@ -814,6 +834,12 @@ class Box extends Model implements AuditableContract, Sortable
      */
     protected function captureBarcodeTransition(): void
     {
+        // Legacy import owns the history for this write (it inserts the full
+        // 'legacy_import' chain itself) — do not also emit a 'recorded' row.
+        if ($this->suppressBarcodeHistory) {
+            return;
+        }
+
         $barcodeDirty = $this->isDirty('barcode');
         $statusDirty = $this->isDirty('barcode_status');
 

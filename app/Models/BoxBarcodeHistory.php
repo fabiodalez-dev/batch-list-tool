@@ -28,6 +28,19 @@ class BoxBarcodeHistory extends Model
     use HasFactory;
 
     /**
+     * A row written by the live observer hook on a real barcode/status change.
+     */
+    public const SOURCE_RECORDED = 'recorded';
+
+    /**
+     * A row reconstructed by DocumentImporter from the legacy "Barcode RAS
+     * 1/2/3/4" + "Status 1/2/3/4" columns (client point #3). Undated
+     * (`changed_at` NULL); delete-and-rebuilt on re-import; never mixed with
+     * 'recorded' rows.
+     */
+    public const SOURCE_LEGACY = 'legacy_import';
+
+    /**
      * Table name is explicit because the conventional plural would mangle "history".
      */
     protected $table = 'box_barcode_history';
@@ -39,6 +52,7 @@ class BoxBarcodeHistory extends Model
         'previous_status',
         'new_status',
         'changed_at',
+        'source',
         'changed_by_user_id',
         'reason',
         'repository_id',
