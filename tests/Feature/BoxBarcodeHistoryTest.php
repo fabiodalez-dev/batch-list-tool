@@ -71,6 +71,7 @@ test('model exposes the correct fillable and casts', function () {
         'previous_status',
         'new_status',
         'changed_at',
+        'source',
         'changed_by_user_id',
         'reason',
         'repository_id',
@@ -159,7 +160,9 @@ test('multiple changes produce multiple rows in chronological order', function (
     $box->refresh();
     $box->update(['barcode' => 'BC-MULTI-C']);
 
-    $rows = $box->barcodeHistory()->orderBy('id')->get();
+    // The relation now defaults to (changed_at desc, id desc); reorder() clears
+    // that so this assertion can read the rows in ascending insertion order.
+    $rows = $box->barcodeHistory()->reorder('id')->get();
     expect($rows)->toHaveCount(3);
     expect($rows->pluck('previous_barcode')->all())
         ->toBe(['BC-MULTI-0', 'BC-MULTI-A', 'BC-MULTI-B']);

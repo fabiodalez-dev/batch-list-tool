@@ -2,6 +2,7 @@
 
 namespace App\Filament\Resources\BoxResource\RelationManagers;
 
+use App\Models\BoxBarcodeHistory;
 use Filament\Actions\ViewAction;
 use Filament\Forms;
 use Filament\Resources\RelationManagers\RelationManager;
@@ -77,7 +78,21 @@ class BarcodeHistoryRelationManager extends RelationManager
                 Tables\Columns\TextColumn::make('changed_at')
                     ->label('Changed')
                     ->dateTime()
+                    // Client #3: legacy-import rows carry no date (the client
+                    // cannot date a historical barcode change).
+                    ->placeholder('No date (legacy import)')
                     ->sortable(),
+
+                Tables\Columns\TextColumn::make('source')
+                    ->label('Source')
+                    ->badge()
+                    ->formatStateUsing(fn (?string $state): string => $state === BoxBarcodeHistory::SOURCE_LEGACY
+                        ? 'Legacy import'
+                        : 'Recorded')
+                    ->color(fn (?string $state): string => $state === BoxBarcodeHistory::SOURCE_LEGACY
+                        ? 'warning'
+                        : 'success')
+                    ->toggleable(),
 
                 Tables\Columns\TextColumn::make('changedBy.name')
                     ->label('By')
