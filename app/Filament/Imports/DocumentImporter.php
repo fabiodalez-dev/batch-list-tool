@@ -224,6 +224,15 @@ class DocumentImporter extends Importer
     protected static array $rowCustomFieldStash = [];
 
     /**
+     * Per-row stash for the `seal_number` column. Applied to the resolved
+     * current box in {@see persistRowSideEffects()} (needs current_box_id),
+     * only when the box has no seal yet. Keyed by `spl_object_id` of the record.
+     *
+     * @var array<int, string>
+     */
+    protected static array $rowSealStash = [];
+
+    /**
      * Per-row transactional safety (review I2 / Fix 5).
      *
      * Filament's import job wraps an entire CHUNK in one DB::transaction and
@@ -1231,17 +1240,27 @@ class DocumentImporter extends Importer
                     $repoIdForBatch = self::$rowRepositoryStash[spl_object_id($record)] ?? null;
                     $res = EntityResolver::resolveBatch($n, $repoIdForBatch, create: true);
                     if ($res === null) {
-                        return; // unknown batch — leave FK null
+                        // Unknown batch — leave FK null, but keep the legacy text
+                        // so the value is not lost (mirrors the reserved path).
+                        $record->ras_batch_1 = (string) $n;
+
+                        return;
                     }
                     if (isset($res['forbidden'])) {
-                        // RFQ App.1 #1 — operators are not allowed to import
-                        // documents into reserved batches.
-                        throw ValidationException::withMessages([
-                            'batch_number' => __(
-                                'Batch :n is reserved (RFQ App.1 #1) and cannot be assigned',
-                                ['n' => (int) $res['forbidden']],
-                            ),
+                        // RFQ App.1 #1 forbids ALLOCATION into a reserved batch.
+                        // No allocation happens here — DEGRADE gracefully instead
+                        // of failing the whole row: leave batch_id null, keep the
+                        // legacy denormalised text, and flag it in extra so the
+                        // operator can review. The real client file carries rows
+                        // pointing at reserved batches; failing them all would drop
+                        // otherwise-valid document data.
+                        $forbidden = (int) $res['forbidden'];
+                        $record->ras_batch_1 = (string) $n;
+                        self::mergeExtra($record, [
+                            'batch_import_note' => 'reserved batch ' . $forbidden . ' — not linked',
                         ]);
+
+                        return;
                     }
                     $record->batch_id = $res['batch_id'];
                     // Also keep the legacy denormalised text column populated.
@@ -1429,6 +1448,13 @@ class DocumentImporter extends Importer
                 ->label('Torre (legacy flag)')
                 ->guess(['Torre', 'torre'])
                 ->boolean()
+                // The real batch list has ~25k BLANK Torre cells. Without this a
+                // blank cell fills `null` and MySQL rejects it ("Column 'torre'
+                // cannot be null"), failing the row. ignoreBlankState() skips the
+                // fill for a blank cell so the DB default (false) stands on create
+                // and the existing value is preserved on update; a 'Torre'-filled
+                // cell still casts to boolean true.
+                ->ignoreBlankState()
                 ->rules(['nullable', 'boolean']),
 
             // Client 2026-08-18 (#23): the "Accession" cell may be either a name
@@ -1495,6 +1521,58 @@ class DocumentImporter extends Importer
             ImportColumn::make('museum_reference')
                 ->label('Museum Reference')
                 ->guess(['Museum Reference', 'museum_reference'])
+                ->rules(['nullable', 'string']),
+
+            // ── Console-alignment columns ───────────────────────────────
+            // These three carry data the bespoke `nra:import-batch-list`
+            // console command used to persist directly. Now that the command
+            // delegates through this importer, the columns live here so the
+            // aligned bulk path captures the same fields.
+
+            // The physical yellow security seal id. Belongs to the BOX
+            // (box_seal_number_history, Task 7) — stashed per row and applied to
+            // the resolved current box in persistRowSideEffects(), only when the
+            // box does not already carry one (never overwrite a live seal).
+            ImportColumn::make('seal_number')
+                ->label('Seal Number')
+                ->guess(['Seal Number', 'seal_number'])
+                ->fillRecordUsing(function (Document $record, ?string $state): void {
+                    $v = trim((string) ($state ?? ''));
+                    if ($v !== '') {
+                        self::$rowSealStash[spl_object_id($record)] = $v;
+                    }
+                })
+                ->rules(['nullable', 'string', 'max:64']),
+
+            // The physical container TYPE label ("RAS Box", "Big Brown Box", …).
+            // Distinct from `box_type` (the structural RAS/IN_SITU/NRA code) and
+            // from current_box_number (the box's own number). The real col 46
+            // "Current Box" holds this label; current_box_number's first guess is
+            // "RAS Box 1", so it binds there and does not steal "Current Box".
+            ImportColumn::make('current_box_type')
+                ->label('Current Box (physical container type)')
+                ->guess(['Current Box', 'current_box_type'])
+                ->fillRecordUsing(function (Document $record, ?string $state): void {
+                    // The source column holds a box-TYPE code/label ("RAS",
+                    // "RAS Box", "big", …). Document::CURRENT_BOX_TYPES only
+                    // accepts the canonical container labels, so normalise like
+                    // the legacy console did (an unrecognised value → null, kept
+                    // out of the way rather than failing the row).
+                    $record->current_box_type = self::normaliseCurrentBoxType($state);
+                })
+                ->rules(['nullable', 'string', 'max:64']),
+
+            // NAF "Type" (col 47) — the accession/legacy type label. Kept in
+            // extra (NOT mapped to document_type, which is a separate concept).
+            ImportColumn::make('accession_type')
+                ->label('Accession Type (legacy "Type")')
+                ->guess(['Type', 'accession_type'])
+                ->fillRecordUsing(function (Document $record, ?string $state): void {
+                    $v = trim((string) ($state ?? ''));
+                    if ($v !== '') {
+                        self::mergeExtra($record, ['accession_type' => $v]);
+                    }
+                })
                 ->rules(['nullable', 'string']),
         ];
     }
@@ -1827,6 +1905,10 @@ class DocumentImporter extends Importer
         // directly: the box's `updated`/`created` hooks own the mirror.
         $this->applyBoxBarcodeState($record);
 
+        // Console-alignment — apply the row's Seal Number to the current box
+        // (only when the box has none). Done here, after current_box_id is set.
+        $this->applyBoxSeal($record);
+
         // Client 2026-08-18 (#8): record the document's PAST attribution as a
         // document_identifier_history row. previous_identifier is NOT NULL, so
         // when only a Prev Volume is given we anchor on the document's current
@@ -2033,6 +2115,60 @@ class DocumentImporter extends Importer
             $box->save(); // triggers the Task-7 mirror onto the document(s)
             $box->suppressBarcodeHistory = false;
         }
+    }
+
+    /**
+     * Console-alignment — apply the row's stashed Seal Number to the box the
+     * document currently sits in, ONLY when that box has no seal yet (never
+     * overwrite a live seal). Mirrors {@see applyBoxBarcodeState()}: a real
+     * save() so the box_seal_number_history hook records the null→value
+     * transition (there is no separate seal-history builder, so that row is the
+     * genuine record, not a duplicate). Setting only `seal_number` leaves
+     * barcode/status untouched, so the box's barcode-transition capture is a
+     * no-op and no spurious barcode-history row is written.
+     */
+    protected function applyBoxSeal(Document $record): void
+    {
+        $key = spl_object_id($record);
+        $seal = self::$rowSealStash[$key] ?? null;
+        unset(self::$rowSealStash[$key]);
+
+        if ($seal === null || $record->current_box_id === null) {
+            return;
+        }
+
+        $box = Box::withoutGlobalScopes()->find($record->current_box_id);
+        if ($box === null || trim((string) $box->seal_number) !== '') {
+            return; // no box, or the box already carries a seal — never overwrite
+        }
+
+        $box->seal_number = $seal;
+        // Bypass the PERM_OUT location guard for this programmatic write (legacy
+        // rows may lack a location); the seal write itself is unrelated to it.
+        $box->skipPermOutGuard = true;
+        $box->save();
+    }
+
+    /**
+     * Console-alignment — normalise a raw "Current Box" cell (a box-TYPE code or
+     * label) to one of {@see Document::CURRENT_BOX_TYPES}, or null when it
+     * carries no recognised container type. Mirrors the legacy console's
+     * normaliseBoxType() so a bare code like "RAS" maps to "RAS Box" instead of
+     * failing the Document current_box_type guard.
+     */
+    private static function normaliseCurrentBoxType(?string $state): ?string
+    {
+        $v = strtolower(trim((string) ($state ?? '')));
+        if ($v === '') {
+            return null;
+        }
+
+        return match (true) {
+            str_contains($v, 'ras') => 'RAS Box',
+            str_contains($v, 'big') => 'Big Brown Box',
+            str_contains($v, 'small') => 'Small Brown Box',
+            default => null,
+        };
     }
 
     /**

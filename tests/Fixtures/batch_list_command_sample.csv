@@ -1,0 +1,13 @@
+Series," RAS Box 1","RAS Batch 1","RAS Batch 2","RAS Box 2","In Situ Box 1","In Situ Box 2","In Situ Box 3","Barcode (IN)","Barcode RAS 1","Status 1","Barcode RAS 2","Status 2","Barcode RAS 3","Status 3","Barcode RAS 4","Status 4","Barcode (IN)","Barcode RAS 1","Status 1","Barcode RAS 2","Status 2","Authority Identifier",Accession,"Document Type",Type,"Prev Attributed Identifier","Prev Attributed Volume","Seal Number","Current Box",Torre,"Catalogue Identifier",Notes,"Document Identifier"
+REG,1,1,2,5,,,,,AA1,"Perm Out",AA2,"Perm Out",,,,,BB2,BB1,"Perm Out",,,R100,"Test Accession One",Register,Notary,,,,"RAS Box",Torre,,"First row",DOC-1
+REG,2,1,,,"NRA 3",,,,,,,,,,,,,,,,,,,,,,,,,,,"Second row",DOC-2
+REG,3,1,,,,,,,,,,,,,,,,,,,,,,,,OLD-3,V2,,,,,"Prev attrib",DOC-3
+REG,,34,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,"Forbidden batch",DOC-4
+REG,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,"blank a",
+Unknown,6,1,,,,,,,,,,,,,,,,,,,,,,,,,,SEAL-6,,,,,DOC-6
+REG,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,CAT-7,"Cat id row",
+REG,8,1,,,,,,CC1,,,,,,,,,,,,,,,,,,,,,,x,,,DOC-8
+REG,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,"blank b",
+REG,9.0,1.0,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,DOC-10
+REG,11,1,,,"NRA 3",,,,,,,,,,,,,,,,,,,,,,,,,,,,DOC-11
+REG,12,1,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,DOC-12
