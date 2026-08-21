@@ -79,8 +79,8 @@ function bch_row(array $over): array
         'Barcode RAS 4' => '', 'Status 4' => '',
         // Block 2 (RAS Box 2's barcode chain) — deduped duplicate headers.
         'Barcode (IN) (2)' => '',
-        'Barcode RAS 2 (2)' => '', 'Status 1 (2)' => '',
-        'Barcode RAS 2 (3)' => '', 'Status 2 (2)' => '',
+        'Barcode RAS 1 (2)' => '', 'Status 1 (2)' => '',
+        'Barcode RAS 2 (2)' => '', 'Status 2 (2)' => '',
     ], $over);
 }
 
@@ -427,8 +427,8 @@ it('models a full block-2 chain oldest→newest with IN last (2 rows)', function
         'Identifier' => 'B2CHAIN',
         'RAS Batch 1' => '1', 'RAS Box 1' => '900',
         'RAS Batch 2' => '2', 'RAS Box 2' => '901',
-        'Barcode RAS 2 (2)' => 'C1', 'Status 1 (2)' => 'PERM OUT',
-        'Barcode RAS 2 (3)' => 'C2', 'Status 2 (2)' => 'PERM OUT',
+        'Barcode RAS 1 (2)' => 'C1', 'Status 1 (2)' => 'PERM OUT',
+        'Barcode RAS 2 (2)' => 'C2', 'Status 2 (2)' => 'PERM OUT',
         'Barcode (IN) (2)' => 'C3',
     ]), $u->id);
 
@@ -697,9 +697,9 @@ it('the document template round-trips: every barcode/status column maps to its o
         'barcode_ras_4' => 'Barcode RAS 4',
         'status_4' => 'Status 4',
         'barcode_in_2' => 'Barcode (IN) (2)',
-        'barcode_ras_2_alt' => 'Barcode RAS 2 (2)',
+        'barcode_ras_2_alt' => 'Barcode RAS 1 (2)',
         'status_1_alt' => 'Status 1 (2)',
-        'barcode_ras_2_alt2' => 'Barcode RAS 2 (3)',
+        'barcode_ras_2_alt2' => 'Barcode RAS 2 (2)',
         'status_2_alt' => 'Status 2 (2)',
     ];
 

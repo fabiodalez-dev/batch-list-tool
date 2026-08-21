@@ -39,8 +39,9 @@ use Symfony\Component\HttpFoundation\StreamedResponse;
  *      same byte position — multi-step provenance tracking:
  *
  *          [13] "Barcode (IN)"        [22] "Barcode (IN)"
+ *          [14] "Barcode RAS 1"       [23] "Barcode RAS 1"
  *          [15] "Status 1"            [24] "Status 1"
- *          [16] "Barcode RAS 2"       [23] "Barcode RAS 2"   [25] "Barcode RAS 2"
+ *          [16] "Barcode RAS 2"       [25] "Barcode RAS 2"
  *          [17] "Status 2"            [26] "Status 2"
  *          [28] "Disinfestation Date" [29] "Disinfestation Date" [30] "Disinfestation Date"
  *
@@ -112,7 +113,10 @@ final class TemplateGenerator
         'Barcode (IN)',
         'Barcode RAS 1', 'Status 1', 'Barcode RAS 2', 'Status 2',
         'Barcode RAS 3', 'Status 3', 'Barcode RAS 4', 'Status 4',
-        'Barcode (IN)', 'Barcode RAS 2', 'Status 1', 'Barcode RAS 2', 'Status 2',
+        // Block 2 (RAS Box 2) barcodes — matches the real client sheet:
+        // current IN, then past "Barcode RAS 1" + Status 1, then "Barcode RAS 2"
+        // + Status 2. (Was erroneously "Barcode RAS 2, Status 1, Barcode RAS 2".)
+        'Barcode (IN)', 'Barcode RAS 1', 'Status 1', 'Barcode RAS 2', 'Status 2',
         // Seal Number is a BOX field (box_seal_number_history), not a document
         // field — intentionally NOT emitted in the document template.
         'Disinfestation Date', 'Disinfestation Date',
@@ -141,7 +145,7 @@ final class TemplateGenerator
      * can detect a stale template at re-upload time and warn the operator.
      * Bump on any change to the header contract.
      */
-    public const string GENERATOR_VERSION = '1.11.0';
+    public const string GENERATOR_VERSION = '1.12.0';
 
     /**
      * Supported template entities. Headers come from the in-repo constants

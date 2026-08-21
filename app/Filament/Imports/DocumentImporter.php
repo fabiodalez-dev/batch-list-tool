@@ -1388,18 +1388,25 @@ class DocumentImporter extends Importer
                 ->label('Barcode (IN) (2)')
                 ->guess(['Barcode (IN) (2)', 'Barcode IN 2', 'barcode_in_2'])
                 ->rules(['nullable', 'string', 'max:50']),
+            // Block 2 (RAS Box 2) past barcode #1. In the real client sheet the
+            // second block's first past-barcode header is "Barcode RAS 1" (its
+            // 2nd occurrence → "Barcode RAS 1 (2)" after dedupe), NOT "Barcode
+            // RAS 2". Guessing "Barcode RAS 2 (2)" here left it unmapped and made
+            // this column collide with barcode_ras_2_alt2.
             ImportColumn::make('barcode_ras_2_alt')
-                ->label('Barcode RAS 2 (2)')
-                ->guess(['Barcode RAS 2 (2)', 'barcode_ras_2_alt'])
+                ->label('Barcode RAS 1 (2)')
+                ->guess(['Barcode RAS 1 (2)', 'barcode_ras_2_alt'])
                 ->rules(['nullable', 'string', 'max:50']),
             ImportColumn::make('status_1_alt')
                 ->label('Status 1 (2)')
                 ->guess(['Status 1 (2)', 'status_1_alt'])
                 ->castStateUsing(fn (?string $state): ?string => self::normaliseBarcodeStatus($state))
                 ->rules(['nullable', 'in:IN,OUT,PERM_OUT']),
+            // Block 2 (RAS Box 2) past barcode #2 = the 2nd occurrence of
+            // "Barcode RAS 2" (col 16 is the 1st, in block 1) → "Barcode RAS 2 (2)".
             ImportColumn::make('barcode_ras_2_alt2')
-                ->label('Barcode RAS 2 (3)')
-                ->guess(['Barcode RAS 2 (3)', 'barcode_ras_2_alt2'])
+                ->label('Barcode RAS 2 (2)')
+                ->guess(['Barcode RAS 2 (2)', 'barcode_ras_2_alt2'])
                 ->rules(['nullable', 'string', 'max:50']),
             ImportColumn::make('status_2_alt')
                 ->label('Status 2 (2)')
