@@ -386,29 +386,30 @@ test('DocumentImporter F-001: short Creator token "Foo" does not fuzzy-match', f
     expect((string) ($doc->extra['creator_match_log'] ?? ''))->toBe('unresolved');
 });
 
-test('DocumentImporter rejects forbidden batch_number 34 (RFQ App.1 #1); batch 33 is reserved (not forbidden)', function () {
+test('DocumentImporter DEGRADES a forbidden batch_number 34 (RFQ App.1 #1) instead of failing the row; batch 33 is reserved (not forbidden)', function () {
     $repo = bi_repo();
     $u = bi_makeAdmin($repo->id);
     $this->actingAs($u);
     bi_series('REG');
 
-    // Batch 34 is forbidden per RFQ Appendix 2.
-    try {
-        bi_runImporter(DocumentImporter::class, [
-            'identifier' => 'DOC-B34-1',
-            'series' => 'REG',
-            'batch_number' => 34,
-        ], $u->id);
-        $this->fail('Expected a validation exception for forbidden batch 34.');
-    } catch (ValidationException $validationException) {
-        expect($validationException->errors())->toHaveKey('batch_number');
-    }
+    // Batch 34 is forbidden per RFQ Appendix 2. RFQ App.1 #1 forbids
+    // ALLOCATION into it — no allocation happens, so the row DEGRADES rather
+    // than failing: the document imports with batch_id null, the legacy text is
+    // kept, and an extra note flags it. (Changed 2026-08 — bulk-import
+    // alignment: the real file carries rows pointing at reserved batches and
+    // failing them all would drop otherwise-valid document data.)
+    bi_runImporter(DocumentImporter::class, [
+        'identifier' => 'DOC-B34-1',
+        'series' => 'REG',
+        'batch_number' => 34,
+    ], $u->id);
 
-    // No row should have been inserted for the forbidden batch.
-    expect(
-        Document::withoutGlobalScope(RepositoryScope::class)
-            ->where('identifier', 'DOC-B34-1')->exists()
-    )->toBeFalse();
+    $degraded = Document::withoutGlobalScope(RepositoryScope::class)
+        ->where('identifier', 'DOC-B34-1')->first();
+    expect($degraded)->not->toBeNull()
+        ->and($degraded->batch_id)->toBeNull()
+        ->and($degraded->ras_batch_1)->toBe('34')
+        ->and($degraded->extra['batch_import_note'] ?? null)->toBe('reserved batch 34 — not linked');
 
     // Batch 33 is reserved for old MAV boxes — NOT forbidden.
     // When batch 33 exists, documents can be imported into it.

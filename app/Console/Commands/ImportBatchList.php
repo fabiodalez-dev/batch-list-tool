@@ -4,31 +4,51 @@ declare(strict_types=1);
 
 namespace App\Console\Commands;
 
-use App\Models\Accession;
+use App\Filament\Imports\DocumentImporter;
+use App\Filament\Pages\ImportWizard;
 use App\Models\Authority;
-use App\Models\Batch;
-use App\Models\Box;
 use App\Models\Document;
 use App\Models\Repository;
 use App\Models\Series;
-use App\Support\Import\BatchListColumnMap;
+use App\Models\User;
+use App\Support\BulkImport\EntityResolver;
+use App\Support\BulkImport\SpreadsheetHeaders;
+use Filament\Actions\Imports\Exceptions\RowImportFailedException;
+use Filament\Actions\Imports\Models\Import;
 use Illuminate\Console\Command;
 use Illuminate\Support\Facades\DB;
+use Illuminate\Validation\ValidationException;
 use PhpOffice\PhpSpreadsheet\Reader\IReadFilter;
 use PhpOffice\PhpSpreadsheet\Reader\Xlsx as XlsxReader;
-use PhpOffice\PhpSpreadsheet\Shared\Date as ExcelDate;
 
 /**
- * Header-driven importer for the NAF "New_BATCH_LIST" single-workbook export.
+ * Header-driven bulk importer for the NAF "New_BATCH_LIST" single-workbook
+ * export (26k+ rows), delegating EVERY row through {@see DocumentImporter}.
  *
- * Unlike the legacy {@see ImportSampleData} (which read fixed column positions
- * and silently mis-mapped when the NAF added columns), this resolves every
- * column by HEADER NAME via {@see BatchListColumnMap} — the same alias source
- * the Filament Import Wizard uses — so the two import paths stay in sync and a
- * future column shift cannot corrupt the import.
+ * Historically this command had its OWN persistence (`new Document()->save()` +
+ * `Box::firstOrCreate`) and BYPASSED the Filament importer, so a bulk import did
+ * NOT build box_movements, box_barcode_history, the current_box_id repoint,
+ * accession/authority pivots or identifier history. It now runs each row through
+ * the SAME single-row pipeline the Import Wizard uses ({@see DocumentImporter}),
+ * so the bulk path and the wizard path can never drift apart: one row shape, one
+ * set of side effects.
  *
- * Memory-safe: the BATCH_LIST sheet (26k+ rows) is read in row windows via a
- * read filter instead of materialising the whole workbook.
+ * What the command still owns (things a per-row importer cannot):
+ *   - memory-safe streaming of the source workbook in row windows (a 26k-row
+ *     xlsx is never materialised whole — that OOMs on shared hosting);
+ *   - positional de-duplication of the NAF's repeated headers (via
+ *     {@see SpreadsheetHeaders::dedupe()}) so each physical column keeps a
+ *     distinct key, exactly as the streaming job does;
+ *   - a Series bootstrap pre-pass: the importer resolves Series match-only, so
+ *     the distinct Series codes are firstOrCreate'd up front (the console's old
+ *     permissive semantics, INCLUDING 'Unknown');
+ *   - threading each row's ABSOLUTE sheet position under the importer's reserved
+ *     source-row key so a blank-identifier row's auto id stays idempotent;
+ *   - per-row isolation: a bad row is caught and rolled back to the base
+ *     transaction level, and the run continues.
+ *
+ * The Scout index is intentionally NOT updated per row (disableSearchSyncing) —
+ * run `php artisan scout:import "App\Models\Document"` afterwards to rebuild it.
  */
 class ImportBatchList extends Command
 {
@@ -38,6 +58,10 @@ class ImportBatchList extends Command
      * Tables emptied by --truncate-data. EXCLUDES users, roles, permissions,
      * model_has_roles, the lookup vocabularies, repositories and custom-field
      * DEFINITIONS — re-importing data must never disturb accounts or config.
+     *
+     * `authorities` and `series` are NOT truncated: the aligned path never
+     * re-creates authorities (it links match-only), and series are
+     * firstOrCreate'd by the bootstrap pre-pass — both are master data now.
      * Order is irrelevant (FK checks are disabled around the truncate).
      *
      * @var array<int, string>
@@ -47,24 +71,20 @@ class ImportBatchList extends Command
         'document_location_history', 'document_barcode_history',
         'document_identifier_history', 'box_barcode_history', 'box_seal_number_history',
         'custom_field_values',
-        'documents', 'boxes', 'accessions', 'batches', 'series', 'authorities',
+        'documents', 'boxes', 'accessions', 'batches',
     ];
 
     protected $signature = 'nra:import-batch-list
-        {--file= : Path to the New_BATCH_LIST xlsx}
+        {--file= : Path to the New_BATCH_LIST xlsx/csv}
         {--sheet=BATCH_LIST : Worksheet name}
         {--limit=0 : Import at most N data rows (0 = all)}
-        {--dry-run : Roll everything back at the end and print a field-level spot check}
-        {--truncate-data : Empty ONLY the data tables (documents/boxes/batches/accessions/series/authorities + pivots/history) before importing — NEVER touches users, roles, permissions or lookups}
-        {--repo=NRA : Repository code to attach rows to}';
+        {--dry-run : Roll everything back at the end (use with --limit)}
+        {--truncate-data : Empty ONLY the data tables (documents/boxes/batches/accessions + pivots/history) before importing — NEVER touches users, roles, permissions, lookups, authorities or series}
+        {--repo=NRA : Repository code to attach rows to}
+        {--user= : Email of the user to attribute the import to (default: first super_admin)}
+        {--force : Skip the --truncate-data confirmation prompt (for automation)}';
 
-    protected $description = 'Header-driven import of the NAF New_BATCH_LIST workbook (Wizard-consistent column mapping).';
-
-    /** @var array<string, int> */
-    private array $idx = [];
-
-    /** @var array<string, array<int, int>> */
-    private array $idxAll = [];
+    protected $description = 'Bulk import of the NAF New_BATCH_LIST workbook — delegates every row through DocumentImporter (no drift with the wizard).';
 
     public function handle(): int
     {
@@ -72,10 +92,15 @@ class ImportBatchList extends Command
 
         // Bulk import: do not push every row to the search index synchronously
         // (Scout's per-model save hook would dominate the runtime for 26k rows).
-        // The CLI process exits afterwards, so disabling for its lifetime is safe;
-        // run `scout:import` separately to (re)build the index when needed.
+        // Rebuild the index afterwards with `scout:import`.
         Document::disableSearchSyncing();
         Authority::disableSearchSyncing();
+
+        // Start from a clean FK-resolution memo. A no-op in production (the
+        // command is a fresh process), but essential when the process is reused
+        // (e.g. the test suite): a stale memo would map a code to an id from a
+        // previous DB state.
+        EntityResolver::flushMemo();
 
         $file = $this->option('file')
             ?: base_path('nra/inbox/2026-06-22_NAF_New_BATCH_LIST_04_06_26_sample.xlsx');
@@ -92,200 +117,120 @@ class ImportBatchList extends Command
             return self::FAILURE;
         }
 
-        $sheetName = (string) $this->option('sheet');
-        $header = $this->readHeader($file, $sheetName);
-        $this->idx = BatchListColumnMap::resolve($header);
-        $this->idxAll = BatchListColumnMap::resolveAll($header);
+        $user = $this->resolveUser();
+        if ($user === null) {
+            $this->error('No user to attribute the import to — pass --user=<email> or seed a super_admin.');
 
-        $missing = array_diff(array_keys(BatchListColumnMap::FIELDS), array_keys($this->idx));
-        $this->info('Resolved ' . count($this->idx) . '/' . count(BatchListColumnMap::FIELDS) . ' columns by header.');
-        if ($missing !== []) {
-            $this->warn('Columns not present in this file (ignored): ' . implode(', ', $missing));
+            return self::FAILURE;
         }
 
+        // In-memory ONLY default-repository override so resolveRecord() scopes to
+        // the requested repository. NEVER persist a change to a user record.
+        if ((int) $user->default_repository_id !== (int) $repo->id) {
+            $user->setAttribute('default_repository_id', $repo->id);
+        }
+
+        $sheetName = (string) $this->option('sheet');
         $limit = (int) $this->option('limit');
         $dry = (bool) $this->option('dry-run');
 
-        // Optional selective wipe of the DATA tables only. Never in dry-run.
-        // Guarded by a confirmation unless --no-interaction (CI/automation).
-        if ($this->option('truncate-data') && ! $dry) {
-            $this->warn('--truncate-data will EMPTY: ' . implode(', ', self::DATA_TABLES));
-            $this->info('It will NOT touch: users, roles, permissions, lookups, repositories.');
-            if ($this->input->isInteractive() && ! $this->confirm('Proceed with truncating the data tables?', false)) {
-                $this->info('Aborted — nothing truncated, nothing imported.');
+        // Header → deduped keys (same scheme the streaming job uses).
+        $rawHeader = $this->readHeader($file, $sheetName);
+        $dedupedHeaders = SpreadsheetHeaders::dedupe($rawHeader);
 
-                return self::SUCCESS;
-            }
-            $this->truncateDataTables();
-            $this->info('Data tables truncated (accounts and lookups preserved).');
-        }
-
-        $batches = [];
-        $series = [];
-        $boxes = [];
-        $authorities = [];
-        $count = 0;
-        $skipped = 0;
-        $failed = 0;
-        $errSamples = [];
-        $spot = [];
-
-        DB::disableQueryLog();
-        // Real import runs in autocommit so one bad row can't roll back the rest;
-        // dry-run wraps everything in a single transaction it rolls back at the end.
-        if ($dry) {
-            DB::beginTransaction();
-        }
+        // Authenticate BEFORE building the importer / guessing the column map:
+        // getColumns() reads the active repository's custom-field definitions,
+        // and resolveRecord() reads the acting user's default_repository_id.
+        auth()->setUser($user);
 
         try {
-            foreach ($this->rowWindows($file, $sheetName, $limit) as $row) {
+            $columnMap = array_filter(
+                ImportWizard::guessColumnMap(DocumentImporter::class, $dedupedHeaders),
+                static fn ($v): bool => $v !== null && $v !== '',
+            );
+            ImportWizard::logUnrecognisedHeaders(
+                DocumentImporter::class,
+                $dedupedHeaders,
+                $columnMap,
+                'nra:import-batch-list',
+            );
+
+            $this->info('Mapped ' . count($columnMap) . ' importer columns from ' . count($dedupedHeaders) . ' headers.');
+
+            // Optional selective wipe of the DATA tables only. Never in dry-run.
+            if ($this->option('truncate-data') && ! $dry) {
+                $this->warn('--truncate-data will EMPTY: ' . implode(', ', self::DATA_TABLES));
+                $this->info('It will NOT touch: users, roles, permissions, lookups, repositories, authorities, series.');
+                $bypass = (bool) $this->option('force') || ! $this->input->isInteractive();
+                if (! $bypass && ! $this->confirm('Proceed with truncating the data tables?', false)) {
+                    $this->info('Aborted — nothing truncated, nothing imported.');
+
+                    return self::SUCCESS;
+                }
+                $this->truncateDataTables();
+                $this->info('Data tables truncated (accounts, lookups, authorities and series preserved).');
+            }
+
+            // Series bootstrap: the importer resolves Series match-only, so the
+            // distinct Series codes must exist before the run. Permissive — the
+            // console's original semantics, INCLUDING a literal 'Unknown'.
+            $created = $this->bootstrapSeries($file, $sheetName, $dedupedHeaders, $columnMap, (int) $repo->id, $limit);
+            if ($created > 0) {
+                $this->info("Bootstrapped {$created} new Series.");
+            }
+
+            // Persisted Import model — required by LogsImportRows (audit
+            // attribution) and by the legacy movement/history builders
+            // (user_id = $this->import->user).
+            $import = new Import;
+            $import->user()->associate($user);
+            $import->file_name = basename($file);
+            $import->file_path = $file;
+            $import->importer = DocumentImporter::class;
+            $import->processed_rows = 0;
+            $import->successful_rows = 0;
+            $import->total_rows = 0;
+            $import->save();
+
+            DB::disableQueryLog();
+
+            // Real import runs in autocommit so one bad row can't roll back the
+            // rest; dry-run wraps everything in a single transaction it rolls
+            // back at the end. $baseTx is the level a failed row unwinds to.
+            if ($dry) {
+                DB::beginTransaction();
+            }
+            $baseTx = DB::transactionLevel();
+
+            $ok = 0;
+            $failed = 0;
+            $errSamples = [];
+
+            foreach ($this->rowWindows($file, $sheetName, $limit) as $absRow => $rawRow) {
+                $rowArray = $this->buildRowArray($dedupedHeaders, $rawRow, (int) $absRow);
+
                 try {
-                    $r = $this->mapRow($row);
-
-                    $seriesCode = $this->seriesCode($r['series']);
-                    $identifier = $this->numLike($r['identifier']);
-                    if ($seriesCode === '' && $identifier === '' && $this->str($r['catalogue_identifier']) === '') {
-                        $skipped++;
-
-                        continue;
-                    }
-
-                    // Series (required, NOT NULL on documents).
-                    if ($seriesCode === '') {
-                        $skipped++;
-
-                        continue;
-                    }
-                    $seriesModel = $series[$seriesCode] ??= Series::firstOrCreate(
-                        ['code' => $seriesCode],
-                        ['title' => $seriesCode, 'is_wills_series' => str_contains(strtolower($seriesCode), 'wl'), 'is_active' => true, 'repository_id' => $repo->id],
-                    );
-
-                    // Batch.
-                    $batch = null;
-                    $batchNo = $this->parseInt($r['batch_number']);
-                    if ($batchNo !== null && ! in_array($batchNo, Batch::FORBIDDEN_NUMBERS, true)) {
-                        $batch = $batches[$batchNo] ??= Batch::firstOrCreate(
-                            ['batch_number' => $batchNo],
-                            [
-                                'description' => "Imported batch {$batchNo}",
-                                'type' => $batchNo >= 30 ? 'NOTARY_ACCESSION' : 'MAIN_COLLECTION',
-                                'repository_id' => $repo->id,
-                            ],
-                        );
-                    }
-
-                    // Box. A box's physical identity is its (globally-unique) barcode,
-                    // so when a barcode is present we dedup on it — the same barcode on
-                    // several document rows is ONE box. Only barcode-less rows fall back
-                    // to (batch, box_number). BATCH_LIST boxes are structurally RAS.
-                    $box = null;
-                    $boxNo = $this->numLike($r['box_number']);
-                    $barcode = $this->firstBarcode($row);
-                    if ($barcode !== '') {
-                        $box = $boxes['bc|' . $barcode] ??= Box::firstOrCreate(
-                            ['barcode' => $barcode],
-                            [
-                                'box_number' => $boxNo ?: '1',
-                                'batch_id' => $batch?->id,
-                                'box_type' => 'RAS',
-                                'barcode_status' => 'IN',
-                                'seal_number' => $this->str($r['seal_number']) ?: null,
-                            ],
-                        );
-                    } elseif ($batch !== null && $boxNo !== '') {
-                        $box = $boxes["bb|{$batch->id}|{$boxNo}"] ??= Box::firstOrCreate(
-                            ['box_number' => $boxNo, 'batch_id' => $batch->id],
-                            [
-                                'box_type' => 'RAS',
-                                'barcode_status' => 'IN',
-                                'seal_number' => $this->str($r['seal_number']) ?: null,
-                            ],
-                        );
-                    }
-
-                    // Accession (rare in this file, but supported).
-                    $accession = null;
-                    $accCode = $this->str($r['accession']);
-                    if ($accCode !== '') {
-                        $accession = Accession::firstOrCreate(['code' => $accCode], ['repository_id' => $repo->id]);
-                        if ($batch !== null) {
-                            $accession->batches()->syncWithoutDetaching([$batch->id]);
-                        }
-                    }
-
-                    [$ys, $ye] = $this->parseYearRange($this->str($r['dates']));
-                    $disinfest = $this->firstDisinfestation($row);
-
-                    $doc = new Document([
-                        'identifier' => $identifier ?: ($this->str($r['catalogue_identifier']) ?: 'AUTO-' . ($count + 2)),
-                        'document_type' => $this->str($r['document_type']) ?: null,
-                        'series_id' => $seriesModel->id,
-                        'accession_id' => $accession?->id,
-                        'current_box_id' => $box?->id,
-                        'batch_id' => $batch?->id,
-                        'repository_id' => $repo->id,
-                        'volume_number' => $this->numLike($r['volume_number']) ?: null,
-                        'part_number' => $this->str($r['part_number']) ?: null,
-                        'dates' => $this->str($r['dates']) ?: null,
-                        'dates_year_start' => $ys,
-                        'dates_year_end' => $ye,
-                        'deeds' => $this->str($r['deeds']) ?: null,
-                        'practice' => $this->str($r['practice']) ?: null,
-                        'current_box_type' => $this->normaliseBoxType($this->str($r['current_box_type'])),
-                        'disinfestation_date' => $disinfest,
-                        'catalogue_identifier' => $this->str($r['catalogue_identifier']) ?: null,
-                        'nra_location' => $this->str($r['nra_location']) ?: null,
-                        'museum_location' => $this->str($r['museum_location']) ?: null,
-                        'digitised' => $this->normaliseDigitised($this->str($r['digitised'])),
-                        'torre' => $this->str($r['torre']) !== '',
-                        'object_reference_number' => $this->str($r['object_reference_number']) ?: null,
-                        'tracking' => $this->str($r['tracking']) ?: null,
-                        'museum_reference' => $this->str($r['museum_reference']) ?: null,
-                        'notes' => $this->str($r['note']) ?: null,
-                        'extra' => [
-                            'legacy_creator_text' => $this->str($r['creator']),
-                            'accession_type' => $this->str($r['accession_type']),       // NAF "Type"
-                            'prev_identifier' => $this->str($r['prev_identifier']),
-                            'prev_volume' => $this->str($r['prev_volume']),
-                            'citation_reference' => $this->str($r['citation_reference']),
-                        ],
-                    ]);
-                    $doc->save();
-
-                    // Authority: the legacy "Actual Identifier" number maps 1:1 to
-                    // "R<num>". Create it from the Creator name when it does not yet
-                    // exist (this workbook has no separate Authorities sheet), so the
-                    // notary link is populated end-to-end.
-                    if ($identifier !== '' && ctype_digit($identifier)) {
-                        $authId = 'R' . $identifier;
-                        $authority = $authorities[$authId] ??= $this->resolveAuthority($authId, $this->str($r['creator']));
-                        $doc->authorities()->syncWithoutDetaching([$authority->id => ['is_primary' => true]]);
-                    }
-
-                    if ($count < 8) {
-                        $spot[] = sprintf(
-                            'id=%s series=%s docType=%s vol=%s batch=%s box=%s notary=%s',
-                            $doc->identifier,
-                            $seriesCode,
-                            $doc->document_type ?? '—',
-                            $doc->volume_number ?? '—',
-                            $batchNo ?? '—',
-                            $boxNo ?: '—',
-                            $this->str($r['creator']) ?: '—',
-                        );
-                    }
-
-                    $count++;
-                    if ($count % 1000 === 0) {
-                        $this->info("  … {$count} documents");
-                    }
-                } catch (\Throwable $rowErr) {
-                    // Real NAF data is messy — skip the bad row, keep going.
+                    // Fresh importer PER ROW: the importer keeps per-instance
+                    // transactional state (an open per-row savepoint flag). After
+                    // a failure we unwind the DB to $baseTx here; a fresh instance
+                    // guarantees that stale flag never double-rolls the next row.
+                    $importer = $import->getImporter($columnMap, ['skip_duplicates' => false]);
+                    $importer($rowArray);
+                    $ok++;
+                } catch (RowImportFailedException|ValidationException $rowErr) {
                     $failed++;
-                    if (count($errSamples) < 8) {
-                        $errSamples[] = substr($rowErr->getMessage(), 0, 160);
+                    if (count($errSamples) < 10) {
+                        $errSamples[] = 'row ' . $absRow . ': ' . substr($this->rowErrorMessage($rowErr), 0, 160);
                     }
+                    // Unwind any half-open per-row savepoint back to the base
+                    // level so the next row starts clean.
+                    while (DB::transactionLevel() > $baseTx) {
+                        DB::rollBack();
+                    }
+                }
+
+                if (($ok + $failed) % 1000 === 0) {
+                    $this->info('  … ' . ($ok + $failed) . " rows ({$ok} ok, {$failed} failed)");
                 }
             }
 
@@ -293,18 +238,136 @@ class ImportBatchList extends Command
                 DB::rollBack();
                 $this->warn('DRY RUN — all changes rolled back.');
             }
+
+            $this->printSummary($ok, $failed, $errSamples, $dry);
+
+            return self::SUCCESS;
         } catch (\Throwable $throwable) {
-            if ($dry) {
+            while (DB::transactionLevel() > 0) {
                 DB::rollBack();
             }
             $this->error('Import aborted: ' . $throwable->getMessage());
             $this->line($throwable->getFile() . ':' . $throwable->getLine());
 
             return self::FAILURE;
+        } finally {
+            auth()->forgetGuards();
+        }
+    }
+
+    /* ── Attribution ─────────────────────────────────────────────────────── */
+
+    private function resolveUser(): ?User
+    {
+        $email = $this->option('user');
+        if ($email !== null && $email !== '') {
+            return User::query()->where('email', $email)->first();
         }
 
+        return User::query()
+            ->whereHas('roles', fn ($q) => $q->where('name', 'super_admin'))
+            ->orderBy('id')
+            ->first();
+    }
+
+    /* ── Series bootstrap ────────────────────────────────────────────────── */
+
+    /**
+     * First cheap pass: firstOrCreate a Series for every DISTINCT non-empty
+     * value in the Series column. Permissive by design (the importer resolves
+     * Series match-only and would otherwise fail the row) — 'Unknown' included.
+     *
+     * @param array<int, string> $dedupedHeaders
+     * @param array<string, string> $columnMap importer field => header
+     * @return int number of Series created
+     */
+    private function bootstrapSeries(string $file, string $sheet, array $dedupedHeaders, array $columnMap, int $repositoryId, int $limit): int
+    {
+        $seriesHeader = $columnMap['series'] ?? null;
+        if ($seriesHeader === null) {
+            return 0;
+        }
+        $pos = array_search($seriesHeader, $dedupedHeaders, true);
+        if ($pos === false) {
+            return 0;
+        }
+
+        $codes = [];
+        foreach ($this->rowWindows($file, $sheet, $limit) as $rawRow) {
+            $code = $this->seriesCode($rawRow[$pos] ?? null);
+            if ($code !== '') {
+                $codes[$code] = true;
+            }
+        }
+
+        $created = 0;
+        foreach (array_keys($codes) as $code) {
+            $series = Series::firstOrCreate(
+                ['code' => $code],
+                [
+                    'title' => $code,
+                    'is_wills_series' => str_contains(strtolower($code), 'wl'),
+                    'is_active' => true,
+                    'repository_id' => $repositoryId,
+                ],
+            );
+            if ($series->wasRecentlyCreated) {
+                $created++;
+            }
+        }
+
+        return $created;
+    }
+
+    /* ── Row assembly ────────────────────────────────────────────────────── */
+
+    /**
+     * Turn a positional raw row into the `[dedupedHeader => cell]` array the
+     * importer expects, normalising Excel float artefacts on EVERY cell and
+     * injecting the ABSOLUTE source-row key (same key the streaming reader uses,
+     * so a blank-identifier row's auto id keys on the absolute position).
+     *
+     * @param array<int, string> $dedupedHeaders
+     * @param array<int, mixed> $rawRow
+     * @return array<string, mixed>
+     */
+    private function buildRowArray(array $dedupedHeaders, array $rawRow, int $absRow): array
+    {
+        $out = [];
+        foreach ($dedupedHeaders as $pos => $key) {
+            $out[$key] = $this->normaliseCell($rawRow[$pos] ?? null);
+        }
+        $out[SpreadsheetHeaders::SOURCE_ROW_KEY] = (string) $absRow;
+
+        return $out;
+    }
+
+    /** Strip Excel float artefacts ("607.0" → "607") while keeping real text. */
+    private function normaliseCell(mixed $v): mixed
+    {
+        if ($v === null) {
+            return null;
+        }
+        $s = (string) $v;
+
+        return preg_match('/^(\d+)\.0+$/', $s, $m) === 1 ? $m[1] : $v;
+    }
+
+    private function rowErrorMessage(\Throwable $e): string
+    {
+        if ($e instanceof ValidationException) {
+            $first = collect($e->errors())->flatten()->first();
+
+            return is_string($first) ? $first : $e->getMessage();
+        }
+
+        return $e->getMessage();
+    }
+
+    private function printSummary(int $ok, int $failed, array $errSamples, bool $dry): void
+    {
         $this->newLine();
-        $this->info("Imported {$count} documents, skipped {$skipped} (empty), failed {$failed} (row errors)." . ($dry ? ' (rolled back)' : ''));
+        $this->info("Imported {$ok} rows, failed {$failed}." . ($dry ? ' (rolled back)' : ''));
         if ($errSamples !== []) {
             $this->newLine();
             $this->warn('Sample row errors:');
@@ -312,13 +375,11 @@ class ImportBatchList extends Command
                 $this->line('  • ' . $s);
             }
         }
-        $this->newLine();
-        $this->line('Field-level spot check (first rows):');
-        foreach ($spot as $s) {
-            $this->line('  ' . $s);
+        if (! $dry) {
+            $this->newLine();
+            $this->warn('The search index is STALE after a no-sync import. Rebuild it with:');
+            $this->line('  php artisan scout:import "App\\Models\\Document"');
         }
-
-        return self::SUCCESS;
     }
 
     /* ── Selective wipe ──────────────────────────────────────────────────── */
@@ -377,7 +438,9 @@ class ImportBatchList extends Command
     }
 
     /**
-     * Yield data rows (0-based arrays) in memory-safe windows.
+     * Yield data rows (0-based positional arrays) in memory-safe windows, KEYED
+     * by their ABSOLUTE 1-based sheet row number (header = row 1, first data =
+     * row 2). Blank rows are skipped but still consume a row number.
      *
      * @return \Generator<int, array<int, mixed>>
      */
@@ -389,13 +452,15 @@ class ImportBatchList extends Command
             if ($fh === false) {
                 return;
             }
-            fgetcsv($fh, escape: '\\'); // skip header
+            fgetcsv($fh, escape: '\\'); // skip header (row 1)
+            $lineNo = 1;
             $emitted = 0;
             while (($row = fgetcsv($fh, escape: '\\')) !== false) {
+                $lineNo++;
                 if ($this->isBlank($row)) {
                     continue;
                 }
-                yield $row;
+                yield $lineNo => $row;
                 $emitted++;
                 if ($limit > 0 && $emitted >= $limit) {
                     break;
@@ -441,62 +506,20 @@ class ImportBatchList extends Command
             $rows = $ws->rangeToArray('A' . $start . ':BC' . $end, null, false, false, false);
             unset($ws);
 
+            $rowNo = $start;
             foreach ($rows as $row) {
-                if ($this->isBlank($row)) {
-                    continue;
+                if (! $this->isBlank($row)) {
+                    yield $rowNo => $row;
+                    $emitted++;
+                    if ($limit > 0 && $emitted >= $limit) {
+                        return;
+                    }
                 }
-                yield $row;
-                $emitted++;
-                if ($limit > 0 && $emitted >= $limit) {
-                    return;
-                }
+                $rowNo++;
             }
 
             $start = $end + 1;
         }
-    }
-
-    /* ── Row mapping ─────────────────────────────────────────────────────── */
-
-    /**
-     * @param array<int, mixed> $row
-     * @return array<string, mixed>
-     */
-    private function mapRow(array $row): array
-    {
-        $out = [];
-        foreach (array_keys(BatchListColumnMap::FIELDS) as $field) {
-            $i = $this->idx[$field] ?? null;
-            $out[$field] = $i !== null ? ($row[$i] ?? null) : null;
-        }
-
-        return $out;
-    }
-
-    /** @param array<int, mixed> $row */
-    private function firstBarcode(array $row): string
-    {
-        foreach ($this->idxAll['barcode_in'] ?? [] as $i) {
-            $v = $this->str($row[$i] ?? null);
-            if ($v !== '') {
-                return $v;
-            }
-        }
-
-        return '';
-    }
-
-    /** @param array<int, mixed> $row */
-    private function firstDisinfestation(array $row): ?string
-    {
-        foreach ($this->idxAll['disinfestation_date'] ?? [] as $i) {
-            $d = $this->parseDate($row[$i] ?? null);
-            if ($d !== null) {
-                return $d;
-            }
-        }
-
-        return null;
     }
 
     /* ── Value helpers ───────────────────────────────────────────────────── */
@@ -504,43 +527,6 @@ class ImportBatchList extends Command
     private function str(mixed $v): string
     {
         return trim((string) ($v ?? ''));
-    }
-
-    /** Strip Excel float artefacts ("574.0" → "574") while keeping real text. */
-    private function numLike(mixed $v): string
-    {
-        $s = $this->str($v);
-        if ($s !== '' && preg_match('/^(\d+)\.0+$/', $s, $m)) {
-            return $m[1];
-        }
-
-        return $s;
-    }
-
-    /**
-     * Find or create the notary Authority for an "R<num>" identifier, naming it
-     * from the free-text Creator ("Edwina Brincat" → given "Edwina", surname
-     * "Brincat"). Default entity type Notary (NAF spec). "Unknown" → no name.
-     */
-    private function resolveAuthority(string $identifier, string $creator): Authority
-    {
-        $given = null;
-        $surname = $identifier;
-        $name = trim($creator);
-        if ($name !== '' && strcasecmp($name, 'Unknown') !== 0) {
-            $parts = preg_split('/\s+/', $name) ?: [];
-            if (count($parts) === 1) {
-                $surname = $parts[0];
-            } else {
-                $given = array_shift($parts);
-                $surname = implode(' ', $parts);
-            }
-        }
-
-        return Authority::firstOrCreate(
-            ['identifier' => $identifier],
-            ['surname' => $surname, 'given_names' => $given, 'entity_type' => 'Notary'],
-        );
     }
 
     private function seriesCode(mixed $v): string
@@ -553,76 +539,9 @@ class ImportBatchList extends Command
         return substr(trim(explode(':', $s, 2)[0]), 0, 16);
     }
 
-    private function normaliseBoxType(string $v): ?string
-    {
-        if ($v === '') {
-            return null;
-        }
-
-        return str_contains(strtolower($v), 'ras') ? 'RAS Box'
-            : (str_contains(strtolower($v), 'big') ? 'Big Brown Box'
-                : (str_contains(strtolower($v), 'small') ? 'Small Brown Box' : null));
-    }
-
-    private function normaliseDigitised(string $v): ?string
-    {
-        $v = strtolower($v);
-        if ($v === '') {
-            return null;
-        }
-
-        return str_contains($v, 'vhmml') ? 'VHMML' : (str_contains($v, 'nra') ? 'NRA' : 'none');
-    }
-
     /** @param array<int, mixed> $row */
     private function isBlank(array $row): bool
     {
         return array_all($row, fn ($c) => ! ($c !== null && trim((string) $c) !== ''));
-    }
-
-    private function parseInt(mixed $v): ?int
-    {
-        $s = $this->str($v);
-        if ($s === '') {
-            return null;
-        }
-        if (is_numeric($s)) {
-            return (int) $s;
-        }
-
-        return preg_match('/^\s*(\d+)/', $s, $m) ? (int) $m[1] : null;
-    }
-
-    private function parseDate(mixed $v): ?string
-    {
-        if ($v === null || $v === '') {
-            return null;
-        }
-        if (is_numeric($v)) {
-            try {
-                return ExcelDate::excelToDateTimeObject((float) $v)->format('Y-m-d');
-            } catch (\Throwable) {
-                return null;
-            }
-        }
-        $ts = strtotime((string) $v);
-
-        return $ts ? date('Y-m-d', $ts) : null;
-    }
-
-    /** @return array{0: int|null, 1: int|null} */
-    private function parseYearRange(?string $s): array
-    {
-        if (! $s) {
-            return [null, null];
-        }
-        if (preg_match('/(\d{4})\s*[-–]\s*(\d{4})/', $s, $m)) {
-            return [(int) $m[1], (int) $m[2]];
-        }
-        if (preg_match('/(\d{4})/', $s, $m)) {
-            return [(int) $m[1], (int) $m[1]];
-        }
-
-        return [null, null];
     }
 }

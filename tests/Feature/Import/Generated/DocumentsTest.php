@@ -675,7 +675,7 @@ test('batch_number auto-creates the missing batch inside the resolved repository
         ->and($batch->type)->toBe('MAIN_COLLECTION');
 });
 
-test('a forbidden batch number (34) is rejected with a clear message; no batch or document is created', function () {
+test('a forbidden batch number (34) DEGRADES the row (null batch_id + note) instead of failing; no forbidden batch is created', function () {
     $repo = Repository::factory()->create(['code' => 'DGT2']);
     dgt_series('REG');
     $u = dgt_admin($repo->id);
@@ -684,18 +684,23 @@ test('a forbidden batch number (34) is rejected with a clear message; no batch o
     // Real Catalogue Identifier (R47/001); RAS Batch 1 mutated to the
     // forbidden number — no real row ever carries a forbidden batch (RFQ
     // App.1 #1 is enforced upstream of the client's own workflow), so this
-    // single cell is the deliberate edge-case override.
+    // single cell is the deliberate edge-case override. RFQ App.1 #1 forbids
+    // ALLOCATION into it; no allocation happens, so the row now DEGRADES
+    // gracefully (bulk-import alignment 2026-08) rather than failing outright.
     $import = dgt_run(
         [array_merge(DGT_ROW_R47_001, ['RAS Batch 1' => '34'])],
         ['series' => 'Series', 'catalogue_identifier' => 'Catalogue Identifier', 'batch_number' => 'RAS Batch 1'],
         $u->id,
     );
 
-    $failures = dgt_failures($import);
-    expect($failures)->toHaveCount(1)
-        ->and(strtolower($failures[0]))->toContain('reserved');
-    expect(Batch::withoutGlobalScope(RepositoryScope::class)->where('batch_number', 34)->exists())->toBeFalse()
-        ->and(Document::withoutGlobalScope(RepositoryScope::class)->where('catalogue_identifier', 'R47/001')->exists())->toBeFalse();
+    // The row succeeds (no failure) but is NOT linked to the forbidden batch.
+    expect(dgt_failures($import))->toBe([]);
+    expect(Batch::withoutGlobalScope(RepositoryScope::class)->where('batch_number', 34)->exists())->toBeFalse();
+    $doc = Document::withoutGlobalScope(RepositoryScope::class)->where('catalogue_identifier', 'R47/001')->first();
+    expect($doc)->not->toBeNull()
+        ->and($doc->batch_id)->toBeNull()
+        ->and($doc->ras_batch_1)->toBe('34')
+        ->and($doc->extra['batch_import_note'] ?? null)->toBe('reserved batch 34 — not linked');
 });
 
 test('REGRESSION (bug #13): a soft-deleted batch sharing (batch_number, repository_id) is RESTORED on re-import, not collided', function () {
@@ -922,7 +927,7 @@ test('PERM_OUT status WITH a disinfestation_date succeeds and mirrors onto the c
 //  torre — NOT NULL rejection of the (overwhelmingly common) blank cell
 // ════════════════════════════════════════════════════════════════════════
 
-test('a blank "Torre" cell fails the row with "fill that column", even though the DB column defaults to false', function () {
+test('a blank "Torre" cell no longer fails the row — ignoreBlankState() keeps the DB default (false)', function () {
     dgt_series('REG');
     $u = dgt_admin();
     $this->actingAs($u);
@@ -936,16 +941,14 @@ test('a blank "Torre" cell fails the row with "fill that column", even though th
         $u->id,
     );
 
-    $failures = dgt_failures($import);
-    // Confirmed BUG: `torre` ImportColumn has no ->ignoreBlankState() and no
-    // fillRecordUsing() override, so a blank cell casts to `null`
-    // (ImportColumn::castStateItem() returns null for any blank() state
-    // BEFORE the ->boolean() cast even runs) and gets written verbatim onto
-    // the model — overriding the schema's `->default(false)` and hitting
-    // the `torre` NOT NULL constraint on every single ordinary row.
-    expect($failures)->toHaveCount(1)
-        ->and(strtolower($failures[0]))->toContain('torre');
-    expect(Document::withoutGlobalScope(RepositoryScope::class)->where('catalogue_identifier', 'R642/001')->exists())->toBeFalse();
+    // FIXED: `torre` now has ->ignoreBlankState(), so a blank cell is SKIPPED
+    // during fill (Importer::fillRecord() honours isBlankStateIgnored) and the
+    // schema's ->default(false) stands instead of writing null into the NOT NULL
+    // column. The ordinary blank-Torre row imports cleanly.
+    expect(dgt_failures($import))->toBe([]);
+    $doc = Document::withoutGlobalScope(RepositoryScope::class)->where('catalogue_identifier', 'R642/001')->first();
+    expect($doc)->not->toBeNull()
+        ->and((bool) $doc->torre)->toBeFalse();
 });
 
 // ════════════════════════════════════════════════════════════════════════
@@ -961,13 +964,15 @@ test("a row that fails inside saveRecord() leaks DocumentImporter's per-row save
     // Baseline: RefreshDatabase wraps this test in exactly ONE transaction.
     expect(DB::transactionLevel())->toBe(1);
 
-    // Trigger ANY genuine saveRecord()-level failure (the "torre" NOT NULL
-    // bug above is a convenient, real, reproducible one — the mechanism
-    // below is independent of Torre specifically). Real row: the shipped
-    // example's Torre cell is genuinely blank, same as the test above.
+    // Trigger ANY genuine saveRecord()-level failure. A row whose Series column
+    // is MAPPED but BLANK passes mapping/validation (mapping is present; no
+    // value rule), leaves series_id null, then fails at $record->save() on the
+    // NOT NULL series_id FK — a clean, reproducible saveRecord()-level error
+    // (the mechanism below is independent of which column triggers it; the old
+    // blank-Torre trigger was fixed by ignoreBlankState()).
     $import = dgt_run(
-        [DGT_EXAMPLE_ROW],
-        ['series' => 'Series', 'catalogue_identifier' => 'Catalogue Identifier', 'torre' => 'Torre'],
+        [array_merge(DGT_EXAMPLE_ROW, ['Series' => ''])],
+        ['series' => 'Series', 'catalogue_identifier' => 'Catalogue Identifier'],
         $u->id,
     );
     expect(dgt_failures($import))->toHaveCount(1);

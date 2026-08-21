@@ -16,7 +16,6 @@ use Filament\Actions\Imports\Exceptions\RowImportFailedException;
 use Filament\Actions\Imports\Importer;
 use Filament\Actions\Imports\Models\Import;
 use Illuminate\Foundation\Testing\RefreshDatabase;
-use Illuminate\Validation\ValidationException;
 use Spatie\Permission\Models\Role;
 
 /**
@@ -136,28 +135,31 @@ test('B5: importing a document with an unknown Batch and Box CREATES both and li
         ->and($box->batch_id)->toBe($batch->id);
 });
 
-test('B5: create-if-absent still refuses a forbidden batch number (A1.1) and never creates it', function () {
+test('B5: create-if-absent DEGRADES a forbidden batch number (A1.1) — never creates it, never allocates it', function () {
     $repo = ait_repo();
     $u = ait_makeAdmin($repo->id);
     $this->actingAs($u);
     ait_series('REG');
 
-    try {
-        ait_runDocImporter([
-            'identifier' => 'DOC-FORBID-1',
-            'series' => 'REG',
-            'batch_number' => 34, // forbidden
-            'current_box_number' => '5',
-        ], $u->id);
-        $this->fail('Expected the forbidden batch to be rejected.');
-    } catch (ValidationException|RowImportFailedException) {
-        // either surface is acceptable — the point is the row fails.
-    }
+    // RFQ App.1 #1 forbids ALLOCATION into a forbidden batch. No allocation
+    // happens, so the row DEGRADES (bulk-import alignment 2026-08): the document
+    // imports with batch_id null + a note, and the forbidden batch is never
+    // created. (Previously the whole row failed.)
+    ait_runDocImporter([
+        'identifier' => 'DOC-FORBID-1',
+        'series' => 'REG',
+        'batch_number' => 34, // forbidden
+        'current_box_number' => '5',
+    ], $u->id);
 
     expect(Batch::withoutGlobalScope(RepositoryScope::class)->where('batch_number', 34)->exists())->toBeFalse();
-    expect(
-        Document::withoutGlobalScope(RepositoryScope::class)->where('identifier', 'DOC-FORBID-1')->exists()
-    )->toBeFalse();
+
+    $doc = Document::withoutGlobalScope(RepositoryScope::class)->where('identifier', 'DOC-FORBID-1')->first();
+    expect($doc)->not->toBeNull()
+        ->and($doc->batch_id)->toBeNull()                                  // never allocated
+        ->and($doc->current_box_id)->toBeNull()                            // no batch → no box resolution
+        ->and($doc->ras_batch_1)->toBe('34')
+        ->and($doc->extra['batch_import_note'] ?? null)->toBe('reserved batch 34 — not linked');
 });
 
 /* ─── B5 consistency: document.batch must match its box's batch ──────────── */
