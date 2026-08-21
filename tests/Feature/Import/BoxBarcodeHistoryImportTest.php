@@ -845,3 +845,17 @@ it('a second box given a duplicate IN barcode fails safely; the first box is int
     expect(bch_doc('DUPB'))->toBeNull();                      // rolled back
     expect(bch_box('RAS', '801')->fresh()->barcode)->toBe('DUP123'); // first box intact
 });
+
+it('DIGITISED: an unrecognised digitised value (junk) is dropped to null, the row still imports', function () {
+    [$repo, $u] = bch_admin();
+
+    // Real data had an accession name mis-filed in the Digitised column; that
+    // must not fail the whole document row.
+    bch_import(bch_row(['Identifier' => 'DIGJUNK', 'Digitised' => 'Sam Abela Accession']), $u->id);
+    $doc = bch_doc('DIGJUNK');
+    expect($doc)->not->toBeNull()->and($doc->digitised)->toBeNull();
+
+    // A case variant is normalised to the controlled vocabulary.
+    bch_import(bch_row(['Identifier' => 'DIGOK', 'Digitised' => 'vhmml']), $u->id);
+    expect(bch_doc('DIGOK')?->digitised)->toBe('VHMML');
+});

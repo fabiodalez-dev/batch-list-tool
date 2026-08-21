@@ -1474,6 +1474,23 @@ class DocumentImporter extends Importer
             ImportColumn::make('digitised')
                 ->label('Digitised')
                 ->guess(['Digitised', 'digitised'])
+                // Normalise to the controlled vocabulary (case-insensitive):
+                // 'vhmml' → 'VHMML', 'None' → 'none'. An unrecognised value
+                // (real data: an accession name mis-filed in this column) is
+                // dropped to null rather than failing the whole document row.
+                ->castStateUsing(function (?string $state): ?string {
+                    $v = trim((string) ($state ?? ''));
+                    if ($v === '') {
+                        return null;
+                    }
+                    foreach (Document::DIGITISED_VALUES as $allowed) {
+                        if (strcasecmp($v, $allowed) === 0) {
+                            return $allowed;
+                        }
+                    }
+
+                    return null;
+                })
                 ->rules(['nullable', 'string', 'max:100']),
 
             ImportColumn::make('torre')
