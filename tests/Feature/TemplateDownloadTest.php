@@ -308,7 +308,10 @@ test('Document template preserves the duplicated provenance headers verbatim', f
     );
 
     // Contract: the multi-step provenance DUPLICATES are preserved verbatim.
-    expect(array_count_values($generated)['Barcode RAS 2'] ?? 0)->toBe(3);
+    // Block 2's first past barcode is "Barcode RAS 1" (matching the real client
+    // sheet), so "Barcode RAS 1" and "Barcode RAS 2" each appear twice.
+    expect(array_count_values($generated)['Barcode RAS 1'] ?? 0)->toBe(2);
+    expect(array_count_values($generated)['Barcode RAS 2'] ?? 0)->toBe(2);
     expect(array_count_values($generated)['Disinfestation Date'] ?? 0)->toBe(3);
     expect(array_count_values($generated)['Barcode (IN)'] ?? 0)->toBe(2);
     expect(array_count_values($generated)['Status 1'] ?? 0)->toBe(2);

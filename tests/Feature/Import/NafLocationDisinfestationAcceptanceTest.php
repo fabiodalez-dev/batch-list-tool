@@ -267,7 +267,7 @@ it('B3: a legacy box sheet with Location + Disinfestation Date still imports cle
 });
 
 it('B4: the generator version was bumped for the template contract change', function () {
-    expect(TemplateGenerator::GENERATOR_VERSION)->toBe('1.11.0');
+    expect(TemplateGenerator::GENERATOR_VERSION)->toBe('1.12.0');
 });
 
 it('B5: every generated box header still maps to a BoxImporter column (round-trip)', function () {
