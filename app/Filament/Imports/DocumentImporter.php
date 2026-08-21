@@ -426,6 +426,12 @@ class DocumentImporter extends Importer
         /** @var Document $record */
         $record = $this->record;
 
+        // Legacy bulk import loads historical truth: a document may legitimately
+        // have sat in a box that has since been DESTROYED. Let the save guard
+        // accept a destroyed (but not soft-deleted) current box for imported rows
+        // — the interactive UI stays protected (flag defaults false).
+        $record->skipDestroyedBoxGuard = true;
+
         // Client 2026-08-18 (#26): Temporary Identifier must be UNIQUE. Reject
         // the row if a DIFFERENT document already carries this value (the row's
         // own record is ignored so a re-import / overwrite doesn't self-collide).
@@ -649,6 +655,32 @@ class DocumentImporter extends Importer
     public static function peekStashedAuthorities(Document $record): array
     {
         return self::$rowAuthorityStash[spl_object_id($record)] ?? [];
+    }
+
+    /**
+     * Memory hygiene (BLOCKER 2) — empty ALL the per-row static stashes.
+     *
+     * Each stash is keyed by spl_object_id($record) and is normally drained by
+     * the row that populated it (afterFill / persistRowSideEffects unset their
+     * own key). A row that THROWS before draining leaks its entry; PHP also
+     * recycles spl_object_id values once a record is garbage-collected, so a
+     * leaked entry could later be read by a DIFFERENT row whose record happens
+     * to reuse the id — a correctness hazard, not just a leak. The bulk command
+     * calls this from its per-row catch (after unwinding savepoints) and once
+     * per window to keep the static footprint flat across a 26k-row run.
+     */
+    public static function flushRowStashes(): void
+    {
+        self::$rowAuthorityStash = [];
+        self::$rowBoxBarcodeStash = [];
+        self::$rowBoxNumberStash = [];
+        self::$rowBoxStatusStash = [];
+        self::$rowPrevIdentifierStash = [];
+        self::$rowPrevVolumeStash = [];
+        self::$rowCustomFieldStash = [];
+        self::$rowSealStash = [];
+        self::$rowRepositoryStash = [];
+        self::$rowAutoIdentifierStash = [];
     }
 
     public static function getCompletedNotificationBody(Import $import): string
@@ -1442,6 +1474,23 @@ class DocumentImporter extends Importer
             ImportColumn::make('digitised')
                 ->label('Digitised')
                 ->guess(['Digitised', 'digitised'])
+                // Normalise to the controlled vocabulary (case-insensitive):
+                // 'vhmml' → 'VHMML', 'None' → 'none'. An unrecognised value
+                // (real data: an accession name mis-filed in this column) is
+                // dropped to null rather than failing the whole document row.
+                ->castStateUsing(function (?string $state): ?string {
+                    $v = trim((string) ($state ?? ''));
+                    if ($v === '') {
+                        return null;
+                    }
+                    foreach (Document::DIGITISED_VALUES as $allowed) {
+                        if (strcasecmp($v, $allowed) === 0) {
+                            return $allowed;
+                        }
+                    }
+
+                    return null;
+                })
                 ->rules(['nullable', 'string', 'max:100']),
 
             ImportColumn::make('torre')
@@ -1723,12 +1772,18 @@ class DocumentImporter extends Importer
     /**
      * Delete-and-rebuild one block's 'legacy_import' barcode history for one box.
      *
+     * OWNERSHIP (BLOCKER 1): the box sheet owns a box's CURRENT barcode +
+     * barcode_status; the document sheet owns box barcode HISTORY. History is
+     * therefore (re)built for EVERY box — pre-existing or freshly created —
+     * while the box's CURRENT state is seeded ONLY on a box this run created.
+     *
      * SKIPS entirely (not even the delete) when the row mapped NO barcode/status
      * column for this block — a partial sheet must never wipe a fuller sheet's
      * history. Otherwise drops this box's 'legacy_import' rows (never 'recorded'
      * ones) and inserts the fresh chain (n barcodes → n-1 rows). When
      * $setBoxState is true the box's CURRENT barcode/status is also set from the
-     * chain terminal (block 2 only; block 1 is owned by applyBoxBarcodeState()).
+     * chain terminal (block 2 only; block 1 is owned by applyBoxBarcodeState()) —
+     * but only for a box THIS run created ({@see boxIsFreshThisRun()}).
      *
      * @param list<string> $mapColumns importer field names for this block
      * @param array<int, array{0: mixed, 1: mixed}> $pastPairs oldest→newest [barcode, status] cells
@@ -1765,7 +1820,11 @@ class DocumentImporter extends Importer
 
         // Set this box's CURRENT barcode/status from the chain terminal (block 2
         // only — block 1's current state is owned by applyBoxBarcodeState()).
-        if ($setBoxState && $box !== null && $chain !== []) {
+        // BLOCKER 1 — only when THIS run created the box: the box sheet owns a
+        // pre-existing box's current state; the document sheet may only seed a
+        // box it created itself. The history delete-and-rebuild below still runs
+        // for EVERY box (the document sheet always owns history).
+        if ($setBoxState && $box !== null && $chain !== [] && $this->boxIsFreshThisRun($box)) {
             $last = end($chain);
             if ($last['barcode'] !== null && (string) $box->barcode !== $last['barcode']) {
                 $box->barcode = $last['barcode'];
@@ -2042,6 +2101,13 @@ class DocumentImporter extends Importer
     /**
      * Task 8 (B4) — push the reconciled barcode status onto the BOX.
      *
+     * OWNERSHIP (BLOCKER 1): the box sheet owns a box's CURRENT barcode +
+     * barcode_status; the document sheet owns box barcode HISTORY. This method
+     * seeds a box's current state ONLY on a box THIS import run created itself
+     * ({@see boxIsFreshThisRun()}) — a pre-existing box (already owned by the
+     * box sheet) is never mutated here, which also keeps the C2.2 PERM_OUT→IN
+     * guard from firing on a box the document import does not own.
+     *
      * The box has been authoritative for barcode status since Task 7: rather
      * than writing `documents.barcode_status`, we set the value on the box and
      * let its `updated` mirror propagate to every document inside it (this
@@ -2076,6 +2142,14 @@ class DocumentImporter extends Importer
 
         $box = Box::withoutGlobalScopes()->find($record->current_box_id);
         if ($box === null) {
+            return;
+        }
+
+        // BLOCKER 1 — never overwrite a PRE-EXISTING box's current state. The box
+        // sheet owns it; the document sheet only seeds current state on a box this
+        // run created. Bailing here leaves the box's barcode, status AND the
+        // PERM_OUT disinfestation backfill untouched (the stash was drained above).
+        if (! $this->boxIsFreshThisRun($box)) {
             return;
         }
 
@@ -2147,6 +2221,29 @@ class DocumentImporter extends Importer
         // rows may lack a location); the seal write itself is unrelated to it.
         $box->skipPermOutGuard = true;
         $box->save();
+    }
+
+    /**
+     * BLOCKER 1 — true when THIS import run created the given box itself.
+     *
+     * OWNERSHIP: the BOX SHEET (BoxImporter) owns a box's CURRENT barcode +
+     * barcode_status; the DOCUMENT SHEET only ever provides box barcode
+     * HISTORY. The one exception is a box the document import created itself
+     * (an In-Situ box, or a RAS box absent from the box sheet): with no box-sheet
+     * row to own it, the document import seeds its current state.
+     *
+     * {@see $this->import} is persisted BEFORE the first row, so any box whose
+     * `created_at` is at/after the import's `created_at` was inserted during
+     * this run. Stateless and re-entrant — no per-row tracking — and correct
+     * across the wizard's chunked importers (they share one Import) and the bulk
+     * command (one Import for the whole run). Timestamps are second-precision on
+     * both sides, and a box is always created after the import within a run, so
+     * a box created in-run compares `gte` true.
+     */
+    private function boxIsFreshThisRun(Box $box): bool
+    {
+        return $box->created_at !== null
+            && $box->created_at->gte($this->import->created_at);
     }
 
     /**

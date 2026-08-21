@@ -18,6 +18,7 @@ use Filament\Actions\Imports\Models\Import;
 use Illuminate\Console\Command;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Validation\ValidationException;
+use Laravel\Telescope\Telescope;
 use PhpOffice\PhpSpreadsheet\Reader\IReadFilter;
 use PhpOffice\PhpSpreadsheet\Reader\Xlsx as XlsxReader;
 
@@ -90,6 +91,15 @@ class ImportBatchList extends Command
     {
         @ini_set('memory_limit', '3G');
 
+        // BLOCKER 2 (dominant leak) — Telescope is registered in the local env
+        // and queues every query, event and log entry in memory for the whole
+        // command. Over 26k rows that alone grows to gigabytes. Stop recording
+        // for the duration of the import (no-op when Telescope isn't installed,
+        // e.g. a --no-dev production build).
+        if (class_exists(Telescope::class)) {
+            Telescope::stopRecording();
+        }
+
         // Bulk import: do not push every row to the search index synchronously
         // (Scout's per-model save hook would dominate the runtime for 26k rows).
         // Rebuild the index afterwards with `scout:import`.
@@ -142,6 +152,10 @@ class ImportBatchList extends Command
         // getColumns() reads the active repository's custom-field definitions,
         // and resolveRecord() reads the acting user's default_repository_id.
         auth()->setUser($user);
+
+        // FAILURE VISIBILITY — opened inside the try (below), closed in finally.
+        // Declared here so finally can close it even if the run aborts mid-way.
+        $failCsv = false;
 
         try {
             $columnMap = array_filter(
@@ -204,7 +218,16 @@ class ImportBatchList extends Command
 
             $ok = 0;
             $failed = 0;
-            $errSamples = [];
+
+            // FAILURE VISIBILITY — stream every failed row to a CSV (O(1) memory)
+            // and keep a BOUNDED grouped counter in memory (keyed by exception
+            // class + a digit/quote-masked message template) for the summary.
+            $failCsvPath = storage_path('logs/import-batch-list-failures-' . date('YmdHis') . '.csv');
+            $failCsv = @fopen($failCsvPath, 'w');
+            if ($failCsv !== false) {
+                fputcsv($failCsv, ['abs_row', 'identifier', 'exception_class', 'message'], escape: '\\');
+            }
+            $errGroups = [];
 
             foreach ($this->rowWindows($file, $sheetName, $limit) as $absRow => $rawRow) {
                 $rowArray = $this->buildRowArray($dedupedHeaders, $rawRow, (int) $absRow);
@@ -219,18 +242,47 @@ class ImportBatchList extends Command
                     $ok++;
                 } catch (RowImportFailedException|ValidationException $rowErr) {
                     $failed++;
-                    if (count($errSamples) < 10) {
-                        $errSamples[] = 'row ' . $absRow . ': ' . substr($this->rowErrorMessage($rowErr), 0, 160);
+                    $message = $this->rowErrorMessage($rowErr);
+                    if ($failCsv !== false) {
+                        fputcsv(
+                            $failCsv,
+                            [$absRow, $this->rowIdentifierCell($rowArray), $rowErr::class, $message],
+                            escape: '\\',
+                        );
                     }
+                    $this->recordErrorGroup($errGroups, $rowErr::class, $message);
+
                     // Unwind any half-open per-row savepoint back to the base
                     // level so the next row starts clean.
                     while (DB::transactionLevel() > $baseTx) {
                         DB::rollBack();
                     }
+
+                    // BLOCKER 2 — a failed row never reaches persistRowSideEffects()
+                    // to drain its per-row stashes, and spl_object_id reuse would
+                    // then leak them onto a LATER row (a correctness hazard, not
+                    // just a leak). The rollback above can also destroy a batch/box
+                    // that a resolver just created AND memoised, leaving a stale id
+                    // for later rows. Flush both so the next row starts truly clean.
+                    DocumentImporter::flushRowStashes();
+                    EntityResolver::flushMemo();
                 }
 
                 if (($ok + $failed) % 1000 === 0) {
-                    $this->info('  … ' . ($ok + $failed) . " rows ({$ok} ok, {$failed} failed)");
+                    $this->info(
+                        '  … ' . ($ok + $failed) . " rows ({$ok} ok, {$failed} failed)"
+                        . ' — mem ' . $this->formatMb(memory_get_usage(true))
+                    );
+                }
+
+                // BLOCKER 2 — reclaim per-window memory: drop the FK-resolution
+                // memo (every create path is lookup-first + firstOrCreate, so a
+                // post-flush re-lookup finds the earlier-created row in the DB)
+                // and run the cycle collector. WINDOW-aligned so it costs O(1) per
+                // window, not per row.
+                if (($ok + $failed) % self::WINDOW === 0) {
+                    EntityResolver::flushMemo();
+                    gc_collect_cycles();
                 }
             }
 
@@ -239,7 +291,7 @@ class ImportBatchList extends Command
                 $this->warn('DRY RUN — all changes rolled back.');
             }
 
-            $this->printSummary($ok, $failed, $errSamples, $dry);
+            $this->printSummary($ok, $failed, $errGroups, $failCsvPath, $dry);
 
             return self::SUCCESS;
         } catch (\Throwable $throwable) {
@@ -251,6 +303,9 @@ class ImportBatchList extends Command
 
             return self::FAILURE;
         } finally {
+            if ($failCsv !== false) {
+                fclose($failCsv);
+            }
             auth()->forgetGuards();
         }
     }
@@ -364,17 +419,91 @@ class ImportBatchList extends Command
         return $e->getMessage();
     }
 
-    private function printSummary(int $ok, int $failed, array $errSamples, bool $dry): void
+    /**
+     * Identifier cell for the failure CSV: the 'Identifier' or, failing that,
+     * the 'Catalogue Identifier' header cell of the raw row, or '' when neither
+     * carries a value.
+     *
+     * @param array<string, mixed> $rowArray dedupedHeader => cell
+     */
+    private function rowIdentifierCell(array $rowArray): string
+    {
+        foreach (['Identifier', 'Catalogue Identifier'] as $header) {
+            $value = trim((string) ($rowArray[$header] ?? ''));
+            if ($value !== '') {
+                return $value;
+            }
+        }
+
+        return '';
+    }
+
+    /**
+     * Fold a raw error message into a stable TEMPLATE: quoted substrings and
+     * runs of digits are replaced with '*' so rows that differ only by an
+     * id/value/quoted-value collapse into one group.
+     */
+    private function errorTemplate(string $message): string
+    {
+        $template = preg_replace('/([\'"]).*?\1/s', '$1*$1', $message) ?? $message;
+        $template = preg_replace('/\d+/', '*', $template) ?? $template;
+
+        return mb_substr(trim($template), 0, 200);
+    }
+
+    /**
+     * Increment the bounded grouped failure counter (keyed by exception class +
+     * message template), keeping the first raw sample per group. Bounded: once
+     * a safety cap of distinct templates is reached, further novel templates are
+     * folded into a single overflow bucket so memory stays O(1) even on a
+     * pathological input with unique messages per row.
+     *
+     * @param array<string, array{count:int, class:string, template:string, sample:string}> $groups
+     */
+    private function recordErrorGroup(array &$groups, string $class, string $message): void
+    {
+        $template = $this->errorTemplate($message);
+        $key = $class . '|' . $template;
+
+        if (! isset($groups[$key]) && count($groups) >= 500) {
+            $key = $class . '|(other)';
+            $template = '(other — distinct-template cap reached)';
+        }
+
+        if (! isset($groups[$key])) {
+            $groups[$key] = ['count' => 0, 'class' => $class, 'template' => $template, 'sample' => $message];
+        }
+        $groups[$key]['count']++;
+    }
+
+    /** Human-readable "N.N MB" for a byte count. */
+    private function formatMb(int $bytes): string
+    {
+        return number_format($bytes / 1048576, 1) . ' MB';
+    }
+
+    /**
+     * @param array<string, array{count:int, class:string, template:string, sample:string}> $errGroups
+     */
+    private function printSummary(int $ok, int $failed, array $errGroups, ?string $failCsvPath, bool $dry): void
     {
         $this->newLine();
         $this->info("Imported {$ok} rows, failed {$failed}." . ($dry ? ' (rolled back)' : ''));
-        if ($errSamples !== []) {
+
+        if ($errGroups !== []) {
+            uasort($errGroups, static fn (array $a, array $b): int => $b['count'] <=> $a['count']);
             $this->newLine();
-            $this->warn('Sample row errors:');
-            foreach ($errSamples as $s) {
-                $this->line('  • ' . $s);
+            $this->warn('Failure groups (count × error template, most frequent first):');
+            foreach ($errGroups as $group) {
+                $this->line('  ' . $group['count'] . ' × ' . $group['class'] . ': ' . $group['template']);
             }
         }
+
+        if ($failCsvPath !== null) {
+            $this->newLine();
+            $this->line('Per-row failure detail (abs_row, identifier, class, message): ' . $failCsvPath);
+        }
+
         if (! $dry) {
             $this->newLine();
             $this->warn('The search index is STALE after a no-sync import. Rebuild it with:');
@@ -502,9 +631,13 @@ class ImportBatchList extends Command
                     return $row >= $this->from && $row <= $this->to;
                 }
             });
-            $ws = $reader->load($file)->getSheetByName($sheet);
+            $spreadsheet = $reader->load($file);
+            $ws = $spreadsheet->getSheetByName($sheet);
             $rows = $ws->rangeToArray('A' . $start . ':BC' . $end, null, false, false, false);
-            unset($ws);
+            // BLOCKER 2 — free PhpSpreadsheet's whole cell graph for this window
+            // before moving on; rangeToArray has already materialised the data.
+            $spreadsheet->disconnectWorksheets();
+            unset($ws, $spreadsheet);
 
             $rowNo = $start;
             foreach ($rows as $row) {
