@@ -102,6 +102,17 @@ class Document extends Model implements AuditableContract, HasMedia, Sortable
      */
     public const CUSTODY_STATUSES = ['in_box', 'not_in_box', 'mounted_no_box'];
 
+    /**
+     * Import-context bypass for the "cannot place a document in a DESTROYED box"
+     * saving guard. The guard exists to stop an OPERATOR from filing a NEW
+     * document into a box that was physically destroyed. A LEGACY BULK IMPORT,
+     * however, loads historical truth — a document legitimately used to sit in a
+     * box that has since been destroyed — so the importer sets this flag and the
+     * guard allows a destroyed (but not soft-deleted) target box. Transient,
+     * never persisted. Defaults false so the interactive UI stays protected.
+     */
+    public bool $skipDestroyedBoxGuard = false;
+
     public array $sortable = [
         'order_column_name' => 'sort_order',
         'sort_when_creating' => true,
@@ -817,7 +828,10 @@ class Document extends Model implements AuditableContract, HasMedia, Sortable
                         'current_box_id' => 'The selected box does not exist.',
                     ]);
                 }
-                if ($box->trashed() || $box->isDestroyed()) {
+                // A soft-deleted (trashed) box is always rejected. A DESTROYED
+                // box is rejected for interactive entry but allowed for a legacy
+                // bulk import (historical truth) via $skipDestroyedBoxGuard.
+                if ($box->trashed() || ($box->isDestroyed() && ! $document->skipDestroyedBoxGuard)) {
                     throw ValidationException::withMessages([
                         'current_box_id' => 'Cannot place a document in a destroyed box.',
                     ]);

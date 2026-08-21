@@ -123,6 +123,31 @@ function bch_importFields(array $data, int $userId): void
     (new DocumentImporter($imp, $map, []))($data);
 }
 
+/**
+ * Import several rows through ONE import run (a single shared Import model),
+ * exactly as a real bulk import runs the whole sheet. A box CREATED by an
+ * earlier row therefore stays "fresh in this run" for the later rows, so the
+ * document sheet may still seed its current state (last-import-wins) — unlike
+ * two SEPARATE runs where a now-pre-existing box is owned by the box sheet and
+ * left untouched (BLOCKER 1 ownership rule).
+ *
+ * @param array<int, array<string,string|int|null>> $rows
+ */
+function bch_importSameRun(array $rows, int $userId): void
+{
+    EntityResolver::flushMemo();
+    /** @var Import $imp */
+    $imp = Import::query()->create([
+        'completed_at' => null, 'file_name' => 't.xlsx', 'file_path' => '/tmp/t.xlsx',
+        'importer' => DocumentImporter::class, 'processed_rows' => 0, 'total_rows' => count($rows),
+        'successful_rows' => 0, 'user_id' => $userId,
+    ]);
+    foreach ($rows as $data) {
+        $map = ImportWizard::guessColumnMap(DocumentImporter::class, array_keys($data));
+        (new DocumentImporter($imp, $map, []))($data);
+    }
+}
+
 function bch_doc(string $identifier): ?Document
 {
     return Document::withoutGlobalScope(RepositoryScope::class)->where('identifier', $identifier)->first();
@@ -629,25 +654,31 @@ it('a partial sheet that maps NO block-2 column does not wipe block-2 legacy his
         ->and(bch_legacy($boxB->id)->first()->previous_barcode)->toBe('KEEP1');
 });
 
-it('two rows sharing a box with conflicting blocks → last import wins (delete-and-rebuild)', function () {
+it('two rows sharing a box with conflicting blocks IN ONE RUN → last import wins (delete-and-rebuild)', function () {
     [$repo, $u] = bch_admin();
     bch_batch($repo->id, '1');
 
-    bch_import(bch_row([
-        'Identifier' => 'CONFA',
-        'RAS Batch 1' => '1', 'RAS Box 1' => '995',
-        'Barcode RAS 1' => 'V1', 'Status 1' => 'OUT',
-        'Barcode (IN)' => 'V2',
-    ]), $u->id);
-
-    // A second document lands in the SAME box with a different chain.
-    bch_import(bch_row([
-        'Identifier' => 'CONFB',
-        'RAS Batch 1' => '1', 'RAS Box 1' => '995',
-        'Barcode RAS 1' => 'W1', 'Status 1' => 'PERM OUT',
-        'Barcode RAS 2' => 'W2', 'Status 2' => 'PERM OUT',
-        'Barcode (IN)' => 'W3',
-    ]), $u->id);
+    // Both rows in ONE run: the box is created by the first row and stays
+    // fresh-in-run for the second, so the document sheet may still overwrite its
+    // current barcode (last-import-wins). Across SEPARATE runs the BLOCKER 1
+    // ownership rule would instead protect the now-pre-existing box's current
+    // barcode (covered by the dedicated BLOCKER1 regression test below), while
+    // history stays last-import-wins either way.
+    bch_importSameRun([
+        bch_row([
+            'Identifier' => 'CONFA',
+            'RAS Batch 1' => '1', 'RAS Box 1' => '995',
+            'Barcode RAS 1' => 'V1', 'Status 1' => 'OUT',
+            'Barcode (IN)' => 'V2',
+        ]),
+        bch_row([
+            'Identifier' => 'CONFB',
+            'RAS Batch 1' => '1', 'RAS Box 1' => '995',
+            'Barcode RAS 1' => 'W1', 'Status 1' => 'PERM OUT',
+            'Barcode RAS 2' => 'W2', 'Status 2' => 'PERM OUT',
+            'Barcode (IN)' => 'W3',
+        ]),
+    ], $u->id);
 
     $box = bch_box('RAS', '995');
     $rows = bch_legacy($box->id);
@@ -655,6 +686,76 @@ it('two rows sharing a box with conflicting blocks → last import wins (delete-
     expect($rows)->toHaveCount(2);
     expect($rows->pluck('previous_barcode')->all())->toBe(['W1', 'W2']);
     expect($box->barcode)->toBe('W3');
+});
+
+it('BLOCKER1: a doc row for a PRE-EXISTING PERM_OUT box does not fail and does not overwrite the box\'s current state', function () {
+    [$repo, $u] = bch_admin();
+    $batch = bch_batch($repo->id, '1');
+
+    // Simulate a box already imported by the BOX SHEET: it owns its CURRENT
+    // barcode + PERM_OUT status, and PREDATES this document import run.
+    $box = Box::factory()->create([
+        'batch_id' => $batch->id, 'box_type' => 'RAS', 'box_number' => '850',
+        'barcode' => 'BOXSHEET-OWN', 'barcode_status' => 'PERM_OUT',
+        'repository_id' => $repo->id,
+    ]);
+    Box::withoutGlobalScopes()->whereKey($box->id)->update(['created_at' => now()->subDay()]);
+
+    // A document row lands in that box (resolved by its barcode) and carries a
+    // block-1 chain that ends IN — under the OLD rule this would have flipped the
+    // box to IN (and could trip the C2.2 PERM_OUT→IN guard); now it must not.
+    bch_import(bch_row([
+        'Identifier' => 'BLK1',
+        'Current box barcode' => 'BOXSHEET-OWN',
+        'Barcode RAS 1' => 'H1', 'Status 1' => 'OUT',
+        'Barcode (IN)' => 'H2',
+    ]), $u->id);
+
+    // The row SUCCEEDED and points at the pre-existing box.
+    $doc = bch_doc('BLK1');
+    expect($doc)->not->toBeNull()
+        ->and($doc->current_box_id)->toBe($box->id);
+
+    // The pre-existing box keeps its OWN barcode + PERM_OUT status (untouched).
+    $fresh = $box->fresh();
+    expect($fresh->barcode)->toBe('BOXSHEET-OWN')
+        ->and($fresh->barcode_status)->toBe('PERM_OUT');
+
+    // History is STILL built for it — the document sheet always owns history.
+    $legacy = bch_legacy($box->id);
+    expect($legacy)->toHaveCount(1);
+    expect($legacy->first()->previous_barcode)->toBe('H1')
+        ->and($legacy->first()->new_barcode)->toBe('H2')
+        ->and($legacy->first()->source)->toBe('legacy_import');
+});
+
+it('DESTROYED-BOX: a legacy import row lands in a DESTROYED box (historical truth) instead of failing', function () {
+    [$repo, $u] = bch_admin();
+    $batch = bch_batch($repo->id, '1');
+
+    // A box the BOX SHEET imported and that has since been DESTROYED
+    // (destroyed_at set, but NOT soft-deleted). Interactive entry would refuse a
+    // document here; a legacy import must accept it — the document used to be in
+    // that box before it was destroyed.
+    $box = Box::factory()->create([
+        'batch_id' => $batch->id, 'box_type' => 'RAS', 'box_number' => '860',
+        'barcode' => 'DEAD-BOX', 'barcode_status' => 'PERM_OUT',
+        'repository_id' => $repo->id,
+    ]);
+    Box::withoutGlobalScopes()->whereKey($box->id)->update([
+        'created_at' => now()->subDay(),
+        'destroyed_at' => now()->subDay(),
+    ]);
+
+    bch_import(bch_row([
+        'Identifier' => 'DEADDOC',
+        'Current box barcode' => 'DEAD-BOX',
+    ]), $u->id);
+
+    // The row SUCCEEDED and points at the destroyed box.
+    $doc = bch_doc('DEADDOC');
+    expect($doc)->not->toBeNull()
+        ->and($doc->current_box_id)->toBe($box->id);
 });
 
 it('barcodeHistory() lists dated recorded rows BEFORE undated legacy rows', function () {
