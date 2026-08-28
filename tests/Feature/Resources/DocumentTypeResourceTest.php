@@ -5,7 +5,11 @@ declare(strict_types=1);
 use App\Filament\Resources\DocumentTypeResource;
 use App\Filament\Resources\DocumentTypeResource\Pages\CreateDocumentType;
 use App\Filament\Resources\DocumentTypeResource\Pages\ListDocumentTypes;
+use App\Models\Document;
 use App\Models\DocumentType;
+use App\Models\Repository;
+use App\Models\Scopes\RepositoryScope;
+use App\Models\Series;
 use App\Models\User;
 use Filament\Schemas\Schema;
 use Illuminate\Foundation\Testing\RefreshDatabase;
@@ -140,4 +144,35 @@ it('EDGE: bulk delete actually removes the selected rows', function () {
         ->callTableBulkAction('delete', [$a, $b]);
 
     expect(DocumentType::whereIn('id', [$a->id, $b->id])->count())->toBe(0);
+});
+
+it('EDGE: deleting a referenced Document Type nulls the FK, never deletes the document', function () {
+    $this->actingAs(dt_superAdmin());
+
+    // A document that points at the type via the soft FK (document_type_id).
+    $repo = Repository::factory()->create(['code' => 'DTR_' . substr(uniqid(), -6)]);
+    $series = Series::create([
+        'code' => 'DTR_' . substr(uniqid(), -4),
+        'title' => 'DTR series',
+        'is_active' => true,
+    ]);
+    $type = DocumentType::create(['name' => 'Deed', 'identifier' => 'DT00001']);
+    $doc = Document::withoutGlobalScope(RepositoryScope::class)->create([
+        'identifier' => 'DTR-' . strtoupper(substr(uniqid(), -8)),
+        'document_type' => 'Deed', // legacy free-text label survives the delete
+        'document_type_id' => $type->id,
+        'series_id' => $series->id,
+        'repository_id' => $repo->id,
+    ]);
+
+    Livewire::test(ListDocumentTypes::class)
+        ->callTableBulkAction('delete', [$type]);
+
+    // Type gone; document intact with the structured link nulled (nullOnDelete),
+    // and the human-readable label untouched — no cascade, no FK error.
+    $doc->refresh();
+    expect(DocumentType::whereKey($type->id)->exists())->toBeFalse()
+        ->and(Document::withoutGlobalScope(RepositoryScope::class)->whereKey($doc->id)->exists())->toBeTrue()
+        ->and($doc->document_type_id)->toBeNull()
+        ->and($doc->document_type)->toBe('Deed');
 });
