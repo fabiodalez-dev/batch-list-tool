@@ -96,3 +96,48 @@ it('exposes a bulk delete action on the table', function () {
         ->assertTableBulkActionExists('delete')
         ->assertTableBulkActionExists('deactivate');
 });
+
+/* ── nextIdentifier() edge cases ──────────────────────────────────────── */
+
+it('EDGE: nextIdentifier ignores non-DT identifiers', function () {
+    DocumentType::create(['name' => 'Legacy', 'identifier' => 'REG']);
+    DocumentType::create(['name' => 'Other', 'identifier' => 'DT12A']); // malformed
+    expect(DocumentTypeResource::nextIdentifier())->toBe('DT00001');
+
+    DocumentType::create(['name' => 'Two', 'identifier' => 'DT00002']);
+    expect(DocumentTypeResource::nextIdentifier())->toBe('DT00003');
+});
+
+it('EDGE: nextIdentifier takes the max numeric value across mixed padding', function () {
+    DocumentType::create(['name' => 'A', 'identifier' => 'DT1']);
+    DocumentType::create(['name' => 'B', 'identifier' => 'DT00007']);
+    expect(DocumentTypeResource::nextIdentifier())->toBe('DT00008');
+});
+
+it('EDGE: nextIdentifier does not truncate past 5 digits (DT99999 -> DT100000)', function () {
+    DocumentType::create(['name' => 'Big', 'identifier' => 'DT99999']);
+    expect(DocumentTypeResource::nextIdentifier())->toBe('DT100000');
+});
+
+it('EDGE: a duplicate identifier is rejected on create (unique)', function () {
+    $this->actingAs(dt_superAdmin());
+    DocumentType::create(['name' => 'First', 'identifier' => 'DT00001']);
+
+    Livewire::test(CreateDocumentType::class)
+        ->fillForm(['identifier' => 'DT00001', 'name' => 'Second'])
+        ->call('create')
+        ->assertHasFormErrors(['identifier']);
+
+    expect(DocumentType::where('identifier', 'DT00001')->count())->toBe(1);
+});
+
+it('EDGE: bulk delete actually removes the selected rows', function () {
+    $this->actingAs(dt_superAdmin());
+    $a = DocumentType::create(['name' => 'A', 'identifier' => 'DT00001']);
+    $b = DocumentType::create(['name' => 'B', 'identifier' => 'DT00002']);
+
+    Livewire::test(ListDocumentTypes::class)
+        ->callTableBulkAction('delete', [$a, $b]);
+
+    expect(DocumentType::whereIn('id', [$a->id, $b->id])->count())->toBe(0);
+});
