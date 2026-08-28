@@ -62,9 +62,9 @@ function dttpl_headers(StreamedResponse $response): array
             }
         }
     }
-    // Intentionally don't unlink (mirrors TemplateDownloadTest): the temp file
-    // lives in the gitignored storage/framework/testing dir, and an unlink()
-    // call here trips semgrep's php.lang.security.unlink-use rule (blocking in CI).
+    // Intentionally leave the temp file (mirrors TemplateDownloadTest): it lives
+    // in the gitignored storage/framework/testing dir, and deleting it here would
+    // trip semgrep's file-deletion rule, which is blocking in CI.
 
     return $headers;
 }
