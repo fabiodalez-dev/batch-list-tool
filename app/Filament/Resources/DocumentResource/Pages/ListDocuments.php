@@ -10,6 +10,8 @@ use App\Filament\Imports\DocumentImporter;
 use App\Filament\Resources\DocumentResource;
 use App\Models\CustomFieldDefinition;
 use App\Models\Document;
+use App\Models\Scopes\RepositoryScope;
+use App\Support\ActiveRepository;
 use App\Support\BulkImport\Jobs\DeduplicatingImportExcel;
 use App\Support\BulkImport\TemplateGenerator;
 use App\Support\CustomFields\CustomFieldCsv;
@@ -227,21 +229,44 @@ class ListDocuments extends ListRecords
                         'Only super administrators may delete all documents.',
                     );
 
+                    // SAFETY: a super_admin viewing "All repositories" has no
+                    // RepositoryScope narrowing, so Document::query() would span
+                    // EVERY repository — a cross-tenant wipe. Require an explicit
+                    // active repository and scope the delete to it, never trusting
+                    // the ambient scope for a destructive mass operation.
+                    $repoId = app(ActiveRepository::class)->id();
+                    if ($repoId === null) {
+                        Notification::make()
+                            ->title('Select a repository first')
+                            ->body('Pick a specific repository in the top bar before deleting all documents — this action never deletes across repositories.')
+                            ->danger()
+                            ->send();
+
+                        return;
+                    }
+
                     $deleted = 0;
 
                     Document::query()
+                        ->withoutGlobalScope(RepositoryScope::class)
                         ->withTrashed()
+                        ->where('repository_id', $repoId)
                         ->select('id')
-                        ->chunkById(1000, function (Collection $rows) use (&$deleted): void {
+                        ->chunkById(1000, function (Collection $rows) use (&$deleted, $repoId): void {
                             $ids = $rows->pluck('id')->all();
-                            Document::query()->withTrashed()->whereIn('id', $ids)->forceDelete();
+                            Document::query()
+                                ->withoutGlobalScope(RepositoryScope::class)
+                                ->withTrashed()
+                                ->where('repository_id', $repoId)
+                                ->whereIn('id', $ids)
+                                ->forceDelete();
                             $deleted += count($ids);
                         });
 
                     Notification::make()
                         ->title($deleted > 0
-                            ? "Deleted {$deleted} document(s)."
-                            : 'There were no documents to delete.')
+                            ? "Deleted {$deleted} document(s) from this repository."
+                            : 'There were no documents to delete in this repository.')
                         ->success()
                         ->send();
                 })
