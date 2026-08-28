@@ -37,8 +37,8 @@ it('is read-only — disables create/edit/delete', function () {
 
 it('navigation label + icon + group are set for Operations group', function () {
     expect(AuditResource::getNavigationLabel())->toBe('Audit log')
-        ->and(AuditResource::getNavigationGroup())->toBe('Operations')
-        ->and(AuditResource::getNavigationSort())->toBe(90);
+        ->and(AuditResource::getNavigationGroup())->toBe('Administration')
+        ->and(AuditResource::getNavigationSort())->toBe(20);
 });
 
 it('points to the correct Eloquent model (OwenIt Audit)', function () {

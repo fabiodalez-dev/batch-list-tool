@@ -35,9 +35,9 @@ class AccessionResource extends Resource
 
     protected static string|\BackedEnum|null $navigationIcon = 'heroicon-o-document-plus';
 
-    protected static string|\UnitEnum|null $navigationGroup = 'Archive';
+    protected static string|\UnitEnum|null $navigationGroup = 'Operations';
 
-    protected static ?int $navigationSort = 12;
+    protected static ?int $navigationSort = 20;
 
     protected static ?string $recordTitleAttribute = 'code';
 

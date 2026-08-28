@@ -522,7 +522,7 @@ test('Document::flags() returns a HasMany of DocumentFlag', function () {
 
 test('DocumentFlagResource navigation is wired up under Operations sort=85', function () {
     expect(DocumentFlagResource::getNavigationGroup())->toBe('Operations');
-    expect(DocumentFlagResource::getNavigationSort())->toBe(85);
+    expect(DocumentFlagResource::getNavigationSort())->toBe(30);
     expect(DocumentFlagResource::getNavigationIcon())->toBe('heroicon-o-flag');
 });
 

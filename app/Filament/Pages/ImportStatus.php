@@ -32,9 +32,9 @@ class ImportStatus extends Page
 {
     protected string $view = 'filament.pages.import-status';
 
-    protected static string|\UnitEnum|null $navigationGroup = 'Archive';
+    protected static string|\UnitEnum|null $navigationGroup = 'Importation';
 
-    protected static ?int $navigationSort = 31;
+    protected static ?int $navigationSort = 20;
 
     protected static string|\BackedEnum|null $navigationIcon = 'heroicon-o-clipboard-document-list';
 

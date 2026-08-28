@@ -9,6 +9,7 @@ use App\Filament\Support\CreatorColumn;
 use App\Models\DocumentType;
 use Filament\Actions\BulkAction;
 use Filament\Actions\BulkActionGroup;
+use Filament\Actions\DeleteBulkAction;
 use Filament\Actions\EditAction;
 use Filament\Forms;
 use Filament\Resources\Resource;
@@ -26,29 +27,59 @@ class DocumentTypeResource extends Resource
 
     protected static string|\BackedEnum|null $navigationIcon = 'heroicon-o-document-text';
 
-    protected static string|\UnitEnum|null $navigationGroup = 'Reference';
+    protected static string|\UnitEnum|null $navigationGroup = 'Classifications';
 
     protected static ?int $navigationSort = 50;
 
     protected static ?string $recordTitleAttribute = 'name';
+
+    /**
+     * Next consecutive auto-suggested identifier in the `DT00001` format.
+     *
+     * Scans every existing row (the model carries no global scopes) for the
+     * largest identifier matching /^DT(\d+)$/, increments its numeric part and
+     * zero-pads to five digits. Returns 'DT00001' when none exist yet.
+     */
+    public static function nextIdentifier(): string
+    {
+        $max = 0;
+
+        // Narrow with a portable LIKE (REGEXP is MySQL-only — tests run on
+        // SQLite) then validate the exact `DT<digits>` shape in PHP so codes
+        // like "DTX" or "DT12A" never leak into the max.
+        DocumentType::query()
+            ->whereNotNull('identifier')
+            ->where('identifier', 'like', 'DT%')
+            ->pluck('identifier')
+            ->each(function (string $identifier) use (&$max): void {
+                if (preg_match('/^DT(\d+)$/', $identifier, $m) === 1) {
+                    $max = max($max, (int) $m[1]);
+                }
+            });
+
+        return 'DT' . str_pad((string) ($max + 1), 5, '0', STR_PAD_LEFT);
+    }
 
     public static function form(Schema $schema): Schema
     {
         return $schema
             ->columns(1)
             ->components([
+                // Charlene UX — Identifier is now the primary key users read on
+                // records, so it comes first and is required. On create it is
+                // pre-filled with the next consecutive DT##### code (still
+                // user-editable and uniqueness-validated).
+                Forms\Components\TextInput::make('identifier')
+                    ->label('Identifier')
+                    ->required()
+                    ->maxLength(64)
+                    ->unique(ignoreRecord: true)
+                    ->default(fn () => static::nextIdentifier())
+                    ->helperText('Short code in the form DT00001. Pre-filled with the next free code; must be unique.'),
                 Forms\Components\TextInput::make('name')
                     ->required()
                     ->maxLength(100)
                     ->unique(ignoreRecord: true),
-                // Wave D2 — optional machine-readable identifier (distinct from the
-                // human-readable name). Unique where non-NULL; NULL for legacy entries.
-                Forms\Components\TextInput::make('identifier')
-                    ->label('Identifier')
-                    ->maxLength(64)
-                    ->unique(ignoreRecord: true)
-                    ->nullable()
-                    ->helperText('Optional short code, e.g. "REG" or "ORIG". Must be unique if set.'),
                 Forms\Components\Textarea::make('description')
                     ->maxLength(500)
                     ->rows(3),
@@ -95,6 +126,10 @@ class DocumentTypeResource extends Resource
                         ->action(fn ($records) => DocumentType::query()
                             ->whereKey($records->modelKeys())
                             ->update(['is_active' => false])),
+                    // Charlene UX — allow permanent bulk removal alongside the
+                    // soft "deactivate" path. Visibility follows the default
+                    // delete policy (only users who can delete see it).
+                    DeleteBulkAction::make(),
                 ]),
             ]);
     }

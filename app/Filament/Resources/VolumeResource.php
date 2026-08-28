@@ -28,9 +28,9 @@ class VolumeResource extends Resource
 
     protected static string|\BackedEnum|null $navigationIcon = 'heroicon-o-book-open';
 
-    protected static string|\UnitEnum|null $navigationGroup = 'Archive';
+    protected static string|\UnitEnum|null $navigationGroup = 'Records';
 
-    protected static ?int $navigationSort = 14;
+    protected static ?int $navigationSort = 90;
 
     protected static ?string $recordTitleAttribute = 'volume_number';
 

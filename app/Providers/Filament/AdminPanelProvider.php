@@ -57,6 +57,18 @@ class AdminPanelProvider extends PanelProvider
             ->login(TwoFactorLogin::class)
             ->passwordReset()
             ->profile(EditProfile::class)
+            // Left-navigation group order (Charlene UX restructure). Groups
+            // render in exactly this sequence; each resource/page pins itself
+            // to one of these via $navigationGroup + $navigationSort.
+            ->navigationGroups([
+                'Records',
+                'Classifications',
+                'Operations',
+                'Importation',
+                'Reports',
+                'My Account',
+                'Administration',
+            ])
             // Security Baseline §15: NO external CDNs at runtime —
             // Inter font is served from /fonts/inter/ (rsms/inter v4.1, OFL-1.1)
             ->font(

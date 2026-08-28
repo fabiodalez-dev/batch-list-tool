@@ -29,9 +29,9 @@ class BoxMovementResource extends Resource
 
     protected static string|\BackedEnum|null $navigationIcon = 'heroicon-o-arrows-right-left';
 
-    protected static string|\UnitEnum|null $navigationGroup = 'Archive';
+    protected static string|\UnitEnum|null $navigationGroup = 'Operations';
 
-    protected static ?int $navigationSort = 15;
+    protected static ?int $navigationSort = 10;
 
     /**
      * Bug #29 — a clearer document label for the movements table/infolist:

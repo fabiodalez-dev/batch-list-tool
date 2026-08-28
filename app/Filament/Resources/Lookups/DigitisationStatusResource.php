@@ -27,7 +27,7 @@ class DigitisationStatusResource extends Resource
 
     protected static string|\BackedEnum|null $navigationIcon = 'heroicon-o-camera';
 
-    protected static string|\UnitEnum|null $navigationGroup = 'Lookups';
+    protected static string|\UnitEnum|null $navigationGroup = 'Classifications';
 
     protected static ?int $navigationSort = 40;
 
