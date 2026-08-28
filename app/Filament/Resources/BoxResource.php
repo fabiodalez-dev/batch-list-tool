@@ -54,9 +54,9 @@ class BoxResource extends Resource
 
     protected static string|\BackedEnum|null $navigationIcon = 'heroicon-o-archive-box';
 
-    protected static string|\UnitEnum|null $navigationGroup = 'Archive';
+    protected static string|\UnitEnum|null $navigationGroup = 'Records';
 
-    protected static ?int $navigationSort = 13;
+    protected static ?int $navigationSort = 50;
 
     protected static ?string $recordTitleAttribute = 'box_number';
 

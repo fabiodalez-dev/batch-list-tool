@@ -30,11 +30,11 @@ class CurrentBoxTypeResource extends Resource
 
     protected static string|\BackedEnum|null $navigationIcon = 'heroicon-o-inbox-stack';
 
-    protected static string|\UnitEnum|null $navigationGroup = 'Lookups';
+    protected static string|\UnitEnum|null $navigationGroup = 'Classifications';
 
-    protected static ?int $navigationSort = 50;
+    protected static ?int $navigationSort = 80;
 
-    protected static ?string $navigationLabel = 'Current Box Types';
+    protected static ?string $navigationLabel = 'Physical Box Type';
 
     protected static ?string $recordTitleAttribute = 'label';
 

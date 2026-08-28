@@ -29,9 +29,9 @@ class BarcodeStatusResource extends Resource
 
     protected static string|\BackedEnum|null $navigationIcon = 'heroicon-o-qr-code';
 
-    protected static string|\UnitEnum|null $navigationGroup = 'Lookups';
+    protected static string|\UnitEnum|null $navigationGroup = 'Classifications';
 
-    protected static ?int $navigationSort = 10;
+    protected static ?int $navigationSort = 20;
 
     protected static ?string $navigationLabel = 'Barcode Statuses';
 

@@ -32,11 +32,11 @@ class LocationTypeResource extends Resource
 
     protected static string|\BackedEnum|null $navigationIcon = 'heroicon-o-map-pin';
 
-    protected static string|\UnitEnum|null $navigationGroup = 'Lookups';
+    protected static string|\UnitEnum|null $navigationGroup = 'Classifications';
 
     protected static ?int $navigationSort = 70;
 
-    protected static ?string $navigationLabel = 'Location Types';
+    protected static ?string $navigationLabel = 'Location Typology';
 
     protected static ?string $recordTitleAttribute = 'label';
 

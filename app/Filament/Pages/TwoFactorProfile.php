@@ -71,7 +71,7 @@ class TwoFactorProfile extends Page
      */
     public string $disablePassword = '';
 
-    protected static string|\UnitEnum|null $navigationGroup = 'My account';
+    protected static string|\UnitEnum|null $navigationGroup = 'My Account';
 
     protected static ?int $navigationSort = 10;
 

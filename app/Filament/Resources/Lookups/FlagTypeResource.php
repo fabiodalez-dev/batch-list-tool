@@ -29,9 +29,9 @@ class FlagTypeResource extends Resource
 
     protected static string|\BackedEnum|null $navigationIcon = 'heroicon-o-flag';
 
-    protected static string|\UnitEnum|null $navigationGroup = 'Lookups';
+    protected static string|\UnitEnum|null $navigationGroup = 'Classifications';
 
-    protected static ?int $navigationSort = 30;
+    protected static ?int $navigationSort = 60;
 
     protected static ?string $navigationLabel = 'Flag Types';
 

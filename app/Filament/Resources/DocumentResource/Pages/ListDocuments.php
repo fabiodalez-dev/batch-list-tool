@@ -15,6 +15,8 @@ use App\Support\BulkImport\TemplateGenerator;
 use App\Support\CustomFields\CustomFieldCsv;
 use App\Support\CustomFields\CustomFieldResolver;
 use Filament\Actions;
+use Filament\Forms\Components\TextInput;
+use Filament\Notifications\Notification;
 use Filament\Resources\Pages\ListRecords;
 use HayderHatem\FilamentExcelImport\Actions\FullImportAction;
 use Illuminate\Support\Collection;
@@ -186,6 +188,64 @@ class ListDocuments extends ListRecords
                 ->color('gray')
                 ->action(fn () => TemplateGenerator::download('document'))
                 ->visible(fn () => auth()->user()?->can('create', Document::class) ?? false),
+
+            // Charlene UX — one-shot "empty this repository" for super_admins.
+            // The standard page-by-page bulk delete forced 26 k rows to be
+            // confirmed 25-at-a-time. This wipes every Document in the acting
+            // user's CURRENT repository scope (RepositoryScope already narrows
+            // Document::query() to the active repository — or all repositories
+            // when "All" is selected).
+            //
+            // Delete strategy — chunked forceDelete: documents SoftDelete, but
+            // "delete all" means gone, and the dependent rows (box_movements,
+            // document_authority, identifier/barcode history …) are wired with
+            // ON DELETE CASCADE, so a real DELETE removes them too. We chunk by
+            // id (1 000 at a time) selecting only the id column, so memory stays
+            // flat and each round-trip is a single mass DELETE — no per-model
+            // hydration, events or observers. 26 k rows ≈ 26 statements, which
+            // completes well within a request; a synchronous delete also lets
+            // the success state be asserted immediately (no queue worker needed).
+            Actions\Action::make('deleteAll')
+                ->label('Delete all documents')
+                ->icon('heroicon-o-trash')
+                ->color('danger')
+                ->requiresConfirmation()
+                ->modalHeading('Delete ALL documents in this repository')
+                ->modalDescription('This permanently removes every document in your current repository scope, together with their movements, flags and history. This cannot be undone. Type DELETE to confirm.')
+                ->modalSubmitActionLabel('Delete everything')
+                ->form([
+                    TextInput::make('confirmation')
+                        ->label('Type DELETE to confirm')
+                        ->required()
+                        ->rule('in:DELETE')
+                        ->validationMessages(['in' => 'You must type DELETE (in capitals) to confirm.']),
+                ])
+                ->action(function (): void {
+                    abort_unless(
+                        auth()->user()?->hasRole('super_admin') ?? false,
+                        403,
+                        'Only super administrators may delete all documents.',
+                    );
+
+                    $deleted = 0;
+
+                    Document::query()
+                        ->withTrashed()
+                        ->select('id')
+                        ->chunkById(1000, function (Collection $rows) use (&$deleted): void {
+                            $ids = $rows->pluck('id')->all();
+                            Document::query()->withTrashed()->whereIn('id', $ids)->forceDelete();
+                            $deleted += count($ids);
+                        });
+
+                    Notification::make()
+                        ->title($deleted > 0
+                            ? "Deleted {$deleted} document(s)."
+                            : 'There were no documents to delete.')
+                        ->success()
+                        ->send();
+                })
+                ->visible(fn () => auth()->user()?->hasRole('super_admin') ?? false),
 
             Actions\CreateAction::make(),
         ];

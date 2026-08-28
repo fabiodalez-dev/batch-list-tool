@@ -29,11 +29,11 @@ class BoxTypeResource extends Resource
 
     protected static string|\BackedEnum|null $navigationIcon = 'heroicon-o-archive-box';
 
-    protected static string|\UnitEnum|null $navigationGroup = 'Lookups';
+    protected static string|\UnitEnum|null $navigationGroup = 'Classifications';
 
-    protected static ?int $navigationSort = 20;
+    protected static ?int $navigationSort = 30;
 
-    protected static ?string $navigationLabel = 'Box Types';
+    protected static ?string $navigationLabel = 'Box Typology';
 
     protected static ?string $recordTitleAttribute = 'label';
 

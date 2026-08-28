@@ -42,7 +42,7 @@ class DocumentFlagResource extends Resource
 
     protected static string|\UnitEnum|null $navigationGroup = 'Operations';
 
-    protected static ?int $navigationSort = 85;
+    protected static ?int $navigationSort = 30;
 
     protected static ?string $recordTitleAttribute = 'title';
 

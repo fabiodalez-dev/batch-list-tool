@@ -26,9 +26,9 @@ class RepositoryResource extends Resource
 
     protected static string|\BackedEnum|null $navigationIcon = 'heroicon-o-building-library';
 
-    protected static string|\UnitEnum|null $navigationGroup = 'Administration';
+    protected static string|\UnitEnum|null $navigationGroup = 'Records';
 
-    protected static ?int $navigationSort = 20;
+    protected static ?int $navigationSort = 10;
 
     protected static ?string $recordTitleAttribute = 'name';
 

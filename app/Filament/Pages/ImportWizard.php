@@ -312,9 +312,9 @@ class ImportWizard extends Page
 
     protected string $view = 'filament.pages.import-wizard';
 
-    protected static string|\UnitEnum|null $navigationGroup = 'Archive';
+    protected static string|\UnitEnum|null $navigationGroup = 'Importation';
 
-    protected static ?int $navigationSort = 1;
+    protected static ?int $navigationSort = 10;
 
     protected static string|\BackedEnum|null $navigationIcon = 'heroicon-o-arrow-up-tray';
 
