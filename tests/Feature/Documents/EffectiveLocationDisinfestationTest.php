@@ -240,9 +240,12 @@ it('adds a Location import column to BOTH the Box and Document templates (client
         ->and($docColumns)->toContain('location');
 });
 
-it('still exposes legacy NRA / Museum location columns on the Documents template', function () {
+it('exposes the legacy Museum Location import column but no longer the nra_location one', function () {
+    // Client 2026-08-31: nra_location is no longer an importer column — 'NRA
+    // Location' now resolves the code onto location_id (the `location` column).
+    // museum_location stays a free-text import column.
     $docColumns = collect(DocumentImporter::getColumns())->map(fn ($c) => $c->getName());
 
-    expect($docColumns)->toContain('nra_location')
-        ->and($docColumns)->toContain('museum_location');
+    expect($docColumns)->toContain('museum_location')
+        ->and($docColumns)->not->toContain('nra_location');
 });

@@ -1204,15 +1204,14 @@ class DocumentImporter extends Importer
 
             // ── Locations ──────────────────────────────────────────────
             // Client 2026-08-31: 'NRA Location' now means the code-resolved
-            // location (see the `location` column above). This legacy free-text
-            // field keeps its existing prod data and is still importable via its
-            // technical header ('nra_location') for old sheets, but it no longer
-            // claims the 'NRA Location' header — that now resolves to location_id.
-            ImportColumn::make('nra_location')
-                ->label('NRA Location (legacy free-text)')
-                ->guess(['nra_location'])
-                ->rules(['nullable', 'string']),
-
+            // location (see the `location` column above, which resolves the code
+            // to documents.location_id). The legacy free-text `nra_location`
+            // column is intentionally NOT imported any more — it keeps its
+            // existing prod data and is still shown on the document view page,
+            // but a fresh import must never write it. (It was removed because
+            // guessColumnMap's Levenshtein tier matched the field name
+            // 'nra_location' against the 'NRA Location' header, double-filling
+            // both location_id AND the raw text field with the same code.)
             ImportColumn::make('museum_location')
                 ->label('Museum Location')
                 ->guess(['Museum Location', 'museum_location'])

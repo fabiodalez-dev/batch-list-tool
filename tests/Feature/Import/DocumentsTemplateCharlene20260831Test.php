@@ -135,7 +135,12 @@ it('resolves the NRA Location CODE onto documents.location_id', function () {
         'NRA Location' => 'REPO-1-45',
     ], $u->id);
 
-    expect(dtc_doc('DTC-LOC-1')?->location_id)->toBe($loc->id);
+    $doc = dtc_doc('DTC-LOC-1');
+    // The code resolves onto location_id, and does NOT also leak into the legacy
+    // free-text nra_location field (the import column was removed to stop the
+    // guessColumnMap Levenshtein double-fill).
+    expect($doc?->location_id)->toBe($loc->id)
+        ->and($doc?->nra_location)->toBeNull();
 });
 
 it('rejects a NAME under NRA Location — Charlene: "Archive 1" is wrong, use the code', function () {
