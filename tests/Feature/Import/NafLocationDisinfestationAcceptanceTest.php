@@ -267,7 +267,7 @@ it('B3: a legacy box sheet with Location + Disinfestation Date still imports cle
 });
 
 it('B4: the generator version was bumped for the template contract change', function () {
-    expect(TemplateGenerator::GENERATOR_VERSION)->toBe('1.12.0');
+    expect(TemplateGenerator::GENERATOR_VERSION)->toBe('1.13.0');
 });
 
 it('B5: every generated box header still maps to a BoxImporter column (round-trip)', function () {
@@ -283,10 +283,14 @@ it('B5: every generated box header still maps to a BoxImporter column (round-tri
     }
 });
 
-it('B6: the document template offers Location (appended) and the importer maps it', function () {
+it('B6: the document template offers the code-resolved location under "NRA Location" and the importer maps it', function () {
+    // Client 2026-08-31: the standalone 'Location' header was removed; the
+    // document's code-resolved location is now the 'NRA Location' column, which
+    // the importer's `location` column claims (guess-list).
     $headers = TemplateGenerator::headersFor('document');
     $cols = collect(DocumentImporter::getColumns())->map(fn ($c) => $c->getName())->all();
-    expect($headers)->toContain('Location')
+    expect($headers)->toContain('NRA Location')
+        ->and($headers)->not->toContain('Location')
         ->and($cols)->toContain('location')
         // Client 2026-08-18: Temporary Identifier + Citation Reference are the
         // new trailing columns (Location is no longer last).

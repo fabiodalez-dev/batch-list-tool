@@ -1034,11 +1034,14 @@ class DocumentImporter extends Importer
                 ->guess(['Pages/Folios', 'Pages / Folios', 'Pages', 'Folios', 'pages_folios'])
                 ->rules(['nullable', 'string', 'max:128']),
 
-            // ── Series — FK by code/title ──────────────────────────────
+            // ── Subseries — FK by code/title ───────────────────────────
+            // Client 2026-08-31: 'Series' → 'Subseries' (display only). The
+            // column key, the FK (series_id) and the resolver are unchanged;
+            // 'Series' stays in the guess-list so old sheets still map.
             ImportColumn::make('series')
-                ->label('Series (code or "CODE: Title")')
+                ->label('Subseries (code or "CODE: Title")')
                 ->requiredMappingForNewRecordsOnly()
-                ->guess(['Series', 'series', 'series_id'])
+                ->guess(['Subseries', 'subseries', 'Series', 'series', 'series_id'])
                 ->fillRecordUsing(function (Document $record, ?string $state): void {
                     if ($state === null || trim($state) === '') {
                         return;
@@ -1200,9 +1203,14 @@ class DocumentImporter extends Importer
                 ->rules(['nullable', 'date']),
 
             // ── Locations ──────────────────────────────────────────────
+            // Client 2026-08-31: 'NRA Location' now means the code-resolved
+            // location (see the `location` column above). This legacy free-text
+            // field keeps its existing prod data and is still importable via its
+            // technical header ('nra_location') for old sheets, but it no longer
+            // claims the 'NRA Location' header — that now resolves to location_id.
             ImportColumn::make('nra_location')
-                ->label('NRA Location')
-                ->guess(['NRA Location', 'nra_location'])
+                ->label('NRA Location (legacy free-text)')
+                ->guess(['nra_location'])
                 ->rules(['nullable', 'string']),
 
             ImportColumn::make('museum_location')
@@ -1219,9 +1227,16 @@ class DocumentImporter extends Importer
             // box's location (see Document::effectiveLocation()); an unknown code
             // fails the row (per-row, like the box import) rather than silently
             // dropping the operator's data.
+            // Client 2026-08-31: the code-resolved location column is now the
+            // 'NRA Location' column on the template — the operator types the
+            // location CODE (e.g. REPO-1-45), not a descriptive name. The old
+            // standalone 'Location' header is gone from the template but kept in
+            // the guess-list so pre-2026-08-31 sheets still import. The legacy
+            // free-text nra_location column no longer claims the 'NRA Location'
+            // header (see below) so there is no collision.
             ImportColumn::make('location')
-                ->label('Location (code / identifier)')
-                ->guess(['Location', 'location', 'Location Code', 'Location Identifier'])
+                ->label('NRA Location (location code, e.g. REPO-1-45)')
+                ->guess(['NRA Location', 'nra location', 'Location', 'location', 'Location Code', 'Location Identifier'])
                 ->fillRecordUsing(function (Document $record, ?string $state): void {
                     if ($state === null || trim($state) === '') {
                         // The Location column is mapped but this cell is blank:

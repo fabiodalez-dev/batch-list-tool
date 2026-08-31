@@ -104,7 +104,7 @@ class Reports extends Page
             ],
             [
                 'key' => 'by-series',
-                'title' => 'Documents by series',
+                'title' => 'Documents by subseries',
                 'description' => 'Counts of documents grouped by their series code.',
                 'icon' => 'heroicon-o-rectangle-stack',
                 'url' => DocumentsBySeriesReport::getUrl(),
@@ -232,7 +232,7 @@ class Reports extends Page
         return match ($source) {
             ReportTemplate::SOURCE_DOCUMENTS_BY_BATCH => 'Documents by batch',
             ReportTemplate::SOURCE_DOCUMENTS_BY_CREATOR => 'Documents by creator',
-            ReportTemplate::SOURCE_DOCUMENTS_BY_SERIES => 'Documents by series',
+            ReportTemplate::SOURCE_DOCUMENTS_BY_SERIES => 'Documents by subseries',
             ReportTemplate::SOURCE_DOCUMENT_LOCATIONS => 'Documents by location',
             ReportTemplate::SOURCE_PENDING_DISINFESTATION => 'Pending disinfestation',
             ReportTemplate::SOURCE_DISINFESTATION_CYCLE => 'Disinfestation cycle plan',

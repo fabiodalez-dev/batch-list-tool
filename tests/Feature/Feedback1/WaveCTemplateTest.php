@@ -46,7 +46,7 @@ it('C3-Headers: synthesiseAccessionHeaders returns the exact 23 columns in casca
         'Current Box Type', // FB1-GAP-2: current_box_types lookup ref code
         'Document Identifier', // the document_identifier column (bare "Identifier" is the authority R-number)
         'Document Type',
-        'Series',
+        'Subseries',        // Client 2026-08-31: 'Series' → 'Subseries'
         'Volume No',        // renamed from 'Volume Number'
         'Part Number',
         'Practice',
@@ -136,7 +136,7 @@ it('D11-Synonyms: guessColumnMap resolves NAf Feedback 1 column name variants fo
     expect($map['box_number'])->toBe('Box No');
     expect($map['box_barcode'])->toBe('Box Barcode');
     expect($map['document_type'])->toBe('Document Type');
-    expect($map['series'])->toBe('Series');
+    expect($map['series'])->toBe('Series'); // back-compat: an old sheet's 'Series' header still maps
     expect($map['part_number'])->toBe('Part Number');
 
     // NAf Feedback 1 renamed columns must also auto-resolve.

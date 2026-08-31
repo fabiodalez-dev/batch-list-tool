@@ -46,7 +46,7 @@ class DocumentsBySeriesReport extends Page implements HasTable
 
     protected static string|\UnitEnum|null $navigationGroup = 'Operations';
 
-    protected static ?string $title = 'Documents by series';
+    protected static ?string $title = 'Documents by subseries';
 
     protected static ?string $slug = 'reports/documents-by-series';
 
@@ -228,7 +228,7 @@ class DocumentsBySeriesReport extends Page implements HasTable
         abort_unless(static::canAccess(), 403);
 
         return ReportRenderer::renderPdf(
-            title: 'Documents by series',
+            title: 'Documents by subseries',
             slug: 'documents-by-series',
             headers: ['Code', 'Title', '# Documents'],
             rows: $this->collectRows(),
@@ -261,7 +261,7 @@ class DocumentsBySeriesReport extends Page implements HasTable
 
     public function getReportTitle(): string
     {
-        return 'Documents by series';
+        return 'Documents by subseries';
     }
 
     public function getReportSlug(): string

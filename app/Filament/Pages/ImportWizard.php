@@ -1147,7 +1147,7 @@ class ImportWizard extends Page
                     ->label('Type of records')
                     ->options([
                         'accessions' => 'New Accession (bottom-up: one row = one Document, auto-creates Authority / Accession / Batch / Box)',
-                        'series' => 'Series (record types: R / REG / RWL / O)',
+                        'series' => 'Subseries (record types: R / REG / RWL / O)',
                         'authorities' => 'Authorities (notaries — 808 in production sample)',
                         'locations' => 'Locations (physical/logical hierarchy)',
                         'batches' => 'Batches (numbered groupings)',

@@ -324,7 +324,7 @@ test('[Template/Document] headersFor appends active text+date custom labels afte
     // Static headers must come first (spot-check using known DOCUMENT_HEADERS content).
     expect($headers)->toContain('Authority Identifier')
         ->and($headers)->toContain('Document Type')
-        ->and($headers)->toContain('Series');
+        ->and($headers)->toContain('Subseries'); // Client 2026-08-31: 'Series' → 'Subseries'
 
     // Custom labels appended at the end.
     expect($headers)->toContain('Doc Text Field');

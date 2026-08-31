@@ -126,17 +126,24 @@ final class TemplateGenerator
         // notaries) — renamed to the client's wording. The importer's guess
         // list still accepts the legacy 'Identifier'/'Actual Identifier' headers.
         'Museum Location', 'Authority Identifier', 'Practice', 'Volume', 'Creator',
-        'Dates', 'Deeds', 'Document Type', 'Series', 'Current Box', 'Note',
+        // Client 2026-08-31: 'Series' → 'Subseries' throughout (display rename;
+        // the underlying series table/FK are unchanged, the importer still
+        // resolves the code). 'Current Box' removed — the current box is
+        // imported WITH the box, so repeating it on the document row is noise.
+        'Dates', 'Deeds', 'Document Type', 'Subseries', 'Note',
         'Digitised', 'Torre', 'Accession', 'Conservation Object Reference Number',
         'Tracking', 'Museum Reference',
-        // Client feedback 2026-08-04: Location moves onto the document template
-        // (documents.location_id, code-resolved). Appended in place — the
-        // document layout is position-matched legacy, so new columns go last.
-        'Location',
+        // Client 2026-08-31: the standalone 'Location' column was removed — the
+        // document's location is now the code entered under 'NRA Location'
+        // (above), which resolves to documents.location_id. A single column
+        // instead of two that mean the same thing.
         // Client 2026-08-18: new free-text document columns.
         'Temporary Identifier', 'Citation Reference',
         // Client 2026-08-18 (#8): past attribution → document_identifier_history.
         'Prev Attributed Identifier', 'Prev Attributed Volume',
+        // Client 2026-08-31: Part Number surfaced on the document template
+        // (documents.part_number; the importer already read it).
+        'Part Number',
     ];
 
     /**
@@ -145,7 +152,7 @@ final class TemplateGenerator
      * can detect a stale template at re-upload time and warn the operator.
      * Bump on any change to the header contract.
      */
-    public const string GENERATOR_VERSION = '1.12.0';
+    public const string GENERATOR_VERSION = '1.13.0';
 
     /**
      * Supported template entities. Headers come from the in-repo constants
@@ -408,7 +415,7 @@ final class TemplateGenerator
             // Document (DECISIONS 4, 5, 7, 10)
             'Document Identifier',    // optional; auto-generated when blank (DECISION 4). NOT "Identifier" — that bare header is the authority R-number.
             'Document Type',          // required
-            'Series',                 // required; code or "CODE: Title"
+            'Subseries',              // required; code or "CODE: Title" (Client 2026-08-31: 'Series' → 'Subseries')
             'Volume No',              // optional; renamed from volume_label (DECISION 7)
             'Part Number',            // optional; DECISION 5
             'Practice',               // optional
@@ -541,7 +548,9 @@ final class TemplateGenerator
         // entity keys are clean ASCII; just title-case for the user.
         return match ($entity) {
             'authority' => 'Authorities',
-            'series' => 'Series',
+            // Client 2026-08-31: 'Series' → 'Subseries' throughout, incl. the
+            // series import sheet title.
+            'series' => 'Subseries',
             'batch' => 'Batches',
             'box' => 'Boxes',
             'location' => 'Locations',

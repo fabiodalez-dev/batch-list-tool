@@ -58,5 +58,6 @@ it('lists multiple series', function () {
 });
 
 it('renders the series list heading', function () {
-    bl_login(bl_actor('admin'))->navigate('/admin/series')->assertSee('Series');
+    // Client 2026-08-31: the entity is presented as 'Subseries'.
+    bl_login(bl_actor('admin'))->navigate('/admin/series')->assertSee('Subseries');
 });

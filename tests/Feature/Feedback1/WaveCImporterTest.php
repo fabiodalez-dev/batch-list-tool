@@ -814,7 +814,7 @@ it('Template: TemplateGenerator returns the accession template with all required
     expect($headers)->toContain('Box No');
     expect($headers)->toContain('Box Barcode');
     expect($headers)->toContain('Document Type');
-    expect($headers)->toContain('Series');
+    expect($headers)->toContain('Subseries'); // Client 2026-08-31: 'Series' → 'Subseries'
     expect($headers)->toContain('Volume No');     // NAf Feedback 1: 'Volume No' not 'Volume Number'
     expect($headers)->toContain('Part Number');
     expect($headers)->toContain('Note');          // NAf Feedback 1: singular 'Note'

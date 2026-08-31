@@ -44,7 +44,8 @@ it('opens the Documents by Creator report', function () {
 });
 
 it('opens the Documents by Series report', function () {
-    bl_login(bl_actor('admin'))->navigate('/admin/reports/documents-by-series')->assertSee('Series');
+    // Client 2026-08-31: report title renamed to 'Documents by subseries'.
+    bl_login(bl_actor('admin'))->navigate('/admin/reports/documents-by-series')->assertSee('subseries');
 });
 
 it('opens the Pending Disinfestation report', function () {

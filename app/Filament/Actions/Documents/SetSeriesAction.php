@@ -28,10 +28,10 @@ final class SetSeriesAction
     public static function make(string $name = 'setSeries'): Action
     {
         return Action::make($name)
-            ->label('Set series')
+            ->label('Set subseries')
             ->icon('heroicon-o-tag')
             ->color('primary')
-            ->modalHeading('Reclassify this document into a different series')
+            ->modalHeading('Reclassify this document into a different subseries')
             ->form(self::form())
             ->action(function (Document $record, array $data): void {
                 self::perform(ActionSupport::asCollection($record), $data);
@@ -42,10 +42,10 @@ final class SetSeriesAction
     public static function bulk(string $name = 'bulkSetSeries'): BulkAction
     {
         return BulkAction::make($name)
-            ->label('Set series')
+            ->label('Set subseries')
             ->icon('heroicon-o-tag')
             ->color('primary')
-            ->modalHeading('Reclassify selected documents into a different series')
+            ->modalHeading('Reclassify selected documents into a different subseries')
             ->form(self::form())
             ->action(function (EloquentCollection $records, array $data): void {
                 self::perform($records, $data);
@@ -61,7 +61,7 @@ final class SetSeriesAction
     {
         return [
             SearchableSelects::series('to_series_id')
-                ->label('Target series')
+                ->label('Target subseries')
                 ->required(),
         ];
     }
@@ -78,7 +78,7 @@ final class SetSeriesAction
         $series = Series::query()->find($seriesId);
         if ($series === null || $series->trashed()) {
             Notification::make()
-                ->title('Cannot set series — series not found')
+                ->title('Cannot set subseries — subseries not found')
                 ->danger()->send();
 
             return;
