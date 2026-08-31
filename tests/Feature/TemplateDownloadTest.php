@@ -292,9 +292,9 @@ test('Document template preserves the duplicated provenance headers verbatim', f
     // (columns added/removed at the ends) don't force a rewrite of every index.
     expect($generated)->toEqual(TemplateGenerator::DOCUMENT_HEADERS);
 
-    // Column count: 49 legacy columns − 5 "…Box Destroyed" (removed 2026-08-18,
-    // a BOX property) + 2 new (Temporary Identifier, Citation Reference) = 46.
-    expect(count($generated))->toBe(48);
+    // Column count: was 48; Client 2026-08-31 removed 'Current Box' and
+    // 'Location' (−2) and added 'Part Number' (+1) → 47.
+    expect(count($generated))->toBe(47);
 
     // The five Destroyed columns are gone from the document template.
     expect($generated)->not->toContain('RAS 1 Box Destroyed', 'In Situ Box 3 Destroyed');
@@ -304,8 +304,15 @@ test('Document template preserves the duplicated provenance headers verbatim', f
         'Conservation Object Reference Number',
         'Temporary Identifier',
         'Citation Reference',
-        'Location',
+        // Client 2026-08-31: Subseries (renamed from Series), Part Number added,
+        // NRA Location is the code-resolved location column.
+        'Subseries',
+        'Part Number',
+        'NRA Location',
     );
+
+    // Client 2026-08-31: the removed / renamed columns are gone from the template.
+    expect($generated)->not->toContain('Series', 'Current Box', 'Location');
 
     // Contract: the multi-step provenance DUPLICATES are preserved verbatim.
     // Block 2's first past barcode is "Barcode RAS 1" (matching the real client

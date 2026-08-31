@@ -1318,10 +1318,12 @@ class AccessionRowImporter extends Importer
                 ->guess(['Document Type', 'document_type', 'Doc Type', 'Type'])
                 ->rules(['required', 'string', 'max:64']),
 
+            // Client 2026-08-31: 'Series' → 'Subseries' (display only); 'Series'
+            // kept in the guess-list for back-compat with old accession sheets.
             ImportColumn::make('series')
-                ->label('Series')
+                ->label('Subseries')
                 ->requiredMappingForNewRecordsOnly()
-                ->guess(['Series', 'series', 'Series Code'])
+                ->guess(['Subseries', 'subseries', 'Series', 'series', 'Series Code'])
                 ->fillRecordUsing(function (Document $record, ?string $state): void {
                     if ($state === null || trim($state) === '') {
                         throw ValidationException::withMessages([

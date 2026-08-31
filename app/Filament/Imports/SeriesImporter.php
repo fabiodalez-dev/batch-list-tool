@@ -92,8 +92,8 @@ class SeriesImporter extends Importer
             // the operator override the heuristic when their data is already
             // tagged.
             ImportColumn::make('is_wills_series')
-                ->label('Is wills series?')
-                ->guess(['Is wills series', 'Wills', 'is_wills_series'])
+                ->label('Is wills subseries?')
+                ->guess(['Is wills subseries', 'Is wills series', 'Wills', 'is_wills_series'])
                 ->boolean()
                 ->rules(['nullable', 'boolean']),
 

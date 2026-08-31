@@ -19,7 +19,7 @@ class DocumentsPerSeriesChart extends ChartWidget
 {
     protected static ?int $sort = 3;
 
-    protected ?string $heading = 'Documents by Series';
+    protected ?string $heading = 'Documents by Subseries';
 
     protected ?string $maxHeight = '300px';
 

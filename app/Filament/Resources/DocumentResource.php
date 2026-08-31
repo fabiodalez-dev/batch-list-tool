@@ -1594,7 +1594,7 @@ class DocumentResource extends Resource
 
         return array_filter([
             'Authors' => $authors !== '' ? $authors : null,
-            'Series' => $record->series?->code,
+            'Subseries' => $record->series?->code,
             'Box' => $record->currentBox?->box_number,
         ]);
     }

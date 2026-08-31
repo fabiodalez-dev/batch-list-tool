@@ -147,16 +147,16 @@ it('maps the real DOCUMENT batch list "Tracking" header onto the document tracki
         ->and($map['tracking'])->toBe('Tracking');
 })->skip(fn (): bool => ! file_exists(base_path(NAF_DOC_CSV)), 'real NAF document batch list absent (PII, not in CI)');
 
-it('the real DOCUMENT batch list has NO code Location column yet (only free-text NRA/Museum)', function () {
-    // The client's current sheet carries 'NRA Location' / 'Museum Location'
-    // (free text), not the new code-resolved 'Location'. So the document
-    // Location import column stays unmapped until they add it — documented here
-    // so the expectation is explicit.
+it('maps the sheet\'s NRA Location header to the code-resolved location column', function () {
+    // Client 2026-08-31: 'NRA Location' is now the code-resolved location
+    // column (documents.location_id) — the operator types the location CODE
+    // (e.g. REPO-1-45). The legacy free-text nra_location field no longer
+    // claims that header, so guessColumnMap points 'NRA Location' at `location`.
     [$headers] = nafsmoke_docRows(0);
     $map = ImportWizard::guessColumnMap(DocumentImporter::class, $headers);
 
-    expect($map['location'])->toBeNull()
-        ->and($map['nra_location'])->toBe('NRA Location')
+    expect($map['location'])->toBe('NRA Location')
+        ->and($map['nra_location'])->toBeNull()
         ->and($map['museum_location'])->toBe('Museum Location');
 })->skip(fn (): bool => ! file_exists(base_path(NAF_DOC_CSV)), 'real NAF document batch list absent (PII, not in CI)');
 

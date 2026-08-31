@@ -52,7 +52,7 @@ class ListDocuments extends ListRecords
             'identifier' => 'Identifier',
             'document_type' => 'Type',
             'creator' => 'Creator(s)',
-            'series' => 'Series',
+            'series' => 'Subseries',
             'batch' => 'Batch',
             'current_box' => 'Current box',
             'disinfestation_date' => 'Disinfestation date',

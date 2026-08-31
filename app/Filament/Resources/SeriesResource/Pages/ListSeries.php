@@ -50,7 +50,7 @@ class ListSeries extends ListRecords
                 ->visible(fn () => auth()->user()?->can('create', Series::class) ?? false),
 
             Actions\CreateAction::make()
-                ->label('New Series'),   // Bug #20
+                ->label('New Subseries'),   // Bug #20; Client 2026-08-31 rename
         ];
     }
 }

@@ -39,6 +39,16 @@ class SeriesResource extends Resource
 
     protected static ?int $navigationSort = 30;
 
+    // Client 2026-08-31: the entity is presented as "Subseries" throughout the
+    // UI (navigation, page title, buttons, breadcrumbs). The model, table,
+    // relationships and FK (series_id) are deliberately left as `series` — this
+    // is a display rename only.
+    protected static ?string $navigationLabel = 'Subseries';
+
+    protected static ?string $modelLabel = 'subseries';
+
+    protected static ?string $pluralModelLabel = 'Subseries';
+
     protected static ?string $recordTitleAttribute = 'code';
 
     public static function form(Schema $schema): Schema
@@ -75,7 +85,7 @@ class SeriesResource extends Resource
                         // descendants so a cycle cannot be formed from the UI;
                         // the closure rule below is the server-side backstop.
                         $g(Forms\Components\Select::make('parent_id')
-                            ->label('Parent series')
+                            ->label('Parent subseries')
                             ->helperText('Leave empty for a top-level series.')
                             ->native(false)
                             ->searchable()
@@ -184,13 +194,13 @@ class SeriesResource extends Resource
                             ->badge()
                             ->color('gray'),
                         TextEntry::make('parent.code')
-                            ->label('Parent series')
+                            ->label('Parent subseries')
                             ->url(fn (?Series $record): ?string => $record?->parent_id
                                 ? route('filament.admin.resources.series.view', ['record' => $record->parent_id])
                                 : null)
                             ->placeholder('Top-level (no parent)'),
                         IconEntry::make('is_wills_series')
-                            ->label('Wills series')
+                            ->label('Wills subseries')
                             ->boolean(),
                         IconEntry::make('is_active')
                             ->label('Active')
@@ -332,9 +342,9 @@ class SeriesResource extends Resource
                     ->searchable()
                     ->multiple(),
                 TernaryFilter::make('is_wills_series')
-                    ->label('Wills series')
+                    ->label('Wills subseries')
                     ->placeholder('All')
-                    ->trueLabel('Wills series only')
+                    ->trueLabel('Wills subseries only')
                     ->falseLabel('Non-wills only'),
                 TernaryFilter::make('is_active')
                     ->label('Active')
@@ -345,15 +355,15 @@ class SeriesResource extends Resource
                 TernaryFilter::make('top_level')
                     ->label('Top-level only')
                     ->placeholder('All levels')
-                    ->trueLabel('Top-level series only')
-                    ->falseLabel('Sub-series only')
+                    ->trueLabel('Top-level subseries only')
+                    ->falseLabel('Child subseries only')
                     ->queries(
                         true: fn (Builder $q): Builder => $q->whereNull('parent_id'),
                         false: fn (Builder $q): Builder => $q->whereNotNull('parent_id'),
                         blank: fn (Builder $q): Builder => $q,
                     ),
                 SelectFilter::make('parent_id')
-                    ->label('Parent series')
+                    ->label('Parent subseries')
                     ->options(fn (): array => Series::query()
                         ->orderBy('code')
                         ->get()

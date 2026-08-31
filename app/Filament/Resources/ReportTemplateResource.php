@@ -266,7 +266,7 @@ class ReportTemplateResource extends Resource
             ReportTemplate::SOURCE_DOCUMENTS => 'Documents',
             ReportTemplate::SOURCE_DOCUMENTS_BY_BATCH => 'Documents by batch',
             ReportTemplate::SOURCE_DOCUMENTS_BY_CREATOR => 'Documents by creator',
-            ReportTemplate::SOURCE_DOCUMENTS_BY_SERIES => 'Documents by series',
+            ReportTemplate::SOURCE_DOCUMENTS_BY_SERIES => 'Documents by subseries',
             ReportTemplate::SOURCE_PENDING_DISINFESTATION => 'Pending disinfestation',
             ReportTemplate::SOURCE_BOX_MOVEMENTS => 'Box movement history',
             ReportTemplate::SOURCE_FLAGS_BY_TYPE => 'Flags by type',

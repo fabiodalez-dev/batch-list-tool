@@ -430,6 +430,11 @@ test('Bug #4: the recovered duplicate-header data reaches the saved Document end
     // dedicated test below) that would otherwise mask the finding under
     // test here. Drop it so this test isolates the duplicate-header fix.
     unset($columnMap['torre']);
+    // Client 2026-08-31: 'NRA Location' is now the code-resolved location
+    // column. This legacy sample row carries a free-text location NAME
+    // ("Archive Room 1"), not a code, which would now fail the row — orthogonal
+    // to the duplicate-header finding under test. Drop it, exactly like torre.
+    unset($columnMap['location']);
 
     $rows = dgt_realRows(DGT_EXAMPLE_XLSX, 2, 2);
     $import = dgt_run($rows, $columnMap, $u->id);
