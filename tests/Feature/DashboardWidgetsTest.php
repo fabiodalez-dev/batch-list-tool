@@ -511,7 +511,7 @@ test('Export CSV contains the expected column order in the header row', function
         ->toContain('Identifier')
         ->toContain('Type')
         ->toContain('Creator')
-        ->toContain('Series')
+        ->toContain('Subseries') // Client 2026-08-31: 'Series' → 'Subseries'
         ->toContain('Batch')
         ->toContain('Current box')
         ->toContain('Disinfestation date')
@@ -520,7 +520,7 @@ test('Export CSV contains the expected column order in the header row', function
     // Column order assertion — Wave F added No of Acts + Pages/Folios as cols 10 and 11.
     $headers = str_getcsv($firstLine, escape: '\\');
     expect($headers)->toBe([
-        'Identifier', 'Type', 'Creator(s)', 'Series', 'Batch',
+        'Identifier', 'Type', 'Creator(s)', 'Subseries', 'Batch',
         'Current box', 'Disinfestation date', 'Notes', 'Part Number',
         'No of Acts', 'Pages/Folios',
     ]);
