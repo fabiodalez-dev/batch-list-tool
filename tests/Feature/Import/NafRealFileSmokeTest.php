@@ -156,7 +156,9 @@ it('maps the sheet\'s NRA Location header to the code-resolved location column',
     $map = ImportWizard::guessColumnMap(DocumentImporter::class, $headers);
 
     expect($map['location'])->toBe('NRA Location')
-        ->and($map['nra_location'])->toBeNull()
+        // Client 2026-08-31: the legacy nra_location column is no longer an
+        // importer column, so it cannot claim (or double-fill from) the header.
+        ->and($map)->not->toHaveKey('nra_location')
         ->and($map['museum_location'])->toBe('Museum Location');
 })->skip(fn (): bool => ! file_exists(base_path(NAF_DOC_CSV)), 'real NAF document batch list absent (PII, not in CI)');
 
