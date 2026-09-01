@@ -14,6 +14,7 @@ use App\Models\Location;
 use App\Models\Lookup\BarcodeStatus;
 use App\Models\Lookup\BoxType;
 use App\Support\CustomFields\CustomFieldSchema;
+use App\Support\LocationBreadcrumbCache;
 use Carbon\Carbon;
 use Filament\Actions\Action;
 use Filament\Actions\BulkAction;
@@ -801,6 +802,10 @@ class BoxResource extends Resource
                 // form's location_id select.
                 $gc(Tables\Columns\TextColumn::make('location.full_path')
                     ->label('Location')
+                    // Memoise the breadcrumb by location id instead of
+                    // dot-accessing the accessor per row, which runs an
+                    // ancestors() query each time (schema audit — N+1).
+                    ->state(fn (?Box $record): ?string => LocationBreadcrumbCache::for($record?->location))
                     ->placeholder('—')
                     ->toggleable()
                     // Gate the link on the RESOLVED relation, not the raw FK: an

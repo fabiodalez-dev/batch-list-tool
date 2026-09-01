@@ -47,6 +47,9 @@ class RecentActivityWidget extends BaseWidget
 
     protected int|string|array $columnSpan = 'full';
 
+    /** @var array<int, string> Per-render memo so a user who made several of the last 10 edits is fetched once (schema audit — N+1). */
+    private array $userNameMemo = [];
+
     public function table(Table $table): Table
     {
         return $table
@@ -130,10 +133,9 @@ class RecentActivityWidget extends BaseWidget
             return 'System';
         }
 
-        /** @var User|null $user */
-        $user = User::query()->find($audit->user_id);
-
-        return $user?->name ?? ('User #' . $audit->user_id);
+        return $this->userNameMemo[(int) $audit->user_id] ??= (
+            User::query()->find($audit->user_id)?->name ?? ('User #' . $audit->user_id)
+        );
     }
 
     protected function describeAudit(Audit $audit): string

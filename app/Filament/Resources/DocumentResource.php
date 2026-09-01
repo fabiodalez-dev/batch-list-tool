@@ -17,6 +17,7 @@ use App\Models\Lookup\DigitisationStatus;
 use App\Models\Practice;
 use App\Models\Repository;
 use App\Support\CustomFields\CustomFieldSchema;
+use App\Support\LocationBreadcrumbCache;
 use Carbon\Carbon;
 use Filament\Actions\BulkActionGroup;
 use Filament\Actions\DeleteBulkAction;
@@ -1084,7 +1085,10 @@ class DocumentResource extends Resource
                 // accessor, not a DB column. Gated on the document's location_id.
                 $gc(Tables\Columns\TextColumn::make('effective_location')
                     ->label('Location')
-                    ->state(fn (?Document $record): ?string => $record?->effectiveLocation()?->full_path)
+                    // Memoise the breadcrumb by location id — the accessor runs
+                    // an ancestors() query per call, and a page shares few
+                    // distinct locations (schema audit — N+1).
+                    ->state(fn (?Document $record): ?string => LocationBreadcrumbCache::for($record?->effectiveLocation()))
                     ->description(fn (?Document $record): ?string => $record?->locationIsInherited() ? 'from box' : null)
                     ->placeholder('—')
                     ->url(fn (?Document $record): ?string => ($loc = $record?->effectiveLocation())
