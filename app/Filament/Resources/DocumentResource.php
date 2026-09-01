@@ -1648,6 +1648,20 @@ class DocumentResource extends Resource
             return;
         }
 
+        // Schema audit (#6): the full omni-search fans a leading-wildcard LIKE
+        // across ~38 columns plus 8 EXISTS subqueries — a full documents scan.
+        // The table search is debounced per keystroke, so a 1-character term
+        // (which matches almost everything and is never a useful substring
+        // search) would trigger that scan over 26k rows on every early keystroke.
+        // For terms shorter than 2 characters, restrict to a sargable prefix
+        // match on the indexed identifier instead of the whole fan-out.
+        if (mb_strlen($term) < 2) {
+            $prefix = self::escapeForLike($term) . '%';
+            $query->whereRaw("documents.identifier LIKE ? ESCAPE '!'", [$prefix]);
+
+            return;
+        }
+
         // Escape LIKE wildcards so user input like "100%" or
         // "OMSEARCH_REG" matches the literal substring instead of being
         // interpreted as a `%` / `_` pattern. Eloquent does NOT escape
