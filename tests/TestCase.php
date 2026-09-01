@@ -4,6 +4,7 @@ namespace Tests;
 
 use App\Support\CustomFields\CustomFieldResolver;
 use Illuminate\Foundation\Testing\TestCase as BaseTestCase;
+use Illuminate\Support\Facades\DB;
 
 abstract class TestCase extends BaseTestCase
 {
@@ -20,5 +21,22 @@ abstract class TestCase extends BaseTestCase
     {
         parent::setUp();
         CustomFieldResolver::flush();
+
+        // Schema audit (#14): SQLite's built-in LOWER() folds only ASCII, while
+        // the MySQL/MariaDB prod database (utf8mb4) folds accented Latin. The
+        // import resolvers compare LOWER(column) against an mb_strtolower'd
+        // needle, so accented uppercase values resolve in prod but not under the
+        // SQLite test driver. Override SQLite's LOWER() with a Unicode-aware
+        // implementation so the suite exercises the same case-folding as prod.
+        // Kept in the test bootstrap (not AppServiceProvider) so it never touches
+        // the production boot path or forces an early connection. mb_strtolower
+        // is a strict superset of ASCII lower — it can only improve correctness.
+        $connection = DB::connection();
+        if ($connection->getDriverName() === 'sqlite') {
+            $pdo = $connection->getPdo();
+            if (method_exists($pdo, 'sqliteCreateFunction')) {
+                $pdo->sqliteCreateFunction('LOWER', static fn (?string $value): ?string => $value === null ? null : mb_strtolower($value), 1);
+            }
+        }
     }
 }
