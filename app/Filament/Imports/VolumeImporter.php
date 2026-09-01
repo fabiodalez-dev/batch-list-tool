@@ -105,12 +105,20 @@ class VolumeImporter extends Importer
         if ($identifier !== null && $identifier !== '' && $volumeNumber !== null && $volumeNumber !== '') {
             $repoId = CustomFieldResolver::activeRepositoryId();
 
+            // SECURITY (schema audit): with no active or default repository we
+            // must NOT match the parent Document by identifier across EVERY
+            // repository — that attaches/restores a volume onto another tenant's
+            // document. Fail the row closed with a clear reason.
+            if ($repoId === null) {
+                throw ValidationException::withMessages([
+                    'document_identifier' => 'Select a repository before importing volumes — an import cannot match documents across all repositories.',
+                ]);
+            }
+
             $docQuery = Document::query()
                 ->withoutGlobalScope(RepositoryScope::class)
-                ->where('identifier', $identifier);
-            if ($repoId !== null) {
-                $docQuery->where('repository_id', $repoId);
-            }
+                ->where('identifier', $identifier)
+                ->where('repository_id', $repoId);
             $document = $docQuery->first();
 
             if ($document !== null) {
@@ -236,17 +244,21 @@ class VolumeImporter extends Importer
                     $identifier = trim($state);
                     $repoId = CustomFieldResolver::activeRepositoryId();
 
+                    // SECURITY (schema audit): a null repository must never fall
+                    // back to matching the parent Document across all tenants —
+                    // fail the row closed with a clear reason instead.
+                    if ($repoId === null) {
+                        throw ValidationException::withMessages([
+                            'document_identifier' => 'Select a repository before importing volumes — an import cannot match documents across all repositories.',
+                        ]);
+                    }
+
                     // Resolve the parent Document scoped to the active repository.
-                    // Using withoutGlobalScope so we can scope manually: the global
-                    // RepositoryScope would apply the session repo anyway, but we
-                    // need to do an explicit tenant check here.
+                    // withoutGlobalScope so we can apply the tenant filter explicitly.
                     $query = Document::query()
                         ->withoutGlobalScope(RepositoryScope::class)
-                        ->where('identifier', $identifier);
-
-                    if ($repoId !== null) {
-                        $query->where('repository_id', $repoId);
-                    }
+                        ->where('identifier', $identifier)
+                        ->where('repository_id', $repoId);
 
                     $document = $query->first();
 
@@ -258,9 +270,8 @@ class VolumeImporter extends Importer
                         return;
                     }
 
-                    // Tenant safety: if no repo filter was applied (repoId is null, e.g.
-                    // no active repo set), still accept the first matching document.
-                    // But if a specific repo IS set, the query already filtered for it.
+                    // A specific repo IS set (guaranteed non-null above), so the
+                    // query already filtered for it — the match is tenant-safe.
                     static::$rowDocumentIdStash[$key] = (int) $document->getKey();
                     $record->document_id = (int) $document->getKey();
                 }),
