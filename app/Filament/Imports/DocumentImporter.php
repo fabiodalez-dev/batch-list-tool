@@ -341,6 +341,19 @@ class DocumentImporter extends Importer
         $user = auth()->user();
         $repoId = $user?->default_repository_id;
 
+        // SECURITY (schema audit — High): with no determinable repository — the
+        // profile of a privileged user (super_admin/admin) who has no
+        // default_repository_id — we must NOT fall back to matching documents by
+        // identifier across EVERY repository. Doing so lets one tenant's import
+        // silently overwrite (or restore) another tenant's document, and the
+        // id-keyed side effects (BoxMovement rebuild, BoxBarcodeHistory delete)
+        // then hit the victim. Fail the row closed with a clear reason instead.
+        if ($repoId === null) {
+            throw ValidationException::withMessages([
+                'identifier' => 'Select a repository before importing documents — an import cannot match rows across all repositories.',
+            ]);
+        }
+
         // Bug #22 — when the identifier column is blank, afterFill() falls the
         // document identifier back to the Catalogue Identifier (then to an
         // auto-generated code). Match on that natural key here so RE-IMPORTING a
@@ -369,7 +382,7 @@ class DocumentImporter extends Importer
         if ($identifier === null || trim((string) $identifier) === '') {
             $autoIdentifier = $this->buildAutoIdentifier(
                 $this->data,
-                $repoId !== null ? (int) $repoId : null,
+                (int) $repoId, // guaranteed non-null past the guard above
                 $this->currentRowSequence(),
             );
             $identifier = $autoIdentifier;
@@ -380,14 +393,12 @@ class DocumentImporter extends Importer
         // the unique catalogue_identifier / barcode. Mirrors the other importers.
         $q = Document::withTrashed()
             ->withoutGlobalScope(RepositoryScope::class)
-            ->where('identifier', trim((string) $identifier));
-        if ($repoId !== null) {
-            $q->where('repository_id', $repoId);
-        }
+            ->where('identifier', trim((string) $identifier))
+            ->where('repository_id', $repoId); // guaranteed non-null past the guard above
 
         $record = $q->first() ?? new Document;
         // BUG-05: stash repo id so the static batch_number closure can use it.
-        self::$rowRepositoryStash[spl_object_id($record)] = $repoId !== null ? (int) $repoId : null;
+        self::$rowRepositoryStash[spl_object_id($record)] = (int) $repoId; // non-null past the guard above
         // Bug #22 — remember the computed auto id so afterFill() stamps the exact
         // same value that was just used as the match key (no recomputation drift).
         if ($autoIdentifier !== null) {

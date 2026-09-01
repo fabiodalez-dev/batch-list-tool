@@ -72,6 +72,12 @@ class ImportBatchList extends Command
         'document_location_history', 'document_barcode_history',
         'document_identifier_history', 'box_barcode_history', 'box_seal_number_history',
         'custom_field_values',
+        // Schema audit (High): these four are FK-constrained to documents/boxes
+        // with ON DELETE CASCADE. TRUNCATE never fires the cascade AND resets
+        // AUTO_INCREMENT to 1, so any surviving child row would silently
+        // re-attach to a freshly imported parent that reuses its old id. They
+        // MUST be truncated alongside their parents.
+        'volumes', 'document_items', 'document_flags', 'box_parents',
         'documents', 'boxes', 'accessions', 'batches',
     ];
 

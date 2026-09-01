@@ -234,6 +234,16 @@ class AccessionRowImporter extends Importer
         // tenant-correct. Result stored in instance property for the cascade.
         $repoId = $this->resolveRowRepositoryId();
 
+        // SECURITY (schema audit — High): with no determinable repository we
+        // must NOT match an existing document by identifier across EVERY
+        // repository — that would let this import overwrite (or restore, below)
+        // another tenant's document. Fail the row closed with a clear reason.
+        if ($repoId === null) {
+            throw ValidationException::withMessages([
+                'document_identifier' => 'Select a repository before importing — an import cannot match documents across all repositories.',
+            ]);
+        }
+
         if ($identifier === null || trim((string) $identifier) === '') {
             return new Document;
         }
@@ -243,10 +253,8 @@ class AccessionRowImporter extends Importer
         // on a chained instance). Same query, satisfies static analysis.
         $q = Document::withTrashed()
             ->withoutGlobalScope(RepositoryScope::class)
-            ->where('identifier', trim((string) $identifier));
-        if ($repoId !== null) {
-            $q->where('repository_id', $repoId);
-        }
+            ->where('identifier', trim((string) $identifier))
+            ->where('repository_id', $repoId); // guaranteed non-null past the guard above
 
         $record = $q->first();
         if ($record === null) {
