@@ -391,6 +391,11 @@ class SeriesResource extends Resource
         return parent::getEloquentQuery()->with([
             // A9 — creator resolution: first 'created' audit with its user.
             'audits' => fn ($q) => $q->oldest('id')->with('user'),
+            // Schema audit (N+1): the list renders repository.code and the
+            // parent chain per row — eager-load them so the default view does
+            // not fire a query per row for the repository and immediate parent.
+            'repository',
+            'parent',
         ]);
     }
 
