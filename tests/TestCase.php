@@ -3,6 +3,7 @@
 namespace Tests;
 
 use App\Support\CustomFields\CustomFieldResolver;
+use App\Support\LocationBreadcrumbCache;
 use Illuminate\Foundation\Testing\TestCase as BaseTestCase;
 use Illuminate\Support\Facades\DB;
 
@@ -21,6 +22,10 @@ abstract class TestCase extends BaseTestCase
     {
         parent::setUp();
         CustomFieldResolver::flush();
+        // Request-scoped static memo keyed by location id — RefreshDatabase
+        // resets the DB (and reuses ids) but not the static cache, so flush it
+        // per test to prevent a stale breadcrumb bleeding across scenarios.
+        LocationBreadcrumbCache::flush();
 
         // Schema audit (#14): SQLite's built-in LOWER() folds only ASCII, while
         // the MySQL/MariaDB prod database (utf8mb4) folds accented Latin. The
