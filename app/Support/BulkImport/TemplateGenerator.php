@@ -85,7 +85,14 @@ final class TemplateGenerator
     // real first column is Identifier, matching what operators actually fill in.
     public const array SERIES_HEADERS = [
         'Identifier', 'Standard title in English (Plural)',
-        'Level of description', 'Date of creation', 'Name of Inputter',
+        'Level of description',
+        // Client 2026-09-14 — the identifier of the series this one sits under
+        // (e.g. REG's parent is R). "Level of description" only records the WORD
+        // "SubSeries"; it does not attach the row to anything, and until this
+        // column existed the cataloguer had to set every parent by hand after
+        // importing. Blank = a top-level series.
+        'Parent',
+        'Date of creation', 'Name of Inputter',
         // Optional: archive code to assign the series to a specific Repository.
         // Leave blank for a GLOBAL series (visible to every repository).
         'Repository',
@@ -152,7 +159,7 @@ final class TemplateGenerator
      * can detect a stale template at re-upload time and warn the operator.
      * Bump on any change to the header contract.
      */
-    public const string GENERATOR_VERSION = '1.13.0';
+    public const string GENERATOR_VERSION = '1.14.0';
 
     /**
      * Supported template entities. Headers come from the in-repo constants

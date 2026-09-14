@@ -533,20 +533,35 @@ test('the real RFQ Series_Sample.xlsx yields correct is_wills_series flags acros
 
 // ─── 18. Real outbox example file (2 data rows: REG, RWL) ─────────────────
 
-test('imports the real outbox example_series_import.xlsx (REG + RWL) with the correct wills flag', function () {
+test('imports the real outbox example_series_import.xlsx, wills flags and hierarchy included', function () {
+    // The example was regenerated on 2026-09-14: it now carries the client's
+    // actual two-root tree (R and O with their subseries) and the Parent column
+    // that builds it, instead of two flat rows. It also dropped the stray blank
+    // first column the generated template stopped emitting long ago.
     [$headers, $rows] = srt_readXlsx(SRT_OUTBOX_XLSX);
-    expect($rows)->toHaveCount(2);
+    expect($rows)->toHaveCount(8);
+    expect($headers)->toContain('Parent');
 
     $u = srt_admin();
     $this->actingAs($u);
 
-    $columnMap = ['code' => 'Identifier', 'title' => 'Standard title in English (Plural)'];
+    $columnMap = [
+        'code' => 'Identifier',
+        'title' => 'Standard title in English (Plural)',
+        'level_of_description' => 'Level of description',
+        'parent_code' => 'Parent',
+    ];
     $import = srt_run($rows, $columnMap, $u->id);
 
     expect(srt_failures($import))->toBe([])
-        ->and(Series::count())->toBe(2)
+        ->and(Series::count())->toBe(8)
         ->and(Series::where('code', 'REG')->value('is_wills_series'))->toBeFalse()
         ->and(Series::where('code', 'RWL')->value('is_wills_series'))->toBeTrue();
+
+    // The point of the 2026-09-14 change: the sheet builds the tree in one pass.
+    expect(Series::where('code', 'REG')->firstOrFail()->parent->code)->toBe('R');
+    expect(Series::where('code', 'OWL')->firstOrFail()->parent->code)->toBe('O');
+    expect(Series::whereNull('parent_id')->pluck('code')->sort()->values()->all())->toBe(['O', 'R']);
 });
 
 // ─── 19. Explicit is_wills_series override beats the heuristic ────────────

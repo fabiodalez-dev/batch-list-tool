@@ -44,12 +44,15 @@ it('TemplateGenerator: headersFor("authority") returns the in-repo legacy contra
         ->and($headers[0])->toBe('Identifier');
 });
 
-it('TemplateGenerator: headersFor("series") starts at Identifier and includes the optional Repository column', function () {
+it('TemplateGenerator: headersFor("series") starts at Identifier and includes the optional Repository and Parent columns', function () {
     $headers = TemplateGenerator::headersFor('series');
     expect($headers)->toEqual(TemplateGenerator::SERIES_HEADERS)
-        ->and($headers)->toHaveCount(6)
+        ->and($headers)->toHaveCount(7)
         ->and($headers[0])->toBe('Identifier')
-        ->and($headers)->toContain('Repository');
+        ->and($headers)->toContain('Repository')
+        // Client 2026-09-14 — carries the hierarchy, which "Level of
+        // description" only names.
+        ->and($headers)->toContain('Parent');
 });
 
 it('TemplateGenerator: headersFor("document") preserves the duplicated provenance headers', function () {
