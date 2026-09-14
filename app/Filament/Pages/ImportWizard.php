@@ -792,7 +792,8 @@ class ImportWizard extends Page
             // Series / Authorities
             'Identifier' => "The record's code / identifier.",
             'Standard title in English (Plural)' => 'The title.',
-            'Level of description' => 'ISAD level (usually "Series"). Informational.',
+            'Level of description' => 'ISAD level (usually "Series" or "SubSeries"). A label only — use "Parent" to attach the row to another series.',
+            'Parent' => 'The Identifier of the series this one sits under (e.g. REG sits under R). Blank for a top-level series. The parent may appear anywhere in this sheet or already exist.',
             'Date of creation' => 'A date or year range, e.g. "1607-1629". Informational.',
             'Name of Inputter' => 'Who catalogued the record. Informational (the system also records who ran the import).',
             'Repository' => 'The repository code (e.g. "NRA").',
@@ -2155,6 +2156,16 @@ class ImportWizard extends Page
             }
         }
 
+        // Client 2026-09-14 — Series rows carry a Parent identifier, and the
+        // importer resolves it against series ALREADY in the database. A sheet
+        // that lists REG before R would therefore fail on REG through no fault
+        // of the operator. Reorder so parents come first; a row whose parent is
+        // not in this sheet keeps its position and is resolved against the
+        // database as before.
+        if ($importerClass === SeriesImporter::class) {
+            $rows = self::sortSeriesRowsParentsFirst($rows, $cleanColumnMap);
+        }
+
         $chunks = array_chunk($rows, $chunkSize);
 
         $jobs = collect($chunks)->map(fn (array $chunk): object => app(ImportCsv::class, [
@@ -2241,4 +2252,102 @@ class ImportWizard extends Page
             ->danger()
             ->send();
     }
+
+    /**
+     * Order Series rows so a parent always precedes its children.
+     *
+     * The importer resolves "Parent" against series already persisted, so
+     * within a single sheet the order of rows decides whether a child can find
+     * its parent. Sorting here keeps that concern out of the importer, which
+     * stays a pure per-row transform.
+     *
+     * Rows whose parent is not present in this sheet are emitted first: their
+     * parent either already exists in the database (fine) or does not exist at
+     * all (the importer fails that row with an explicit message, which is the
+     * intended behaviour). A cycle inside the sheet cannot be ordered — those
+     * rows are emitted last in their original order and the importer rejects
+     * them, rather than looping here.
+     *
+     * @param  array<int, array<string, mixed>>  $rows
+     * @param  array<string, string>  $columnMap
+     * @return array<int, array<string, mixed>>
+     */
+    protected static function sortSeriesRowsParentsFirst(array $rows, array $columnMap): array
+    {
+        $codeKey = $columnMap['code'] ?? null;
+        $parentKey = $columnMap['parent_code'] ?? null;
+
+        // Nothing to order when either column is unmapped — an older sheet
+        // without a Parent column must behave exactly as it did before.
+        if (! is_string($codeKey) || ! is_string($parentKey)) {
+            return $rows;
+        }
+
+        $normalise = static function (mixed $value): string {
+            $value = is_scalar($value) ? trim((string) $value) : '';
+            // Mirror the importer: operators paste "R: Register Copies" into
+            // identifier columns, and the part before the colon is the code.
+            if (str_contains($value, ':')) {
+                $value = trim((string) explode(':', $value, 2)[0]);
+            }
+
+            return mb_strtolower($value);
+        };
+
+        $rows = array_values($rows);
+        $codesInSheet = [];
+        foreach ($rows as $i => $row) {
+            $code = $normalise($row[$codeKey] ?? '');
+            if ($code !== '') {
+                // First occurrence wins, matching the importer's own
+                // first-match-by-code resolution.
+                $codesInSheet[$code] ??= $i;
+            }
+        }
+
+        $emitted = [];
+        $ordered = [];
+        $remaining = $rows;
+
+        // Repeated passes rather than recursion: the sheet is a reference table
+        // (tens of rows), and a flat loop cannot blow the stack on a deep tree.
+        while ($remaining !== []) {
+            $progressed = false;
+            $stillPending = [];
+
+            foreach ($remaining as $index => $row) {
+                $parent = $normalise($row[$parentKey] ?? '');
+                $parentInSheet = $parent !== '' && array_key_exists($parent, $codesInSheet);
+
+                if (! $parentInSheet || array_key_exists($parent, $emitted)) {
+                    $ordered[] = $row;
+                    $code = $normalise($row[$codeKey] ?? '');
+                    if ($code !== '') {
+                        $emitted[$code] = true;
+                    }
+                    $progressed = true;
+
+                    continue;
+                }
+
+                $stillPending[$index] = $row;
+            }
+
+            if (! $progressed) {
+                // Every remaining row waits on another remaining row: a cycle,
+                // or a self-reference. Emit them unchanged and let the importer
+                // reject them with a message the operator can act on.
+                foreach ($stillPending as $row) {
+                    $ordered[] = $row;
+                }
+
+                break;
+            }
+
+            $remaining = $stillPending;
+        }
+
+        return $ordered;
+    }
+
 }

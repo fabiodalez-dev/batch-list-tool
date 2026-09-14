@@ -135,11 +135,15 @@ test('materialiseCsv on the Series template reads the "Data" sheet with the real
     $csvPath = wiz_call($page, 'materialiseCsv', [$file, 0]);
     [$headers, $rows] = wiz_call($page, 'readCsvForImport', [$csvPath]);
 
+    // Regenerated 2026-09-14: the client's real two-root tree, with the Parent
+    // column that builds it, replacing the two flat rows.
     expect($headers)->toContain('Identifier')
         ->and($headers)->toContain('Standard title in English (Plural)')
-        ->and($rows)->toHaveCount(2)
-        ->and($rows[0]['Identifier'])->toBe('REG')
-        ->and($rows[1]['Identifier'])->toBe('RWL');
+        ->and($headers)->toContain('Parent')
+        ->and($rows)->toHaveCount(8)
+        ->and($rows[0]['Identifier'])->toBe('R')
+        ->and($rows[1]['Identifier'])->toBe('REG')
+        ->and($rows[1]['Parent'])->toBe('R');
 });
 
 test('materialiseCsv copies a real .csv upload byte-for-byte (no xlsx transcoding)', function () {
@@ -468,14 +472,18 @@ test('guessColumnMap maps the Location template headers 1:1 (exact field-name he
         ->and($map['is_active'])->toBe('is_active');
 });
 
-test('guessColumnMap on the Series template with its stray blank first header still maps code/title correctly', function () {
+test('guessColumnMap on a sheet with a stray blank first header still maps code/title correctly', function () {
+    // This used to read the outbox example, which happened to carry the stray
+    // blank column the old Series_Sample.xlsx had. That example was regenerated
+    // on 2026-09-14 without it, so the case is built explicitly here instead:
+    // operators still send sheets shaped the old way, and the mapper must not
+    // let the blank header claim a field. Pinning the case to a fixture that
+    // only accidentally had the property is what made this test disappear the
+    // moment the fixture was cleaned up.
     $this->actingAs(wiz_admin());
-    $page = wiz_page();
-    $file = wiz_temp_file(WIZ_SERIES_XLSX);
-    $csvPath = wiz_call($page, 'materialiseCsv', [$file, 0]);
-    [$headers] = wiz_call($page, 'readCsvForImport', [$csvPath]);
 
-    // Confirms the fixture really does carry the stray blank column.
+    $headers = ['', 'Identifier', 'Standard title in English (Plural)', 'Level of description'];
+
     expect($headers[0])->toBe('');
 
     $map = ImportWizard::guessColumnMap(SeriesImporter::class, $headers);

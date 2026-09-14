@@ -11,6 +11,7 @@ use App\Support\BulkImport\EntityResolver;
 use Filament\Actions\Imports\ImportColumn;
 use Filament\Actions\Imports\Importer;
 use Filament\Actions\Imports\Models\Import;
+use Illuminate\Validation\ValidationException;
 use PhpOffice\PhpSpreadsheet\Shared\Date;
 
 /**
@@ -155,6 +156,67 @@ class SeriesImporter extends Importer
                     } else {
                         $record->date_of_creation = $state;
                     }
+                }),
+
+            // Client 2026-09-14 — the hierarchy itself, not just the word for it.
+            // "Level of description" records that a row IS a subseries; this
+            // column records WHAT it sits under, which is the part the
+            // cataloguer previously had to set by hand on every record after
+            // importing.
+            //
+            // A parent named but not resolvable FAILS the row rather than
+            // quietly importing it as top-level. Silently dropping the link is
+            // the worse outcome: the operator believes the tree is built, sees a
+            // flat list, and has no way to tell which rows lost their parent.
+            // Filament collects failed rows into a downloadable CSV, so an
+            // explicit failure is both visible and actionable.
+            ImportColumn::make('parent_code')
+                ->label('Parent identifier')
+                ->guess(['Parent', 'Parent identifier', 'Parent code', 'parent_code', 'Parent series'])
+                ->fillRecordUsing(function (Series $record, ?string $state): void {
+                    $state = $state !== null ? trim($state) : '';
+                    if ($state === '') {
+                        // Blank is a top-level series. Do NOT null an existing
+                        // parent here: re-importing a sheet whose Parent column
+                        // was left empty must not silently flatten a hierarchy
+                        // someone set up by hand.
+                        return;
+                    }
+
+                    // Operators paste the same "R: Register Copies" label into
+                    // this column that they paste into Identifier; accept it.
+                    if (str_contains($state, ':')) {
+                        $state = trim((string) explode(':', $state, 2)[0]);
+                    }
+
+                    $own = (string) ($record->code ?? '');
+                    if ($own !== '' && mb_strtolower($state) === mb_strtolower($own)) {
+                        throw ValidationException::withMessages([
+                            'parent_code' => __('A series cannot be its own parent.'),
+                        ]);
+                    }
+
+                    $parent = Series::query()
+                        ->whereRaw('LOWER(code) = ?', [mb_strtolower($state)])
+                        ->first();
+
+                    if ($parent === null) {
+                        throw ValidationException::withMessages([
+                            'parent_code' => __('No series with identifier ":code" exists yet. Put the parent on an earlier row of the same sheet, or import it first.', ['code' => $state]),
+                        ]);
+                    }
+
+                    // Re-importing an existing row must not build a loop
+                    // (R under REG while REG is already under R). disallowedParentIds()
+                    // returns the record itself plus every descendant; it is empty
+                    // for a row being created, where no loop is possible yet.
+                    if (in_array((int) $parent->getKey(), $record->disallowedParentIds(), true)) {
+                        throw ValidationException::withMessages([
+                            'parent_code' => __('":code" sits under this series already — making it the parent would create a loop.', ['code' => $state]),
+                        ]);
+                    }
+
+                    $record->parent_id = $parent->getKey();
                 }),
 
             ImportColumn::make('name_of_inputter')

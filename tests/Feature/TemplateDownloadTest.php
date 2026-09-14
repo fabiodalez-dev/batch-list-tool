@@ -239,7 +239,7 @@ test('Series template headers start at Identifier (no leading blank column)', fu
     // anything since the importer resolves columns by header name). A trailing
     // optional "Repository" column was added (client request 2026-07-27).
     expect($generated)->toEqual(TemplateGenerator::SERIES_HEADERS);
-    expect(count($generated))->toBe(6);
+    expect(count($generated))->toBe(7);
     expect($generated[0])->toBe('Identifier');
     expect($generated[1])->toBe('Standard title in English (Plural)');
     expect($generated)->toContain('Repository');
