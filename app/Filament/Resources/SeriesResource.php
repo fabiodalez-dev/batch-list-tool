@@ -284,6 +284,39 @@ class SeriesResource extends Resource
                     ->searchable()
                     ->sortable()
                     ->toggleable()),
+                // ISAD(G) metadata from the client's sheet. These used to be
+                // visible ONLY on the record's detail page, which is what the
+                // cataloguer's three reports were really about: in the list the
+                // nearest-looking columns were `created_at` (the moment of the
+                // import — hence "today's date" instead of the sheet's date)
+                // and the audit-derived Inputter (whoever was logged in during
+                // the import, not the name typed in the sheet). Level of
+                // description had no column at all. The values were imported
+                // correctly the whole time; the list simply never showed them.
+                $gc(Tables\Columns\TextColumn::make('level_of_description')
+                    ->label('Level of description')
+                    ->badge()
+                    ->color('gray')
+                    ->placeholder('—')
+                    ->searchable()
+                    ->sortable()
+                    ->toggleable()),
+                $gc(Tables\Columns\TextColumn::make('date_of_creation')
+                    ->label('Date of creation')
+                    // Deliberately NOT ->dateTime(): the column is free text so
+                    // an ISAD(G) span such as "1607-1629" stays readable. Piping
+                    // it through a date formatter would either mangle the span
+                    // or throw on it.
+                    ->placeholder('—')
+                    ->searchable()
+                    ->sortable()
+                    ->toggleable()),
+                $gc(Tables\Columns\TextColumn::make('name_of_inputter')
+                    ->label('Name of Inputter')
+                    ->placeholder('—')
+                    ->searchable()
+                    ->sortable()
+                    ->toggleable()),
                 Tables\Columns\TextColumn::make('document_types_count')
                     ->label('Doc. types')
                     ->counts('documentTypes')
@@ -324,8 +357,16 @@ class SeriesResource extends Resource
                     ->dateTime()
                     ->sortable()
                     ->toggleable(isToggledHiddenByDefault: true),
-                // A9 — inputter column (who created the record).
-                CreatorColumn::make(),
+                // A9 — audit-derived column: who entered the record in this
+                // application. Relabelled "Uploaded by" on Series only, because
+                // Series is the one table that ALSO carries the sheet's own
+                // "Name of Inputter"; two columns both called Inputter, showing
+                // different names for the same row, is what made the audit one
+                // look wrong. The shared factory keeps its "Inputter" label for
+                // the other 17 resources, which have nothing to confuse it with.
+                CreatorColumn::make()
+                    ->label('Uploaded by')
+                    ->tooltip('The account that imported or created this record — not the cataloguer named in the sheet.'),
             ])
             ->filters([
                 // Feedback1 Wave B (B1) — dropdown-driven filters (mechanism #1)
