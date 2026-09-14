@@ -2268,8 +2268,8 @@ class ImportWizard extends Page
      * rows are emitted last in their original order and the importer rejects
      * them, rather than looping here.
      *
-     * @param  array<int, array<string, mixed>>  $rows
-     * @param  array<string, string>  $columnMap
+     * @param array<int, array<string, mixed>> $rows
+     * @param array<string, string> $columnMap
      * @return array<int, array<string, mixed>>
      */
     protected static function sortSeriesRowsParentsFirst(array $rows, array $columnMap): array
@@ -2349,5 +2349,4 @@ class ImportWizard extends Page
 
         return $ordered;
     }
-
 }
