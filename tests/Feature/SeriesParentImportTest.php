@@ -278,8 +278,17 @@ it('has the wizard itself apply the ordering before the rows reach the queue', f
     $dispatched = [];
     Bus::assertBatched(function (PendingBatchContract $batch) use (&$dispatched): bool {
         foreach ($batch->jobs as $job) {
+            // The wizard base64-encodes a serialize()d chunk onto the job; reading
+            // it back is the only way to see the order the queue will receive.
+            // allowed_classes:false keeps this to plain arrays and scalars, so no
+            // object can be instantiated from the payload — and the payload is
+            // produced by the wizard in this same process, not by user input.
             /** @var array<int, array<string, mixed>> $chunk */
-            $chunk = unserialize(base64_decode((new ReflectionProperty($job, 'rows'))->getValue($job)));
+            // nosemgrep: php.lang.security.unserialize-use.unserialize-use
+            $chunk = unserialize(
+                base64_decode((new ReflectionProperty($job, 'rows'))->getValue($job)),
+                ['allowed_classes' => false],
+            );
             foreach ($chunk as $row) {
                 $dispatched[] = $row['Identifier'] ?? null;
             }
