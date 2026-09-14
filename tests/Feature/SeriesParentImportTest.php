@@ -211,8 +211,16 @@ it('builds the whole tree from the example sheet shipped to the client', functio
     $user = sp_admin();
     $this->actingAs($user);
 
+    // nra/ holds real client data and is intentionally untracked, so the sheet
+    // is absent in CI and in a fresh checkout. Skip cleanly there, exactly as
+    // tests/Pest.php does for the whole Feature/Import/Generated suite —
+    // asserting the file exists would turn "fixture unavailable" into a red
+    // build. The skip is scoped to this one case on purpose: the other twelve
+    // tests in this file need no fixture and must keep running in CI.
     $path = base_path('nra/outbox/2026-07-22_NAF_import_examples/example_series_import.xlsx');
-    expect(file_exists($path))->toBeTrue('the example sheet is missing');
+    if (! is_file($path)) {
+        test()->markTestSkipped('client import fixtures (nra/) are untracked and absent in this environment');
+    }
 
     $sheet = Excel::toArray(new class {}, $path)[0];
     $headers = array_map(static fn ($h): string => trim((string) $h), $sheet[0]);
