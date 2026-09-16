@@ -263,6 +263,28 @@ class ImportWizard extends Page
     public const PREFLIGHT_MAX_ERRORS = 200;
 
     /**
+     * Render the cached preflight result as an HTML summary + error table.
+     */
+    /**
+     * Columns whose absence changes what the import BUILDS, not just what it
+     * stores — and which therefore cannot be left to pass unremarked.
+     *
+     * Client 2026-09-16: a Series sheet saved before the Parent column existed
+     * imported 19 of 19 rows with zero failures and built no hierarchy at all,
+     * because the column simply was not there to map. Every signal the operator
+     * had said success. An unmapped optional column is normally none of the
+     * wizard's business; one that silently disables a feature the operator came
+     * here to use is.
+     *
+     * @var array<class-string, array<string, string>>
+     */
+    protected const STRUCTURAL_COLUMNS = [
+        SeriesImporter::class => [
+            'parent_code' => 'No "Parent" column is mapped, so no parent-child relationships will be created — series already linked keep their parent, and the rest stay top-level. If your spreadsheet has no Parent column, download the template again: it gained one on 14 September.',
+        ],
+    ];
+
+    /**
      * Wizard state — a single flat array of every step's fields.
      * Filament's Wizard component stitches the steps' state paths
      * together under this root, so `data.import_type`, `data.file`
@@ -1582,8 +1604,49 @@ class ImportWizard extends Page
     }
 
     /**
-     * Render the cached preflight result as an HTML summary + error table.
+     * Warn about structural columns the file does not carry. Rendered whether
+     * or not rows fail, because the case this exists for is the one where every
+     * row passes.
      */
+    protected function renderStructuralWarnings(): string
+    {
+        // getRawState(), not getState(): the same reason runPreflight() gives —
+        // validating the whole form here would trip over the Confirm step's
+        // checkbox, which is still empty while the operator is on this step.
+        $state = $this->form->getRawState();
+        $importer = self::IMPORTERS[(string) ($state['import_type'] ?? '')] ?? null;
+
+        $expected = is_string($importer) ? (self::STRUCTURAL_COLUMNS[$importer] ?? []) : [];
+        if ($expected === []) {
+            return '';
+        }
+
+        /** @var array<string, string|null> $map */
+        $map = is_array($state['column_map'] ?? null) ? $state['column_map'] : [];
+
+        $missing = [];
+        foreach ($expected as $column => $message) {
+            $mapped = $map[$column] ?? null;
+            if ($mapped === null || $mapped === '') {
+                $missing[] = $message;
+            }
+        }
+
+        if ($missing === []) {
+            return '';
+        }
+
+        $items = '';
+        foreach ($missing as $m) {
+            $items .= '<li>' . e($m) . '</li>';
+        }
+
+        return '<div class="mt-2 rounded-md bg-warning-50 p-3 text-xs text-warning-800 dark:bg-warning-900/30 dark:text-warning-200">'
+            . '<p class="font-medium">Heads up before you import</p>'
+            . '<ul class="mt-1 list-disc ps-4 space-y-1">' . $items . '</ul>'
+            . '</div>';
+    }
+
     protected function renderPreflightResult(): string
     {
         $r = $this->preflightResult;
@@ -1594,7 +1657,8 @@ class ImportWizard extends Page
         if ($r['invalid'] === 0) {
             return '<p class="text-sm font-medium text-success-600">'
                 . sprintf('All %d rows pass validation. You can continue.', $r['total'])
-                . '</p>';
+                . '</p>'
+                . $this->renderStructuralWarnings();
         }
 
         $summary = '<p class="text-sm font-medium text-danger-600">'
@@ -1624,7 +1688,8 @@ class ImportWizard extends Page
             . '<th class="px-2 py-1 text-left font-medium bg-gray-100 dark:bg-gray-800">Field</th>'
             . '<th class="px-2 py-1 text-left font-medium bg-gray-100 dark:bg-gray-800">Error</th>'
             . '</tr></thead><tbody>' . $rowsHtml . '</tbody></table></div>'
-            . $truncatedNote;
+            . $truncatedNote
+            . $this->renderStructuralWarnings();
     }
 
     /**
