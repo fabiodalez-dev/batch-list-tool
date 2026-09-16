@@ -141,6 +141,24 @@ it('leaves an existing parent alone when the Parent cell is blank', function ():
         ->toBe(Series::where('code', 'R')->firstOrFail()->id);
 });
 
+it('does not read a hand-typed number in Date of creation as an Excel serial', function (): void {
+    $user = sp_admin();
+    $this->actingAs($user);
+
+    // Review finding, 2026-09-16, found on the Authorities importer and present
+    // here in the same shape: the guard was "digits and > 9999" with no ceiling,
+    // so "16071629" — the span 1607-1629 typed without its dash — converted to
+    // 45902-08-16 and saved without complaint.
+    sp_import(['code' => 'SPAN', 'title' => 'Span typed flat', 'date_of_creation' => '16071629'], $user->id);
+    sp_import(['code' => 'CMPT', 'title' => 'Compact date', 'date_of_creation' => '20260729'], $user->id);
+    // A genuine Excel serial must still be rendered readable.
+    sp_import(['code' => 'SER', 'title' => 'Real serial', 'date_of_creation' => '46232'], $user->id);
+
+    expect(Series::where('code', 'SPAN')->value('date_of_creation'))->toBe('16071629');
+    expect(Series::where('code', 'CMPT')->value('date_of_creation'))->toBe('20260729');
+    expect(Series::where('code', 'SER')->value('date_of_creation'))->toBe('2026-07-29');
+});
+
 /* ── the wizard's row ordering ────────────────────────────────────────── */
 
 function sp_order(array $rows): array

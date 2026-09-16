@@ -11,6 +11,7 @@ use App\Support\BulkImport\SpreadsheetParsers;
 use Filament\Actions\Imports\ImportColumn;
 use Filament\Actions\Imports\Importer;
 use Filament\Actions\Imports\Models\Import;
+use Illuminate\Validation\ValidationException;
 
 /**
  * RFQ §3.1.3 — Bulk import for {@see Authority} (notaries / "Creators").
@@ -50,13 +51,27 @@ class AuthorityImporter extends Importer
                 // because Authority rows are matched on this column — we
                 // cannot dedupe without it.
                 ->requiredMapping()
-                ->guess(['Identifier', 'identifier', 'ID', 'R-code', 'Code'])
+                // The template header became "Authority Record Identifier (NAM)"
+                // on 2026-09-16. The old spellings stay in the list so sheets
+                // saved before that keep importing without remapping.
+                ->guess([
+                    'Authority Record Identifier (NAM)', 'Authority Record Identifier',
+                    'Identifier', 'identifier', 'ID', 'R-code', 'Code', 'NAM',
+                ])
                 ->rules(['required', 'string', 'max:32']),
 
             ImportColumn::make('alternative_identifier')
                 ->label('Alternative Identifier')
                 ->guess(['Alternative Identifier', 'Alt Identifier', 'MS', 'MS code'])
                 ->rules(['nullable', 'string', 'max:32']),
+
+            ImportColumn::make('alternative_identifier_warrant')
+                ->label('Alternative Identifier (Warrant Number)')
+                ->guess([
+                    'Alternative Identifier (Warrant Number)', 'Warrant Number',
+                    'Warrant', 'alternative_identifier_warrant',
+                ])
+                ->rules(['nullable', 'string', 'max:191']),
 
             ImportColumn::make('surname')
                 ->label('Creator Surname')
@@ -109,6 +124,73 @@ class AuthorityImporter extends Importer
                         $record->ntg_dates_end = $end;
                     }
                 }),
+
+            // Client 2026-09-16 — ISAAR(CPF) descriptive fields.
+            //
+            // These sit BEFORE name_suffix and maiden_surname on purpose.
+            // maiden_surname appends a line to `notes`, and Filament fills
+            // columns in the order declared here: with `notes` declared after
+            // it, the imported note would overwrite the appended maiden-surname
+            // line and lose it without a word.
+            ImportColumn::make('authorised_form_of_name')
+                ->label('Authorised form of name')
+                ->guess(['Authorised form of name', 'Authorized form of name', 'Authorised name'])
+                ->rules(['nullable', 'string', 'max:65535']),
+
+            ImportColumn::make('functions_occupations_activities')
+                ->label('Functions, occupations and activities')
+                ->guess([
+                    'Functions, occupations and activities',
+                    'Functions occupations and activities',
+                    'Functions', 'Occupations',
+                ])
+                ->rules(['nullable', 'string', 'max:65535']),
+
+            ImportColumn::make('level_of_detail')
+                ->label('Level of detail')
+                ->guess(['Level of detail', 'Level'])
+                ->fillRecordUsing(function (Authority $record, ?string $state): void {
+                    $record->level_of_detail = self::matchAllowed($state, Authority::LEVELS_OF_DETAIL, 'Level of detail', 'level_of_detail');
+                }),
+
+            ImportColumn::make('status')
+                ->label('Status')
+                ->guess(['Status', 'Record status'])
+                ->fillRecordUsing(function (Authority $record, ?string $state): void {
+                    $record->status = self::matchAllowed($state, Authority::RECORD_STATUSES, 'Status', 'status');
+                }),
+
+            ImportColumn::make('rules_and_conventions')
+                ->label('Rules and/or conventions')
+                ->guess(['Rules and/or conventions', 'Rules and conventions', 'Rules', 'Conventions'])
+                ->rules(['nullable', 'string', 'max:65535']),
+
+            ImportColumn::make('date_of_creation')
+                ->label('Date of creation')
+                ->guess(['Date of creation', 'Creation date', 'Dates'])
+                ->fillRecordUsing(function (Authority $record, ?string $state): void {
+                    $state = $state !== null ? trim($state) : '';
+                    if ($state === '') {
+                        return;
+                    }
+                    // Same treatment as series.date_of_creation: free text, so a
+                    // span ("1607-1629") survives as written, and only a number
+                    // that is plausibly an Excel serial is read as a date —
+                    // "46232" on screen would be meaningless in the record.
+                    $record->date_of_creation = SpreadsheetParsers::freeTextDateSerial($state) ?? $state;
+                }),
+
+            ImportColumn::make('creator_of_record')
+                ->label('Creator of record')
+                ->guess(['Creator of record', 'Record creator', 'Cataloguer'])
+                ->rules(['nullable', 'string', 'max:65535']),
+
+            // Notes has existed on the form and in the database all along but
+            // had no import column, so it could be typed and never imported.
+            ImportColumn::make('notes')
+                ->label('Notes')
+                ->guess(['Notes', 'Note', 'Remarks'])
+                ->rules(['nullable', 'string', 'max:65535']),
 
             ImportColumn::make('name_suffix')
                 ->label('Name Suffix')
@@ -180,5 +262,43 @@ class AuthorityImporter extends Importer
         }
 
         return $body;
+    }
+
+    /**
+     * Accept one of a fixed list of values, case- and spacing-insensitively,
+     * and reject anything else with a message naming the options.
+     *
+     * The alternative — storing whatever arrives — gives the cataloguer a
+     * "Level of detail" of "ful" that no filter will ever match and nothing
+     * will ever flag. Rejecting the row puts it in the failed-rows file with
+     * the valid values spelled out, which is something she can act on.
+     *
+     * @param array<int, string> $allowed
+     */
+    protected static function matchAllowed(?string $state, array $allowed, string $label, string $attribute): ?string
+    {
+        $state = $state !== null ? trim($state) : '';
+        if ($state === '') {
+            return null;
+        }
+
+        $normalise = static fn (string $v): string => preg_replace('/\s+/', ' ', mb_strtolower(trim($v))) ?? '';
+        $wanted = $normalise($state);
+
+        foreach ($allowed as $option) {
+            if ($normalise($option) === $wanted) {
+                // Store the canonical spelling, not the operator's casing, so
+                // filters and grouping see one value rather than three.
+                return $option;
+            }
+        }
+
+        throw ValidationException::withMessages([
+            $attribute => __(':label must be one of: :options (got ":given").', [
+                'label' => $label,
+                'options' => implode(', ', $allowed),
+                'given' => $state,
+            ]),
+        ]);
     }
 }

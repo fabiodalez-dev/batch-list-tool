@@ -37,11 +37,20 @@ it('TemplateGenerator: headersFor("box") includes parent_box_number and barcode_
         ->and($headers)->not->toContain('Location');
 });
 
-it('TemplateGenerator: headersFor("authority") returns the in-repo legacy contract', function () {
+it('TemplateGenerator: headersFor("authority") carries the ISAAR(CPF) contract', function () {
+    // Client 2026-09-16: the nine RFQ columns plus a warrant number and the
+    // ISAAR(CPF) descriptive block. "Identifier" was renamed in the same
+    // request — the importer still answers to the old spelling, the template
+    // does not offer it.
     $headers = TemplateGenerator::headersFor('authority');
     expect($headers)->toEqual(TemplateGenerator::AUTHORITY_HEADERS)
-        ->and($headers)->toHaveCount(9)
-        ->and($headers[0])->toBe('Identifier');
+        ->and($headers)->toHaveCount(18)
+        ->and($headers[0])->toBe('Authority Record Identifier (NAM)')
+        ->and($headers)->not->toContain('Identifier')
+        ->and($headers)->toContain('Alternative Identifier (Warrant Number)')
+        ->and($headers)->toContain('Level of detail')
+        ->and($headers)->toContain('Status')
+        ->and($headers)->toContain('Notes');
 });
 
 it('TemplateGenerator: headersFor("series") starts at Identifier and includes the optional Repository and Parent columns', function () {

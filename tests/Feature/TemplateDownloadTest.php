@@ -217,16 +217,31 @@ test('Authority template download returns 200 with xlsx content-type and dated f
     expect($parsed['filename'])->toStartWith('authority_template_');
 });
 
-test('Authority template headers match Authorities_Sample.xlsx verbatim', function () {
+test('Authority template still carries every Authorities_Sample.xlsx column, in the sample order', function () {
     $this->actingAs(tpl_admin());
 
     $generated = tpl_renderAndParse(TemplateGenerator::download('authority'))['headers'];
 
     expect($generated)->toEqual(TemplateGenerator::AUTHORITY_HEADERS);
-    // Authorities sample has exactly 9 columns — sanity check on the contract.
-    expect(count($generated))->toBe(9);
-    expect($generated[0])->toBe('Identifier');
-    expect($generated[8])->toBe('Creator Name');
+
+    // The nine columns of the RFQ sample. The client asked for the ISAAR(CPF)
+    // fields on 2026-09-16, so the template is now a superset of the sample
+    // rather than equal to it — but dropping one of these, or reordering them
+    // against each other, would still break the sheets the NAf already holds.
+    // "Identifier" was renamed to "Authority Record Identifier (NAM)" in that
+    // same request; the importer still answers to the old spelling.
+    $sample = [
+        'Authority Record Identifier (NAM)', 'Alternative Identifier', 'Type of Entity',
+        'Private Practice Dates Active', 'NTG Dates Active', 'Name Suffix',
+        'Maiden Surname', 'Creator Surname', 'Creator Name',
+    ];
+
+    // array_intersect keeps the FIRST array's order, so this compares presence
+    // and relative order in one assertion.
+    expect(array_values(array_intersect($generated, $sample)))->toBe($sample);
+
+    expect($generated)->toHaveCount(18);
+    expect($generated[0])->toBe('Authority Record Identifier (NAM)');
 });
 
 test('Series template headers start at Identifier (no leading blank column)', function () {

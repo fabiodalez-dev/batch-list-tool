@@ -23,6 +23,19 @@ use PhpOffice\PhpSpreadsheet\Shared\Date as ExcelDate;
 final class SpreadsheetParsers
 {
     /**
+     * Largest Excel serial a free-text date column will be read as a date:
+     * 73415, which is 2100-12-31.
+     *
+     * Excel turns a typed date into a serial, so a genuine one lands in the
+     * low tens of thousands (2026 is around 46000). A larger number is
+     * something the cataloguer typed by hand — a compact date like
+     * "20260729", or the span "1607-1629" written without its dash — and
+     * converting those yields 57371-12-27 and 45902-08-16 rather than an
+     * error, so the row saves a wrong date and nothing complains.
+     */
+    public const int MAX_DATE_SERIAL = 73415;
+
+    /**
      * Parse a free-text date string into a (start, end) integer-year pair.
      * Returns `[null, null]` on failure.
      *
@@ -45,6 +58,32 @@ final class SpreadsheetParsers
         $result = DateRangeNormalizer::extractYearRange($value);
 
         return [$result['year_start'], $result['year_end']];
+    }
+
+    /**
+     * Read a free-text date cell as an Excel serial, or return null when the
+     * value is not plausibly one and should be kept as the operator typed it.
+     *
+     * A value of 9999 or less is a year ("2026") or part of a span, never a
+     * serial — serials that low are dates before 1928, which Excel cannot
+     * have produced from a modern typed date.
+     */
+    public static function freeTextDateSerial(string $state): ?string
+    {
+        if (! ctype_digit($state)) {
+            return null;
+        }
+
+        $serial = (int) $state;
+        if ($serial <= 9999 || $serial > self::MAX_DATE_SERIAL) {
+            return null;
+        }
+
+        try {
+            return ExcelDate::excelToDateTimeObject($serial)->format('Y-m-d');
+        } catch (\Throwable) {
+            return null;
+        }
     }
 
     /**

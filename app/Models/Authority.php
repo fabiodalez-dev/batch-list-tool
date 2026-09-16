@@ -18,11 +18,31 @@ class Authority extends Model implements AuditableContract
     use Searchable;
     use SoftDeletes;
 
+    /**
+     * ISAAR(CPF) "Level of detail" (client 2026-09-16). Kept here rather than as
+     * a database ENUM so the list can grow without a migration, and so a value
+     * outside it is rejected where the operator can be told why.
+     *
+     * @var array<int, string>
+     */
+    public const LEVELS_OF_DETAIL = ['Minimal', 'Partial', 'Full Level'];
+
+    /**
+     * ISAAR(CPF) record status (client 2026-09-16).
+     *
+     * @var array<int, string>
+     */
+    public const RECORD_STATUSES = ['In Progress', 'Complete'];
+
     protected $table = 'authorities';
 
     protected $fillable = [
-        'identifier', 'alternative_identifier', 'surname', 'given_names',
-        'entity_type', 'practice_dates_start', 'practice_dates_end', 'notes',
+        'identifier', 'alternative_identifier', 'alternative_identifier_warrant',
+        'surname', 'given_names', 'authorised_form_of_name',
+        'entity_type', 'functions_occupations_activities',
+        'level_of_detail', 'status', 'rules_and_conventions',
+        'date_of_creation', 'creator_of_record',
+        'practice_dates_start', 'practice_dates_end', 'notes',
         'ntg_dates_start', 'ntg_dates_end',
     ];
 

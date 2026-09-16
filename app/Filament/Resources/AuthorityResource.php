@@ -99,6 +99,13 @@ class AuthorityResource extends Resource
                             ->validationMessages([
                                 'regex' => 'Alternative identifier must start with MS.',
                             ])),
+                        // Client 2026-09-16 — the warrant number, a third
+                        // identifier alongside the NAM code and the MS number.
+                        // No MS prefix rule: it is a different numbering scheme,
+                        // not a variant of the alternative identifier.
+                        $g(Forms\Components\TextInput::make('alternative_identifier_warrant')
+                            ->label('Alternative Identifier (Warrant Number)')
+                            ->maxLength(191)),
                         $g(Forms\Components\TextInput::make('surname')
                             ->required()
                             ->maxLength(255)),
@@ -176,6 +183,43 @@ class AuthorityResource extends Resource
                             })),
                     ]),
 
+                // Client 2026-09-16 — ISAAR(CPF) descriptive fields.
+                Section::make('Archival description')
+                    ->columns($twoCols)
+                    ->schema([
+                        $g(Forms\Components\Textarea::make('authorised_form_of_name')
+                            ->label('Authorised form of name')
+                            ->rows(2)
+                            ->columnSpanFull()),
+                        $g(Forms\Components\Textarea::make('functions_occupations_activities')
+                            ->label('Functions, occupations and activities')
+                            ->rows(3)
+                            ->columnSpanFull()),
+                        $g(Forms\Components\Select::make('level_of_detail')
+                            ->label('Level of detail')
+                            ->native(false)
+                            ->options(array_combine(Authority::LEVELS_OF_DETAIL, Authority::LEVELS_OF_DETAIL))),
+                        $g(Forms\Components\Select::make('status')
+                            ->label('Status')
+                            ->native(false)
+                            ->options(array_combine(Authority::RECORD_STATUSES, Authority::RECORD_STATUSES))),
+                        $g(Forms\Components\Textarea::make('rules_and_conventions')
+                            ->label('Rules and/or conventions')
+                            ->rows(2)
+                            ->columnSpanFull()),
+                        // Free text, not a date picker: an archival creation date
+                        // is often a span or an approximation, and a picker would
+                        // force it into a single day.
+                        $g(Forms\Components\TextInput::make('date_of_creation')
+                            ->label('Date of creation')
+                            ->helperText('As written in the record — a date, a year, or a span such as 1607-1629.')
+                            ->maxLength(255)),
+                        $g(Forms\Components\TextInput::make('creator_of_record')
+                            ->label('Creator of record')
+                            ->helperText('The cataloguer named in the sheet, not the account that imported it.')
+                            ->maxLength(255)),
+                    ]),
+
                 Section::make('Notes')
                     ->columns(1)
                     ->collapsed()
@@ -207,6 +251,10 @@ class AuthorityResource extends Resource
                             ->placeholder('—'),
                         TextEntry::make('alternative_identifier')
                             ->label('Alternative identifier')
+                            ->copyable()
+                            ->placeholder('—'),
+                        TextEntry::make('alternative_identifier_warrant')
+                            ->label('Alternative identifier (warrant number)')
                             ->copyable()
                             ->placeholder('—'),
                         TextEntry::make('surname')
@@ -278,6 +326,39 @@ class AuthorityResource extends Resource
                             ->columnSpanFull(),
                     ]),
 
+                Section::make('Archival description')
+                    ->columns($twoCols)
+                    ->schema([
+                        TextEntry::make('authorised_form_of_name')
+                            ->label('Authorised form of name')
+                            ->placeholder('—')
+                            ->columnSpanFull(),
+                        TextEntry::make('functions_occupations_activities')
+                            ->label('Functions, occupations and activities')
+                            ->placeholder('—')
+                            ->columnSpanFull(),
+                        TextEntry::make('level_of_detail')
+                            ->label('Level of detail')
+                            ->badge()
+                            ->color('gray')
+                            ->placeholder('—'),
+                        TextEntry::make('status')
+                            ->label('Status')
+                            ->badge()
+                            ->color(fn (?string $state): string => $state === 'Complete' ? 'success' : 'warning')
+                            ->placeholder('—'),
+                        TextEntry::make('rules_and_conventions')
+                            ->label('Rules and/or conventions')
+                            ->placeholder('—')
+                            ->columnSpanFull(),
+                        TextEntry::make('date_of_creation')
+                            ->label('Date of creation')
+                            ->placeholder('—'),
+                        TextEntry::make('creator_of_record')
+                            ->label('Creator of record')
+                            ->placeholder('—'),
+                    ]),
+
                 Section::make('Notes')
                     ->columns(1)
                     ->collapsed()
@@ -327,6 +408,40 @@ class AuthorityResource extends Resource
                     ->sortable()
                     ->searchable()
                     ->toggleable()),
+                $gc(Tables\Columns\TextColumn::make('alternative_identifier_warrant')
+                    ->label('Warrant no.')
+                    ->placeholder('—')
+                    ->sortable()
+                    ->searchable()
+                    ->toggleable(isToggledHiddenByDefault: true)),
+                // Status and Level of detail stay visible: they are how the
+                // cataloguer sees at a glance which records still need work.
+                // The long descriptive fields are toggleable and off by default
+                // — useful on the record, noise in a list.
+                $gc(Tables\Columns\TextColumn::make('status')
+                    ->label('Status')
+                    ->badge()
+                    ->color(fn (?string $state): string => $state === 'Complete' ? 'success' : 'warning')
+                    ->placeholder('—')
+                    ->sortable()
+                    ->toggleable()),
+                $gc(Tables\Columns\TextColumn::make('level_of_detail')
+                    ->label('Level of detail')
+                    ->badge()
+                    ->color('gray')
+                    ->placeholder('—')
+                    ->sortable()
+                    ->toggleable()),
+                $gc(Tables\Columns\TextColumn::make('date_of_creation')
+                    ->label('Date of creation')
+                    ->placeholder('—')
+                    ->sortable()
+                    ->toggleable(isToggledHiddenByDefault: true)),
+                $gc(Tables\Columns\TextColumn::make('creator_of_record')
+                    ->label('Creator of record')
+                    ->placeholder('—')
+                    ->sortable()
+                    ->toggleable(isToggledHiddenByDefault: true)),
                 $gc(Tables\Columns\TextColumn::make('surname')
                     ->sortable()
                     ->searchable()
