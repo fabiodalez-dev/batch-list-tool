@@ -12,7 +12,6 @@ use Filament\Actions\Imports\ImportColumn;
 use Filament\Actions\Imports\Importer;
 use Filament\Actions\Imports\Models\Import;
 use Illuminate\Validation\ValidationException;
-use PhpOffice\PhpSpreadsheet\Shared\Date;
 
 /**
  * RFQ §3.1.3 — Bulk import for {@see Authority} (notaries / "Creators").
@@ -175,13 +174,10 @@ class AuthorityImporter extends Importer
                         return;
                     }
                     // Same treatment as series.date_of_creation: free text, so a
-                    // span ("1607-1629") survives as written. Only an integer too
-                    // large to be a year is read as an Excel serial — Excel turns
-                    // a typed date into one, and "46232" on screen would be
-                    // meaningless in the record.
-                    $record->date_of_creation = ctype_digit($state) && (int) $state > 9999
-                        ? Date::excelToDateTimeObject((int) $state)->format('Y-m-d')
-                        : $state;
+                    // span ("1607-1629") survives as written, and only a number
+                    // that is plausibly an Excel serial is read as a date —
+                    // "46232" on screen would be meaningless in the record.
+                    $record->date_of_creation = SpreadsheetParsers::freeTextDateSerial($state) ?? $state;
                 }),
 
             ImportColumn::make('creator_of_record')

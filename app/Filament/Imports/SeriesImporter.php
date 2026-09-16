@@ -8,11 +8,11 @@ use App\Filament\Imports\Concerns\LogsImportRows;
 use App\Filament\Imports\Concerns\SkipsExistingRows;
 use App\Models\Series;
 use App\Support\BulkImport\EntityResolver;
+use App\Support\BulkImport\SpreadsheetParsers;
 use Filament\Actions\Imports\ImportColumn;
 use Filament\Actions\Imports\Importer;
 use Filament\Actions\Imports\Models\Import;
 use Illuminate\Validation\ValidationException;
-use PhpOffice\PhpSpreadsheet\Shared\Date;
 
 /**
  * RFQ §3.1.3 — Bulk import for {@see Series} (record-group / "fond" codes:
@@ -147,15 +147,12 @@ class SeriesImporter extends Importer
                         return;
                     }
                     // Excel stores a date cell as a serial number (e.g. "46228")
-                    // — render it as a readable Y-m-d. Only a pure integer TOO
-                    // LARGE to be a year (5+ digits, i.e. > 9999) is treated as a
-                    // serial: a 4-digit year ("2026"), an ISAD year range
-                    // ("1607-1629"), or any other text is kept exactly as typed.
-                    if (ctype_digit($state) && (int) $state > 9999) {
-                        $record->date_of_creation = Date::excelToDateTimeObject((int) $state)->format('Y-m-d');
-                    } else {
-                        $record->date_of_creation = $state;
-                    }
+                    // — render it as a readable Y-m-d. Only a number plausibly
+                    // in the serial range is treated that way: a 4-digit year
+                    // ("2026"), an ISAD span ("1607-1629"), that same span typed
+                    // without its dash ("16071629"), or any other text is kept
+                    // exactly as the cataloguer wrote it.
+                    $record->date_of_creation = SpreadsheetParsers::freeTextDateSerial($state) ?? $state;
                 }),
 
             // Client 2026-09-14 — the hierarchy itself, not just the word for it.

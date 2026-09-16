@@ -211,6 +211,41 @@ it('keeps an archival date span as written, and converts an Excel serial', funct
     expect(Authority::where('identifier', 'NAM-5')->value('date_of_creation'))->toBe('2026-07-29');
 });
 
+it('does not read a hand-typed number as an Excel serial', function (): void {
+    $u = isaar_admin();
+    $this->actingAs($u);
+
+    // Review finding, 2026-09-16. The guard was "digits and > 9999", with no
+    // upper bound, so any long number reached the serial converter and came
+    // back as a date thousands of years out — silently, because the row saves.
+    // "16071629" is the one that matters here: it is the span 1607-1629 typed
+    // without its dash, which is a thing cataloguers do.
+    $cases = [
+        'NAM-D1' => '20260729',   // a compact date, was 57371-12-27
+        'NAM-D2' => '16071629',   // the span without its dash, was 45902-08-16
+        'NAM-D3' => '190712',     // year and month run together, was 2422-02-23
+        'NAM-D4' => '18001850',   // a span of years, was 51187-05-22
+    ];
+
+    foreach ($cases as $id => $typed) {
+        isaar_import([
+            'identifier' => $id, 'surname' => 'X', 'given_names' => 'Y', 'entity_type' => 'Notary',
+            'date_of_creation' => $typed,
+        ], $u->id);
+
+        expect(Authority::where('identifier', $id)->value('date_of_creation'))
+            ->toBe($typed, "«{$typed}» must survive as written");
+    }
+
+    // The real serial still converts — that is the whole point of the branch.
+    isaar_import([
+        'identifier' => 'NAM-D5', 'surname' => 'X', 'given_names' => 'Y', 'entity_type' => 'Notary',
+        'date_of_creation' => '46232',
+    ], $u->id);
+
+    expect(Authority::where('identifier', 'NAM-D5')->value('date_of_creation'))->toBe('2026-07-29');
+});
+
 it('imports Notes without the maiden-surname line overwriting it', function (): void {
     $u = isaar_admin();
     $this->actingAs($u);
