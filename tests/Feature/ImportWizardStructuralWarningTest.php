@@ -132,3 +132,65 @@ it('leaves importers with no structural columns untouched', function (): void {
     expect($html)->toContain('All 3 rows pass validation');
     expect($html)->not->toContain('Heads up before you import');
 });
+
+it('warns that locations will flatten when the Parent column is missing', function (): void {
+    $this->actingAs(isw_admin());
+
+    // Verified empirically before adding the warning: importing two locations
+    // with no Parent column mapped reports two successes, zero errors, and
+    // leaves both at the root. Same silent shape as the Series case above.
+    $html = isw_render(
+        [
+            'import_type' => 'locations',
+            'column_map' => [
+                'name' => 'name',
+                'type' => 'type',
+                'repository_code' => 'repository_code',
+                // no parent_name — the column is not in the file
+            ],
+        ],
+        ['total' => 2, 'valid' => 2, 'invalid' => 0, 'errors' => [], 'truncated' => false],
+    );
+
+    expect($html)->toContain('top level');
+});
+
+it('says nothing about locations once the Parent column is mapped', function (): void {
+    $this->actingAs(isw_admin());
+
+    $html = isw_render(
+        [
+            'import_type' => 'locations',
+            'column_map' => [
+                'name' => 'name',
+                'type' => 'type',
+                'parent_name' => 'parent_name',
+            ],
+        ],
+        ['total' => 2, 'valid' => 2, 'invalid' => 0, 'errors' => [], 'truncated' => false],
+    );
+
+    expect($html)->not->toContain('top level');
+});
+
+it('stays quiet about box parents, which fail loudly on their own', function (): void {
+    $this->actingAs(isw_admin());
+
+    // An IN_SITU or NRA box with no RAS parent fails the row with an explicit
+    // message, so the operator already hears about it. Warning here as well
+    // would train them to skim past warnings that do matter.
+    $html = isw_render(
+        [
+            'import_type' => 'boxes',
+            'column_map' => [
+                'box_type' => 'box_type',
+                'box_number' => 'box_number',
+                // no parent_barcode
+            ],
+        ],
+        ['total' => 2, 'valid' => 2, 'invalid' => 0, 'errors' => [], 'truncated' => false],
+    );
+
+    expect($html)->not->toContain('top level');
+    expect($html)->not->toContain('parent RAS');
+});

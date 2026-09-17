@@ -289,6 +289,16 @@ class ImportWizard extends Page
         SeriesImporter::class => [
             'parent_code' => 'No "Parent" column is mapped, so no parent-child relationships will be created — series already linked keep their parent, and the rest stay top-level. If your spreadsheet has no Parent column, download the template again: it gained one on 14 September.',
         ],
+        // Locations flatten the same silent way: the column is resolved after
+        // the rows are sorted by depth, and an unmapped one simply leaves every
+        // row at the root. The import reports success either way.
+        //
+        // Boxes are deliberately absent from this list. An IN_SITU or NRA box
+        // with no parent RAS box FAILS the row with an explicit message, so the
+        // operator already hears about it — a warning here would be noise.
+        LocationImporter::class => [
+            'parent_name' => 'No "Parent" column is mapped, so every location will be created at the top level instead of inside its room or shelf. Locations already nested keep their parent. The import will report success either way, so check this before running it on a hierarchy.',
+        ],
     ];
 
     /**

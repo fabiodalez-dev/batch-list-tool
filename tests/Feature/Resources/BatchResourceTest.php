@@ -181,11 +181,17 @@ test('Batch numbers 1-29 map to MAIN_COLLECTION (Batch::MAIN_COLLECTION_MAX = 29
 
     // The import command sets type based on >= 30 → NOTARY_ACCESSION, else MAIN_COLLECTION.
     // Sample 1, 15, 29 must end up as MAIN_COLLECTION.
+    // The repository is created fresh for this test and the unique key is
+    // (batch_number, repository_id), so the real numbers are free — no offset
+    // needed. The previous version added a random offset in 5001..6028, three
+    // overlapping ranges drawn in one loop, so two iterations could collide
+    // and fail the test at random (seen on 5449). It also passed the type in
+    // explicitly, which made the assertion tautological: it wrote
+    // MAIN_COLLECTION and then checked for MAIN_COLLECTION, on numbers the
+    // convention would have mapped to NOTARY_ACCESSION.
     $repo = makeRepository_batch('MC');
     foreach ([1, 15, 29] as $n) {
-        // Skip if already present (e.g. seeded data) — pick an offset
-        $num = $n + 5000 + random_int(0, 999);
-        $b = makeBatch_batch($repo->id, $num, ['type' => 'MAIN_COLLECTION']);
+        $b = makeBatch_batch($repo->id, $n);
         expect($b->type)->toBe('MAIN_COLLECTION');
     }
 });
