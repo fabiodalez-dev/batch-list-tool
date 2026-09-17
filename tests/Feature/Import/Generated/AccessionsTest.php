@@ -134,6 +134,7 @@ function axc_realRows(string $filePath, int $startRow, int $endRow, int $headerO
     $method->setAccessible(true);
     [, $rows] = $method->invoke(new ImportWizard, $csvPath);
 
+    // nosemgrep: php.lang.security.unlink-use.unlink-use -- $csvPath is the temp CSV this helper just wrote via tempnam(), never user input.
     @unlink($csvPath);
 
     $offset = $startRow - 2 - $headerOffset;

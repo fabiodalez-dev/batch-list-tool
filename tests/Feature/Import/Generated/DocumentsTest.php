@@ -149,6 +149,7 @@ function dgt_realRows(string $filePath, int $startRow, int $endRow, int $headerO
     $method->setAccessible(true);
     [, $rows] = $method->invoke($page, $csvPath);
 
+    // nosemgrep: php.lang.security.unlink-use.unlink-use -- $csvPath is the temp CSV this helper just wrote via tempnam(), never user input.
     @unlink($csvPath);
 
     // Sheet rows are 1-based and row 1 is the header, so data row N sits at
