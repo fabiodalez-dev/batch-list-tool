@@ -10,9 +10,10 @@ use Illuminate\Support\Facades\Schema;
  * Client request 2026-09-16 — ISAAR(CPF) descriptive fields on Authorities.
  *
  * The cataloguer asked for a third identifier (the warrant number) plus seven
- * descriptive fields the standard expects. Every one is nullable: the 678
- * authorities already in production predate them and must keep importing and
- * saving untouched.
+ * descriptive fields the standard expects. Every one is nullable, so the sheets
+ * the NAf already holds keep importing untouched. Production's `authorities`
+ * table is empty as of this migration — the 678 rows are in the development
+ * database — so this adds columns to nothing and cannot disturb live data.
  *
  * `date_of_creation` is TEXT, not a date column, deliberately — the same
  * decision as series.date_of_creation. An archival creation date is often a
