@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 use App\Filament\Pages\ImportStatus;
 use App\Filament\Pages\ImportWizard;
+use App\Filament\Resources\SeriesResource\Pages\ListSeries;
 use App\Models\User;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Spatie\Permission\Models\Role;
@@ -71,7 +72,7 @@ it('hides the resource Import button from anyone the wizard would refuse', funct
     $this->actingAs($editor);
 
     $source = file_get_contents(
-        (new ReflectionClass(\App\Filament\Resources\SeriesResource\Pages\ListSeries::class))->getFileName()
+        (new ReflectionClass(ListSeries::class))->getFileName()
     );
 
     expect($source)->toContain('ImportWizard::canAccess()');
