@@ -6,6 +6,7 @@ use App\Filament\Pages\ImportWizard;
 use App\Models\User;
 use App\Support\BulkImport\TemplateGenerator;
 use Illuminate\Foundation\Testing\RefreshDatabase;
+use Livewire\Livewire;
 use Spatie\Permission\Models\Role;
 
 /*
@@ -76,8 +77,15 @@ it('opens the wizard with the type already chosen', function (): void {
     $this->actingAs(sip_admin());
 
     foreach (array_keys(ImportWizard::IMPORTERS) as $type) {
-        $this->get(ImportWizard::getUrl(['type' => $type]))
-            ->assertSuccessful();
+        $this->get(ImportWizard::getUrl(['type' => $type]))->assertSuccessful();
+
+        // A 200 only proves the page rendered; it would pass just as well if
+        // mount() ignored the parameter outright. Assert the form state, which
+        // is what decides whether the operator has to pick the type again.
+        Livewire::withQueryParams(['type' => $type])
+            ->test(ImportWizard::class)
+            ->assertOk()
+            ->assertSet('data.import_type', $type);
     }
 });
 
@@ -85,9 +93,15 @@ it('ignores a type it does not recognise instead of failing', function (): void 
     $this->actingAs(sip_admin());
 
     // A stale bookmark or a hand-edited URL must land on the normal wizard,
-    // not on an error.
-    $this->get(ImportWizard::getUrl(['type' => 'nonsense']))->assertSuccessful();
-    $this->get(ImportWizard::getUrl(['type' => '']))->assertSuccessful();
+    // not on an error and not with a bogus value sitting in the radio.
+    foreach (['nonsense', '', 'Series', '../../etc/passwd'] as $bogus) {
+        $this->get(ImportWizard::getUrl(['type' => $bogus]))->assertSuccessful();
+
+        Livewire::withQueryParams(['type' => $bogus])
+            ->test(ImportWizard::class)
+            ->assertOk()
+            ->assertSet('data.import_type', null);
+    }
 });
 
 it('offers volumes, which had an importer and a template but no way in', function (): void {
