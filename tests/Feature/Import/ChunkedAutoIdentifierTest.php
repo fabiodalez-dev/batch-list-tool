@@ -10,7 +10,6 @@ use App\Models\Scopes\RepositoryScope;
 use App\Models\Series;
 use App\Models\User;
 use App\Support\BulkImport\EntityResolver;
-use App\Support\BulkImport\Jobs\DeduplicatingImportExcel;
 use Filament\Actions\Imports\Models\Import;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Support\Facades\Bus;
@@ -85,22 +84,30 @@ function chunkaid_xlsx(array $seriesCells): string
 }
 
 /**
- * Run ONE chunk of the REAL streaming job over the file: a fresh
- * DeduplicatingImportExcel with the given startRow/endRow (so it reads that row
- * range straight from the sheet, building its own importer — exactly one chunk).
+ * Run the rows through the wizard's real dispatch, which is the only import
+ * path since 2026-09-17: it injects the ABSOLUTE pre-chunk row index, chunks,
+ * and hands each chunk to Filament's ImportCsv. The queue is sync under test,
+ * so the jobs execute here rather than being faked — the assertion is about
+ * what ends up in the database, not about what was dispatched.
+ *
+ * @param list<string> $seriesCells one mapped cell per row
  */
-function chunkaid_runChunk(Import $import, string $columnMapExcelHeader, int $startRow, int $endRow): void
+function chunkaid_runViaWizard(array $seriesCells, User $actor): void
 {
     EntityResolver::flushMemo();
-    $job = new DeduplicatingImportExcel(
-        importId: $import->getKey(),
-        rows: null,
-        startRow: $startRow,
-        endRow: $endRow,
-        columnMap: ['series' => $columnMapExcelHeader],
-        options: ['headerOffset' => 0, 'activeSheet' => 0],
-    );
-    $job->handle();
+
+    // Filament's ImportCsv ends with auth()->forgetGuards() — correct for a
+    // queued job, which runs isolated, but under the sync queue it tears down
+    // the test's own authentication. Re-establish it before each dispatch so a
+    // second pass can create its Import row; this is an artefact of running the
+    // queue inline, not something the application does between real imports.
+    auth()->setUser($actor);
+
+    $rows = array_map(static fn (string $cell): array => ['Series' => $cell], $seriesCells);
+
+    $wizard = new ImportWizard;
+    $dispatch = new ReflectionMethod($wizard, 'dispatchImportBatch');
+    $dispatch->invoke($wizard, DocumentImporter::class, 'chunked.csv', '/tmp/chunked.csv', $rows, ['series' => 'Series'], []);
 }
 
 function chunkaid_import(string $filePath, int $userId): Import
@@ -128,29 +135,26 @@ test('Bug #22 (hardening): two DISTINCT blank-identifier rows at the SAME chunk-
     // chunk-local index 0 of their respective 2-row chunks — the exact collision
     // the chunk-local counter could not tell apart. Rows 3 and 5 are distinct
     // fillers so the chunks are genuinely 2 rows wide.
-    $path = chunkaid_xlsx([
-        'REG: Registers Private Practice', // row 2  — chunk 1, local 0
-        'REG: filler alpha',               // row 3  — chunk 1, local 1
-        'REG: Registers Private Practice', // row 4  — chunk 2, local 0  (identical to row 2)
-        'REG: filler beta',                // row 5  — chunk 2, local 1
-    ]);
+    // Two rows byte-identical in mapped content, far enough apart to land in
+    // different chunks. The absolute index the wizard injects is what keeps
+    // them apart; a chunk-local counter could not tell them from each other.
+    $cells = array_merge(
+        ['REG: Registers Private Practice'],
+        array_map(static fn (int $i): string => "REG: filler {$i}", range(1, 99)),
+        ['REG: Registers Private Practice'],
+        ['REG: filler beta'],
+    );
 
-    $import = chunkaid_import($path, $u->id);
+    chunkaid_runViaWizard($cells, $u);
 
-    // TWO REAL CHUNKS, each a fresh importer instance — the production shape.
-    chunkaid_runChunk($import, 'Series', 2, 3); // chunk 1: rows 2-3
-    chunkaid_runChunk($import, 'Series', 4, 5); // chunk 2: rows 4-5
-
-    // No over-merge: all four distinct source rows survive as four documents.
-    // (Pre-fix, rows 2 and 4 collapsed into ONE — the second UPDATED the first.)
+    // No over-merge: every distinct source row survives as its own document.
+    // Pre-fix the two identical rows collapsed into one, the second updating
+    // the first.
     $docs = Document::withoutGlobalScope(RepositoryScope::class)->get();
-    expect($docs)->toHaveCount(4);
+    expect($docs)->toHaveCount(102);
     $ids = $docs->pluck('identifier');
-    expect($ids->unique()->values())->toHaveCount(4)
+    expect($ids->unique()->values())->toHaveCount(102)
         ->and($ids->every(fn ($i): bool => filled($i) && $i !== 'AUTO-'))->toBeTrue();
-
-    // nosemgrep: php.lang.security.unlink-use.unlink-use -- test-controlled temp path.
-    @unlink($path);
 });
 
 test('Bug #22 (hardening): the WIZARD CSV path injects an ABSOLUTE __source_row across the 100-row chunk boundary', function () {
@@ -200,28 +204,20 @@ test('Bug #22 (hardening): re-importing the SAME multi-chunk sequence keeps the 
     $u = chunkaid_admin($repo->id);
     $this->actingAs($u);
 
-    $path = chunkaid_xlsx([
-        'REG: Registers Private Practice',
-        'REG: filler alpha',
-        'REG: Registers Private Practice',
-        'REG: filler beta',
-    ]);
+    $cells = array_merge(
+        ['REG: Registers Private Practice'],
+        array_map(static fn (int $i): string => "REG: filler {$i}", range(1, 99)),
+        ['REG: Registers Private Practice'],
+        ['REG: filler beta'],
+    );
 
-    $import = chunkaid_import($path, $u->id);
-
-    // First full pass (both chunks).
-    chunkaid_runChunk($import, 'Series', 2, 3);
-    chunkaid_runChunk($import, 'Series', 4, 5);
+    chunkaid_runViaWizard($cells, $u);
     $afterFirst = Document::withoutGlobalScope(RepositoryScope::class)->count();
-    expect($afterFirst)->toBe(4);
+    expect($afterFirst)->toBe(102);
 
-    // Second full pass over the SAME file: every row replays at the SAME
-    // absolute position with the SAME content → same deterministic auto id →
-    // each row MATCHES its existing document and UPDATES in place. Count stable.
-    chunkaid_runChunk($import, 'Series', 2, 3);
-    chunkaid_runChunk($import, 'Series', 4, 5);
+    // Second pass over the SAME sheet: every row replays at the SAME absolute
+    // position with the SAME content, so it derives the same auto identifier,
+    // matches its existing document and updates in place. Count stable.
+    chunkaid_runViaWizard($cells, $u);
     expect(Document::withoutGlobalScope(RepositoryScope::class)->count())->toBe($afterFirst);
-
-    // nosemgrep: php.lang.security.unlink-use.unlink-use -- test-controlled temp path.
-    @unlink($path);
 });

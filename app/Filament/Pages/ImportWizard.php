@@ -16,7 +16,6 @@ use App\Filament\Imports\SeriesImporter;
 use App\Filament\Imports\VolumeImporter;
 use App\Models\ImportProfile;
 use App\Models\User;
-use App\Support\BulkImport\Jobs\DeduplicatingImportExcel;
 use App\Support\BulkImport\SpreadsheetHeaders;
 use App\Support\BulkImport\TemplateGenerator;
 use Filament\Actions\Action as FilamentAction;
@@ -72,7 +71,7 @@ use Symfony\Component\HttpFoundation\StreamedResponse;
  *   4. Preview
  *   5. Confirm and import
  *
- * The per-Resource `FullImportAction` stays as a power-user shortcut on
+ * The per-Resource Import buttons link here (retired their own modal on
  * each List page; this Wizard is the primary guided path for operators
  * onboarding a fresh tenant or running a bulk re-import.
  *
@@ -86,10 +85,9 @@ use Symfony\Component\HttpFoundation\StreamedResponse;
  * dispatch (the same code path Filament's built-in `ImportAction`
  * uses), targeting whichever {@see Importer} class matches the
  * wizard's `import_type`. For .xlsx files we convert to a temporary
- * CSV first so the stock {@see ImportCsv} job can read it row-by-row
- * — this keeps us off the HayderHatem streaming path (which has its
- * own form schema we cannot reuse without re-rendering inside the
- * Wizard).
+ * CSV first so the stock {@see ImportCsv} job can read it row-by-row.
+ * This was originally to stay off a second, package-provided streaming
+ * path; that path was retired on 2026-09-17 and this is the only one.
  *
  * @property-read Schema $form
  */
@@ -2174,8 +2172,9 @@ class ImportWizard extends Page
      * positionally and re-key each row through {@see SpreadsheetHeaders::dedupe()},
      * so the first occurrence keeps its exact name (column-map guesses still
      * resolve to the data-bearing column) while later occurrences get a distinct
-     * "` (n)`" suffix instead of clobbering it. This mirrors the streaming path's
-     * {@see DeduplicatingImportExcel} exactly.
+     * "` (n)`" suffix instead of clobbering it. This used to mirror a second
+     * reader on the streaming path; that path was retired on 2026-09-17 and
+     * this is now the only place sheets are read.
      *
      * @return array{0:array<int, string>, 1:array<int, array<string, string>>}
      */

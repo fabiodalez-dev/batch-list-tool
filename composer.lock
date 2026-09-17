@@ -4,7 +4,7 @@
         "Read more about it at https://getcomposer.org/doc/01-basic-usage.md#installing-dependencies",
         "This file is @generated automatically"
     ],
-    "content-hash": "e554c1e94603babfd4b5dfe816107c6c",
+    "content-hash": "ad6c3f3d78af823338919aa6658b95fd",
     "packages": [
         {
             "name": "anourvalar/eloquent-serialize",
@@ -3034,88 +3034,6 @@
                 }
             ],
             "time": "2026-08-24T17:13:02+00:00"
-        },
-        {
-            "name": "hayderhatem/filament-excel-import",
-            "version": "dev-main",
-            "source": {
-                "type": "git",
-                "url": "https://github.com/rianorie/filament-excel-import.git",
-                "reference": "33ebca0d54cdb3d1ecc0b59111733274be176220"
-            },
-            "dist": {
-                "type": "zip",
-                "url": "https://api.github.com/repos/rianorie/filament-excel-import/zipball/33ebca0d54cdb3d1ecc0b59111733274be176220",
-                "reference": "33ebca0d54cdb3d1ecc0b59111733274be176220",
-                "shasum": ""
-            },
-            "require": {
-                "filament/filament": "^4.0|^5.0",
-                "laravel/framework": "^10.0|^11.0|^12.0|^13.0",
-                "php": "^8.1",
-                "phpoffice/phpspreadsheet": "^1.29.9|^2.0"
-            },
-            "require-dev": {
-                "friendsofphp/php-cs-fixer": "^3.0",
-                "mockery/mockery": "^1.6",
-                "orchestra/testbench": "^8.0|^9.0",
-                "phpstan/phpstan": "^1.0",
-                "phpstan/phpstan-phpunit": "^1.0",
-                "phpunit/phpunit": "^10.0|^11.0"
-            },
-            "default-branch": true,
-            "type": "library",
-            "extra": {
-                "laravel": {
-                    "providers": [
-                        "HayderHatem\\FilamentExcelImport\\FilamentExcelImportServiceProvider"
-                    ]
-                }
-            },
-            "autoload": {
-                "psr-4": {
-                    "HayderHatem\\FilamentExcelImport\\": "src/"
-                }
-            },
-            "autoload-dev": {
-                "psr-4": {
-                    "HayderHatem\\FilamentExcelImport\\Tests\\": "tests/"
-                }
-            },
-            "scripts": {
-                "test": [
-                    "vendor/bin/phpunit --no-coverage"
-                ],
-                "test-coverage": [
-                    "vendor/bin/phpunit --coverage-text --coverage-clover=coverage.clover"
-                ],
-                "test-runner": [
-                    "php test-runner.php"
-                ],
-                "cs-check": [
-                    "vendor/bin/php-cs-fixer fix --dry-run --diff"
-                ],
-                "cs-fix": [
-                    "vendor/bin/php-cs-fixer fix"
-                ],
-                "phpstan": [
-                    "vendor/bin/phpstan analyse --memory-limit=512M"
-                ]
-            },
-            "license": [
-                "MIT"
-            ],
-            "authors": [
-                {
-                    "name": "Hayder Hatem",
-                    "email": "hayderhatem@example.com"
-                }
-            ],
-            "description": "Filament Excel import trait for Laravel",
-            "support": {
-                "source": "https://github.com/rianorie/filament-excel-import/tree/5.0"
-            },
-            "time": "2026-05-07T03:06:28+00:00"
         },
         {
             "name": "intervention/gif",
@@ -18907,18 +18825,9 @@
             "time": "2025-12-08T11:19:18+00:00"
         }
     ],
-    "aliases": [
-        {
-            "package": "hayderhatem/filament-excel-import",
-            "version": "dev-main",
-            "alias": "4.1.0",
-            "alias_normalized": "4.1.0.0"
-        }
-    ],
+    "aliases": [],
     "minimum-stability": "stable",
-    "stability-flags": {
-        "hayderhatem/filament-excel-import": 20
-    },
+    "stability-flags": {},
     "prefer-stable": true,
     "prefer-lowest": false,
     "platform": {

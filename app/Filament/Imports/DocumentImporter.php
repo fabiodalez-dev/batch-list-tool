@@ -18,7 +18,6 @@ use App\Models\DocumentIdentifierHistory;
 use App\Models\Repository;
 use App\Models\Scopes\RepositoryScope;
 use App\Support\BulkImport\EntityResolver;
-use App\Support\BulkImport\Jobs\DeduplicatingImportExcel;
 use App\Support\BulkImport\SpreadsheetHeaders;
 use App\Support\BulkImport\SpreadsheetParsers;
 use App\Support\CustomFields\CustomFieldResolver;
@@ -98,7 +97,7 @@ class DocumentImporter extends Importer
      * The two readers inject the row's absolute position under this key so
      * {@see resolveRecord()} can key the auto identifier on it instead of the
      * chunk-local counter:
-     *   - streaming ({@see DeduplicatingImportExcel})
+     *   - the wizard's CSV reader ({@see ImportWizard::readCsvForImport()})
      *     threads the absolute sheet row number (`$rowIndex`);
      *   - the wizard ({@see ImportWizard::dispatchImportBatch()})
      *     threads `chunkIndex * chunkSize + localIndex`.

@@ -3,6 +3,7 @@
 declare(strict_types=1);
 
 use App\Filament\Imports\AccessionRowImporter;
+use App\Filament\Pages\ImportWizard;
 use App\Models\Accession;
 use App\Models\Authority;
 use App\Models\Batch;
@@ -16,9 +17,11 @@ use App\Models\Scopes\ThroughBatchRepositoryScope;
 use App\Models\Series;
 use App\Models\User;
 use App\Support\BulkImport\EntityResolver;
+use Filament\Actions\Imports\Jobs\ImportCsv;
 use Filament\Actions\Imports\Models\Import;
-use HayderHatem\FilamentExcelImport\Actions\Imports\Jobs\ImportExcel;
 use Illuminate\Foundation\Testing\RefreshDatabase;
+use PhpOffice\PhpSpreadsheet\IOFactory;
+use PhpOffice\PhpSpreadsheet\Writer\Csv;
 use Spatie\Permission\Models\Role;
 
 /**
@@ -74,14 +77,15 @@ function axc_run(array $rows, array $columnMap, int $userId, array $options = []
         'user_id' => $userId,
     ]);
 
-    $job = new ImportExcel(
-        importId: $import->getKey(),
-        rows: base64_encode(serialize($rows)),
-        startRow: null,
-        endRow: null,
-        columnMap: $columnMap,
-        options: $options,
-    );
+    // The live path: the wizard chunks the rows and hands each chunk to
+    // Filament's own ImportCsv. Nothing dispatches the package's ImportExcel
+    // any more, so testing through it would cover code production never runs.
+    $job = app(ImportCsv::class, [
+        'import' => $import,
+        'rows' => base64_encode(serialize($rows)),
+        'columnMap' => $columnMap,
+        'options' => $options,
+    ]);
     $job->handle();
 
     return $import->refresh();
@@ -115,20 +119,27 @@ const AXC_BLF_XLSX = __DIR__ . '/../../../../nra/inbox/2026-06-06_NAF_sam_abela_
  */
 function axc_realRows(string $filePath, int $startRow, int $endRow, int $headerOffset = 0, int $activeSheet = 0): array
 {
-    $job = new ImportExcel(
-        importId: 0,
-        rows: null,
-        startRow: null,
-        endRow: null,
-        columnMap: [],
-        options: ['headerOffset' => $headerOffset, 'activeSheet' => $activeSheet],
-    );
-    $method = new ReflectionMethod($job, 'readExcelRowsFromFile');
+    // Same conversion the wizard performs on upload, then its own reader.
+    $reader = IOFactory::createReaderForFile($filePath);
+    $reader->setReadDataOnly(true);
+    $spreadsheet = $reader->load($filePath);
+    $spreadsheet->setActiveSheetIndex($activeSheet);
 
-    /** @var array<int, array<string, mixed>> $rows */
-    $rows = $method->invoke($job, $filePath, $startRow, $endRow);
+    $csvPath = tempnam(sys_get_temp_dir(), 'axc_') . '.csv';
+    $writer = new Csv($spreadsheet);
+    $writer->setSheetIndex($activeSheet);
+    $writer->save($csvPath);
 
-    return $rows;
+    $method = new ReflectionMethod(ImportWizard::class, 'readCsvForImport');
+    $method->setAccessible(true);
+    [, $rows] = $method->invoke(new ImportWizard, $csvPath);
+
+    // nosemgrep: php.lang.security.unlink-use.unlink-use -- $csvPath is the temp CSV this helper just wrote via tempnam(), never user input.
+    @unlink($csvPath);
+
+    $offset = $startRow - 2 - $headerOffset;
+
+    return array_values(array_slice($rows, max($offset, 0), max($endRow - $startRow + 1, 0)));
 }
 
 // ─── Column map for nra/outbox/.../example_accession_import.xlsx ("Data" sheet) ──

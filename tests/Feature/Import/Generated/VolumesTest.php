@@ -13,8 +13,8 @@ use App\Models\User;
 use App\Models\Volume;
 use App\Support\BulkImport\EntityResolver;
 use App\Support\CustomFields\CustomFieldResolver;
+use Filament\Actions\Imports\Jobs\ImportCsv;
 use Filament\Actions\Imports\Models\Import;
-use HayderHatem\FilamentExcelImport\Actions\Imports\Jobs\ImportExcel;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use PhpOffice\PhpSpreadsheet\IOFactory;
 use Spatie\Permission\Models\Role;
@@ -111,14 +111,15 @@ function vt_run(array $rows, array $columnMap, int $userId, array $options = [])
         'user_id' => $userId,
     ]);
 
-    $job = new ImportExcel(
-        importId: $import->getKey(),
-        rows: base64_encode(serialize($rows)),
-        startRow: null,
-        endRow: null,
-        columnMap: $columnMap,
-        options: $options,
-    );
+    // The live path: the wizard chunks the rows and hands each chunk to
+    // Filament's own ImportCsv. Nothing dispatches the package's ImportExcel
+    // any more, so testing through it would cover code production never runs.
+    $job = app(ImportCsv::class, [
+        'import' => $import,
+        'rows' => base64_encode(serialize($rows)),
+        'columnMap' => $columnMap,
+        'options' => $options,
+    ]);
     $job->handle();
 
     return $import->refresh();
@@ -306,7 +307,11 @@ test('a row missing document_identifier fails with a clear required-field messag
     $failures = vt_failures($import);
     expect($failures)->toHaveCount(1)
         ->and($failures[0])->not->toContain('generic_validation')
-        ->and(strtolower($failures[0]))->toContain('document_identifier');
+        // The wording changed with the import path: the package's job produced
+        // the raw attribute name, Filament's produces "the document identifier
+        // field is required". Both name the column, which is what the operator
+        // needs, so match either spelling rather than pin the phrasing.
+        ->and(strtolower($failures[0]))->toMatch('/document[ _]identifier/');
     expect(Volume::query()->count())->toBe(0);
 });
 

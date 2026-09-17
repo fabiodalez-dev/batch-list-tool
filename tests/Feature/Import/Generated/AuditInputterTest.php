@@ -14,8 +14,8 @@ use App\Models\Series;
 use App\Models\User;
 use App\Support\Audit\ImportAwareUserResolver;
 use App\Support\BulkImport\EntityResolver;
+use Filament\Actions\Imports\Jobs\ImportCsv;
 use Filament\Actions\Imports\Models\Import;
-use HayderHatem\FilamentExcelImport\Actions\Imports\Jobs\ImportExcel;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use League\Csv\Reader;
@@ -110,14 +110,14 @@ function ai_run(string $importer, array $rows, array $columnMap, int $userId): I
         'user_id' => $userId,
     ]);
 
-    $job = new ImportExcel(
-        importId: $import->getKey(),
-        rows: base64_encode(serialize($rows)),
-        startRow: null,
-        endRow: null,
-        columnMap: $columnMap,
-        options: [],
-    );
+    // The live path: Filament's own ImportCsv, which is what the wizard
+    // dispatches. Nothing runs the package's ImportExcel any more.
+    $job = app(ImportCsv::class, [
+        'import' => $import,
+        'rows' => base64_encode(serialize($rows)),
+        'columnMap' => $columnMap,
+        'options' => [],
+    ]);
     $job->handle();
 
     return $import->refresh();

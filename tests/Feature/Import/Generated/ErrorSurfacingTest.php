@@ -12,9 +12,8 @@ use App\Models\Repository;
 use App\Models\Scopes\RepositoryScope;
 use App\Models\User;
 use App\Support\BulkImport\EntityResolver;
-use Filament\Actions\Imports\Exceptions\RowImportFailedException;
+use Filament\Actions\Imports\Jobs\ImportCsv;
 use Filament\Actions\Imports\Models\Import;
-use HayderHatem\FilamentExcelImport\Actions\Imports\Jobs\ImportExcel;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Spatie\Permission\Models\Role;
 
@@ -131,14 +130,15 @@ function esf_run(string $importer, array $rows, array $columnMap, int $userId, a
         'user_id' => $userId,
     ]);
 
-    $job = new ImportExcel(
-        importId: $import->getKey(),
-        rows: base64_encode(serialize($rows)),
-        startRow: null,
-        endRow: null,
-        columnMap: $columnMap,
-        options: $options,
-    );
+    // The live path: the wizard chunks the rows and hands each chunk to
+    // Filament's own ImportCsv. Nothing dispatches the package's ImportExcel
+    // any more, so testing through it would cover code production never runs.
+    $job = app(ImportCsv::class, [
+        'import' => $import,
+        'rows' => base64_encode(serialize($rows)),
+        'columnMap' => $columnMap,
+        'options' => $options,
+    ]);
     $job->handle();
 
     return $import->refresh();
@@ -148,20 +148,6 @@ function esf_run(string $importer, array $rows, array $columnMap, int $userId, a
 function esf_failures(Import $import): array
 {
     return $import->failedRows()->pluck('validation_error')->all();
-}
-
-/**
- * Invoke the REAL vendor ImportExcel::parseErrorMessage() (protected) so we
- * can prove, end-to-end, what the operator ultimately sees for a given
- * exception — including whether our own humanised message gets re-masked.
- */
-function esf_vendorParse(Throwable $e): string
-{
-    $ref = new ReflectionClass(ImportExcel::class);
-    $job = $ref->newInstanceWithoutConstructor();
-    $method = $ref->getMethod('parseErrorMessage');
-
-    return $method->invoke($job, $e);
 }
 
 // ─────────────────────────────────────────────────────────────────────────
@@ -382,19 +368,52 @@ test('BUG: a realistically long duplicate-key value produces a humanised message
  * operator ends up looking at "generic_validation" again — the exact defect
  * LogsImportRows was written to eliminate (see its class docblock).
  */
-test('BUG: the vendor re-masks our own humanised long-duplicate message as generic_validation', function () {
+test('a long humanised message reaches the failed-rows file intact, not re-masked', function () {
+    // History: the package's ImportExcel ran every error through its own
+    // parseErrorMessage(), which replaced anything over 200 characters with
+    // "generic_validation" — throwing away the humanised text LogsImportRows
+    // exists to produce. Filament's ImportCsv, the only job dispatched since
+    // 2026-09-17, records validation_error verbatim, so the defect is gone
+    // with the package rather than merely unlikely.
     $longValue = str_repeat('AB12-CATALOGUE-', 8);
     $rawException = new Exception("SQLSTATE[23000]: Integrity constraint violation: 1062 Duplicate entry '{$longValue}' for key 'documents.documents_catalogue_identifier_unique' (Connection: mysql, SQL: insert into `documents` ...)");
     $humanised = AuthorityImporter::humaniseImportError($rawException);
 
-    // What the vendor job actually catches: our RowImportFailedException
-    // carrying the humanised text (see LogsImportRows::saveRecord()).
-    $thrownToVendor = new RowImportFailedException($humanised);
-    $whatOperatorSees = esf_vendorParse($thrownToVendor);
+    // humaniseImportError deliberately keeps its own output under 200 chars,
+    // so pair it with a message that is genuinely over the threshold the
+    // package used to mask at — the point is that no threshold applies now.
+    $overLong = $humanised . ' ' . str_repeat('x', 250);
+    expect(mb_strlen($overLong))->toBeGreaterThan(200);
 
-    // CONFIRMED BUG: this currently IS 'generic_validation' — the vendor
-    // re-masks our own humanised message because it's over 200 chars.
-    expect($whatOperatorSees)->not->toBe('filament-excel-import::import.errors.generic_validation');
+    $user = esf_admin();
+    $import = Import::query()->create([
+        'completed_at' => null,
+        'file_name' => 'esf.csv',
+        'file_path' => '/tmp/esf.csv',
+        'importer' => AuthorityImporter::class,
+        'processed_rows' => 0,
+        'total_rows' => 1,
+        'successful_rows' => 0,
+        'user_id' => $user->getKey(),
+    ]);
+
+    $job = app(ImportCsv::class, [
+        'import' => $import,
+        'rows' => base64_encode(serialize([])),
+        'columnMap' => [],
+        'options' => [],
+    ]);
+    $log = new ReflectionMethod(ImportCsv::class, 'logFailedRow');
+    $log->setAccessible(true);
+    $log->invoke($job, ['Identifier' => 'R1'], $overLong);
+
+    $rows = new ReflectionProperty(ImportCsv::class, 'failedRows');
+    $rows->setAccessible(true);
+    $logged = $rows->getValue($job);
+
+    expect($logged)->toHaveCount(1);
+    expect($logged[0]['validation_error'])->toBe($overLong);
+    expect($logged[0]['validation_error'])->not->toContain('generic_validation');
 });
 
 // ─────────────────────────────────────────────────────────────────────────
