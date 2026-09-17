@@ -14,10 +14,13 @@ use OwenIt\Auditing\AuditableObserver;
 /**
  * Verbose, operator-facing logging for every import row + REAL error surfacing.
  *
- * The streaming importer (hayderhatem/filament-excel-import) masks any error
- * whose message contains "SQLSTATE" or is longer than 200 chars behind a
- * generic "generic_validation" message — so the operator never learns WHY a row
- * failed, and neither do we. This trait wraps saveRecord():
+ * Written against a streaming importer that masked any error containing
+ * "SQLSTATE" or longer than 200 chars behind a generic message, so the
+ * operator never learned WHY a row failed. That package was removed on
+ * 2026-09-17; Filament's own ImportCsv records validation_error verbatim.
+ * The trait stays because its real value is the other half — a full log of
+ * every row attempt, and a short readable message in place of a raw SQL
+ * exception. It wraps saveRecord():
  *
  *   - logs every row attempt + outcome to the dedicated `import` channel
  *     (storage/logs/import-YYYY-MM-DD.log), including the FULL raw exception;

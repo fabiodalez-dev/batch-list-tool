@@ -4,8 +4,6 @@ declare(strict_types=1);
 
 namespace App\Support\BulkImport;
 
-use HayderHatem\FilamentExcelImport\Actions\Imports\Jobs\ImportExcel;
-
 /**
  * Bug #4 — duplicate spreadsheet headers collapse to blank.
  *
@@ -17,7 +15,7 @@ use HayderHatem\FilamentExcelImport\Actions\Imports\Jobs\ImportExcel;
  *
  * Every row reader in the pipeline keys each row by its header STRING
  * (`$rowData[$header] = $value`) — the vendor's
- * {@see ImportExcel::readExcelRowsFromFile()}
+ * the wizard's CSV reader
  * does exactly this, and so does league/csv's header mode in the wizard. When
  * two physical columns share a header name the LAST one overwrites all earlier
  * ones, and in this layout the earlier column is the one that actually carries
@@ -31,7 +29,7 @@ use HayderHatem\FilamentExcelImport\Actions\Imports\Jobs\ImportExcel;
  * the legacy sheet is provenance the operator reads by eye, not import data.
  *
  * This class is the single source of truth for that scheme; the streaming job
- * ({@see Jobs\DeduplicatingImportExcel}) and the wizard CSV reader both call it
+ * the wizard CSV reader calls it
  * so the two production paths de-duplicate identically.
  */
 final class SpreadsheetHeaders
@@ -40,7 +38,7 @@ final class SpreadsheetHeaders
      * Reserved row key under which a reader injects the ABSOLUTE source-row
      * position of a row (used by importers that need a stable per-row key across
      * the 100-row chunking the import jobs do). Lives on this domain-neutral
-     * reading utility so the generic {@see Jobs\DeduplicatingImportExcel} reader
+     * reading utility so the wizard's reader
      * does not have to depend on any one importer's domain class.
      */
     public const string SOURCE_ROW_KEY = '__source_row';

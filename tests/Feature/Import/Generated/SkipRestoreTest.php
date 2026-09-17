@@ -14,8 +14,8 @@ use App\Models\Scopes\RepositoryScope;
 use App\Models\Series;
 use App\Models\User;
 use App\Support\BulkImport\EntityResolver;
+use Filament\Actions\Imports\Jobs\ImportCsv;
 use Filament\Actions\Imports\Models\Import;
-use HayderHatem\FilamentExcelImport\Actions\Imports\Jobs\ImportExcel;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use League\Csv\Reader;
 use Spatie\Permission\Models\Role;
@@ -98,14 +98,15 @@ function sr_run(string $importer, array $rows, array $columnMap, int $userId, ar
         'user_id' => $userId,
     ]);
 
-    $job = new ImportExcel(
-        importId: $import->getKey(),
-        rows: base64_encode(serialize($rows)),
-        startRow: null,
-        endRow: null,
-        columnMap: $columnMap,
-        options: $options,
-    );
+    // The live path: the wizard chunks the rows and hands each chunk to
+    // Filament's own ImportCsv. Nothing dispatches the package's ImportExcel
+    // any more, so testing through it would cover code production never runs.
+    $job = app(ImportCsv::class, [
+        'import' => $import,
+        'rows' => base64_encode(serialize($rows)),
+        'columnMap' => $columnMap,
+        'options' => $options,
+    ]);
     $job->handle();
 
     return $import->refresh();

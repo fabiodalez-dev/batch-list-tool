@@ -3,6 +3,7 @@
 declare(strict_types=1);
 
 use App\Filament\Imports\DocumentImporter;
+use App\Filament\Pages\ImportWizard;
 use App\Models\Authority;
 use App\Models\Batch;
 use App\Models\Box;
@@ -13,16 +14,16 @@ use App\Models\Scopes\ThroughBatchRepositoryScope;
 use App\Models\Series;
 use App\Models\User;
 use App\Support\BulkImport\EntityResolver;
-use App\Support\BulkImport\Jobs\DeduplicatingImportExcel;
 use App\Support\BulkImport\SpreadsheetHeaders;
+use Filament\Actions\Imports\Jobs\ImportCsv;
 use Filament\Actions\Imports\Models\Import;
-use HayderHatem\FilamentExcelImport\Actions\Imports\Jobs\ImportExcel;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Support\Arr;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Str;
 use PhpOffice\PhpSpreadsheet\IOFactory;
 use PhpOffice\PhpSpreadsheet\Reader\IReadFilter;
+use PhpOffice\PhpSpreadsheet\Writer\Csv;
 use Spatie\Permission\Models\Role;
 
 /**
@@ -92,14 +93,15 @@ function dgt_run(array $rows, array $columnMap, int $userId, array $options = []
         'user_id' => $userId,
     ]);
 
-    $job = new ImportExcel(
-        importId: $import->getKey(),
-        rows: base64_encode(serialize($rows)),
-        startRow: null,
-        endRow: null,
-        columnMap: $columnMap,
-        options: $options,
-    );
+    // The live path: the wizard chunks the rows and hands each chunk to
+    // Filament's own ImportCsv. Nothing dispatches the package's ImportExcel
+    // any more, so testing through it would cover code production never runs.
+    $job = app(ImportCsv::class, [
+        'import' => $import,
+        'rows' => base64_encode(serialize($rows)),
+        'columnMap' => $columnMap,
+        'options' => $options,
+    ]);
     $job->handle();
 
     return $import->refresh();
@@ -113,56 +115,48 @@ function dgt_failures(Import $import): array
 
 /**
  * Read a range of DATA rows from a real xlsx file through the REAL production
- * read path the streaming "Import Excel / CSV" button now dispatches —
- * {@see DeduplicatingImportExcel::readExcelRowsFromFile()} — via reflection
- * (it's `protected`). This is the vendor reader with the Bug #4 fix layered on
- * top (repeated headers de-duplicated by physical position), so the test
- * exercises the *actual* code path in production, not a re-implementation.
+ * read path: the wizard converts the workbook to CSV, then re-keys each row
+ * through {@see SpreadsheetHeaders::dedupe()} in ImportWizard::readCsvForImport()
+ * so repeated headers keep distinct keys instead of overwriting each other.
+ *
+ * Until 2026-09-17 this went through the package's streaming job, which the
+ * resource buttons dispatched. Nothing dispatches it now — every import goes
+ * through the wizard — so reading that way would exercise code production
+ * never runs.
+ *
+ * $startRow / $endRow are 1-based SHEET rows, as before: row 1 is the header,
+ * so startRow 2 is the first data row.
  *
  * @return array<int, array<string, mixed>>
  */
 function dgt_realRows(string $filePath, int $startRow, int $endRow, int $headerOffset = 0, int $activeSheet = 0): array
 {
-    $job = new DeduplicatingImportExcel(
-        importId: 0,
-        rows: null,
-        startRow: null,
-        endRow: null,
-        columnMap: [],
-        options: ['headerOffset' => $headerOffset, 'activeSheet' => $activeSheet],
-    );
-    $method = new ReflectionMethod($job, 'readExcelRowsFromFile');
+    // Same conversion the wizard performs on upload (materialiseCsv): load the
+    // workbook, pick the sheet, write it out as CSV. Plain PhpSpreadsheet with
+    // no logic of ours — the part under test is the reader below.
+    $reader = IOFactory::createReaderForFile($filePath);
+    $reader->setReadDataOnly(true);
+    $spreadsheet = $reader->load($filePath);
+    $spreadsheet->setActiveSheetIndex($activeSheet);
 
-    /** @var array<int, array<string, mixed>> $rows */
-    $rows = $method->invoke($job, $filePath, $startRow, $endRow);
+    $csvPath = tempnam(sys_get_temp_dir(), 'dgt_') . '.csv';
+    $writer = new Csv($spreadsheet);
+    $writer->setSheetIndex($activeSheet);
+    $writer->save($csvPath);
 
-    return $rows;
-}
+    $page = new ImportWizard;
+    $method = new ReflectionMethod(ImportWizard::class, 'readCsvForImport');
+    $method->setAccessible(true);
+    [, $rows] = $method->invoke($page, $csvPath);
 
-/**
- * The UNFIXED vendor reader — keeps the pre-Bug #4 behaviour (rows keyed by
- * header string, so repeated columns collapse). Retained so the flagship tests
- * can assert the fix by CONTRAST: the vendor path still loses the data, ours
- * recovers it.
- *
- * @return array<int, array<string, mixed>>
- */
-function dgt_vendorRows(string $filePath, int $startRow, int $endRow, int $headerOffset = 0, int $activeSheet = 0): array
-{
-    $job = new ImportExcel(
-        importId: 0,
-        rows: null,
-        startRow: null,
-        endRow: null,
-        columnMap: [],
-        options: ['headerOffset' => $headerOffset, 'activeSheet' => $activeSheet],
-    );
-    $method = new ReflectionMethod($job, 'readExcelRowsFromFile');
+    @unlink($csvPath);
 
-    /** @var array<int, array<string, mixed>> $rows */
-    $rows = $method->invoke($job, $filePath, $startRow, $endRow);
+    // Sheet rows are 1-based and row 1 is the header, so data row N sits at
+    // index N - 2 - headerOffset.
+    $offset = $startRow - 2 - $headerOffset;
+    $length = $endRow - $startRow + 1;
 
-    return $rows;
+    return array_values(array_slice($rows, max($offset, 0), max($length, 0)));
 }
 
 /**
@@ -361,14 +355,10 @@ test('Bug #4: the de-duplicating reader RECOVERS the first-occurrence data the v
         ->and(array_count_values($headers)['Barcode (IN)'] ?? 0)->toBe(2)
         ->and(array_count_values($headers)['Disinfestation Date'] ?? 0)->toBe(3);
 
-    // CONTRAST — the UNFIXED vendor reader keys the row by header string, so
-    // the LAST physical column with each duplicated name (blank) overwrites
-    // the FIRST (which holds the real "AA18049" / "IN" / "2026-01-15"). The
-    // data is unrecoverable on that path.
-    $vendor = dgt_vendorRows(DGT_EXAMPLE_XLSX, 2, 2);
-    expect($vendor[0]['Barcode (IN)'])->toBe('')
-        ->and($vendor[0]['Status 1'])->toBe('')
-        ->and($vendor[0]['Disinfestation Date'])->toBe('');
+    // The contrast this test used to draw — against the package's unfixed
+    // reader, which keyed rows by header string and let the last blank
+    // duplicate overwrite the first — is gone with the package. What has to
+    // hold is below: the reader in use keeps the first occurrence's data.
 
     // FIX — the de-duplicating reader keeps the FIRST occurrence's key verbatim
     // (so existing column-map guesses still resolve to it) and suffixes the
@@ -388,11 +378,8 @@ test("Bug #4: the de-duplicating reader recovers the first-occurrence Barcode (I
         $this->markTestSkipped('client sample not present (nra/inbox is untracked)');
     }
 
-    // CONTRAST — the vendor reader loses it (the trailing duplicate columns
-    // were never written, so PhpSpreadsheet hands back null/'' and that
-    // overwrites the real first-occurrence value on the header-keyed path).
-    $vendor = dgt_vendorRows(DGT_BATCHLIST_XLSX, 2, 2);
-    expect($vendor[0]['Barcode (IN)'])->toBeEmpty();
+    // The header-keyed reading this file used to defeat is no longer in the
+    // codebase; what matters is that the live reader recovers the value.
 
     // FIX — row 1 of the client's OWN live file carries Barcode (IN) = "AA40822"
     // in the FIRST physical occurrence (confirmed by direct cell inspection);
