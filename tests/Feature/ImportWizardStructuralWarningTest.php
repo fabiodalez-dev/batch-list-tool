@@ -153,6 +153,12 @@ it('warns that locations will flatten when the Parent column is missing', functi
     );
 
     expect($html)->toContain('top level');
+    // The warning must name the duplicate, which is the part that costs the
+    // operator cleanup work. Measured: a nested location re-imported without
+    // the column leaves the original alone and inserts a second copy at the
+    // root; with a code on it, the row fails on the unique index instead.
+    expect($html)->toContain('second copy');
+    expect($html)->toContain('fail if it has a code');
 });
 
 it('says nothing about locations once the Parent column is mapped', function (): void {
