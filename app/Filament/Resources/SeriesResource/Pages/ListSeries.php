@@ -4,12 +4,12 @@ namespace App\Filament\Resources\SeriesResource\Pages;
 
 use App\Filament\Concerns\ExplainsPage;
 use App\Filament\Imports\SeriesImporter;
+use App\Filament\Pages\ImportWizard;
 use App\Filament\Resources\SeriesResource;
 use App\Models\Series;
 use App\Support\BulkImport\TemplateGenerator;
 use Filament\Actions;
 use Filament\Resources\Pages\ListRecords;
-use HayderHatem\FilamentExcelImport\Actions\FullImportAction;
 
 class ListSeries extends ListRecords
 {
@@ -29,15 +29,20 @@ class ListSeries extends ListRecords
     protected function getHeaderActions(): array
     {
         return [
-            FullImportAction::make()
-                ->importer(SeriesImporter::class)
+            Actions\Action::make('import')
                 ->label('Import Excel / CSV')
                 ->icon('heroicon-o-arrow-up-tray')
                 ->color('gray')
-                ->chunkSize(500)
-                ->maxRows(50000)
-                ->streamingThreshold(10 * 1024 * 1024)
-                ->visible(fn () => auth()->user()?->can('create', Series::class) ?? false),
+                // One import path. The wizard orders parents ahead of
+                // children, offers the overwrite choice and warns about
+                // missing structural columns; the in-page modal did none
+                // of those, so the same sheet behaved differently
+                // depending on where it was uploaded from.
+                ->url(ImportWizard::getUrl(['type' => 'series']))
+                // Also gated on the wizard's own access check, so the
+                // button is never shown to someone it would 403.
+                ->visible(fn (): bool => ImportWizard::canAccess()
+                    && (auth()->user()?->can('create', Series::class) ?? false)),
 
             // Blank xlsx whose row-1 headers match Series_Sample.xlsx
             // (the first 6 populated columns — trailing NULLs in the

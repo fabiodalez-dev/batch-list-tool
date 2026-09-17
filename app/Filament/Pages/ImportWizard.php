@@ -13,6 +13,7 @@ use App\Filament\Imports\DocumentImporter;
 use App\Filament\Imports\DocumentTypeImporter;
 use App\Filament\Imports\LocationImporter;
 use App\Filament\Imports\SeriesImporter;
+use App\Filament\Imports\VolumeImporter;
 use App\Models\ImportProfile;
 use App\Models\User;
 use App\Support\BulkImport\Jobs\DeduplicatingImportExcel;
@@ -113,6 +114,11 @@ class ImportWizard extends Page
         // dropdown presents it as the earlier step.
         'documentTypes' => DocumentTypeImporter::class,
         'documents' => DocumentImporter::class,
+        // Client 2026-09-17: Volumes had an importer and a template but no
+        // wizard entry, so the only way in was the per-page button — the very
+        // path being retired. Placed after documents because a volume row is
+        // matched to its document by identifier.
+        'volumes' => VolumeImporter::class,
         'accessions' => AccessionRowImporter::class,
     ];
 
@@ -130,6 +136,7 @@ class ImportWizard extends Page
         'boxes' => 'box',
         'documentTypes' => 'documentType',
         'documents' => 'document',
+        'volumes' => 'volume',
         'accessions' => 'accession',
     ];
 
@@ -380,8 +387,23 @@ class ImportWizard extends Page
             'overwrite_existing' => false,
         ];
 
+        // ?type=boxes — arrive with the entity already chosen. The Import
+        // buttons on the resource pages link here rather than carrying their
+        // own upload modal, so the operator lands on step 1 with their record
+        // type selected instead of picking it again.
+        //
+        // Validated against IMPORTERS rather than trusted: an unknown or
+        // malformed value simply leaves the radio empty, which is the same
+        // state as arriving with no parameter at all.
+        $requestedType = request()->query('type');
+        if (is_string($requestedType) && array_key_exists($requestedType, self::IMPORTERS)) {
+            $initial['import_type'] = $requestedType;
+        }
+
         // ?profile=N — preload a saved mapping. We only honour profiles the
         // current user can actually see (owner OR shared in their tenant).
+        // A profile carries its own type, so it wins over ?type= when both
+        // are given: the mapping would be meaningless against another entity.
         $profile = $this->resolveProfileFromQuery();
         if ($profile instanceof ImportProfile) {
             $initial['starting_profile_id'] = (string) $profile->getKey();
@@ -1177,6 +1199,7 @@ class ImportWizard extends Page
                         'boxes' => 'Boxes (physical containers)',
                         'documentTypes' => 'Document Types (controlled vocabulary — import BEFORE documents)',
                         'documents' => 'Documents (the main entity — 3,113 rows in sample)',
+                        'volumes' => 'Volumes (the physical volumes inside a document)',
                     ])
                     ->descriptions([
                         'accessions' => 'Primary path for new accessions and mass batch-list import. One row per document; every ancestor is resolved or created automatically. Depends on: Series (must pre-exist).',
@@ -1187,6 +1210,7 @@ class ImportWizard extends Page
                         'boxes' => 'Depends on: at least one Batch. Import the RAS parent boxes first, then the boxes inside them. In "parent_box_number" put the parent RAS box\'s NUMBER (e.g. "1") or its barcode — every IN_SITU / NRA box needs a RAS parent. "Location" is a location CODE (e.g. "SHELF-A3"), not the room name.',
                         'documentTypes' => 'Depends on: nothing. Import this BEFORE documents — the documents sheet links each row to a Document Type by its Identifier.',
                         'documents' => 'Depends on: Series + Authorities + Batches + Boxes + Document Types.',
+                        'volumes' => 'Depends on: Documents — each row is matched to its document by "Document Identifier", so import the documents first.',
                     ])
                     ->required()
                     ->live()

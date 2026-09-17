@@ -6,6 +6,7 @@ namespace App\Filament\Resources\VolumeResource\Pages;
 
 use App\Filament\Concerns\ExplainsPage;
 use App\Filament\Imports\VolumeImporter;
+use App\Filament\Pages\ImportWizard;
 use App\Filament\Resources\VolumeResource;
 use App\Models\CustomFieldDefinition;
 use App\Models\Volume;
@@ -14,7 +15,6 @@ use App\Support\CustomFields\CustomFieldCsv;
 use App\Support\CustomFields\CustomFieldResolver;
 use Filament\Actions;
 use Filament\Resources\Pages\ListRecords;
-use HayderHatem\FilamentExcelImport\Actions\FullImportAction;
 use Illuminate\Support\Str;
 use Symfony\Component\HttpFoundation\StreamedResponse;
 
@@ -131,21 +131,26 @@ class ListVolumes extends ListRecords
     protected function getHeaderActions(): array
     {
         return [
-            // Import Excel / CSV — mirrors ListBoxes pattern (FullImportAction).
+            // Import Excel / CSV — links to the wizard, the single import path.
             // RFQ rules enforced by VolumeImporter:
             //   - document_identifier must resolve to an existing document in
             //     the active repository (multi-tenant guard).
             //   - Custom-field columns are applied with merge semantics so a
             //     partial CSV does not wipe unmentioned fields.
-            FullImportAction::make()
-                ->importer(VolumeImporter::class)
+            Actions\Action::make('import')
                 ->label('Import Excel / CSV')
                 ->icon('heroicon-o-arrow-up-tray')
                 ->color('gray')
-                ->chunkSize(500)
-                ->maxRows(50000)
-                ->streamingThreshold(10 * 1024 * 1024)
-                ->visible(fn () => auth()->user()?->can('create_volume') ?? false),
+                // One import path. The wizard orders parents ahead of
+                // children, offers the overwrite choice and warns about
+                // missing structural columns; the in-page modal did none
+                // of those, so the same sheet behaved differently
+                // depending on where it was uploaded from.
+                ->url(ImportWizard::getUrl(['type' => 'volumes']))
+                // Also gated on the wizard's own access check, so the
+                // button is never shown to someone it would 403.
+                ->visible(fn (): bool => ImportWizard::canAccess()
+                    && (auth()->user()?->can('create_volume') ?? false)),
 
             Actions\Action::make('export_csv')
                 ->label('Export CSV')

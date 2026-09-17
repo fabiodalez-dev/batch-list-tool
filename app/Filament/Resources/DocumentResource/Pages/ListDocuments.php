@@ -7,12 +7,12 @@ namespace App\Filament\Resources\DocumentResource\Pages;
 use App\Filament\Concerns\ExplainsPage;
 use App\Filament\Concerns\FiltersExportColumns;
 use App\Filament\Imports\DocumentImporter;
+use App\Filament\Pages\ImportWizard;
 use App\Filament\Resources\DocumentResource;
 use App\Models\CustomFieldDefinition;
 use App\Models\Document;
 use App\Models\Scopes\RepositoryScope;
 use App\Support\ActiveRepository;
-use App\Support\BulkImport\Jobs\DeduplicatingImportExcel;
 use App\Support\BulkImport\TemplateGenerator;
 use App\Support\CustomFields\CustomFieldCsv;
 use App\Support\CustomFields\CustomFieldResolver;
@@ -20,7 +20,6 @@ use Filament\Actions;
 use Filament\Forms\Components\TextInput;
 use Filament\Notifications\Notification;
 use Filament\Resources\Pages\ListRecords;
-use HayderHatem\FilamentExcelImport\Actions\FullImportAction;
 use Illuminate\Support\Collection;
 use Illuminate\Support\Str;
 use Symfony\Component\HttpFoundation\StreamedResponse;
@@ -153,24 +152,20 @@ class ListDocuments extends ListRecords
             // Per-column dropdown mapping, FK resolution by name (Series via
             // code, Authority via R-code AND surname), F-009 ambiguous-skip
             // policy. See {@see DocumentImporter} for the column declarations.
-            FullImportAction::make()
-                ->importer(DocumentImporter::class)
-                // Bug #4 — the legacy batch-list layout repeats header strings
-                // ("Barcode (IN)", "Status 1", "Disinfestation Date") at
-                // different physical columns. The stock streaming job keys each
-                // row by header name, so the later duplicate silently overwrites
-                // the earlier (data-bearing) column and barcode_in/status_1/
-                // disinfestation_date arrive blank. This job de-duplicates the
-                // headers by position before assembling the row so every column
-                // survives with a distinct key. See DeduplicatingImportExcel.
-                ->job(DeduplicatingImportExcel::class)
+            Actions\Action::make('import')
                 ->label('Import Excel / CSV')
                 ->icon('heroicon-o-arrow-up-tray')
                 ->color('gray')
-                ->chunkSize(500)
-                ->maxRows(50000)
-                ->streamingThreshold(10 * 1024 * 1024)
-                ->visible(fn () => auth()->user()?->can('create', Document::class) ?? false),
+                // One import path. The wizard orders parents ahead of
+                // children, offers the overwrite choice and warns about
+                // missing structural columns; the in-page modal did none
+                // of those, so the same sheet behaved differently
+                // depending on where it was uploaded from.
+                ->url(ImportWizard::getUrl(['type' => 'documents']))
+                // Also gated on the wizard's own access check, so the
+                // button is never shown to someone it would 403.
+                ->visible(fn (): bool => ImportWizard::canAccess()
+                    && (auth()->user()?->can('create', Document::class) ?? false)),
 
             Actions\Action::make('export_csv')
                 ->label('Export CSV')

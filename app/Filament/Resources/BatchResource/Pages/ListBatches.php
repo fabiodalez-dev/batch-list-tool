@@ -6,6 +6,7 @@ namespace App\Filament\Resources\BatchResource\Pages;
 
 use App\Filament\Concerns\ExplainsPage;
 use App\Filament\Imports\BatchImporter;
+use App\Filament\Pages\ImportWizard;
 use App\Filament\Resources\BatchResource;
 use App\Models\Batch;
 use App\Models\CustomFieldDefinition;
@@ -14,7 +15,6 @@ use App\Support\CustomFields\CustomFieldCsv;
 use App\Support\CustomFields\CustomFieldResolver;
 use Filament\Actions;
 use Filament\Resources\Pages\ListRecords;
-use HayderHatem\FilamentExcelImport\Actions\FullImportAction;
 use Illuminate\Support\Str;
 use Symfony\Component\HttpFoundation\StreamedResponse;
 
@@ -134,18 +134,20 @@ class ListBatches extends ListRecords
     protected function getHeaderActions(): array
     {
         return [
-            FullImportAction::make()
-                ->importer(BatchImporter::class)
+            Actions\Action::make('import')
                 ->label('Import Excel / CSV')
-                // NAF Feedback-1 (Batches page) — the upload step should read
-                // "Upload a Excel/CSV file".
-                ->modalHeading('Upload a Excel/CSV file')
                 ->icon('heroicon-o-arrow-up-tray')
                 ->color('gray')
-                ->chunkSize(500)
-                ->maxRows(50000)
-                ->streamingThreshold(10 * 1024 * 1024)
-                ->visible(fn () => auth()->user()?->can('create', Batch::class) ?? false),
+                // One import path. The wizard orders parents ahead of
+                // children, offers the overwrite choice and warns about
+                // missing structural columns; the in-page modal did none
+                // of those, so the same sheet behaved differently
+                // depending on where it was uploaded from.
+                ->url(ImportWizard::getUrl(['type' => 'batches']))
+                // Also gated on the wizard's own access check, so the
+                // button is never shown to someone it would 403.
+                ->visible(fn (): bool => ImportWizard::canAccess()
+                    && (auth()->user()?->can('create', Batch::class) ?? false)),
 
             Actions\Action::make('export_csv')
                 ->label('Export CSV')
