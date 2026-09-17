@@ -289,6 +289,20 @@ class ImportWizard extends Page
         SeriesImporter::class => [
             'parent_code' => 'No "Parent" column is mapped, so no parent-child relationships will be created — series already linked keep their parent, and the rest stay top-level. If your spreadsheet has no Parent column, download the template again: it gained one on 14 September.',
         ],
+        // Locations are worse than series, not merely flatter. resolveRecord()
+        // matches on (repository_id, parent_id, name), so with parent_name
+        // unmapped it looks for parent_id NULL and never finds an existing
+        // nested row. Measured, not assumed: a nested "Shelf" re-imported
+        // without the column leaves the original intact and INSERTS a second
+        // copy at the root, import reporting success; when the location
+        // carries a code, the unique index rejects the row instead.
+        //
+        // Boxes are deliberately absent from this list. An IN_SITU or NRA box
+        // with no parent RAS box FAILS the row with an explicit message, so the
+        // operator already hears about it — a warning here would be noise.
+        LocationImporter::class => [
+            'parent_name' => 'No "Parent" column is mapped, so every location will be created at the top level instead of inside its room or shelf. Worse, a location that already exists inside a parent will not be recognised: you will get a second copy of it at the top level, or the row will fail if it has a code. Map the Parent column before importing into an existing hierarchy.',
+        ],
     ];
 
     /**
