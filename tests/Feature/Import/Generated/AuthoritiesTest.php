@@ -3,6 +3,7 @@
 declare(strict_types=1);
 
 use App\Filament\Imports\AuthorityImporter;
+use App\Filament\Pages\ImportWizard;
 use App\Models\Authority;
 use App\Models\User;
 use App\Support\BulkImport\EntityResolver;
@@ -36,6 +37,28 @@ const AT_COLUMN_MAP = [
     'surname' => 'Creator Surname',
     'given_names' => 'Creator Name',
 ];
+
+/**
+ * Column map derived from the file's OWN header row, via the same guess the
+ * wizard performs.
+ *
+ * AT_COLUMN_MAP is hard-coded and shared with the prod CSV and the RFQ sample,
+ * both of which still carry the pre-September headers — so it cannot simply be
+ * updated. The outbox example, by contrast, is regenerated from the current
+ * template whenever the template changes (19 columns and
+ * "Authority Record Identifier (NAM)" as of 2026-09-22), and pinning its map by
+ * hand means every template change breaks these tests for no real reason.
+ *
+ * The old spellings stay covered: the prod CSV and the RFQ sample still use
+ * them, through AT_COLUMN_MAP, in the tests above.
+ *
+ * @param list<array<string, mixed>> $rows
+ * @return array<string, string>
+ */
+function at_mapFromHeaders(array $rows): array
+{
+    return ImportWizard::guessColumnMap(AuthorityImporter::class, array_keys($rows[0] ?? []));
+}
 
 function at_admin(): User
 {
@@ -466,7 +489,7 @@ test('entity_type "Notary" (real NAF example file value) normalises to INSTITUTI
     // The prod CSV has no "Notary" rows — the NAF example file does: real
     // row R646 (Farrugia, Antonio).
     $rows = at_loadXlsx(AT_NAF_EXAMPLE_XLSX);
-    at_run([$rows[0]], AT_COLUMN_MAP, $u->id);
+    at_run([$rows[0]], at_mapFromHeaders($rows), $u->id);
 
     expect(Authority::where('identifier', 'R646')->value('entity_type'))->toBe('INSTITUTION');
 })->skip(fn () => ! is_file(AT_NAF_EXAMPLE_XLSX), 'NAF example file not present');
@@ -494,7 +517,7 @@ test('NTG Dates Active (real NAF example row 2) splits into ntg_dates_start/end 
     // columns exactly like the private-practice range (it used to be dumped
     // into notes as free text, which is why NTG dates never imported).
     $rows = at_loadXlsx(AT_NAF_EXAMPLE_XLSX);
-    at_run([$rows[1]], AT_COLUMN_MAP, $u->id);
+    at_run([$rows[1]], at_mapFromHeaders($rows), $u->id);
 
     $a = Authority::where('identifier', 'R647')->first();
     expect($a->ntg_dates_start)->toBe(1885)
@@ -507,7 +530,7 @@ test('Maiden Surname (real NAF example row 2) is appended into notes', function 
 
     // Same real row R647 (Grech, Carmela) — Maiden Surname "Zammit".
     $rows = at_loadXlsx(AT_NAF_EXAMPLE_XLSX);
-    at_run([$rows[1]], AT_COLUMN_MAP, $u->id);
+    at_run([$rows[1]], at_mapFromHeaders($rows), $u->id);
 
     expect(Authority::where('identifier', 'R647')->value('notes'))->toContain('Maiden surname: Zammit');
 })->skip(fn () => ! is_file(AT_NAF_EXAMPLE_XLSX), 'NAF example file not present');
@@ -550,7 +573,7 @@ test('the real NAF example_authority_import.xlsx (2 rows) imports cleanly end-to
     $rows = at_loadXlsx(AT_NAF_EXAMPLE_XLSX);
     expect($rows)->toHaveCount(2);
 
-    $import = at_run($rows, AT_COLUMN_MAP, $u->id);
+    $import = at_run($rows, at_mapFromHeaders($rows), $u->id);
 
     expect(at_failures($import))->toBe([])
         ->and(Authority::count())->toBe(2)

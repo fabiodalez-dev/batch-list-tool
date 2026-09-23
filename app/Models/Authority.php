@@ -38,6 +38,7 @@ class Authority extends Model implements AuditableContract
 
     protected $fillable = [
         'identifier', 'alternative_identifier', 'alternative_identifier_warrant',
+        'previous_temporary_identifiers',
         'surname', 'given_names', 'authorised_form_of_name',
         'entity_type', 'functions_occupations_activities',
         'level_of_detail', 'status', 'rules_and_conventions',

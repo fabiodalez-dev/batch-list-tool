@@ -44,7 +44,7 @@ it('TemplateGenerator: headersFor("authority") carries the ISAAR(CPF) contract',
     // does not offer it.
     $headers = TemplateGenerator::headersFor('authority');
     expect($headers)->toEqual(TemplateGenerator::AUTHORITY_HEADERS)
-        ->and($headers)->toHaveCount(18)
+        ->and($headers)->toHaveCount(19)
         ->and($headers[0])->toBe('Authority Record Identifier (NAM)')
         ->and($headers)->not->toContain('Identifier')
         ->and($headers)->toContain('Alternative Identifier (Warrant Number)')

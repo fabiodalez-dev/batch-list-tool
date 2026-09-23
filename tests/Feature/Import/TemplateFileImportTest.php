@@ -169,7 +169,7 @@ it('leaves no Authorities header in the downloaded file without an importer colu
     // supported, the cataloguer fills it in, and the import reports success
     // while dropping the value.
     expect($orphans)->toBe([]);
-    expect($headers)->toHaveCount(18);
+    expect($headers)->toHaveCount(19);
 
     File::delete($path);
 });
@@ -236,6 +236,9 @@ it('imports an Authorities workbook filled in as the cataloguer would', function
         [
             'Authority Record Identifier (NAM)' => 'R-TPL-1',
             'Alternative Identifier (Warrant Number)' => 'W-901',
+            // Client 2026-09-22. Plural on purpose: several superseded codes in
+            // one cell must survive whole, not be split at the separator.
+            'Previous Temporary Identifiers' => 'TMP-1962/17; OLD-REF 88',
             'Type of Entity' => 'Notary',
             'Creator Surname' => 'Bonnici',
             'Creator Name' => 'Ġużeppi',
@@ -260,6 +263,7 @@ it('imports an Authorities workbook filled in as the cataloguer would', function
 
     expect($a)->not->toBeNull();
     expect($a->alternative_identifier_warrant)->toBe('W-901');
+    expect($a->previous_temporary_identifiers)->toBe('TMP-1962/17; OLD-REF 88');
     expect($a->authorised_form_of_name)->toBe('Bonnici, Ġużeppi');
     expect($a->functions_occupations_activities)->toBe('Notarial practice');
     // Stored in the canonical spelling, not the operator's casing.

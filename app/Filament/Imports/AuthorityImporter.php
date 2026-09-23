@@ -73,6 +73,17 @@ class AuthorityImporter extends Importer
                 ])
                 ->rules(['nullable', 'string', 'max:191']),
 
+            // Client 2026-09-22. Plural by design: a record may list several
+            // superseded identifiers, so no length cap beyond the column's.
+            ImportColumn::make('previous_temporary_identifiers')
+                ->label('Previous Temporary Identifiers')
+                ->guess([
+                    'Previous Temporary Identifiers', 'Previous Temporary Identifier',
+                    'Prev Temporary Identifiers', 'Previous Temp Identifiers',
+                    'previous_temporary_identifiers',
+                ])
+                ->rules(['nullable', 'string', 'max:65535']),
+
             ImportColumn::make('surname')
                 ->label('Creator Surname')
                 ->requiredMappingForNewRecordsOnly()
