@@ -68,6 +68,8 @@ final class TemplateGenerator
         // header, so sheets saved before today keep working.
         'Authority Record Identifier (NAM)', 'Alternative Identifier',
         'Alternative Identifier (Warrant Number)',
+        // Client 2026-09-22: asked for immediately after the warrant.
+        'Previous Temporary Identifiers',
         'Type of Entity',
         'Private Practice Dates Active', 'NTG Dates Active', 'Name Suffix',
         'Maiden Surname', 'Creator Surname', 'Creator Name',
@@ -165,7 +167,7 @@ final class TemplateGenerator
      * version tells you whether the operator is working from a stale
      * download. Bump on any change to the header contract.
      */
-    public const string GENERATOR_VERSION = '1.16.0';
+    public const string GENERATOR_VERSION = '1.17.0';
 
     /**
      * Supported template entities. Headers come from the in-repo constants

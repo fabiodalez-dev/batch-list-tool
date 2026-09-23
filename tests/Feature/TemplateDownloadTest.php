@@ -240,7 +240,7 @@ test('Authority template still carries every Authorities_Sample.xlsx column, in 
     // and relative order in one assertion.
     expect(array_values(array_intersect($generated, $sample)))->toBe($sample);
 
-    expect($generated)->toHaveCount(18);
+    expect($generated)->toHaveCount(19);
     expect($generated[0])->toBe('Authority Record Identifier (NAM)');
 });
 

@@ -106,6 +106,15 @@ class AuthorityResource extends Resource
                         $g(Forms\Components\TextInput::make('alternative_identifier_warrant')
                             ->label('Alternative Identifier (Warrant Number)')
                             ->maxLength(191)),
+                        // Client 2026-09-22: a third kind of identifier with no
+                        // relationship to the others. Textarea, not a text
+                        // input: the label is plural and a record may list
+                        // several superseded codes.
+                        $g(Forms\Components\Textarea::make('previous_temporary_identifiers')
+                            ->label('Previous Temporary Identifiers')
+                            ->rows(2)
+                            ->maxLength(65535)
+                            ->columnSpanFull()),
                         $g(Forms\Components\TextInput::make('surname')
                             ->required()
                             ->maxLength(255)),
@@ -257,6 +266,11 @@ class AuthorityResource extends Resource
                             ->label('Alternative identifier (warrant number)')
                             ->copyable()
                             ->placeholder('—'),
+                        TextEntry::make('previous_temporary_identifiers')
+                            ->label('Previous temporary identifiers')
+                            ->copyable()
+                            ->placeholder('—')
+                            ->columnSpanFull(),
                         TextEntry::make('surname')
                             ->label('Surname')
                             ->placeholder('—'),
@@ -412,6 +426,14 @@ class AuthorityResource extends Resource
                     ->label('Warrant no.')
                     ->placeholder('—')
                     ->sortable()
+                    ->searchable()
+                    ->toggleable(isToggledHiddenByDefault: true)),
+                // Hidden by default like the warrant: useful when tracing an
+                // old code, noise the rest of the time.
+                $gc(Tables\Columns\TextColumn::make('previous_temporary_identifiers')
+                    ->label('Previous temp. identifiers')
+                    ->placeholder('—')
+                    ->limit(40)
                     ->searchable()
                     ->toggleable(isToggledHiddenByDefault: true)),
                 // Status and Level of detail stay visible: they are how the

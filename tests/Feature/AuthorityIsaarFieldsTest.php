@@ -70,6 +70,50 @@ it('renames Identifier and adds the warrant number as a third identifier', funct
     expect($headers)->not->toContain('Identifier');
 });
 
+it('adds Previous Temporary Identifiers straight after the warrant', function (): void {
+    // Client 2026-09-22, asked for just before the final sheet was imported:
+    // "can we add one final column ... Previous Temporary Identifiers (can be
+    // placed after warrant pls)". Position matters to her, so assert it rather
+    // than mere presence.
+    $headers = TemplateGenerator::headersFor('authority');
+
+    $warrant = array_search('Alternative Identifier (Warrant Number)', $headers, strict: true);
+    $previous = array_search('Previous Temporary Identifiers', $headers, strict: true);
+
+    expect($warrant)->not->toBeFalse();
+    expect($previous)->toBe($warrant + 1);
+    expect($headers)->toHaveCount(19);
+});
+
+it('imports Previous Temporary Identifiers, and keeps a list of them whole', function (): void {
+    $u = isaar_admin();
+    $this->actingAs($u);
+
+    // Plural: she may list more than one superseded code in the cell, so the
+    // value has to survive verbatim rather than being split or truncated.
+    $several = 'TMP-1987/4; TMP-1990/12; OLD-REF 221';
+
+    isaar_import([
+        'identifier' => 'NAM-PTI', 'surname' => 'Camilleri', 'given_names' => 'Pawlu',
+        'entity_type' => 'Notary',
+        'alternative_identifier_warrant' => 'W-77',
+        'previous_temporary_identifiers' => $several,
+    ], $u->id);
+
+    $a = Authority::where('identifier', 'NAM-PTI')->first();
+
+    expect($a)->not->toBeNull();
+    expect($a->previous_temporary_identifiers)->toBe($several);
+    // It must not disturb the warrant sitting next to it.
+    expect($a->alternative_identifier_warrant)->toBe('W-77');
+});
+
+it('maps the Previous Temporary Identifiers header without manual mapping', function (): void {
+    $map = ImportWizard::guessColumnMap(AuthorityImporter::class, TemplateGenerator::headersFor('authority'));
+
+    expect($map['previous_temporary_identifiers'] ?? null)->toBe('Previous Temporary Identifiers');
+});
+
 it('carries every new descriptive column, Notes included', function (): void {
     $headers = TemplateGenerator::headersFor('authority');
 
