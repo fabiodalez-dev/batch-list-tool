@@ -178,6 +178,11 @@ class ColumnNamesRelationManager extends RelationManager
                     ->label('Restore original name')
                     ->modalHeading('Restore the original name?')
                     ->modalDescription('The column goes back to the name it ships with, on the template and everywhere else.')
+                    // The inherited button says "Delete", under a heading that
+                    // offers to restore a name. Nothing is deleted that anyone
+                    // catalogued, and a red "Delete" invites the reader to
+                    // wonder what else is going with it.
+                    ->modalSubmitActionLabel('Restore the original name')
                     ->after(fn () => ColumnLabels::flushMemo()),
             ])
             ->toolbarActions([
