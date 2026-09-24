@@ -25,6 +25,10 @@ class CustomFieldDefinition extends Model implements AuditableContract
         'batch' => Batch::class,
         'box' => Box::class,
         'volume' => Volume::class,
+        // Client 2026-09-24: she had been asking for new Authority columns
+        // every few days, each one a code change. Authorities join the
+        // entities whose extra columns she can add herself.
+        'authority' => Authority::class,
     ];
 
     /**

@@ -7,6 +7,7 @@ namespace App\Support\BulkImport;
 use App\Filament\Imports\BatchImporter;
 use App\Filament\Imports\BoxImporter;
 use App\Models\Authority;
+use App\Support\ColumnLabels\ColumnLabels;
 use App\Support\CustomFields\CustomFieldResolver;
 use PhpOffice\PhpSpreadsheet\Cell\Coordinate;
 use PhpOffice\PhpSpreadsheet\Cell\DataType;
@@ -220,10 +221,16 @@ final class TemplateGenerator
      *
      * @var array<string, array<string, list<string>>>
      */
+    /**
+     * Keyed by FIELD, not by header: the header is whatever the repository
+     * currently calls the column, and a rename would otherwise silently drop
+     * the dropdown — the template would still open, just without the guard
+     * that stops a value outside the list.
+     */
     private const array ENUM_COLUMNS = [
         'authority' => [
-            'Level of detail' => Authority::LEVELS_OF_DETAIL,
-            'Status' => Authority::RECORD_STATUSES,
+            'level_of_detail' => Authority::LEVELS_OF_DETAIL,
+            'status' => Authority::RECORD_STATUSES,
         ],
     ];
 
@@ -294,7 +301,11 @@ final class TemplateGenerator
         }
 
         $staticHeaders = match ($entity) {
-            'authority' => self::AUTHORITY_HEADERS,
+            // Renameable from the admin since 2026-09-24: the header text comes
+            // from ColumnLabels, which falls back to AUTHORITY_HEADERS' own
+            // wording when nothing has been renamed. The ORDER and the set of
+            // columns stay in code — only the names move.
+            'authority' => ColumnLabels::headers('authority'),
             'series' => self::SERIES_HEADERS,
             'documentType' => self::DOCUMENT_TYPE_HEADERS,
             'document' => self::DOCUMENT_HEADERS,
@@ -308,10 +319,10 @@ final class TemplateGenerator
         // exact key set covered by the match arms, so PHPStan correctly
         // flags any `default` here as unreachable.
 
-        // Authority, series, and location have no custom fields — skip the
-        // resolver call entirely (avoids an unnecessary DB query on every
-        // template download for these entities).
-        if (in_array($entity, ['authority', 'series', 'location', 'documentType'], strict: true)) {
+        // Series, location and document types carry no custom fields — skip
+        // the lookup entirely for them. Authorities gained them on 2026-09-24,
+        // so they now fall through to the append below.
+        if (in_array($entity, ['series', 'location', 'documentType'], strict: true)) {
             return $staticHeaders;
         }
 
@@ -560,7 +571,8 @@ final class TemplateGenerator
         }
 
         // Dropdowns on the closed-list columns.
-        foreach (self::ENUM_COLUMNS[$entity] ?? [] as $header => $options) {
+        foreach (self::ENUM_COLUMNS[$entity] ?? [] as $fieldKey => $options) {
+            $header = ColumnLabels::get($entity, $fieldKey);
             $index = array_search($header, $headers, strict: true);
             if ($index === false) {
                 continue;
@@ -594,7 +606,7 @@ final class TemplateGenerator
         // this template, so the _template_meta sheet can list them explicitly.
         // Authority, series, and location carry no custom fields — skip.
         $customFieldKeys = [];
-        if (! in_array($entity, ['authority', 'series', 'location', 'documentType'], strict: true)) {
+        if (! in_array($entity, ['series', 'location', 'documentType'], strict: true)) {
             $customFieldKeys = CustomFieldResolver::definitionsFor($entity)
                 ->map(fn ($def) => 'cf_' . $def->key)
                 ->all();

@@ -2,6 +2,7 @@
 
 namespace App\Models;
 
+use App\Support\ColumnLabels\ColumnLabels;
 use Illuminate\Database\Eloquent\Factories\HasFactory;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\BelongsToMany;
@@ -48,6 +49,18 @@ class Repository extends Model implements AuditableContract
      * Custom field definitions scoped to this repository.
      * Used by the CustomFieldsRelationManager and the HasCustomFields trait.
      */
+    /**
+     * Built-in columns this repository has renamed.
+     *
+     * Client 2026-09-24 — see {@see ColumnLabels}.
+     * Sits alongside customFieldDefinitions: one adds columns, the other
+     * renames the ones that ship with the application.
+     */
+    public function columnLabelOverrides(): HasMany
+    {
+        return $this->hasMany(ColumnLabelOverride::class);
+    }
+
     public function customFieldDefinitions(): HasMany
     {
         return $this->hasMany(CustomFieldDefinition::class);

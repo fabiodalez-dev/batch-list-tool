@@ -198,6 +198,7 @@ class RepositoryResource extends Resource
         return [
             RelationManagers\UsersRelationManager::class,
             RelationManagers\CustomFieldsRelationManager::class,
+            RelationManagers\ColumnNamesRelationManager::class,
         ];
     }
 
