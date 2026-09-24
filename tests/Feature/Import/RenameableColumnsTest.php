@@ -407,7 +407,8 @@ it('keeps the dropdown on a renamed controlled-vocabulary column', function (): 
         ->and($validation->getFormula1())->toContain('Full Level')
         ->and($validation->getError())->toStartWith('Cataloguing Depth must be one of');
 
-    @unlink($path); // nosemgrep: raw-unlink — temp file this test just wrote
+    // nosemgrep: php.lang.security.unlink-use.unlink-use -- $path is the temp xlsx this test just wrote via tempnam(), never user input.
+    @unlink($path);
 });
 
 it('refuses to rename a column to a name another column already uses', function (): void {
