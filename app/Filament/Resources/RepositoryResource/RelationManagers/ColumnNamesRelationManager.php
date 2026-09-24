@@ -4,6 +4,7 @@ namespace App\Filament\Resources\RepositoryResource\RelationManagers;
 
 use App\Models\ColumnLabelOverride;
 use App\Support\ColumnLabels\ColumnLabels;
+use Filament\Actions\Action;
 use Filament\Actions\BulkActionGroup;
 use Filament\Actions\CreateAction;
 use Filament\Actions\DeleteAction;
@@ -159,10 +160,20 @@ class ColumnNamesRelationManager extends RelationManager
             ->headerActions([
                 CreateAction::make()
                     ->label('Rename a column')
+                    // Without these the dialog is titled "Create Column Label
+                    // Override" and its button says "Create" — the name of the
+                    // table, offered to an archivist who is renaming a column.
+                    ->modalHeading('Rename a column')
+                    ->modalSubmitActionLabel('Rename')
+                    ->createAnotherAction(fn (Action $action) => $action->label('Rename & rename another'))
                     ->after(fn () => ColumnLabels::flushMemo()),
             ])
             ->recordActions([
-                EditAction::make()->after(fn () => ColumnLabels::flushMemo()),
+                EditAction::make()
+                    ->label('Change the name')
+                    ->modalHeading('Change the name')
+                    ->modalSubmitActionLabel('Save the new name')
+                    ->after(fn () => ColumnLabels::flushMemo()),
                 DeleteAction::make()
                     ->label('Restore original name')
                     ->modalHeading('Restore the original name?')
