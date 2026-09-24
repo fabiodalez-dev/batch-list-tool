@@ -6,6 +6,7 @@ use App\Filament\Concerns\AppliesFieldPermissions;
 use App\Filament\Resources\AuthorityResource\Pages;
 use App\Filament\Support\CreatorColumn;
 use App\Models\Authority;
+use App\Support\ColumnLabels\ColumnLabels;
 use Filament\Actions\BulkActionGroup;
 use Filament\Actions\DeleteAction;
 use Filament\Actions\DeleteBulkAction;
@@ -79,18 +80,18 @@ class AuthorityResource extends Resource
                         // Feedback1 — identifier is required, unique and must
                         // start with R or I (Register / Interventor families).
                         $g(Forms\Components\TextInput::make('identifier')
-                            ->label('NAM Authority Reference Code')
+                            ->label(ColumnLabels::get('authority', 'identifier'))
                             ->required()
                             ->maxLength(32)
                             ->unique(ignoreRecord: true)
                             ->rule('regex:/^[RI]/i')
                             ->validationMessages([
-                                'regex' => 'NAM Authority Reference Code must start with R or I.',
+                                'regex' => ColumnLabels::get('authority', 'identifier') . ' must start with R or I.',
                             ])),
                         // alternative_identifier is optional but, when filled,
                         // must start with MS and be unique across creators.
                         $g(Forms\Components\TextInput::make('alternative_identifier')
-                            ->label('Citing Reference Code')
+                            ->label(ColumnLabels::get('authority', 'alternative_identifier'))
                             ->maxLength(32)
                             ->unique(ignoreRecord: true)
                             ->helperText('Starts with MS (optional)')
@@ -99,21 +100,21 @@ class AuthorityResource extends Resource
                                 'regex:/^MS/i',
                             ])
                             ->validationMessages([
-                                'regex' => 'Citing Reference Code must start with MS.',
+                                'regex' => ColumnLabels::get('authority', 'alternative_identifier') . ' must start with MS.',
                             ])),
                         // Client 2026-09-16 — the warrant number, a third
                         // identifier alongside the NAM code and the MS number.
                         // No MS prefix rule: it is a different numbering scheme,
                         // not a variant of the alternative identifier.
                         $g(Forms\Components\TextInput::make('alternative_identifier_warrant')
-                            ->label('Alternate Reference Code')
+                            ->label(ColumnLabels::get('authority', 'alternative_identifier_warrant'))
                             ->maxLength(191)),
                         // Client 2026-09-22: a third kind of identifier with no
                         // relationship to the others. Textarea, not a text
                         // input: the label is plural and a record may list
                         // several superseded codes.
                         $g(Forms\Components\Textarea::make('previous_temporary_identifiers')
-                            ->label('Past Reference Code')
+                            ->label(ColumnLabels::get('authority', 'previous_temporary_identifiers'))
                             ->rows(2)
                             ->maxLength(65535)
                             ->columnSpanFull()),
@@ -255,21 +256,21 @@ class AuthorityResource extends Resource
                     ->columns($twoCols)
                     ->schema([
                         TextEntry::make('identifier')
-                            ->label('NAM authority reference code')
+                            ->label(ColumnLabels::get('authority', 'identifier'))
                             ->badge()
                             ->color('primary')
                             ->copyable()
                             ->placeholder('—'),
                         TextEntry::make('alternative_identifier')
-                            ->label('Citing reference code')
+                            ->label(ColumnLabels::get('authority', 'alternative_identifier'))
                             ->copyable()
                             ->placeholder('—'),
                         TextEntry::make('alternative_identifier_warrant')
-                            ->label('Alternate reference code')
+                            ->label(ColumnLabels::get('authority', 'alternative_identifier_warrant'))
                             ->copyable()
                             ->placeholder('—'),
                         TextEntry::make('previous_temporary_identifiers')
-                            ->label('Past reference code')
+                            ->label(ColumnLabels::get('authority', 'previous_temporary_identifiers'))
                             ->copyable()
                             ->placeholder('—')
                             ->columnSpanFull(),
@@ -418,16 +419,16 @@ class AuthorityResource extends Resource
             ->extremePaginationLinks()
             ->columns([
                 $gc(Tables\Columns\TextColumn::make('identifier')
-                    ->label('NAM ref. code')
+                    ->label(ColumnLabels::get('authority', 'identifier'))
                     ->sortable()
                     ->searchable()),
                 $gc(Tables\Columns\TextColumn::make('alternative_identifier')
-                    ->label('Citing ref. code')
+                    ->label(ColumnLabels::get('authority', 'alternative_identifier'))
                     ->sortable()
                     ->searchable()
                     ->toggleable()),
                 $gc(Tables\Columns\TextColumn::make('alternative_identifier_warrant')
-                    ->label('Alternate ref.')
+                    ->label(ColumnLabels::get('authority', 'alternative_identifier_warrant'))
                     ->placeholder('—')
                     ->sortable()
                     ->searchable()
@@ -435,7 +436,7 @@ class AuthorityResource extends Resource
                 // Hidden by default like the warrant: useful when tracing an
                 // old code, noise the rest of the time.
                 $gc(Tables\Columns\TextColumn::make('previous_temporary_identifiers')
-                    ->label('Past ref. code')
+                    ->label(ColumnLabels::get('authority', 'previous_temporary_identifiers'))
                     ->placeholder('—')
                     ->limit(40)
                     ->searchable()

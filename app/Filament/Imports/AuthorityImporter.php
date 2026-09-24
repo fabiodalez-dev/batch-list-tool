@@ -8,6 +8,8 @@ use App\Filament\Imports\Concerns\LogsImportRows;
 use App\Filament\Imports\Concerns\SkipsExistingRows;
 use App\Models\Authority;
 use App\Support\BulkImport\SpreadsheetParsers;
+use App\Support\ColumnLabels\ColumnLabels;
+use App\Support\CustomFields\CustomFieldResolver;
 use Filament\Actions\Imports\ImportColumn;
 use Filament\Actions\Imports\Importer;
 use Filament\Actions\Imports\Models\Import;
@@ -40,11 +42,45 @@ class AuthorityImporter extends Importer
     protected static ?string $model = Authority::class;
 
     /**
+     * Accept one of a fixed list of values, case- and spacing-insensitively,
+     * and reject anything else with a message naming the options.
+     *
+     * The alternative — storing whatever arrives — gives the cataloguer a
+     * "Level of detail" of "ful" that no filter will ever match and nothing
+     * will ever flag. Rejecting the row puts it in the failed-rows file with
+     * the valid values spelled out, which is something she can act on.
+     *
+     * @param array<int, string> $allowed
+     */
+    /**
+     * Apply the repository's column names to every renameable column.
+     *
+     * Client 2026-09-24: built-in columns can be renamed from the admin. The
+     * template header comes from the same resolver, so the guess must carry
+     * the CURRENT name first — otherwise a renamed column lands in the sheet
+     * under its new name while the importer still looks for the old one, and
+     * the operator fills in a column the import silently discards.
+     *
+     * Done here rather than on each column so a column added later is covered
+     * by being listed in ColumnLabels::DEFAULTS, and nowhere else.
+     *
+     * @param array<ImportColumn> $columns
+     * @return array<ImportColumn>
+     */
+    /**
+     * Per-row stash for custom-field key→value data, persisted in
+     * {@see afterSave()} with merge semantics.
+     *
+     * @var array<int, array<string, string|null>>
+     */
+    protected static array $rowCustomFieldStash = [];
+
+    /**
      * @return array<ImportColumn>
      */
     public static function getColumns(): array
     {
-        return [
+        return self::applyRenames([
             ImportColumn::make('identifier')
                 ->label('NAM Authority Reference Code')
                 // `requiredMapping` (not `requiredMappingForNewRecordsOnly`)
@@ -234,7 +270,7 @@ class AuthorityImporter extends Importer
                     $line = 'Maiden surname: ' . trim($state);
                     $record->notes = $prev === '' ? $line : ($prev . "\n" . $line);
                 }),
-        ];
+        ]);
     }
 
     /**
@@ -282,16 +318,58 @@ class AuthorityImporter extends Importer
     }
 
     /**
-     * Accept one of a fixed list of values, case- and spacing-insensitively,
-     * and reject anything else with a message naming the options.
+     * Persist the row's custom-field values once the Authority is saved.
      *
-     * The alternative — storing whatever arrives — gives the cataloguer a
-     * "Level of detail" of "ful" that no filter will ever match and nothing
-     * will ever flag. Rejecting the row puts it in the failed-rows file with
-     * the valid values spelled out, which is something she can act on.
-     *
-     * @param array<int, string> $allowed
+     * Merge semantics (replaceMissing = false), as in the other importers: a
+     * sheet that omits a custom column must not wipe a value already stored.
      */
+    public function afterSave(): void
+    {
+        /** @var Authority $record */
+        $record = $this->record;
+        $key = spl_object_id($record);
+
+        $customData = self::$rowCustomFieldStash[$key] ?? null;
+        unset(self::$rowCustomFieldStash[$key]);
+
+        if ($customData !== null && method_exists($record, 'setCustomFieldData')) {
+            $record->setCustomFieldData($customData, false);
+        }
+    }
+
+    /**
+     * Dynamic custom-field columns for the 'authority' entity type.
+     *
+     * Client 2026-09-24: Authorities joined the entities whose extra columns
+     * the cataloguer adds herself, instead of waiting on a release for a
+     * column that depends on nothing. Mirrors VolumeImporter.
+     *
+     * @return array<ImportColumn>
+     */
+    protected static function getCustomFieldColumns(): array
+    {
+        $defs = CustomFieldResolver::definitionsFor('authority');
+        if ($defs->isEmpty()) {
+            return [];
+        }
+
+        $columns = [];
+        foreach ($defs as $def) {
+            $columns[] = ImportColumn::make('custom_field_' . $def->key)
+                ->label($def->label . ' (custom field)')
+                ->guess([$def->label, $def->key, 'cf_' . $def->key])
+                ->rules(['nullable', 'string'])
+                ->fillRecordUsing(static function (Authority $record, ?string $state) use ($def): void {
+                    $key = spl_object_id($record);
+                    static::$rowCustomFieldStash[$key][$def->key] = ($state !== null && trim($state) !== '')
+                        ? trim($state)
+                        : null;
+                });
+        }
+
+        return $columns;
+    }
+
     protected static function matchAllowed(?string $state, array $allowed, string $label, string $attribute): ?string
     {
         $state = $state !== null ? trim($state) : '';
@@ -317,5 +395,26 @@ class AuthorityImporter extends Importer
                 'given' => $state,
             ]),
         ]);
+    }
+
+    private static function applyRenames(array $columns): array
+    {
+        $renameable = ColumnLabels::DEFAULTS['authority'];
+
+        foreach ($columns as $column) {
+            $key = $column->getName();
+            if (! array_key_exists($key, $renameable)) {
+                continue;
+            }
+
+            // Setting the LABEL is enough for the header to be recognised:
+            // guessSingleColumn tries the field name, the label and the guess
+            // list in that order, so the renamed header matches on the label.
+            // The factory name keeps working because it is still in each
+            // column's own guess list — see the test that pins exactly that.
+            $column->label(ColumnLabels::get('authority', $key));
+        }
+
+        return [...$columns, ...self::getCustomFieldColumns()];
     }
 }
