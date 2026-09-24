@@ -956,6 +956,21 @@ class ImportWizard extends Page
         $this->preflightResult = self::validateRows($importerClass, $rows, $columnMap);
 
         $r = $this->preflightResult;
+
+        // An empty sheet is not a pass. Without this branch the notification
+        // read "Validation complete — 0 of 0 rows pass. 0 would fail." in
+        // green, which is exactly how a clean file looks: the operator has no
+        // way to tell the blank template from a filled-in one.
+        if ($r['total'] === 0) {
+            Notification::make()
+                ->title('No data rows found')
+                ->body('The header row was read, but there is nothing under it. Check that you uploaded the filled-in sheet rather than the blank template, and that the right sheet is selected in step 3.')
+                ->danger()
+                ->send();
+
+            return;
+        }
+
         Notification::make()
             ->title('Validation complete')
             ->body(sprintf('%d of %d rows pass. %d would fail.', $r['valid'], $r['total'], $r['invalid']))
@@ -1622,6 +1637,16 @@ class ImportWizard extends Page
                         ->title('Run the validation first')
                         ->body('Click "Run validation" so you can see which rows would fail before importing.')
                         ->warning()
+                        ->send();
+
+                    throw new Halt;
+                }
+
+                if (($this->preflightResult['total'] ?? 0) === 0) {
+                    Notification::make()
+                        ->title('Nothing to import')
+                        ->body('This file has no data rows at all. Check that you uploaded the filled-in sheet rather than the blank template, and that the right sheet is selected in step 3.')
+                        ->danger()
                         ->send();
 
                     throw new Halt;

@@ -82,9 +82,11 @@ test('findMissingRequiredColumns reports columns whose mapping is null', functio
     $map = ImportWizard::guessColumnMap(AuthorityImporter::class, []);
     $missing = ImportWizard::findMissingRequiredColumns(AuthorityImporter::class, $map);
 
-    // `identifier` is a requiredMapping column on AuthorityImporter.
+    // `identifier` is a requiredMapping column on AuthorityImporter. The list
+    // reports the column's LABEL, which was renamed on 2026-09-24 — so this
+    // asserts the current label rather than the field name.
     expect($missing)->not()->toBeEmpty()
-        ->and($missing)->toContain('Identifier');
+        ->and($missing)->toContain('NAM Authority Reference Code');
 });
 
 test('IMPORTERS map covers every advertised wizard option', function () {
