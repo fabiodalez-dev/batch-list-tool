@@ -4,6 +4,7 @@ namespace App\Filament\Resources\RepositoryResource\RelationManagers;
 
 use App\Models\ColumnLabelOverride;
 use App\Support\ColumnLabels\ColumnLabels;
+use Filament\Actions\Action;
 use Filament\Actions\BulkActionGroup;
 use Filament\Actions\CreateAction;
 use Filament\Actions\DeleteAction;
@@ -164,7 +165,7 @@ class ColumnNamesRelationManager extends RelationManager
                     // table, offered to an archivist who is renaming a column.
                     ->modalHeading('Rename a column')
                     ->modalSubmitActionLabel('Rename')
-                    ->createAnotherModalSubmitActionLabel('Rename & rename another')
+                    ->createAnotherAction(fn (Action $action) => $action->label('Rename & rename another'))
                     ->after(fn () => ColumnLabels::flushMemo()),
             ])
             ->recordActions([
