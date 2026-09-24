@@ -200,3 +200,32 @@ it('stays quiet about box parents, which fail loudly on their own', function ():
     expect($html)->not->toContain('top level');
     expect($html)->not->toContain('parent RAS');
 });
+
+it('calls an empty sheet a problem, not a pass', function (): void {
+    $this->actingAs(isw_admin());
+
+    // Reported from the field 2026-09-24: uploading a sheet the wizard read as
+    // empty produced "All 0 rows pass validation. You can continue." in green,
+    // which reads as success and sends the operator on to import nothing.
+    $html = isw_render(
+        ['import_type' => 'authorities', 'column_map' => ['identifier' => 'NAM Authority Reference Code']],
+        ['total' => 0, 'valid' => 0, 'invalid' => 0, 'errors' => [], 'truncated' => false],
+    );
+
+    expect($html)->toContain('No data rows found');
+    expect($html)->not->toContain('pass validation');
+    expect($html)->not->toContain('You can continue');
+    // And it must say what to check, not merely that something is wrong.
+    expect($html)->toContain('blank template');
+});
+
+it('still calls a real pass a pass', function (): void {
+    $this->actingAs(isw_admin());
+
+    $html = isw_render(
+        ['import_type' => 'authorities', 'column_map' => ['identifier' => 'NAM Authority Reference Code']],
+        ['total' => 676, 'valid' => 676, 'invalid' => 0, 'errors' => [], 'truncated' => false],
+    );
+
+    expect($html)->toContain('All 676 rows pass validation');
+});

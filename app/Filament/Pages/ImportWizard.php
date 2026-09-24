@@ -1690,6 +1690,19 @@ class ImportWizard extends Page
             return '<em class="text-sm">Not run yet — click "Run validation" above.</em>';
         }
 
+        // Zero rows is not a pass. The sheet is empty, or the wrong sheet of
+        // the workbook was picked, and saying "you can continue" in green sends
+        // the operator on to import nothing at all — reported from the field on
+        // 2026-09-24, where "All 0 rows pass validation" read as success.
+        if ($r['total'] === 0) {
+            return '<p class="text-sm font-medium text-danger-600">'
+                . 'No data rows found in this file.'
+                . '</p>'
+                . '<p class="mt-1 text-xs text-gray-600 dark:text-gray-400">'
+                . 'The header row was read, but there is nothing under it. Check that you uploaded the filled-in sheet rather than the blank template, and that the right sheet is selected in step 3.'
+                . '</p>';
+        }
+
         if ($r['invalid'] === 0) {
             return '<p class="text-sm font-medium text-success-600">'
                 . sprintf('All %d rows pass validation. You can continue.', $r['total'])

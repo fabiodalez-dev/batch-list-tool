@@ -228,10 +228,11 @@ test('Authority template still carries every Authorities_Sample.xlsx column, in 
     // fields on 2026-09-16, so the template is now a superset of the sample
     // rather than equal to it — but dropping one of these, or reordering them
     // against each other, would still break the sheets the NAf already holds.
-    // "Identifier" was renamed to "Authority Record Identifier (NAM)" in that
-    // same request; the importer still answers to the old spelling.
+    // "Identifier" was renamed twice since — to "Authority Record Identifier
+    // (NAM)" in September, then to "NAM Authority Reference Code" on the 24th.
+    // The importer still answers to every previous spelling.
     $sample = [
-        'Authority Record Identifier (NAM)', 'Alternative Identifier', 'Type of Entity',
+        'NAM Authority Reference Code', 'Citing Reference Code', 'Type of Entity',
         'Private Practice Dates Active', 'NTG Dates Active', 'Name Suffix',
         'Maiden Surname', 'Creator Surname', 'Creator Name',
     ];
@@ -241,7 +242,7 @@ test('Authority template still carries every Authorities_Sample.xlsx column, in 
     expect(array_values(array_intersect($generated, $sample)))->toBe($sample);
 
     expect($generated)->toHaveCount(19);
-    expect($generated[0])->toBe('Authority Record Identifier (NAM)');
+    expect($generated[0])->toBe('NAM Authority Reference Code');
 });
 
 test('Series template headers start at Identifier (no leading blank column)', function () {
