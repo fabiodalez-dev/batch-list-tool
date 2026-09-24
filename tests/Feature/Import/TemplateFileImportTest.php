@@ -234,11 +234,11 @@ it('imports an Authorities workbook filled in as the cataloguer would', function
 
     $rows = tfi_fillAndReread($path, $headers, [
         [
-            'Authority Record Identifier (NAM)' => 'R-TPL-1',
-            'Alternative Identifier (Warrant Number)' => 'W-901',
+            'NAM Authority Reference Code' => 'R-TPL-1',
+            'Alternate Reference Code' => 'W-901',
             // Client 2026-09-22. Plural on purpose: several superseded codes in
             // one cell must survive whole, not be split at the separator.
-            'Previous Temporary Identifiers' => 'TMP-1962/17; OLD-REF 88',
+            'Past Reference Code' => 'TMP-1962/17; OLD-REF 88',
             'Type of Entity' => 'Notary',
             'Creator Surname' => 'Bonnici',
             'Creator Name' => 'Ġużeppi',

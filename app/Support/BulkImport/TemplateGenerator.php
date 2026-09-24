@@ -66,10 +66,12 @@ final class TemplateGenerator
         // Client 2026-09-16 — ISAAR(CPF). "Identifier" was renamed to the term
         // the cataloguer uses on paper; the importer still answers to the old
         // header, so sheets saved before today keep working.
-        'Authority Record Identifier (NAM)', 'Alternative Identifier',
-        'Alternative Identifier (Warrant Number)',
-        // Client 2026-09-22: asked for immediately after the warrant.
-        'Previous Temporary Identifiers',
+        // Client 2026-09-24 — the four identifier columns renamed to the
+        // archival vocabulary she uses. The importer still answers to every
+        // previous spelling, so sheets downloaded before today keep working.
+        'NAM Authority Reference Code', 'Citing Reference Code',
+        'Alternate Reference Code',
+        'Past Reference Code',
         'Type of Entity',
         'Private Practice Dates Active', 'NTG Dates Active', 'Name Suffix',
         'Maiden Surname', 'Creator Surname', 'Creator Name',
@@ -167,7 +169,7 @@ final class TemplateGenerator
      * version tells you whether the operator is working from a stale
      * download. Bump on any change to the header contract.
      */
-    public const string GENERATOR_VERSION = '1.17.0';
+    public const string GENERATOR_VERSION = '1.18.0';
 
     /**
      * Supported template entities. Headers come from the in-repo constants

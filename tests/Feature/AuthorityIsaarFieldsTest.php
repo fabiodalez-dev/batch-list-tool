@@ -59,14 +59,17 @@ function isaar_import(array $data, int $userId): void
 
 /* ── template ─────────────────────────────────────────────────────────── */
 
-it('renames Identifier and adds the warrant number as a third identifier', function (): void {
+it('offers three separate identifier columns, not one', function (): void {
+    // The point of the September work: three distinct identifiers side by side.
+    // Their names changed again on 2026-09-24 (see the rename test below); what
+    // has to keep holding is that all three exist and stay separate.
     $headers = TemplateGenerator::headersFor('authority');
 
-    expect($headers[0])->toBe('Authority Record Identifier (NAM)');
-    expect($headers)->toContain('Alternative Identifier');
-    expect($headers)->toContain('Alternative Identifier (Warrant Number)');
-    // The bare old name must be gone from the template, or the cataloguer sees
-    // two columns meaning the same thing.
+    expect($headers[0])->toBe('NAM Authority Reference Code');
+    expect($headers)->toContain('Citing Reference Code');
+    expect($headers)->toContain('Alternate Reference Code');
+    // The bare "Identifier" must be gone, or the cataloguer sees two columns
+    // meaning the same thing.
     expect($headers)->not->toContain('Identifier');
 });
 
@@ -77,8 +80,8 @@ it('adds Previous Temporary Identifiers straight after the warrant', function ()
     // than mere presence.
     $headers = TemplateGenerator::headersFor('authority');
 
-    $warrant = array_search('Alternative Identifier (Warrant Number)', $headers, strict: true);
-    $previous = array_search('Previous Temporary Identifiers', $headers, strict: true);
+    $warrant = array_search('Alternate Reference Code', $headers, strict: true);
+    $previous = array_search('Past Reference Code', $headers, strict: true);
 
     expect($warrant)->not->toBeFalse();
     expect($previous)->toBe($warrant + 1);
@@ -111,7 +114,51 @@ it('imports Previous Temporary Identifiers, and keeps a list of them whole', fun
 it('maps the Previous Temporary Identifiers header without manual mapping', function (): void {
     $map = ImportWizard::guessColumnMap(AuthorityImporter::class, TemplateGenerator::headersFor('authority'));
 
+    expect($map['previous_temporary_identifiers'] ?? null)->toBe('Past Reference Code');
+});
+
+it('renames the four identifier columns to the archival vocabulary', function (): void {
+    // Client 2026-09-24. The four identifiers are now named the way the
+    // cataloguer names them; the order is unchanged.
+    $headers = TemplateGenerator::headersFor('authority');
+
+    expect(array_slice($headers, 0, 4))->toBe([
+        'NAM Authority Reference Code',
+        'Citing Reference Code',
+        'Alternate Reference Code',
+        'Past Reference Code',
+    ]);
+
+    // The previous spellings must be gone from the template, or the sheet
+    // offers two columns meaning the same thing.
+    foreach ([
+        'Authority Record Identifier (NAM)',
+        'Alternative Identifier',
+        'Alternative Identifier (Warrant Number)',
+        'Previous Temporary Identifiers',
+    ] as $old) {
+        expect($headers)->not->toContain($old);
+    }
+});
+
+it('still imports a sheet that uses any of the previous identifier names', function (): void {
+    // Sheets downloaded before today — including the one being filled in right
+    // now — must keep importing without the operator remapping by hand.
+    $map = ImportWizard::guessColumnMap(AuthorityImporter::class, [
+        'Authority Record Identifier (NAM)',
+        'Alternative Identifier',
+        'Alternative Identifier (Warrant Number)',
+        'Previous Temporary Identifiers',
+    ]);
+
+    expect($map['identifier'] ?? null)->toBe('Authority Record Identifier (NAM)');
+    expect($map['alternative_identifier'] ?? null)->toBe('Alternative Identifier');
+    expect($map['alternative_identifier_warrant'] ?? null)->toBe('Alternative Identifier (Warrant Number)');
     expect($map['previous_temporary_identifiers'] ?? null)->toBe('Previous Temporary Identifiers');
+
+    // And the oldest spelling of all, from before the September renames.
+    $older = ImportWizard::guessColumnMap(AuthorityImporter::class, ['Identifier']);
+    expect($older['identifier'] ?? null)->toBe('Identifier');
 });
 
 it('carries every new descriptive column, Notes included', function (): void {
@@ -137,8 +184,8 @@ it('maps every template header onto an importer column without manual mapping', 
     $headers = TemplateGenerator::headersFor('authority');
     $map = ImportWizard::guessColumnMap(AuthorityImporter::class, $headers);
 
-    expect($map['identifier'] ?? null)->toBe('Authority Record Identifier (NAM)');
-    expect($map['alternative_identifier_warrant'] ?? null)->toBe('Alternative Identifier (Warrant Number)');
+    expect($map['identifier'] ?? null)->toBe('NAM Authority Reference Code');
+    expect($map['alternative_identifier_warrant'] ?? null)->toBe('Alternate Reference Code');
     expect($map['level_of_detail'] ?? null)->toBe('Level of detail');
     expect($map['status'] ?? null)->toBe('Status');
     expect($map['date_of_creation'] ?? null)->toBe('Date of creation');

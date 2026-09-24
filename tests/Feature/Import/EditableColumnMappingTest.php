@@ -79,7 +79,10 @@ test('headers that differ from importer aliases leave fields unmapped but the us
     // requiredMappingForNewRecordsOnly and does not count as missing for
     // mapping purposes. Verify the contract:
     $missingBefore = ImportWizard::findMissingRequiredColumns(AuthorityImporter::class, $map);
-    expect($missingBefore)->not->toContain('Identifier');
+    // The list reports labels; the identifier column's label was renamed on
+    // 2026-09-24. The sheet header below still says "Identifier" and is still
+    // recognised — that is the back-compatible guess doing its job.
+    expect($missingBefore)->not->toContain('NAM Authority Reference Code');
 
     // Now simulate the user override on Step 4: they pick "Family Surname"
     // for the surname field.
@@ -135,15 +138,16 @@ test('skip option allowed for optional fields but blocks Next for required', fun
 
     $missing = ImportWizard::findMissingRequiredColumns(AuthorityImporter::class, $map);
     expect($missing)->not->toBeEmpty()
-        ->and($missing)->toContain('Identifier');
+        // Reported by label, renamed on 2026-09-24.
+        ->and($missing)->toContain('NAM Authority Reference Code');
 
     // Skipping a non-required field (e.g. `alternative_identifier`) is fine:
     // explicitly setting it to null in the map must NOT add it to the
     // missing-required list.
     $map['alternative_identifier'] = null;
     $missingAfterSkip = ImportWizard::findMissingRequiredColumns(AuthorityImporter::class, $map);
-    expect($missingAfterSkip)->toContain('Identifier')
-        ->and($missingAfterSkip)->not->toContain('Alternative Identifier');
+    expect($missingAfterSkip)->toContain('NAM Authority Reference Code')
+        ->and($missingAfterSkip)->not->toContain('Citing Reference Code');
 
     // Operator picks an Excel column for the required `identifier` field
     // — missing list now empty.

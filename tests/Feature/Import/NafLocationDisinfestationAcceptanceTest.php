@@ -273,8 +273,9 @@ it('B4: the generator version was bumped for the template contract change', func
     // template gained its "Parent" column; to 1.15.0 on 2026-09-16 for the
     // ISAAR(CPF) block on Authorities; to 1.16.0 the same day when the two
     // closed-list columns gained their dropdowns; to 1.17.0 on 2026-09-22 for
-    // "Previous Temporary Identifiers".
-    expect(TemplateGenerator::GENERATOR_VERSION)->toBe('1.17.0');
+    // "Previous Temporary Identifiers"; to 1.18.0 on 2026-09-24 when the four
+    // identifier columns were renamed to the archival vocabulary.
+    expect(TemplateGenerator::GENERATOR_VERSION)->toBe('1.18.0');
 });
 
 it('B5: every generated box header still maps to a BoxImporter column (round-trip)', function () {

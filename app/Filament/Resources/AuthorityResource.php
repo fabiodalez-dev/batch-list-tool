@@ -79,16 +79,18 @@ class AuthorityResource extends Resource
                         // Feedback1 — identifier is required, unique and must
                         // start with R or I (Register / Interventor families).
                         $g(Forms\Components\TextInput::make('identifier')
+                            ->label('NAM Authority Reference Code')
                             ->required()
                             ->maxLength(32)
                             ->unique(ignoreRecord: true)
                             ->rule('regex:/^[RI]/i')
                             ->validationMessages([
-                                'regex' => 'Identifier must start with R or I.',
+                                'regex' => 'NAM Authority Reference Code must start with R or I.',
                             ])),
                         // alternative_identifier is optional but, when filled,
                         // must start with MS and be unique across creators.
                         $g(Forms\Components\TextInput::make('alternative_identifier')
+                            ->label('Citing Reference Code')
                             ->maxLength(32)
                             ->unique(ignoreRecord: true)
                             ->helperText('Starts with MS (optional)')
@@ -97,21 +99,21 @@ class AuthorityResource extends Resource
                                 'regex:/^MS/i',
                             ])
                             ->validationMessages([
-                                'regex' => 'Alternative identifier must start with MS.',
+                                'regex' => 'Citing Reference Code must start with MS.',
                             ])),
                         // Client 2026-09-16 — the warrant number, a third
                         // identifier alongside the NAM code and the MS number.
                         // No MS prefix rule: it is a different numbering scheme,
                         // not a variant of the alternative identifier.
                         $g(Forms\Components\TextInput::make('alternative_identifier_warrant')
-                            ->label('Alternative Identifier (Warrant Number)')
+                            ->label('Alternate Reference Code')
                             ->maxLength(191)),
                         // Client 2026-09-22: a third kind of identifier with no
                         // relationship to the others. Textarea, not a text
                         // input: the label is plural and a record may list
                         // several superseded codes.
                         $g(Forms\Components\Textarea::make('previous_temporary_identifiers')
-                            ->label('Previous Temporary Identifiers')
+                            ->label('Past Reference Code')
                             ->rows(2)
                             ->maxLength(65535)
                             ->columnSpanFull()),
@@ -253,21 +255,21 @@ class AuthorityResource extends Resource
                     ->columns($twoCols)
                     ->schema([
                         TextEntry::make('identifier')
-                            ->label('Identifier')
+                            ->label('NAM authority reference code')
                             ->badge()
                             ->color('primary')
                             ->copyable()
                             ->placeholder('—'),
                         TextEntry::make('alternative_identifier')
-                            ->label('Alternative identifier')
+                            ->label('Citing reference code')
                             ->copyable()
                             ->placeholder('—'),
                         TextEntry::make('alternative_identifier_warrant')
-                            ->label('Alternative identifier (warrant number)')
+                            ->label('Alternate reference code')
                             ->copyable()
                             ->placeholder('—'),
                         TextEntry::make('previous_temporary_identifiers')
-                            ->label('Previous temporary identifiers')
+                            ->label('Past reference code')
                             ->copyable()
                             ->placeholder('—')
                             ->columnSpanFull(),
@@ -416,14 +418,16 @@ class AuthorityResource extends Resource
             ->extremePaginationLinks()
             ->columns([
                 $gc(Tables\Columns\TextColumn::make('identifier')
+                    ->label('NAM ref. code')
                     ->sortable()
                     ->searchable()),
                 $gc(Tables\Columns\TextColumn::make('alternative_identifier')
+                    ->label('Citing ref. code')
                     ->sortable()
                     ->searchable()
                     ->toggleable()),
                 $gc(Tables\Columns\TextColumn::make('alternative_identifier_warrant')
-                    ->label('Warrant no.')
+                    ->label('Alternate ref.')
                     ->placeholder('—')
                     ->sortable()
                     ->searchable()
@@ -431,7 +435,7 @@ class AuthorityResource extends Resource
                 // Hidden by default like the warrant: useful when tracing an
                 // old code, noise the rest of the time.
                 $gc(Tables\Columns\TextColumn::make('previous_temporary_identifiers')
-                    ->label('Previous temp. identifiers')
+                    ->label('Past ref. code')
                     ->placeholder('—')
                     ->limit(40)
                     ->searchable()

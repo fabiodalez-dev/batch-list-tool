@@ -9,6 +9,7 @@ use App\Models\Lookup\BoxType;
 use App\Models\User;
 use Filament\Schemas\Components\Wizard;
 use Illuminate\Foundation\Testing\RefreshDatabase;
+use Illuminate\Http\UploadedFile;
 use Illuminate\Validation\ValidationException;
 use Livewire\Livewire;
 use Spatie\Permission\Models\Role;
@@ -146,4 +147,24 @@ test('preflight flags an unknown box_type but accepts one added to the Box Types
 
     expect($flaggedRows)->toContain(3)      // ZZZ flagged in the preview
         ->and($flaggedRows)->not->toContain(2); // MUS accepted
+});
+
+test('a sheet with a header row and nothing under it is reported as a problem, not as a clean pass', function () {
+    $this->actingAs(wrv_admin());
+
+    // Reported from the field 2026-09-24: the operator uploaded a sheet the
+    // wizard read as empty and got "Validation complete — 0 of 0 rows pass.
+    // 0 would fail." in green, which is indistinguishable from a clean file.
+    $component = Livewire::test(ImportWizard::class)
+        ->set('data.import_type', 'authorities')
+        ->set('data.file', UploadedFile::fake()->createWithContent(
+            'empty.csv',
+            "NAM Authority Reference Code,Authorized form of name\n",
+        ));
+
+    $component->call('runPreflight')
+        ->assertNotified('No data rows found')
+        ->assertNotNotified('Validation complete');
+
+    expect($component->instance()->preflightResult['total'])->toBe(0);
 });

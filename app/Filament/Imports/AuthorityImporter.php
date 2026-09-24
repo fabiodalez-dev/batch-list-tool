@@ -46,7 +46,7 @@ class AuthorityImporter extends Importer
     {
         return [
             ImportColumn::make('identifier')
-                ->label('Identifier')
+                ->label('NAM Authority Reference Code')
                 // `requiredMapping` (not `requiredMappingForNewRecordsOnly`)
                 // because Authority rows are matched on this column — we
                 // cannot dedupe without it.
@@ -54,20 +54,25 @@ class AuthorityImporter extends Importer
                 // The template header became "Authority Record Identifier (NAM)"
                 // on 2026-09-16. The old spellings stay in the list so sheets
                 // saved before that keep importing without remapping.
+                // Renamed 2026-09-24. Every earlier spelling stays in the
+                // list: sheets downloaded before today must keep importing
+                // without the operator remapping anything by hand.
                 ->guess([
+                    'NAM Authority Reference Code',
                     'Authority Record Identifier (NAM)', 'Authority Record Identifier',
                     'Identifier', 'identifier', 'ID', 'R-code', 'Code', 'NAM',
                 ])
                 ->rules(['required', 'string', 'max:32']),
 
             ImportColumn::make('alternative_identifier')
-                ->label('Alternative Identifier')
-                ->guess(['Alternative Identifier', 'Alt Identifier', 'MS', 'MS code'])
+                ->label('Citing Reference Code')
+                ->guess(['Citing Reference Code', 'Alternative Identifier', 'Alt Identifier', 'MS', 'MS code'])
                 ->rules(['nullable', 'string', 'max:32']),
 
             ImportColumn::make('alternative_identifier_warrant')
-                ->label('Alternative Identifier (Warrant Number)')
+                ->label('Alternate Reference Code')
                 ->guess([
+                    'Alternate Reference Code',
                     'Alternative Identifier (Warrant Number)', 'Warrant Number',
                     'Warrant', 'alternative_identifier_warrant',
                 ])
@@ -76,8 +81,9 @@ class AuthorityImporter extends Importer
             // Client 2026-09-22. Plural by design: a record may list several
             // superseded identifiers, so no length cap beyond the column's.
             ImportColumn::make('previous_temporary_identifiers')
-                ->label('Previous Temporary Identifiers')
+                ->label('Past Reference Code')
                 ->guess([
+                    'Past Reference Code',
                     'Previous Temporary Identifiers', 'Previous Temporary Identifier',
                     'Prev Temporary Identifiers', 'Previous Temp Identifiers',
                     'previous_temporary_identifiers',
