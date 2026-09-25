@@ -5,13 +5,17 @@ declare(strict_types=1);
 namespace App\Filament\Imports;
 
 use App\Filament\Imports\Concerns\LogsImportRows;
+use App\Filament\Imports\Concerns\RenamesColumns;
 use App\Filament\Imports\Concerns\SkipsExistingRows;
+use App\Models\CustomFieldDefinition;
 use App\Models\Location;
 use App\Models\LocationType;
 use App\Models\Repository;
+use App\Support\CustomFields\CustomFieldResolver;
 use Filament\Actions\Imports\ImportColumn;
 use Filament\Actions\Imports\Importer;
 use Filament\Actions\Imports\Models\Import;
+use Illuminate\Database\Eloquent\Collection;
 use Illuminate\Support\Facades\Schema;
 use Illuminate\Validation\ValidationException;
 
@@ -46,94 +50,28 @@ use Illuminate\Validation\ValidationException;
 class LocationImporter extends Importer
 {
     use LogsImportRows;
+    use RenamesColumns;
     use SkipsExistingRows;
 
     protected static ?string $model = Location::class;
+
+    /**
+     * Per-row stash for custom-field key => value data, keyed by
+     * spl_object_id of the record. Persisted in {@see afterSave()}.
+     *
+     * @var array<int, array<string, string|null>>
+     */
+    protected static array $rowCustomFieldStash = [];
 
     /**
      * @return array<ImportColumn>
      */
     public static function getColumns(): array
     {
-        return [
-            ImportColumn::make('name')
-                ->label('Location name')
-                ->requiredMapping()
-                ->guess(['Name', 'name', 'Location', 'Location name'])
-                // max:100 matches the locations.name column; a looser rule let
-                // over-length names through to a raw DB truncation/error.
-                ->rules(['required', 'string', 'max:100']),
-
-            ImportColumn::make('type')
-                ->label('Type (' . implode('|', self::acceptedTypeCodes()) . ')')
-                ->requiredMappingForNewRecordsOnly()
-                ->guess(['Type', 'type', 'Location type', 'Kind'])
-                ->castStateUsing(function (?string $state): ?string {
-                    if ($state === null) {
-                        return null;
-                    }
-                    $candidate = mb_strtolower(trim($state));
-                    // Accept legacy synonyms operators might paste.
-                    $aliases = [
-                        'archive' => 'repository',
-                        'archive room' => 'room',
-                        'storage' => 'shelf',
-                        'display case' => 'showcase',
-                        'vetrina' => 'showcase',
-                        'museo' => 'museum',
-                        'lab' => 'conservation',
-                        'conservazione' => 'conservation',
-                        'temporary' => 'temp_holding',
-                    ];
-                    $candidate = $aliases[$candidate] ?? $candidate;
-
-                    // Feedback1 gaps (F038) — accept any active location_types
-                    // lookup code (plus the hardcoded const for legacy/offline
-                    // fallback), mirroring the form Select's lookup source.
-                    return in_array($candidate, self::acceptedTypeCodes(), true) ? $candidate : null;
-                })
-                ->rules(['required', 'string', 'in:' . implode(',', self::acceptedTypeCodes())]),
-
-            // parent_name / repository_code are VIRTUAL columns: they are not
-            // attributes on Location (the real columns are parent_id /
-            // repository_id). afterFill() resolves those ids from $this->data.
-            // The no-op fillRecordUsing stops Filament writing a phantom
-            // `parent_name` / `repository_code` attribute onto the model, which
-            // would otherwise blow up the INSERT ("no column named …") the
-            // moment an operator maps a Parent or Repository column.
-            ImportColumn::make('parent_name')
-                ->label('Parent location name (blank for root)')
-                ->guess(['Parent', 'parent', 'Parent name', 'parent_name', 'Parent location'])
-                ->fillRecordUsing(function (): void {}),
-
-            ImportColumn::make('repository_code')
-                ->label('Repository code (e.g. NRA)')
-                ->guess(['Repository', 'repository', 'Repo code', 'repository_code'])
-                ->fillRecordUsing(function (): void {}),
-
-            ImportColumn::make('code')
-                ->label('Short code')
-                ->guess(['Code', 'code', 'Short code'])
-                // max:32 matches the locations.code column (was 64 — too loose).
-                ->rules(['nullable', 'string', 'max:32']),
-
-            ImportColumn::make('notes')
-                ->label('Notes')
-                ->guess(['Notes', 'notes', 'Description'])
-                ->rules(['nullable', 'string']),
-
-            ImportColumn::make('sort_order')
-                ->label('Sort order')
-                ->guess(['Sort', 'Sort order', 'Order', 'sort_order'])
-                ->numeric()
-                ->rules(['nullable', 'integer']),
-
-            ImportColumn::make('is_active')
-                ->label('Is active?')
-                ->guess(['Active', 'Is active', 'is_active'])
-                ->boolean()
-                ->rules(['nullable', 'boolean']),
-        ];
+        return static::applyRenameableLabels(
+            'location',
+            array_merge(static::getStaticColumns(), static::getCustomFieldColumns()),
+        );
     }
 
     /**
@@ -274,6 +212,161 @@ class LocationImporter extends Importer
         }
 
         return $body;
+    }
+
+    /**
+     * Persist the added columns once the row itself has been saved.
+     *
+     * Merge semantics (replaceMissing = false): a sheet that maps only some of
+     * the added columns must not wipe the ones it does not mention.
+     */
+    public function afterSave(): void
+    {
+        /** @var Location $record */
+        $record = $this->record;
+        $key = spl_object_id($record);
+
+        $customData = static::$rowCustomFieldStash[$key] ?? null;
+        unset(static::$rowCustomFieldStash[$key]);
+
+        if ($customData !== null && method_exists($record, 'setCustomFieldData')) {
+            // No try/catch: a malformed cell cannot throw (the trait casts with
+            // a total (string) cast), so the only realistic exception is a
+            // persistence error, which MUST fail the row rather than commit the
+            // record with its added columns missing.
+            $record->setCustomFieldData($customData, false);
+        }
+    }
+
+    /**
+     * The columns as they ship, before this repository's own column names and
+     * its own added columns are applied.
+     *
+     * @return array<ImportColumn>
+     */
+    protected static function getStaticColumns(): array
+    {
+        return [
+            ImportColumn::make('name')
+                ->label('Location name')
+                ->requiredMapping()
+                ->guess(['Name', 'name', 'Location', 'Location name'])
+                // max:100 matches the locations.name column; a looser rule let
+                // over-length names through to a raw DB truncation/error.
+                ->rules(['required', 'string', 'max:100']),
+
+            ImportColumn::make('type')
+                ->label('Type (' . implode('|', self::acceptedTypeCodes()) . ')')
+                ->requiredMappingForNewRecordsOnly()
+                ->guess(['Type', 'type', 'Location type', 'Kind'])
+                ->castStateUsing(function (?string $state): ?string {
+                    if ($state === null) {
+                        return null;
+                    }
+                    $candidate = mb_strtolower(trim($state));
+                    // Accept legacy synonyms operators might paste.
+                    $aliases = [
+                        'archive' => 'repository',
+                        'archive room' => 'room',
+                        'storage' => 'shelf',
+                        'display case' => 'showcase',
+                        'vetrina' => 'showcase',
+                        'museo' => 'museum',
+                        'lab' => 'conservation',
+                        'conservazione' => 'conservation',
+                        'temporary' => 'temp_holding',
+                    ];
+                    $candidate = $aliases[$candidate] ?? $candidate;
+
+                    // Feedback1 gaps (F038) — accept any active location_types
+                    // lookup code (plus the hardcoded const for legacy/offline
+                    // fallback), mirroring the form Select's lookup source.
+                    return in_array($candidate, self::acceptedTypeCodes(), true) ? $candidate : null;
+                })
+                ->rules(['required', 'string', 'in:' . implode(',', self::acceptedTypeCodes())]),
+
+            // parent_name / repository_code are VIRTUAL columns: they are not
+            // attributes on Location (the real columns are parent_id /
+            // repository_id). afterFill() resolves those ids from $this->data.
+            // The no-op fillRecordUsing stops Filament writing a phantom
+            // `parent_name` / `repository_code` attribute onto the model, which
+            // would otherwise blow up the INSERT ("no column named …") the
+            // moment an operator maps a Parent or Repository column.
+            ImportColumn::make('parent_name')
+                ->label('Parent location name (blank for root)')
+                ->guess(['Parent', 'parent', 'Parent name', 'parent_name', 'Parent location'])
+                ->fillRecordUsing(function (): void {}),
+
+            ImportColumn::make('repository_code')
+                ->label('Repository code (e.g. NRA)')
+                ->guess(['Repository', 'repository', 'Repo code', 'repository_code'])
+                ->fillRecordUsing(function (): void {}),
+
+            ImportColumn::make('code')
+                ->label('Short code')
+                ->guess(['Code', 'code', 'Short code'])
+                // max:32 matches the locations.code column (was 64 — too loose).
+                ->rules(['nullable', 'string', 'max:32']),
+
+            ImportColumn::make('notes')
+                ->label('Notes')
+                ->guess(['Notes', 'notes', 'Description'])
+                ->rules(['nullable', 'string']),
+
+            ImportColumn::make('sort_order')
+                ->label('Sort order')
+                ->guess(['Sort', 'Sort order', 'Order', 'sort_order'])
+                ->numeric()
+                ->rules(['nullable', 'integer']),
+
+            ImportColumn::make('is_active')
+                ->label('Is active?')
+                ->guess(['Active', 'Is active', 'is_active'])
+                ->boolean()
+                ->rules(['nullable', 'boolean']),
+        ];
+    }
+
+    /**
+     * The columns this repository added itself, for the 'location' entity type.
+     *
+     * Client 2026-09-25: she asked for standalone columns on the remaining
+     * entities too. Guessed by the definition label, the bare key and the
+     * cf_{key} form, so either the readable name or the internal key works as
+     * a header.
+     *
+     * A bad cell must never fail the row: the value is stored as given and the
+     * trait casts it on read.
+     *
+     * @return array<ImportColumn>
+     */
+    protected static function getCustomFieldColumns(): array
+    {
+        /** @var Collection<int, CustomFieldDefinition> $defs */
+        $defs = CustomFieldResolver::definitionsFor('location');
+
+        if ($defs->isEmpty()) {
+            return [];
+        }
+
+        $columns = [];
+        foreach ($defs as $def) {
+            $columns[] = ImportColumn::make('custom_field_' . $def->key)
+                ->label($def->label . ' (custom field)')
+                ->guess([$def->label, $def->key, 'cf_' . $def->key])
+                ->rules(['nullable', 'string'])
+                ->fillRecordUsing(static function (Location $record, ?string $state) use ($def): void {
+                    $key = spl_object_id($record);
+                    // Always stash: null/empty means "clear this field". A column
+                    // that was never mapped does not reach this closure at all,
+                    // and is therefore left untouched.
+                    static::$rowCustomFieldStash[$key][$def->key] = ($state !== null && trim($state) !== '')
+                        ? trim($state)
+                        : null;
+                });
+        }
+
+        return $columns;
     }
 
     /**

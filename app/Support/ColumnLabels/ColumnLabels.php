@@ -59,6 +59,140 @@ final class ColumnLabels
             'creator_of_record' => 'Creator of record',
             'notes' => 'Notes',
         ],
+        'series' => [
+            'code' => 'Identifier',
+            'title' => 'Standard title in English (Plural)',
+            'level_of_description' => 'Level of description',
+            'parent_code' => 'Parent',
+            'date_of_creation' => 'Date of creation',
+            'name_of_inputter' => 'Name of Inputter',
+            'repository_code' => 'Repository',
+        ],
+        'batch' => [
+            'batch_number' => 'batch_number',
+            'description' => 'description',
+            'type' => 'type',
+            'is_active' => 'is_active',
+            'repository_code' => 'repository_code',
+        ],
+        'box' => [
+            'box_type' => 'box_type',
+            'box_number' => 'box_number',
+            'batch_number' => 'batch_number',
+            'parent_barcode' => 'parent_box_number',
+            'barcode' => 'barcode',
+            'barcode_status' => 'barcode_status',
+            'is_legacy' => 'is_legacy',
+            'provenance_unknown' => 'Provenance Unknown',
+            'notes' => 'notes',
+            'tracking_note' => 'Tracking Note',
+            'seal_number' => 'Seal Number',
+            'destroyed' => 'Destroyed',
+            'current_box_type' => 'Current Box Type',
+        ],
+        'location' => [
+            'name' => 'name',
+            'type' => 'type',
+            'parent_name' => 'parent_name',
+            'repository_code' => 'repository_code',
+            'code' => 'code',
+            'notes' => 'notes',
+            'sort_order' => 'sort_order',
+            'is_active' => 'is_active',
+        ],
+        'documentType' => [
+            'identifier' => 'Identifier',
+            'name' => 'Name',
+            'description' => 'Description',
+            'is_active' => 'Is active',
+        ],
+        'document' => [
+            'batch_number' => 'RAS Batch 1',
+            'current_box_number' => 'RAS Box 1',
+            'ras_batch_2' => 'RAS Batch 2',
+            'ras_box_2' => 'RAS Box 2',
+            'in_situ_box_1' => 'In Situ Box 1',
+            'in_situ_box_2' => 'In Situ Box 2',
+            'in_situ_box_3' => 'In Situ Box 3',
+            'barcode_ras_3' => 'Barcode RAS 3',
+            'status_3' => 'Status 3',
+            'barcode_ras_4' => 'Barcode RAS 4',
+            'status_4' => 'Status 4',
+            'catalogue_identifier' => 'Catalogue Identifier',
+            'location' => 'NRA Location',
+            'museum_location' => 'Museum Location',
+            'practice' => 'Practice',
+            'volume_number' => 'Volume',
+            'creator_legacy_text' => 'Creator',
+            'dates' => 'Dates',
+            'deeds' => 'Deeds',
+            'document_type' => 'Document Type',
+            'series' => 'Subseries',
+            'notes' => 'Note',
+            'digitised' => 'Digitised',
+            'torre' => 'Torre',
+            'accession_code_legacy' => 'Accession',
+            'object_reference_number' => 'Conservation Object Reference Number',
+            'tracking' => 'Tracking',
+            'museum_reference' => 'Museum Reference',
+            'temporary_identifier' => 'Temporary Identifier',
+            'citation_reference' => 'Citation Reference',
+            'prev_attributed_identifier' => 'Prev Attributed Identifier',
+            'prev_attributed_volume' => 'Prev Attributed Volume',
+            'part_number' => 'Part Number',
+        ],
+        'volume' => [
+            'document_identifier' => 'document_identifier',
+            'volume_number' => 'volume_number',
+            'dates_start' => 'dates_start',
+            'dates_end' => 'dates_end',
+            'notes' => 'notes',
+        ],
+        'accession' => [
+            'authority_identifier' => 'Authority Identifier',
+            'authority_name' => 'Authority Name',
+            'authority_surname' => 'Authority Surname',
+            'accession_number' => 'Accession Number',
+            'accession_type' => 'Accession Type',
+            'repository' => 'Repository',
+            'batch_number' => 'Batch Number',
+            'box_number' => 'Box No',
+            'box_barcode' => 'Box Barcode',
+            'current_box_type' => 'Current Box Type',
+            'document_identifier' => 'Document Identifier',
+            'document_type' => 'Document Type',
+            'series' => 'Subseries',
+            'volume_number' => 'Volume No',
+            'part_number' => 'Part Number',
+            'practice' => 'Practice',
+            'dates' => 'Dates',
+            'deeds' => 'Deeds',
+            'number_of_acts' => 'No of Acts',
+            'pages_folios' => 'Pages/Folios',
+            'notes' => 'Note',
+        ],
+    ];
+
+    /**
+     * What each entity is called in the interface.
+     *
+     * Not cosmetic: ucfirst() on the key gives "Series" and "DocumentType",
+     * while the archivist's sidebar says "Subseries" and "Document Type". Asking
+     * her to rename a column on "Series" when nothing else in the app uses that
+     * word is how a working feature goes unused.
+     *
+     * @var array<string, string>
+     */
+    public const array ENTITY_LABELS = [
+        'authority' => 'Authority',
+        'series' => 'Subseries',
+        'batch' => 'Batch',
+        'box' => 'Box',
+        'location' => 'Location',
+        'documentType' => 'Document Type',
+        'document' => 'Document',
+        'volume' => 'Volume',
+        'accession' => 'Notary Accession',
     ];
 
     /**
@@ -73,6 +207,27 @@ final class ColumnLabels
     public static function renameableEntities(): array
     {
         return array_keys(self::DEFAULTS);
+    }
+
+    /** What one entity is called in the interface. */
+    public static function entityLabel(string $entityType): string
+    {
+        return self::ENTITY_LABELS[$entityType] ?? ucfirst($entityType);
+    }
+
+    /**
+     * Renameable entities as a Select's options: key => interface name.
+     *
+     * @return array<string, string>
+     */
+    public static function renameableEntityOptions(): array
+    {
+        $options = [];
+        foreach (self::renameableEntities() as $entity) {
+            $options[$entity] = self::entityLabel($entity);
+        }
+
+        return $options;
     }
 
     /**
@@ -115,6 +270,54 @@ final class ColumnLabels
         }
 
         return self::$memo[$memoKey] = $labels;
+    }
+
+    /**
+     * The same headers, with every renamed column substituted in place.
+     *
+     * Used by the template for every entity EXCEPT authority, whose header list
+     * is defined by DEFAULTS itself. The other templates cannot be regenerated
+     * from the labels: the document template repeats headers on purpose ("Barcode
+     * (IN)" twice, "Disinfestation Date" three times) because the cataloguers
+     * read that legacy layout by column POSITION, and rebuilding the row from a
+     * key => label map would collapse the repeats and shift every column after
+     * them. So the factory header is replaced where it sits, and the row keeps
+     * its shape.
+     *
+     * A header that is not unique in the row is never substituted, even if the
+     * field is listed in DEFAULTS: renaming one of three identical cells would
+     * leave a row that claims two different things about the same column. Those
+     * fields are kept out of DEFAULTS for that reason, and this is the guard
+     * that holds if one is ever added back by mistake.
+     *
+     * @param list<string> $headers
+     * @return list<string>
+     */
+    public static function applyToHeaders(string $entityType, array $headers): array
+    {
+        $defaults = self::DEFAULTS[$entityType] ?? [];
+        if ($defaults === []) {
+            return $headers;
+        }
+
+        $labels = self::all($entityType);
+        $counts = array_count_values($headers);
+
+        foreach ($defaults as $fieldKey => $factoryHeader) {
+            $current = $labels[$fieldKey] ?? $factoryHeader;
+            if ($current === $factoryHeader) {
+                continue;
+            }
+            if (($counts[$factoryHeader] ?? 0) !== 1) {
+                continue;
+            }
+            $position = array_search($factoryHeader, $headers, true);
+            if ($position !== false) {
+                $headers[$position] = $current;
+            }
+        }
+
+        return $headers;
     }
 
     /** The label for one field, or the key itself if it is not renameable. */

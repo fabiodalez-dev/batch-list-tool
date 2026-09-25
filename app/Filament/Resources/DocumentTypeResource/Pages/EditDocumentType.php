@@ -4,12 +4,15 @@ declare(strict_types=1);
 
 namespace App\Filament\Resources\DocumentTypeResource\Pages;
 
+use App\Filament\Concerns\HandlesCustomFieldForm;
 use App\Filament\Resources\DocumentTypeResource;
 use Filament\Actions\Action;
 use Filament\Resources\Pages\EditRecord;
 
 class EditDocumentType extends EditRecord
 {
+    use HandlesCustomFieldForm;
+
     protected static string $resource = DocumentTypeResource::class;
 
     protected function getHeaderActions(): array

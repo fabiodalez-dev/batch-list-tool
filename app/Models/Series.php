@@ -2,6 +2,7 @@
 
 namespace App\Models;
 
+use App\Models\Concerns\HasCustomFields;
 use Illuminate\Database\Eloquent\Collection as EloquentCollection;
 use Illuminate\Database\Eloquent\Factories\HasFactory;
 use Illuminate\Database\Eloquent\Model;
@@ -17,6 +18,7 @@ use Spatie\EloquentSortable\SortableTrait;
 class Series extends Model implements AuditableContract, Sortable
 {
     use Auditable;
+    use HasCustomFields;
     use HasFactory;
     use SoftDeletes;
     use SortableTrait;

@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace App\Filament\Imports;
 
 use App\Filament\Imports\Concerns\LogsImportRows;
+use App\Filament\Imports\Concerns\RenamesColumns;
 use App\Filament\Imports\Concerns\SkipsExistingRows;
 use App\Filament\Pages\ImportWizard;
 use App\Models\Accession;
@@ -96,6 +97,7 @@ use Illuminate\Validation\ValidationException;
 class AccessionRowImporter extends Importer
 {
     use LogsImportRows;
+    use RenamesColumns;
     use SkipsExistingRows;
 
     /**
@@ -212,7 +214,10 @@ class AccessionRowImporter extends Importer
      */
     public static function getColumns(): array
     {
-        return array_merge(static::getStaticColumns(), static::getCustomFieldColumns());
+        return static::applyRenameableLabels(
+            'accession',
+            array_merge(static::getStaticColumns(), static::getCustomFieldColumns()),
+        );
     }
 
     /**

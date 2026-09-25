@@ -29,6 +29,18 @@ class CustomFieldDefinition extends Model implements AuditableContract
         // every few days, each one a code change. Authorities join the
         // entities whose extra columns she can add herself.
         'authority' => Authority::class,
+        // Client 2026-09-25: "Is it possible to add new columns that are
+        // independent (standalone)?" — extended to every remaining entity, so
+        // no template is left needing a developer for an extra column.
+        //
+        // 'documentType' is camelCase on purpose: it matches the template
+        // registry and the model's own customFieldEntityType(). Document types
+        // have no repository_id of their own, so their definitions are scoped to
+        // the active repository and anchored to stored values.
+        'series' => Series::class,
+        'location' => Location::class,
+        'documentType' => DocumentType::class,
+        'accession' => Accession::class,
     ];
 
     /**

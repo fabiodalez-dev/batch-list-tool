@@ -56,10 +56,7 @@ class ColumnNamesRelationManager extends RelationManager
         return $schema->components([
             Forms\Components\Select::make('entity_type')
                 ->label('Record type')
-                ->options(fn (): array => array_combine(
-                    ColumnLabels::renameableEntities(),
-                    array_map(ucfirst(...), ColumnLabels::renameableEntities()),
-                ))
+                ->options(fn (): array => ColumnLabels::renameableEntityOptions())
                 ->required()
                 ->live()
                 // Changing the record type invalidates the chosen field.
@@ -127,7 +124,7 @@ class ColumnNamesRelationManager extends RelationManager
             ->columns([
                 Tables\Columns\TextColumn::make('entity_type')
                     ->label('Record type')
-                    ->formatStateUsing(fn (string $state): string => ucfirst($state))
+                    ->formatStateUsing(fn (string $state): string => ColumnLabels::entityLabel($state))
                     ->badge()
                     ->color('gray')
                     ->sortable(),
@@ -152,10 +149,7 @@ class ColumnNamesRelationManager extends RelationManager
             ->filters([
                 SelectFilter::make('entity_type')
                     ->label('Record type')
-                    ->options(fn (): array => array_combine(
-                        ColumnLabels::renameableEntities(),
-                        array_map(ucfirst(...), ColumnLabels::renameableEntities()),
-                    )),
+                    ->options(fn (): array => ColumnLabels::renameableEntityOptions()),
             ])
             ->headerActions([
                 CreateAction::make()

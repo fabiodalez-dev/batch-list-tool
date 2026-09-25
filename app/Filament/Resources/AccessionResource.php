@@ -8,6 +8,7 @@ use App\Filament\Support\SearchableSelects;
 use App\Models\Accession;
 use App\Models\Batch;
 use App\Models\Repository;
+use App\Support\CustomFields\CustomFieldSchema;
 use Filament\Actions\BulkActionGroup;
 use Filament\Actions\DeleteBulkAction;
 use Filament\Actions\EditAction;
@@ -166,6 +167,18 @@ class AccessionResource extends Resource
                             ->rows(3)
                             ->columnSpanFull(),
                     ]),
+                // The columns this repository added itself.
+                // Client 2026-09-25: standalone columns reach every entity, so
+                // an extra column no longer needs a developer.
+                Section::make('Custom fields')
+                    ->columnSpanFull()
+                    ->columns(2)
+                    ->schema(static function (Get $get, ?Accession $record): array {
+                        return CustomFieldSchema::for('accession', self::customFieldRepository($get, $record));
+                    })
+                    ->visible(static function (Get $get, ?Accession $record): bool {
+                        return CustomFieldSchema::for('accession', self::customFieldRepository($get, $record)) !== [];
+                    }),
             ]);
     }
 
@@ -456,6 +469,22 @@ class AccessionResource extends Resource
             'view' => Pages\ViewAccession::route('/{record}'),
             'edit' => Pages\EditAccession::route('/{record}/edit'),
         ];
+    }
+
+    /**
+     * Which repository's added columns this form should show.
+     *
+     * Reads the live form state first, so picking a repository reveals that
+     * repository's columns without a reload; falls back to the record being
+     * edited, then to the operator's default repository on a blank create form.
+     */
+    private static function customFieldRepository(Get $get, ?Accession $record): ?int
+    {
+        $repositoryId = (int) $get('repository_id')
+            ?: $record?->repository_id
+            ?: auth()->user()?->default_repository_id;
+
+        return $repositoryId !== null ? (int) $repositoryId : null;
     }
 
     /**

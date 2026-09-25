@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace App\Filament\Imports;
 
 use App\Filament\Imports\Concerns\LogsImportRows;
+use App\Filament\Imports\Concerns\RenamesColumns;
 use App\Filament\Imports\Concerns\SkipsExistingRows;
 use App\Models\Authority;
 use App\Support\BulkImport\SpreadsheetParsers;
@@ -37,6 +38,7 @@ use Illuminate\Validation\ValidationException;
 class AuthorityImporter extends Importer
 {
     use LogsImportRows;
+    use RenamesColumns;
     use SkipsExistingRows;
 
     protected static ?string $model = Authority::class;
@@ -436,32 +438,15 @@ class AuthorityImporter extends Importer
         ]);
     }
 
+    /**
+     * @param array<int, ImportColumn> $columns
+     * @return array<int, ImportColumn>
+     */
     private static function applyRenames(array $columns): array
     {
-        $renameable = ColumnLabels::DEFAULTS['authority'];
-
-        foreach ($columns as $column) {
-            $key = $column->getName();
-            if (! array_key_exists($key, $renameable)) {
-                continue;
-            }
-
-            // Setting the LABEL is enough for the header to be recognised:
-            // guessSingleColumn tries the field name, the label and the guess
-            // list in that order, so the renamed header matches on the label.
-            // The factory name keeps working because it is still in each
-            // column's own guess list — see the test that pins exactly that.
-            $label = ColumnLabels::get('authority', $key);
-            $column->label($label);
-
-            // Filament builds "The :attribute field is required" from
-            // Str::lcfirst($label), which turns "Citing Reference Code" into
-            // "citing Reference Code" — a column name with its first letter
-            // knocked down, in the one message the cataloguer reads most.
-            // Naming the attribute explicitly keeps the column's own name.
-            $column->validationAttribute($label);
-        }
-
-        return [...$columns, ...self::getCustomFieldColumns()];
+        return [
+            ...self::applyRenameableLabels('authority', $columns),
+            ...self::getCustomFieldColumns(),
+        ];
     }
 }

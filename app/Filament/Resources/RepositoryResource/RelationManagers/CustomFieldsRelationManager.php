@@ -3,6 +3,7 @@
 namespace App\Filament\Resources\RepositoryResource\RelationManagers;
 
 use App\Models\CustomFieldDefinition;
+use App\Support\ColumnLabels\ColumnLabels;
 use Filament\Actions\BulkActionGroup;
 use Filament\Actions\CreateAction;
 use Filament\Actions\DeleteAction;
@@ -52,10 +53,13 @@ class CustomFieldsRelationManager extends RelationManager
     public function form(Schema $schema): Schema
     {
         // Build human-readable option maps from the model constants.
-        $entityTypeOptions = array_map(
-            class_basename(...),
-            CustomFieldDefinition::ENTITY_TYPES,
-        );
+        // The interface names, not the class names: class_basename() gives
+        // "Series" and "DocumentType" where the sidebar says "Subseries" and
+        // "Document Type".
+        $entityTypeOptions = [];
+        foreach (array_keys(CustomFieldDefinition::ENTITY_TYPES) as $entityType) {
+            $entityTypeOptions[$entityType] = ColumnLabels::entityLabel($entityType);
+        }
 
         $typeOptions = array_combine(
             CustomFieldDefinition::TYPES,
@@ -209,10 +213,13 @@ class CustomFieldsRelationManager extends RelationManager
     {
         $isSuperAdmin = auth()->user()?->hasRole('super_admin') === true;
 
-        $entityTypeOptions = array_map(
-            class_basename(...),
-            CustomFieldDefinition::ENTITY_TYPES,
-        );
+        // The interface names, not the class names: class_basename() gives
+        // "Series" and "DocumentType" where the sidebar says "Subseries" and
+        // "Document Type".
+        $entityTypeOptions = [];
+        foreach (array_keys(CustomFieldDefinition::ENTITY_TYPES) as $entityType) {
+            $entityTypeOptions[$entityType] = ColumnLabels::entityLabel($entityType);
+        }
 
         return $table
             ->recordTitleAttribute('label')
@@ -223,7 +230,7 @@ class CustomFieldsRelationManager extends RelationManager
                     ->label('Entity')
                     ->badge()
                     ->color('primary')
-                    ->formatStateUsing(fn (string $state): string => ucfirst($state))
+                    ->formatStateUsing(fn (string $state): string => ColumnLabels::entityLabel($state))
                     ->sortable(),
 
                 Tables\Columns\TextColumn::make('label')

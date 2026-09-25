@@ -170,7 +170,7 @@ final class TemplateGenerator
      * version tells you whether the operator is working from a stale
      * download. Bump on any change to the header contract.
      */
-    public const string GENERATOR_VERSION = '1.18.0';
+    public const string GENERATOR_VERSION = '1.19.0';
 
     /**
      * Supported template entities. Headers come from the in-repo constants
@@ -319,15 +319,24 @@ final class TemplateGenerator
         // exact key set covered by the match arms, so PHPStan correctly
         // flags any `default` here as unreachable.
 
-        // Series, location and document types carry no custom fields — skip
-        // the lookup entirely for them. Authorities gained them on 2026-09-24,
-        // so they now fall through to the append below.
-        if (in_array($entity, ['series', 'location', 'documentType'], strict: true)) {
-            return $staticHeaders;
-        }
+        // Client 2026-09-25: renaming reaches EVERY template, not just
+        // authority. Authority's header list is built from ColumnLabels above,
+        // so it already carries the current names; the others keep their own
+        // header row — repeats, legacy positions and all — and have the renamed
+        // columns substituted in place. See ColumnLabels::applyToHeaders() for
+        // why a repeated header is never substituted.
+        $staticHeaders = ColumnLabels::applyToHeaders($entity, $staticHeaders);
 
         // Accession template appends custom fields for the 'document' entity
         // type because one row = one Document at the bottom of the cascade.
+        //
+        // An Accession's OWN added columns are deliberately NOT appended here.
+        // One row of this sheet writes a Document, and its added columns
+        // already occupy the header row; adding the accession's as well would
+        // put two independent sets of names in one row, where a single repeated
+        // name silently costs a column's worth of work. Accession's added
+        // columns are filled in on the accession record itself, which is where
+        // there is exactly one of them per row.
         if ($entity === 'accession') {
             $customLabels = CustomFieldResolver::definitionsFor('document')
                 ->pluck('label')

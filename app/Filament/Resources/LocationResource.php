@@ -9,6 +9,7 @@ use App\Filament\Support\CreatorColumn;
 use App\Models\Location;
 use App\Models\LocationType;
 use App\Models\Repository;
+use App\Support\CustomFields\CustomFieldSchema;
 use Filament\Actions\BulkAction;
 use Filament\Actions\BulkActionGroup;
 use Filament\Actions\DeleteAction;
@@ -187,6 +188,18 @@ class LocationResource extends Resource
                     ->schema([
                         Forms\Components\Textarea::make('notes')->rows(3)->columnSpanFull(),
                     ]),
+                // The columns this repository added itself.
+                // Client 2026-09-25: standalone columns reach every entity, so
+                // an extra column no longer needs a developer.
+                Section::make('Custom fields')
+                    ->columnSpanFull()
+                    ->columns(2)
+                    ->schema(static function (Get $get, ?Location $record): array {
+                        return CustomFieldSchema::for('location', self::customFieldRepository($get, $record));
+                    })
+                    ->visible(static function (Get $get, ?Location $record): bool {
+                        return CustomFieldSchema::for('location', self::customFieldRepository($get, $record)) !== [];
+                    }),
             ]);
     }
 
@@ -575,5 +588,21 @@ class LocationResource extends Resource
             'temp_holding' => 'warning',
             default => 'gray',
         };
+    }
+
+    /**
+     * Which repository's added columns this form should show.
+     *
+     * Reads the live form state first, so picking a repository reveals that
+     * repository's columns without a reload; falls back to the record being
+     * edited, then to the operator's default repository on a blank create form.
+     */
+    private static function customFieldRepository(Get $get, ?Location $record): ?int
+    {
+        $repositoryId = (int) $get('repository_id')
+            ?: $record?->repository_id
+            ?: auth()->user()?->default_repository_id;
+
+        return $repositoryId !== null ? (int) $repositoryId : null;
     }
 }

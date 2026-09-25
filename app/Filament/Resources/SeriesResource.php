@@ -7,6 +7,7 @@ use App\Filament\Resources\SeriesResource\Pages;
 use App\Filament\Support\CreatorColumn;
 use App\Models\Repository;
 use App\Models\Series;
+use App\Support\CustomFields\CustomFieldSchema;
 use Filament\Actions\BulkActionGroup;
 use Filament\Actions\DeleteBulkAction;
 use Filament\Actions\EditAction;
@@ -17,6 +18,7 @@ use Filament\Infolists\Components\TextEntry;
 use Filament\Resources\Resource;
 use Filament\Schemas;
 use Filament\Schemas\Components\Section;
+use Filament\Schemas\Components\Utilities\Get;
 use Filament\Schemas\Schema;
 use Filament\Tables;
 use Filament\Tables\Filters\SelectFilter;
@@ -160,6 +162,18 @@ class SeriesResource extends Resource
                             ->rows(3)
                             ->columnSpanFull()),
                     ]),
+                // The columns this repository added itself.
+                // Client 2026-09-25: standalone columns reach every entity, so
+                // an extra column no longer needs a developer.
+                Section::make('Custom fields')
+                    ->columnSpanFull()
+                    ->columns(2)
+                    ->schema(static function (Get $get, ?Series $record): array {
+                        return CustomFieldSchema::for('series', self::customFieldRepository($get, $record));
+                    })
+                    ->visible(static function (Get $get, ?Series $record): bool {
+                        return CustomFieldSchema::for('series', self::customFieldRepository($get, $record)) !== [];
+                    }),
             ]);
     }
 
@@ -455,5 +469,21 @@ class SeriesResource extends Resource
             'view' => Pages\ViewSeries::route('/{record}'),
             'edit' => Pages\EditSeries::route('/{record}/edit'),
         ];
+    }
+
+    /**
+     * Which repository's added columns this form should show.
+     *
+     * Reads the live form state first, so picking a repository reveals that
+     * repository's columns without a reload; falls back to the record being
+     * edited, then to the operator's default repository on a blank create form.
+     */
+    private static function customFieldRepository(Get $get, ?Series $record): ?int
+    {
+        $repositoryId = (int) $get('repository_id')
+            ?: $record?->repository_id
+            ?: auth()->user()?->default_repository_id;
+
+        return $repositoryId !== null ? (int) $repositoryId : null;
     }
 }

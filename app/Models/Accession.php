@@ -3,6 +3,7 @@
 namespace App\Models;
 
 use App\Models\Concerns\BelongsToRepository;
+use App\Models\Concerns\HasCustomFields;
 use App\Models\Pivots\AccessionBatch;
 use Illuminate\Database\Eloquent\Factories\HasFactory;
 use Illuminate\Database\Eloquent\Model;
@@ -19,6 +20,7 @@ class Accession extends Model implements AuditableContract, HasMedia
 {
     use Auditable;
     use BelongsToRepository;
+    use HasCustomFields;
     use HasFactory;
     use InteractsWithMedia;
     use SoftDeletes;
