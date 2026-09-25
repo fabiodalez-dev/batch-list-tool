@@ -60,11 +60,12 @@ function actAsAdmin_auth(): User
 
 function makeAuthority_auth(array $attrs = []): Authority
 {
-    // Feedback1 — identifiers must start with R/I and given_names is now a
-    // required form field, so the seed data satisfies the form validators
+    // Client 2026-09-25: the Citing Reference Code is the required, unique key
+    // and the NAM code is optional, so the seed carries the former. given_names
+    // is a required form field, so the seed data satisfies the form validators
     // that re-run on the Edit page's save() (used by several tests below).
     return Authority::create(array_merge([
-        'identifier' => 'R' . strtoupper(substr(uniqid(), -8)),
+        'alternative_identifier' => 'R' . strtoupper(substr(uniqid(), -8)),
         'surname' => 'Surname' . substr(uniqid(), -4),
         'given_names' => 'Given',
         'entity_type' => 'Notary',
@@ -105,13 +106,13 @@ test('AuthorityResource create form renders with required fields', function () {
 test('AuthorityResource valid create persists row', function () {
     $this->actingAs(actAsAdmin_auth());
 
-    // Feedback1 — identifier must start with R or I; given_names is now
-    // required; entity_type is the Notary/Interventor vocabulary.
-    $identifier = 'R-NEW-' . strtoupper(substr(uniqid(), -6));
+    // The Citing Reference Code is the required one since 2026-09-25;
+    // given_names is required; entity_type is the Notary/Interventor vocabulary.
+    $citingReferenceCode = 'R-NEW-' . strtoupper(substr(uniqid(), -6));
 
     Livewire::test(CreateAuthority::class)
         ->fillForm([
-            'identifier' => $identifier,
+            'alternative_identifier' => $citingReferenceCode,
             'surname' => 'Borg',
             'given_names' => 'Joseph',
             'entity_type' => 'Notary',
@@ -119,7 +120,11 @@ test('AuthorityResource valid create persists row', function () {
         ->call('create')
         ->assertHasNoFormErrors();
 
-    expect(Authority::where('identifier', $identifier)->exists())->toBeTrue();
+    // Created without a NAM code at all, which is the case for 88% of the
+    // client's creators.
+    $authority = Authority::where('alternative_identifier', $citingReferenceCode)->first();
+    expect($authority)->not->toBeNull()
+        ->and($authority->identifier)->toBeNull();
 });
 
 /* ----------------------------------------------------------------------- */

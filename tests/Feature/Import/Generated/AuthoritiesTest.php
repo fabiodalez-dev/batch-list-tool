@@ -26,9 +26,23 @@ const AT_PROD_CSV = __DIR__ . '/../../../../nra/inbox/prod-uploads/20260728_0753
 const AT_RFQ_SAMPLE_XLSX = __DIR__ . '/../../../../nra/rfq/RFQ-2026-06_Samples/Authorities_Sample.xlsx';
 const AT_NAF_EXAMPLE_XLSX = __DIR__ . '/../../../../nra/outbox/2026-07-22_NAF_import_examples/example_authority_import.xlsx';
 
+/*
+ * The production CSV and the RFQ sample were written under the old meaning,
+ * where the "Identifier" column held R1, R2, R3… and "Alternative Identifier"
+ * held the MS numbers. The client corrected that on 2026-09-25: the R-codes are
+ * the Citing Reference Code (the key), and the MS numbers are the Alternate
+ * Reference Code.
+ *
+ * So the same file now maps to different FIELDS, which is exactly the remapping
+ * an operator does in step 4 of the wizard when opening an old sheet. The guess
+ * cannot do it for them — the field name `identifier` matches the header
+ * "Identifier" before any guess list is consulted — and that is deliberate: a
+ * row whose key is missing is rejected out loud, rather than filed under the
+ * wrong code in silence.
+ */
 const AT_COLUMN_MAP = [
-    'identifier' => 'Identifier',
-    'alternative_identifier' => 'Alternative Identifier',
+    'alternative_identifier' => 'Identifier',
+    'alternative_identifier_warrant' => 'Alternative Identifier',
     'entity_type' => 'Type of Entity',
     'practice_dates_active' => 'Private Practice Dates Active',
     'ntg_dates_active' => 'NTG Dates Active',
@@ -204,10 +218,10 @@ test('an integer Alternative Identifier cell imports as a string, not rejected',
     $import = at_run([$row], AT_COLUMN_MAP, $u->id);
 
     expect(at_failures($import))->toBe([]);
-    $a = Authority::where('identifier', 'R1')->first();
+    $a = Authority::where('alternative_identifier', 'R1')->first();
     expect($a)->not->toBeNull()
-        ->and($a->alternative_identifier)->toBe('511')
-        ->and($a->alternative_identifier)->toBeString();
+        ->and($a->alternative_identifier_warrant)->toBe('511')
+        ->and($a->alternative_identifier_warrant)->toBeString();
 });
 
 test('a float Alternative Identifier cell (511.5) imports as a string, not rejected', function () {
@@ -223,8 +237,8 @@ test('a float Alternative Identifier cell (511.5) imports as a string, not rejec
     $import = at_run([$row], AT_COLUMN_MAP, $u->id);
 
     expect(at_failures($import))->toBe([]);
-    $a = Authority::where('identifier', 'R2')->first();
-    expect($a->alternative_identifier)->toBe('511.5');
+    $a = Authority::where('alternative_identifier', 'R2')->first();
+    expect($a->alternative_identifier_warrant)->toBe('511.5');
 });
 
 test('a whole-number float Alternative Identifier (511.0) does not grow a spurious decimal point', function () {
@@ -237,7 +251,7 @@ test('a whole-number float Alternative Identifier (511.0) does not grow a spurio
     $import = at_run([$row], AT_COLUMN_MAP, $u->id);
 
     expect(at_failures($import))->toBe([]);
-    expect(Authority::where('identifier', 'R3')->value('alternative_identifier'))->toBe('511');
+    expect(Authority::where('alternative_identifier', 'R3')->value('alternative_identifier_warrant'))->toBe('511');
 });
 
 // ─── The full production file ──────────────────────────────────────────────
@@ -308,7 +322,7 @@ test('re-importing the same identifier updates the existing row instead of dupli
 
     expect(at_failures($import))->toBe([])
         ->and(Authority::count())->toBe(1)
-        ->and(Authority::where('identifier', 'R10')->value('surname'))->toBe('Updated');
+        ->and(Authority::where('alternative_identifier', 'R10')->value('surname'))->toBe('Updated');
 });
 
 test('skip_duplicates option skips an already-existing identifier instead of updating it', function () {
@@ -327,7 +341,7 @@ test('skip_duplicates option skips an already-existing identifier instead of upd
     );
 
     expect(at_failures($import))->toHaveCount(1)
-        ->and(Authority::where('identifier', 'R11')->value('surname'))->toBe('Keep Me');
+        ->and(Authority::where('alternative_identifier', 'R11')->value('surname'))->toBe('Keep Me');
 });
 
 test('two rows with the SAME identifier in one batch do not crash — the second updates the first', function () {
@@ -346,8 +360,8 @@ test('two rows with the SAME identifier in one batch do not crash — the second
     );
 
     expect(at_failures($import))->toBe([])
-        ->and(Authority::where('identifier', 'R12')->count())->toBe(1)
-        ->and(Authority::where('identifier', 'R12')->value('surname'))->toBe('Second');
+        ->and(Authority::where('alternative_identifier', 'R12')->count())->toBe(1)
+        ->and(Authority::where('alternative_identifier', 'R12')->value('surname'))->toBe('Second');
 });
 
 // ─── Dirty database: soft-deleted residue ──────────────────────────────────
@@ -356,7 +370,7 @@ test('re-importing an identifier whose row was soft-deleted RESTORES it instead 
     $u = at_admin();
     $this->actingAs($u);
 
-    Authority::create(['identifier' => 'R20', 'surname' => 'Old', 'entity_type' => 'PERSON'])->delete();
+    Authority::create(['alternative_identifier' => 'R20', 'surname' => 'Old', 'entity_type' => 'PERSON'])->delete();
     expect(Authority::count())->toBe(0)
         ->and(Authority::withTrashed()->count())->toBe(1);
 
@@ -369,15 +383,15 @@ test('re-importing an identifier whose row was soft-deleted RESTORES it instead 
     expect(at_failures($import))->toBe([])
         ->and(Authority::count())->toBe(1)
         ->and(Authority::withTrashed()->count())->toBe(1)
-        ->and(Authority::where('identifier', 'R20')->value('surname'))->toBe('Restored');
+        ->and(Authority::where('alternative_identifier', 'R20')->value('surname'))->toBe('Restored');
 });
 
 test('a dirty batch mixing live, soft-deleted and brand-new authorities imports cleanly with no duplicates', function () {
     $u = at_admin();
     $this->actingAs($u);
 
-    Authority::create(['identifier' => 'R30', 'surname' => 'Live', 'entity_type' => 'PERSON']); // live
-    Authority::create(['identifier' => 'R31', 'surname' => 'Gone', 'entity_type' => 'PERSON'])->delete(); // trashed
+    Authority::create(['alternative_identifier' => 'R30', 'surname' => 'Live', 'entity_type' => 'PERSON']); // live
+    Authority::create(['alternative_identifier' => 'R31', 'surname' => 'Gone', 'entity_type' => 'PERSON'])->delete(); // trashed
 
     // Real rows R30 (Attard, Pietro), R31 (Attard, Simone), R32 (Axisa,
     // Bartolomeo); surnames mutated only to prove which import path each
@@ -395,8 +409,8 @@ test('a dirty batch mixing live, soft-deleted and brand-new authorities imports 
     expect(at_failures($import))->toBe([])
         ->and(Authority::count())->toBe(3)
         ->and(Authority::withTrashed()->count())->toBe(3)
-        ->and(Authority::where('identifier', 'R30')->value('surname'))->toBe('Live Updated')
-        ->and(Authority::where('identifier', 'R31')->value('surname'))->toBe('Restored');
+        ->and(Authority::where('alternative_identifier', 'R30')->value('surname'))->toBe('Live Updated')
+        ->and(Authority::where('alternative_identifier', 'R31')->value('surname'))->toBe('Restored');
 });
 
 // ─── Over-long fields ───────────────────────────────────────────────────────
@@ -414,7 +428,7 @@ test('an over-long identifier (>32 chars) fails validation cleanly instead of cr
     $import = at_run([$row], AT_COLUMN_MAP, $u->id);
 
     expect(at_failures($import))->toHaveCount(1)
-        ->and(Authority::where('identifier', $longId)->exists())->toBeFalse();
+        ->and(Authority::where('alternative_identifier', $longId)->exists())->toBeFalse();
 });
 
 test('an over-long surname (>255 chars) fails validation cleanly instead of crashing the batch', function () {
@@ -427,20 +441,24 @@ test('an over-long surname (>255 chars) fails validation cleanly instead of cras
     $import = at_run([$row], AT_COLUMN_MAP, $u->id);
 
     expect(at_failures($import))->toHaveCount(1)
-        ->and(Authority::where('identifier', 'R40')->exists())->toBeFalse();
+        ->and(Authority::where('alternative_identifier', 'R40')->exists())->toBeFalse();
 });
 
 test('an over-long Alternative Identifier (>32 chars) fails validation cleanly instead of crashing the batch', function () {
     $u = at_admin();
     $this->actingAs($u);
 
+    // 32 characters is the Citing Reference Code's limit, and in this historic
+    // file that code lives in the "Identifier" column. Over-running
+    // "Alternative Identifier" no longer tests anything: it maps to the
+    // Alternate Reference Code now, which allows 191.
     $longAlt = str_repeat('9', 33);
-    $row = array_merge(at_realRow('R41'), ['Alternative Identifier' => $longAlt]); // real: Azzopardi, Giovanni Battista
+    $row = array_merge(at_realRow('R41'), ['Identifier' => $longAlt]); // real: Azzopardi, Giovanni Battista
 
     $import = at_run([$row], AT_COLUMN_MAP, $u->id);
 
     expect(at_failures($import))->toHaveCount(1)
-        ->and(Authority::where('identifier', 'R41')->exists())->toBeFalse();
+        ->and(Authority::where('alternative_identifier', 'R41')->exists())->toBeFalse();
 });
 
 // ─── Required field enforcement ────────────────────────────────────────────
@@ -454,7 +472,7 @@ test('a row with a blank required Creator Surname fails validation and is NOT si
     $import = at_run([$row], AT_COLUMN_MAP, $u->id);
 
     expect(at_failures($import))->toHaveCount(1)
-        ->and(Authority::where('identifier', 'R50')->exists())->toBeFalse();
+        ->and(Authority::where('alternative_identifier', 'R50')->exists())->toBeFalse();
 });
 
 test('a row with a blank Identifier fails validation and is NOT silently imported', function () {
@@ -479,7 +497,7 @@ test('entity_type "Person" (real CSV casing) normalises to PERSON', function () 
     // "Person" in this exact casing.
     at_run([at_realRow('R60')], AT_COLUMN_MAP, $u->id);
 
-    expect(Authority::where('identifier', 'R60')->value('entity_type'))->toBe('PERSON');
+    expect(Authority::where('alternative_identifier', 'R60')->value('entity_type'))->toBe('PERSON');
 });
 
 test('entity_type "Notary" (real NAF example file value) normalises to INSTITUTION, the documented unknown-value fallback', function () {
@@ -491,7 +509,7 @@ test('entity_type "Notary" (real NAF example file value) normalises to INSTITUTI
     $rows = at_loadXlsx(AT_NAF_EXAMPLE_XLSX);
     at_run([$rows[0]], at_mapFromHeaders($rows), $u->id);
 
-    expect(Authority::where('identifier', 'R646')->value('entity_type'))->toBe('INSTITUTION');
+    expect(Authority::where('alternative_identifier', 'R646')->value('entity_type'))->toBe('INSTITUTION');
 })->skip(fn () => ! is_file(AT_NAF_EXAMPLE_XLSX), 'NAF example file not present');
 
 // ─── practice_dates_active / NTG / maiden surname / name suffix ───────────
@@ -503,7 +521,7 @@ test('a "1607-1629" Private Practice Dates Active cell splits into practice_date
     // Real row R1 (Abela, Antonio) carries "1607-1629" verbatim.
     at_run([at_realRow('R1')], AT_COLUMN_MAP, $u->id);
 
-    $a = Authority::where('identifier', 'R1')->first();
+    $a = Authority::where('alternative_identifier', 'R1')->first();
     expect($a->practice_dates_start)->toBe(1607)
         ->and($a->practice_dates_end)->toBe(1629);
 });
@@ -519,7 +537,7 @@ test('NTG Dates Active (real NAF example row 2) splits into ntg_dates_start/end 
     $rows = at_loadXlsx(AT_NAF_EXAMPLE_XLSX);
     at_run([$rows[1]], at_mapFromHeaders($rows), $u->id);
 
-    $a = Authority::where('identifier', 'R647')->first();
+    $a = Authority::where('alternative_identifier', 'R647')->first();
     expect($a->ntg_dates_start)->toBe(1885)
         ->and($a->ntg_dates_end)->toBe(1890);
 })->skip(fn () => ! is_file(AT_NAF_EXAMPLE_XLSX), 'NAF example file not present');
@@ -532,7 +550,7 @@ test('Maiden Surname (real NAF example row 2) is appended into notes', function 
     $rows = at_loadXlsx(AT_NAF_EXAMPLE_XLSX);
     at_run([$rows[1]], at_mapFromHeaders($rows), $u->id);
 
-    expect(Authority::where('identifier', 'R647')->value('notes'))->toContain('Maiden surname: Zammit');
+    expect(Authority::where('alternative_identifier', 'R647')->value('notes'))->toContain('Maiden surname: Zammit');
 })->skip(fn () => ! is_file(AT_NAF_EXAMPLE_XLSX), 'NAF example file not present');
 
 test('Name Suffix is appended onto given_names', function () {
@@ -542,7 +560,7 @@ test('Name Suffix is appended onto given_names', function () {
     // Real row R83 (Borg, Salvatore) carries Name Suffix "Senior".
     at_run([at_realRow('R83')], AT_COLUMN_MAP, $u->id);
 
-    expect(Authority::where('identifier', 'R83')->value('given_names'))->toBe('Salvatore Senior');
+    expect(Authority::where('alternative_identifier', 'R83')->value('given_names'))->toBe('Salvatore Senior');
 });
 
 // ─── Whitespace ─────────────────────────────────────────────────────────────
@@ -559,7 +577,7 @@ test('whitespace-padded identifier and surname are trimmed before matching/savin
 
     at_run([$row], AT_COLUMN_MAP, $u->id);
 
-    $a = Authority::where('identifier', 'R80')->first();
+    $a = Authority::where('alternative_identifier', 'R80')->first();
     expect($a)->not->toBeNull()
         ->and($a->surname)->toBe('Borg');
 });
@@ -573,10 +591,16 @@ test('the real NAF example_authority_import.xlsx (2 rows) imports cleanly end-to
     $rows = at_loadXlsx(AT_NAF_EXAMPLE_XLSX);
     expect($rows)->toHaveCount(2);
 
+    // This example was written in July, when the R-codes were filed under
+    // "Authority Record Identifier (NAM)". Since 2026-09-25 those codes are the
+    // Citing Reference Code, so the file needs the same explicit remapping an
+    // operator would give it — the guess deliberately will not invent it.
+    // The example in nra/outbox should be regenerated from the current
+    // template; until it is, this pins how the old one behaves.
     $import = at_run($rows, at_mapFromHeaders($rows), $u->id);
 
     expect(at_failures($import))->toBe([])
         ->and(Authority::count())->toBe(2)
-        ->and(Authority::where('identifier', 'R646')->value('surname'))->toBe('Farrugia')
-        ->and(Authority::where('identifier', 'R647')->value('notes'))->toContain('Maiden surname: Zammit');
+        ->and(Authority::where('alternative_identifier', 'R646')->value('surname'))->toBe('Farrugia')
+        ->and(Authority::where('alternative_identifier', 'R647')->value('notes'))->toContain('Maiden surname: Zammit');
 })->skip(fn () => ! is_file(AT_NAF_EXAMPLE_XLSX), 'NAF example file not present');

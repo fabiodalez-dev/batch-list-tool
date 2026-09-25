@@ -185,18 +185,20 @@ test('streaming re-import of a soft-deleted authority restores it', function () 
     $u = ddi_admin();
     $this->actingAs($u);
 
-    Authority::create(['identifier' => 'R646', 'surname' => 'Farrugia', 'entity_type' => 'Notary'])->delete();
+    // R646 is a Citing Reference Code — the key since 2026-09-25 — so both the
+    // seeded row and the sheet's column map onto that field.
+    Authority::create(['alternative_identifier' => 'R646', 'surname' => 'Farrugia', 'entity_type' => 'Notary'])->delete();
 
     $import = ddi_run(
         AuthorityImporter::class,
         [['Identifier' => 'R646', 'Type of Entity' => 'Notary', 'Creator Surname' => 'Farrugia']],
-        ['identifier' => 'Identifier', 'entity_type' => 'Type of Entity', 'surname' => 'Creator Surname'],
+        ['alternative_identifier' => 'Identifier', 'entity_type' => 'Type of Entity', 'surname' => 'Creator Surname'],
         $u->id,
     );
 
     expect(ddi_failures($import))->toBe([]);
-    expect(Authority::where('identifier', 'R646')->count())->toBe(1)
-        ->and(Authority::withTrashed()->where('identifier', 'R646')->count())->toBe(1);
+    expect(Authority::where('alternative_identifier', 'R646')->count())->toBe(1)
+        ->and(Authority::withTrashed()->where('alternative_identifier', 'R646')->count())->toBe(1);
 });
 
 // ─── skip_duplicates against a dirty (already-populated) table ───────────────

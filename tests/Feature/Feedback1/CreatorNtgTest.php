@@ -47,7 +47,7 @@ function ntg_actAsSuperAdmin(): User
 function ntg_validForm(array $overrides = []): array
 {
     return array_merge([
-        'identifier' => 'R' . random_int(10000, 99999),
+        'alternative_identifier' => 'R' . random_int(10000, 99999),
         'surname' => 'Borg',
         'given_names' => 'Joseph',
         'entity_type' => 'Notary',
@@ -59,14 +59,14 @@ it('saves the NTG year range through the create form', function () {
 
     Livewire::test(CreateAuthority::class)
         ->fillForm(ntg_validForm([
-            'identifier' => 'R31001',
+            'alternative_identifier' => 'R31001',
             'ntg_dates_start' => '1882',
             'ntg_dates_end' => '1893',
         ]))
         ->call('create')
         ->assertHasNoFormErrors();
 
-    $authority = Authority::where('identifier', 'R31001')->first();
+    $authority = Authority::where('alternative_identifier', 'R31001')->first();
     expect($authority)->not->toBeNull()
         ->and($authority->ntg_dates_start)->toBe(1882)
         ->and($authority->ntg_dates_end)->toBe(1893);
@@ -77,14 +77,14 @@ it('allows a creator with no NTG dates (optional)', function () {
 
     Livewire::test(CreateAuthority::class)
         ->fillForm(ntg_validForm([
-            'identifier' => 'R31002',
+            'alternative_identifier' => 'R31002',
             'ntg_dates_start' => null,
             'ntg_dates_end' => null,
         ]))
         ->call('create')
         ->assertHasNoFormErrors();
 
-    $a = Authority::where('identifier', 'R31002')->first();
+    $a = Authority::where('alternative_identifier', 'R31002')->first();
     expect($a?->ntg_dates_start)->toBeNull()
         ->and($a?->ntg_dates_end)->toBeNull();
 });
@@ -94,7 +94,7 @@ it('rejects an NTG end year earlier than the start year', function () {
 
     Livewire::test(CreateAuthority::class)
         ->fillForm(ntg_validForm([
-            'identifier' => 'R31003',
+            'alternative_identifier' => 'R31003',
             'ntg_dates_start' => '1893',
             'ntg_dates_end' => '1882',
         ]))
@@ -106,10 +106,10 @@ it('filters creators that worked as NTG (true / false)', function () {
     $this->actingAs(ntg_actAsSuperAdmin());
 
     $withNtg = Authority::create(ntg_validForm([
-        'identifier' => 'R32001', 'ntg_dates_start' => 1882, 'ntg_dates_end' => 1893,
+        'alternative_identifier' => 'R32001', 'ntg_dates_start' => 1882, 'ntg_dates_end' => 1893,
     ]));
     $withoutNtg = Authority::create(ntg_validForm([
-        'identifier' => 'R32002', 'ntg_dates_start' => null, 'ntg_dates_end' => null,
+        'alternative_identifier' => 'R32002', 'ntg_dates_start' => null, 'ntg_dates_end' => null,
     ]));
 
     // true → only the NTG creator
@@ -129,7 +129,7 @@ it('exposes the NTG start/end columns on the list table (split like practice dat
     $this->actingAs(ntg_actAsSuperAdmin());
 
     $a = Authority::create(ntg_validForm([
-        'identifier' => 'R33001', 'ntg_dates_start' => 1900, 'ntg_dates_end' => 1910,
+        'alternative_identifier' => 'R33001', 'ntg_dates_start' => 1900, 'ntg_dates_end' => 1910,
     ]));
 
     Livewire::test(ListAuthorities::class)

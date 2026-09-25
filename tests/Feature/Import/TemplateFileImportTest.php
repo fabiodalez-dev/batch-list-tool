@@ -234,7 +234,11 @@ it('imports an Authorities workbook filled in as the cataloguer would', function
 
     $rows = tfi_fillAndReread($path, $headers, [
         [
-            'NAM Authority Reference Code' => 'R-TPL-1',
+            // The Citing Reference Code is the required key (client 2026-09-25);
+            // the NAM code is filled in here too, as it is on the minority of
+            // her rows that carry one.
+            'Citing Reference Code' => 'R-TPL-1',
+            'NAM Authority Reference Code' => 'MT AF-P000058',
             'Alternate Reference Code' => 'W-901',
             // Client 2026-09-22. Plural on purpose: several superseded codes in
             // one cell must survive whole, not be split at the separator.
@@ -259,7 +263,7 @@ it('imports an Authorities workbook filled in as the cataloguer would', function
     $map = ImportWizard::guessColumnMap(AuthorityImporter::class, $headers);
     tfi_import(AuthorityImporter::class, $rows, $map, $user->id);
 
-    $a = Authority::where('identifier', 'R-TPL-1')->first();
+    $a = Authority::where('alternative_identifier', 'R-TPL-1')->first();
 
     expect($a)->not->toBeNull();
     expect($a->alternative_identifier_warrant)->toBe('W-901');

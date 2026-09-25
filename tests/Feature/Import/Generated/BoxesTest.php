@@ -95,7 +95,9 @@ function bxt_readSample(): array
 {
     $reader = IOFactory::createReaderForFile(BXT_SAMPLE);
     $reader->setReadDataOnly(true);
-    $sheet = $reader->load(BXT_SAMPLE)->getSheetByName('Data');
+    // The data sheet is the first one; its NAME is generator-owned and has
+    // already changed once ('Data' -> 'Boxes'), so do not look it up by name.
+    $sheet = $reader->load(BXT_SAMPLE)->getSheet(0);
     $raw = array_values(array_filter(
         $sheet->toArray(null, true, false, false),
         fn (array $r): bool => array_filter($r, fn ($c) => $c !== null && $c !== '') !== [],
@@ -171,11 +173,14 @@ test('the real template parent_box_number ("1") resolves the parent RAS box by i
     ]);
 
     [, $rows] = bxt_readSample();
-    // Row 0 is the RAS parent (box_number "1", barcode "AC54609").
-    // Row 1 is the NRA child, whose "parent_box_number" cell is "1" — the
+    // Row 0 is the RAS parent (box_number 1, barcode "AC54609").
+    // Row 1 is the NRA child, whose "parent_box_number" cell is 1 — the
     // RAS row's box_number, exactly as the client template demonstrates.
-    expect($rows[0]['box_number'])->toBe('1')
-        ->and($rows[1]['parent_box_number'])->toBe('1');
+    // Both arrive as real Excel NUMERICS (the generator writes numbers as
+    // numbers, as a cataloguer's own file does), not as the strings the
+    // pre-2026-09 example file happened to carry.
+    expect($rows[0]['box_number'])->toBe(1)
+        ->and($rows[1]['parent_box_number'])->toBe(1);
 
     // Map "Location" to the valid location code so the child (which requires a
     // location) does not fail on that separate column.
@@ -831,14 +836,17 @@ test('an unknown Location code fails validation with a clear "unknown location" 
         'batch_number' => 1, 'repository_id' => $repo->id, 'type' => 'MAIN_COLLECTION', 'is_active' => true,
     ]);
 
-    // The real template's own NRA row's "Location" cell is the free-text
-    // "Archive Room 1" — a genuinely unresolvable value (not a location
-    // `code`), exactly the scenario the "BUG: mapping parent_box_number"
-    // test above documents. Only batch_number is mutated (Importer requires
-    // it to be mapped for new records); Location is used verbatim.
+    // Client 2026-08: "Location" was REMOVED from the box template, so the
+    // sheet no longer supplies the free-text "Archive Room 1" this test used
+    // to read from it. The importer still ACCEPTS the column when it is
+    // mapped, and that tolerance is what is under test — so the unresolvable
+    // value is supplied on the row instead of being taken from the file.
+    // Row 0 is the RAS parent, which needs no parent box: mapping it keeps the
+    // single expected failure about the location, not about a missing parent.
     [, $rows] = bxt_readSample();
-    $row = $rows[1];
+    $row = $rows[0];
     $row['batch_number'] = (string) $batch->batch_number;
+    $row['Location'] = 'Archive Room 1'; // a location NAME, never a `code`
 
     $import = bxt_run(
         [$row],
@@ -849,7 +857,7 @@ test('an unknown Location code fails validation with a clear "unknown location" 
     $failures = bxt_failures($import);
     expect($failures)->toHaveCount(1)
         ->and(strtolower($failures[0]))->toContain('unknown location');
-    expect(Box::withoutGlobalScope(ThroughBatchRepositoryScope::class)->where('box_number', 'NRA1')->exists())->toBeFalse();
+    expect(Box::withoutGlobalScope(ThroughBatchRepositoryScope::class)->where('box_number', '1')->exists())->toBeFalse();
 });
 
 // ═══════════════════════════════════════════════════════════════════════

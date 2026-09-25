@@ -134,7 +134,7 @@ it('imports a sheet whose header uses the renamed column', function (): void {
     [$headers, $map] = rc_headersAndMap();
 
     $row = array_fill_keys($headers, '');
-    $row['NAM Authority Reference Code'] = 'R-RENAME-1';
+    $row['Citing Reference Code'] = 'R-RENAME-1';
     $row['Creator Surname'] = 'Borg';
     $row['Creator Name'] = 'Anna';
     $row['Type of Entity'] = 'Notary';
@@ -153,20 +153,20 @@ it('imports a sheet whose header uses the renamed column', function (): void {
     ])->handle();
 
     // The value reaches the field the renamed column still stands for.
-    expect(Authority::where('identifier', 'R-RENAME-1')->value('date_of_creation'))->toBe('1607-1629');
+    expect(Authority::where('alternative_identifier', 'R-RENAME-1')->value('date_of_creation'))->toBe('1607-1629');
 });
 
 it('names the renamed column in the validation report, not the old name', function (): void {
     $repo = Repository::factory()->create(['code' => 'RC7']);
     $this->actingAs(rc_admin($repo));
 
-    rc_rename($repo, 'identifier', 'Archive Reference');
+    rc_rename($repo, 'alternative_identifier', 'Archive Reference');
 
     [$headers, $map] = rc_headersAndMap();
 
-    // A row missing the required identifier: the preflight has to tell her
-    // which column to fix, using the name she gave it. This is the label's own
-    // job — the guess list cannot do it, which is why both are wired up.
+    // A row missing the required code: the preflight has to tell her which
+    // column to fix, using the name she gave it. This is the label's own job —
+    // the guess list cannot do it, which is why both are wired up.
     $row = array_fill_keys($headers, '');
     $row['Creator Surname'] = 'Borg';
 
@@ -175,7 +175,7 @@ it('names the renamed column in the validation report, not the old name', functi
     expect($result['invalid'])->toBe(1);
     $fields = array_column($result['errors'], 'field');
     expect($fields)->toContain('Archive Reference');
-    expect($fields)->not->toContain('NAM Authority Reference Code');
+    expect($fields)->not->toContain('Citing Reference Code');
 });
 
 it('still accepts the factory name on a sheet downloaded before the rename', function (): void {
@@ -272,27 +272,30 @@ it('lets a renamed column and an added column coexist', function (): void {
     expect($orphans)->toBe([]);
 });
 
-it('phrases the form validation message with the renamed column, not the factory name', function (): void {
+it('labels the form fields with the renamed column, not the factory name', function (): void {
     $repo = Repository::factory()->create(['code' => 'RC10']);
     $this->actingAs(rc_admin($repo));
 
     rc_rename($repo, 'identifier', 'Archive Reference');
     rc_rename($repo, 'alternative_identifier', 'Citation Code');
 
-    // The rules stay in code — only the NAME moves. A message that keeps the
-    // factory name names a column that is no longer on her screen, which is
-    // worse than no message: it sends her looking for a field that is not there.
+    // The form is where she meets the column most often, and Filament builds
+    // its required/unique messages from the label — so getting the label right
+    // is what makes an error name a field she can find on screen.
+    //
+    // Until 2026-09-25 this test pinned two hand-written regex messages
+    // instead. Those rules are gone: they described the wrong columns.
     $schema = Schema::make(Livewire::test(ListAuthorities::class)->instance());
 
-    $messages = [];
+    $labels = [];
     foreach (AuthorityResource::form($schema)->getFlatComponents(withHidden: true) as $field) {
-        if ($field instanceof Field && $field->getValidationMessages() !== []) {
-            $messages[$field->getName()] = $field->getValidationMessages();
+        if ($field instanceof Field) {
+            $labels[$field->getName()] = $field->getLabel();
         }
     }
 
-    expect($messages['identifier']['regex'] ?? '')->toBe('Archive Reference must start with R or I.')
-        ->and($messages['alternative_identifier']['regex'] ?? '')->toBe('Citation Code must start with MS.');
+    expect($labels['identifier'] ?? null)->toBe('Archive Reference')
+        ->and($labels['alternative_identifier'] ?? null)->toBe('Citation Code');
 });
 
 it('actually stores the value of an added column, not just its header', function (): void {
@@ -315,7 +318,7 @@ it('actually stores the value of an added column, not just its header', function
     [$headers, $map] = rc_headersAndMap();
 
     $row = array_fill_keys($headers, '');
-    $row['NAM Authority Reference Code'] = 'R-CF-1';
+    $row['Citing Reference Code'] = 'R-CF-1';
     $row['Creator Surname'] = 'Borg';
     $row['Creator Name'] = 'Anna';
     $row['Place of Deposit'] = 'Valletta strongroom';
@@ -336,7 +339,7 @@ it('actually stores the value of an added column, not just its header', function
     // rejected: the cataloguer fills the column in and the value disappears
     // without a word. Authorities have no repository_id of their own, so the
     // definitions have to be scoped by the ACTIVE repository instead.
-    $authority = Authority::where('identifier', 'R-CF-1')->firstOrFail();
+    $authority = Authority::where('alternative_identifier', 'R-CF-1')->firstOrFail();
     expect($authority->getCustomFieldData())->toBe(['place_of_deposit' => 'Valletta strongroom']);
 });
 

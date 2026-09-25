@@ -81,36 +81,67 @@ class AuthorityImporter extends Importer
     public static function getColumns(): array
     {
         return self::applyRenames([
+            // Client 2026-09-25: the NAM code is OPTIONAL. Her file carries it
+            // on 80 of 676 creators, so requiring it failed 596 rows on a value
+            // the archive simply does not hold for most notaries.
             ImportColumn::make('identifier')
                 ->label('NAM Authority Reference Code')
-                // `requiredMapping` (not `requiredMappingForNewRecordsOnly`)
-                // because Authority rows are matched on this column — we
-                // cannot dedupe without it.
-                ->requiredMapping()
                 // The template header became "Authority Record Identifier (NAM)"
                 // on 2026-09-16. The old spellings stay in the list so sheets
                 // saved before that keep importing without remapping.
                 // Renamed 2026-09-24. Every earlier spelling stays in the
                 // list: sheets downloaded before today must keep importing
                 // without the operator remapping anything by hand.
+                // The generic spellings — "Identifier", "ID", "R-code",
+                // "Code" — moved to the Citing Reference Code below. In every
+                // sheet saved before 2026-09-25 that column held R1, R2, R3…,
+                // and those are the values that now live in the Citing code.
+                // Leaving them here would file an old sheet's R-codes under
+                // the NAM code and then fail the row for the missing key.
                 ->guess([
                     'NAM Authority Reference Code',
                     'Authority Record Identifier (NAM)', 'Authority Record Identifier',
-                    'Identifier', 'identifier', 'ID', 'R-code', 'Code', 'NAM',
+                    'NAM',
                 ])
-                ->rules(['required', 'string', 'max:32']),
+                // No unique rule here, though the column still is unique in the
+                // database. An ImportColumn's rules are static, so the rule
+                // could not ignore the row's OWN record — and re-importing the
+                // same sheet would then fail every row that carries a NAM code,
+                // against itself. The database catches a real collision; this
+                // would only catch the re-import.
+                ->rules(['nullable', 'string', 'max:32']),
 
+            // Client 2026-09-25: "The Citing Reference Code is the primary key".
+            // Her file agrees — 676 of 676 filled in, all distinct — so this is
+            // the column rows are matched on, and the one that must be present.
             ImportColumn::make('alternative_identifier')
                 ->label('Citing Reference Code')
-                ->guess(['Citing Reference Code', 'Alternative Identifier', 'Alt Identifier', 'MS', 'MS code'])
-                ->rules(['nullable', 'string', 'max:32']),
+                ->requiredMapping()
+                // No generic spellings here. A sheet saved before 2026-09-25
+                // has an "Identifier" column holding R1, R2, R3… — this
+                // column's data under the old meaning — but the field NAME
+                // `identifier` matches that header first, and no guess list can
+                // outrank it. The row is then rejected for a missing Citing
+                // Reference Code, which is the safe outcome: the operator
+                // remaps the column in step 4 and sees what went where, rather
+                // than the import quietly filing R-codes under the NAM code.
+                ->guess(['Citing Reference Code'])
+                // No format rule on purpose. Her codes read R1…R675 with one I,
+                // but pinning the shape here is how the import ends up blocked
+                // again the first time a code does not fit, waiting on a
+                // release — which is the loop this work exists to break.
+                ->rules(['required', 'string', 'max:32']),
 
             ImportColumn::make('alternative_identifier_warrant')
                 ->label('Alternate Reference Code')
+                // "Alternative Identifier" and the MS spellings land here: in
+                // the old sheets that column held the MS number, which is what
+                // the Alternate Reference Code holds today (511, 512, 513…).
                 ->guess([
                     'Alternate Reference Code',
                     'Alternative Identifier (Warrant Number)', 'Warrant Number',
                     'Warrant', 'alternative_identifier_warrant',
+                    'Alternative Identifier', 'Alt Identifier', 'MS', 'MS code',
                 ])
                 ->rules(['nullable', 'string', 'max:191']),
 
@@ -284,9 +315,17 @@ class AuthorityImporter extends Importer
         // whose row was soft-deleted finds and RESTORES it instead of INSERTing a
         // duplicate that violates the unique constraint. Mirrors SeriesImporter /
         // BatchImporter's soft-delete handling.
-        $record = Authority::withTrashed()
-            ->where('identifier', $this->data['identifier'] ?? null)
-            ->first();
+        $citingReferenceCode = $this->data['alternative_identifier'] ?? null;
+
+        // Matched on the Citing Reference Code since 2026-09-25: it is the one
+        // the archive fills in for every creator. Matching on a column that is
+        // empty on 88% of rows would make each import insert duplicates of the
+        // same notary.
+        $record = $citingReferenceCode === null || $citingReferenceCode === ''
+            ? null
+            : Authority::withTrashed()
+                ->where('alternative_identifier', $citingReferenceCode)
+                ->first();
 
         if ($record === null) {
             return new Authority;
@@ -412,7 +451,15 @@ class AuthorityImporter extends Importer
             // list in that order, so the renamed header matches on the label.
             // The factory name keeps working because it is still in each
             // column's own guess list — see the test that pins exactly that.
-            $column->label(ColumnLabels::get('authority', $key));
+            $label = ColumnLabels::get('authority', $key);
+            $column->label($label);
+
+            // Filament builds "The :attribute field is required" from
+            // Str::lcfirst($label), which turns "Citing Reference Code" into
+            // "citing Reference Code" — a column name with its first letter
+            // knocked down, in the one message the cataloguer reads most.
+            // Naming the attribute explicitly keeps the column's own name.
+            $column->validationAttribute($label);
         }
 
         return [...$columns, ...self::getCustomFieldColumns()];

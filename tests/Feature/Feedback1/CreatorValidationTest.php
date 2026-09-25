@@ -14,10 +14,17 @@ use Spatie\Permission\Models\Role;
  * Feedback1 Wave A — Creator (Authority) form validations.
  *
  * Drives the real Filament CreateAuthority / EditAuthority Livewire pages
- * and asserts the validation surface: identifier required + must start with
- * R/I + unique; alternative_identifier optional but MS-prefixed + unique;
- * given name required; practice end >= start; entity_type Notary/Interventor
- * vocabulary that preserves a pre-existing legacy value on edit.
+ * and asserts the validation surface.
+ *
+ * The two identifiers swapped roles on 2026-09-25, when the client wrote that
+ * "the Citing Reference Code is the primary key" and "the NAM Authority
+ * Reference Code is optional" — her file carries the Citing code on all 676
+ * creators and the NAM code on 80. So: Citing required + unique; NAM optional
+ * + unique where given; no format rule on either, because the two that existed
+ * ("starts with R or I", "starts with MS") each described the other column.
+ *
+ * Unchanged: given name required; practice end >= start; entity_type
+ * Notary/Interventor vocabulary that preserves a pre-existing legacy value.
  */
 uses(RefreshDatabase::class);
 
@@ -49,53 +56,46 @@ function cv_actAsSuperAdmin(): User
 function cv_validForm(array $overrides = []): array
 {
     return array_merge([
-        'identifier' => 'R' . random_int(10000, 99999),
+        'alternative_identifier' => 'R' . random_int(10000, 99999),
         'surname' => 'Borg',
         'given_names' => 'Joseph',
         'entity_type' => 'Notary',
     ], $overrides);
 }
 
-it('rejects an identifier that does not start with R or I (validation, not SQL)', function () {
+it('accepts a Citing Reference Code of any shape', function () {
     $this->actingAs(cv_actAsSuperAdmin());
 
+    // Until 2026-09-25 this asserted the opposite: a code not starting with R
+    // or I was rejected. That rule sat on the NAM column, whose values read
+    // "MT AF-P000058", and it is gone — a shape pinned in code is what sends
+    // the next unusual code back to us for a release.
     Livewire::test(CreateAuthority::class)
-        ->fillForm(cv_validForm(['identifier' => 'X1']))
-        ->call('create')
-        ->assertHasFormErrors(['identifier']);
-
-    expect(Authority::where('identifier', 'X1')->exists())->toBeFalse();
-});
-
-it('accepts an identifier starting with R', function () {
-    $this->actingAs(cv_actAsSuperAdmin());
-
-    Livewire::test(CreateAuthority::class)
-        ->fillForm(cv_validForm(['identifier' => 'R5']))
+        ->fillForm(cv_validForm(['alternative_identifier' => 'X-900']))
         ->call('create')
         ->assertHasNoFormErrors();
 
-    expect(Authority::where('identifier', 'R5')->exists())->toBeTrue();
+    expect(Authority::where('alternative_identifier', 'X-900')->exists())->toBeTrue();
 });
 
-it('accepts an identifier starting with I', function () {
+it('requires the Citing Reference Code', function () {
     $this->actingAs(cv_actAsSuperAdmin());
 
     Livewire::test(CreateAuthority::class)
-        ->fillForm(cv_validForm(['identifier' => 'I3']))
+        ->fillForm(cv_validForm(['alternative_identifier' => null]))
         ->call('create')
-        ->assertHasNoFormErrors();
-
-    expect(Authority::where('identifier', 'I3')->exists())->toBeTrue();
+        ->assertHasFormErrors(['alternative_identifier']);
 });
 
-it('requires the identifier', function () {
+it('does not require the NAM Authority Reference Code', function () {
     $this->actingAs(cv_actAsSuperAdmin());
 
+    // 596 of the client's 676 creators have no NAM code. Requiring it is the
+    // defect she reported, in the form as much as in the importer.
     Livewire::test(CreateAuthority::class)
         ->fillForm(cv_validForm(['identifier' => null]))
         ->call('create')
-        ->assertHasFormErrors(['identifier']);
+        ->assertHasNoFormErrors();
 });
 
 it('rejects a duplicate identifier with a validation error (not a SQL exception)', function () {
@@ -111,7 +111,7 @@ it('rejects a duplicate identifier with a validation error (not a SQL exception)
     expect(Authority::where('identifier', 'R777')->count())->toBe(1);
 });
 
-it('rejects a duplicate alternative_identifier with a validation error', function () {
+it('rejects a duplicate Citing Reference Code with a validation error', function () {
     $this->actingAs(cv_actAsSuperAdmin());
 
     Authority::create([
@@ -125,31 +125,24 @@ it('rejects a duplicate alternative_identifier with a validation error', functio
         ->assertHasFormErrors(['alternative_identifier']);
 });
 
-it('rejects an alternative_identifier that does not start with MS when filled', function () {
+it('accepts a NAM Authority Reference Code in the shape the archive uses', function () {
     $this->actingAs(cv_actAsSuperAdmin());
 
+    // "MS123" used to be the only accepted shape here. The real values look
+    // like this instead, which the old rule would have rejected outright.
     Livewire::test(CreateAuthority::class)
-        ->fillForm(cv_validForm(['alternative_identifier' => 'ZZ1']))
-        ->call('create')
-        ->assertHasFormErrors(['alternative_identifier']);
-});
-
-it('accepts an MS-prefixed alternative_identifier', function () {
-    $this->actingAs(cv_actAsSuperAdmin());
-
-    Livewire::test(CreateAuthority::class)
-        ->fillForm(cv_validForm(['identifier' => 'R901', 'alternative_identifier' => 'MS123']))
+        ->fillForm(cv_validForm(['identifier' => 'MT AF-P000058']))
         ->call('create')
         ->assertHasNoFormErrors();
 
-    expect(Authority::where('alternative_identifier', 'MS123')->exists())->toBeTrue();
+    expect(Authority::where('identifier', 'MT AF-P000058')->exists())->toBeTrue();
 });
 
-it('allows an empty alternative_identifier (optional)', function () {
+it('allows an empty NAM Authority Reference Code (optional)', function () {
     $this->actingAs(cv_actAsSuperAdmin());
 
     Livewire::test(CreateAuthority::class)
-        ->fillForm(cv_validForm(['identifier' => 'R902', 'alternative_identifier' => null]))
+        ->fillForm(cv_validForm(['identifier' => null]))
         ->call('create')
         ->assertHasNoFormErrors();
 });
@@ -207,7 +200,7 @@ it('preserves a pre-existing legacy entity_type value on edit', function () {
 
     // Legacy row stored before the Notary/Interventor vocabulary existed.
     $authority = Authority::create([
-        'identifier' => 'R906', 'surname' => 'Legacy', 'given_names' => 'Old',
+        'alternative_identifier' => 'R906', 'surname' => 'Legacy', 'given_names' => 'Old',
         'entity_type' => 'PERSON',
     ]);
 
