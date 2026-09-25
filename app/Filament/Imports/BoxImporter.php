@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace App\Filament\Imports;
 
 use App\Filament\Imports\Concerns\LogsImportRows;
+use App\Filament\Imports\Concerns\RenamesColumns;
 use App\Filament\Imports\Concerns\SkipsExistingRows;
 use App\Models\Batch;
 use App\Models\Box;
@@ -46,6 +47,7 @@ use Illuminate\Validation\ValidationException;
 class BoxImporter extends Importer
 {
     use LogsImportRows;
+    use RenamesColumns;
     use SkipsExistingRows;
 
     protected static ?string $model = Box::class;
@@ -78,7 +80,10 @@ class BoxImporter extends Importer
      */
     public static function getColumns(): array
     {
-        return array_merge(static::getStaticColumns(), static::getCustomFieldColumns());
+        return static::applyRenameableLabels(
+            'box',
+            array_merge(static::getStaticColumns(), static::getCustomFieldColumns()),
+        );
     }
 
     /**

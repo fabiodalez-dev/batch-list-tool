@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace App\Filament\Imports;
 
 use App\Filament\Imports\Concerns\LogsImportRows;
+use App\Filament\Imports\Concerns\RenamesColumns;
 use App\Filament\Imports\Concerns\SkipsExistingRows;
 use App\Models\Batch;
 use App\Models\CustomFieldDefinition;
@@ -36,6 +37,7 @@ use Illuminate\Database\Eloquent\Collection as EloquentCollection;
 class BatchImporter extends Importer
 {
     use LogsImportRows;
+    use RenamesColumns;
     use SkipsExistingRows;
 
     protected static ?string $model = Batch::class;
@@ -55,7 +57,10 @@ class BatchImporter extends Importer
      */
     public static function getColumns(): array
     {
-        return array_merge(static::getStaticColumns(), static::getCustomFieldColumns());
+        return static::applyRenameableLabels(
+            'batch',
+            array_merge(static::getStaticColumns(), static::getCustomFieldColumns()),
+        );
     }
 
     /**

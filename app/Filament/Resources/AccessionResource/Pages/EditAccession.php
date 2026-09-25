@@ -2,12 +2,15 @@
 
 namespace App\Filament\Resources\AccessionResource\Pages;
 
+use App\Filament\Concerns\HandlesCustomFieldForm;
 use App\Filament\Resources\AccessionResource;
 use Filament\Actions;
 use Filament\Resources\Pages\EditRecord;
 
 class EditAccession extends EditRecord
 {
+    use HandlesCustomFieldForm;
+
     protected static string $resource = AccessionResource::class;
 
     protected function getHeaderActions(): array

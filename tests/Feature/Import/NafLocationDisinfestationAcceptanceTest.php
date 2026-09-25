@@ -274,8 +274,10 @@ it('B4: the generator version was bumped for the template contract change', func
     // ISAAR(CPF) block on Authorities; to 1.16.0 the same day when the two
     // closed-list columns gained their dropdowns; to 1.17.0 on 2026-09-22 for
     // "Previous Temporary Identifiers"; to 1.18.0 on 2026-09-24 when the four
-    // identifier columns were renamed to the archival vocabulary.
-    expect(TemplateGenerator::GENERATOR_VERSION)->toBe('1.18.0');
+    // identifier columns were renamed to the archival vocabulary; to 1.19.0 on
+    // 2026-09-25 when renaming reached every template and Subseries, Locations,
+    // Document Types and Notary Accessions gained added columns of their own.
+    expect(TemplateGenerator::GENERATOR_VERSION)->toBe('1.19.0');
 });
 
 it('B5: every generated box header still maps to a BoxImporter column (round-trip)', function () {

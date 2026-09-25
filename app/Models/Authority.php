@@ -2,6 +2,7 @@
 
 namespace App\Models;
 
+use App\Models\Concerns\AnchorsCustomFieldDefinitions;
 use App\Models\Concerns\HasCustomFields;
 use App\Support\CustomFields\CustomFieldResolver;
 use Illuminate\Database\Eloquent\Builder;
@@ -16,6 +17,7 @@ use OwenIt\Auditing\Contracts\Auditable as AuditableContract;
 
 class Authority extends Model implements AuditableContract
 {
+    use AnchorsCustomFieldDefinitions;
     use Auditable;
     use HasCustomFields;
     use HasFactory;
@@ -78,50 +80,15 @@ class Authority extends Model implements AuditableContract
     }
 
     /**
-     * Which added columns this authority answers to.
-     *
-     * The active repository decides which columns are OFFERED — that is already
-     * how the template and the importer choose them, so offering a different set
-     * here would be the inconsistency. But scoping the READ the same way loses
-     * data: the active repository is null whenever the operator has "All
-     * repositories" selected, and null again inside a queue worker once the
-     * import job has finished, so a value written a minute earlier reads back
-     * as absent.
-     *
-     * So the read is anchored to the values themselves as well: a definition
-     * this record already holds a value for stays visible whatever the context.
-     * Authorities are the only entity that needs this — Box and Volume reach a
-     * repository through their batch and document, and cannot drift.
+     * Authorities are shared across the archive and carry no repository of
+     * their own, so which added columns they answer to is anchored to the
+     * values already stored. See the concern for why.
      *
      * @return Builder<CustomFieldDefinition>
      */
     public function customFieldDefinitions(): Builder
     {
-        $activeRepository = $this->customFieldRepositoryId();
-        $anchored = $this->exists
-            ? $this->customFieldValues()->pluck('custom_field_definition_id')->all()
-            : [];
-
-        return CustomFieldDefinition::query()
-            ->where('entity_type', $this->customFieldEntityType())
-            ->where('is_active', true)
-            ->where(function (Builder $query) use ($activeRepository, $anchored): void {
-                if ($activeRepository === null && $anchored === []) {
-                    // Neither a repository nor a stored value to go on. Matching
-                    // nothing is the only safe answer: matching every repository's
-                    // definitions would show one archive's columns on another's.
-                    $query->whereRaw('1 = 0');
-
-                    return;
-                }
-                if ($activeRepository !== null) {
-                    $query->where('repository_id', $activeRepository);
-                }
-                if ($anchored !== []) {
-                    $query->orWhereIn('id', $anchored);
-                }
-            })
-            ->orderBy('sort_order');
+        return $this->anchoredCustomFieldDefinitions();
     }
 
     public function documents(): BelongsToMany

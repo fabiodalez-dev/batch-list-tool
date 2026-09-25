@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace App\Models;
 
 use App\Models\Concerns\BelongsToRepository;
+use App\Models\Concerns\HasCustomFields;
 use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Database\Eloquent\Collection as EloquentCollection;
 use Illuminate\Database\Eloquent\Factories\HasFactory;
@@ -40,6 +41,7 @@ class Location extends Model implements AuditableContract
 {
     use Auditable;
     use BelongsToRepository;
+    use HasCustomFields;
     use HasFactory;
     use SoftDeletes;
 

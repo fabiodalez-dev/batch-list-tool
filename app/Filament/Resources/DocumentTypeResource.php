@@ -7,12 +7,15 @@ namespace App\Filament\Resources;
 use App\Filament\Resources\DocumentTypeResource\Pages;
 use App\Filament\Support\CreatorColumn;
 use App\Models\DocumentType;
+use App\Support\CustomFields\CustomFieldResolver;
+use App\Support\CustomFields\CustomFieldSchema;
 use Filament\Actions\BulkAction;
 use Filament\Actions\BulkActionGroup;
 use Filament\Actions\DeleteBulkAction;
 use Filament\Actions\EditAction;
 use Filament\Forms;
 use Filament\Resources\Resource;
+use Filament\Schemas\Components\Section;
 use Filament\Schemas\Schema;
 use Filament\Tables;
 use Filament\Tables\Table;
@@ -85,6 +88,21 @@ class DocumentTypeResource extends Resource
                     ->rows(3),
                 Forms\Components\Toggle::make('is_active')
                     ->default(true),
+
+                // The columns this repository added itself.
+                //
+                // document_types has no repository_id column — the list is
+                // shared across the archive — so the columns on offer are the
+                // ACTIVE repository's, matching the model's own
+                // customFieldRepositoryId(). With "All repositories" selected
+                // there is no repository to go on and the section stays hidden;
+                // values already stored on a type are still read back, because
+                // the model anchors the read to them.
+                Section::make('Custom fields')
+                    ->columnSpanFull()
+                    ->columns(2)
+                    ->schema(static fn (): array => CustomFieldSchema::for('documentType', CustomFieldResolver::activeRepositoryId()))
+                    ->visible(static fn (): bool => CustomFieldSchema::for('documentType', CustomFieldResolver::activeRepositoryId()) !== []),
             ]);
     }
 

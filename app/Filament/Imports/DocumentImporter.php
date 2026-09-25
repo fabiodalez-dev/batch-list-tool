@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace App\Filament\Imports;
 
 use App\Filament\Imports\Concerns\LogsImportRows;
+use App\Filament\Imports\Concerns\RenamesColumns;
 use App\Filament\Imports\Concerns\SkipsExistingRows;
 use App\Filament\Pages\ImportWizard;
 use App\Models\Accession;
@@ -73,6 +74,7 @@ use Spatie\SchemalessAttributes\SchemalessAttributes;
 class DocumentImporter extends Importer
 {
     use LogsImportRows;
+    use RenamesColumns;
     use SkipsExistingRows;
 
     /**
@@ -315,7 +317,7 @@ class DocumentImporter extends Importer
         $staticColumns = static::getStaticColumns();
         $customColumns = static::getCustomFieldColumns();
 
-        return array_merge($staticColumns, $customColumns);
+        return static::applyRenameableLabels('document', array_merge($staticColumns, $customColumns));
     }
 
     /**
