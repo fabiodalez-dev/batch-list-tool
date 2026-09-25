@@ -77,31 +77,30 @@ class AuthorityResource extends Resource
                 Section::make('Identification')
                     ->columns($twoCols)
                     ->schema([
-                        // Feedback1 — identifier is required, unique and must
-                        // start with R or I (Register / Interventor families).
-                        $g(Forms\Components\TextInput::make('identifier')
-                            ->label(ColumnLabels::get('authority', 'identifier'))
-                            ->required()
-                            ->maxLength(32)
-                            ->unique(ignoreRecord: true)
-                            ->rule('regex:/^[RI]/i')
-                            ->validationMessages([
-                                'regex' => ColumnLabels::get('authority', 'identifier') . ' must start with R or I.',
-                            ])),
-                        // alternative_identifier is optional but, when filled,
-                        // must start with MS and be unique across creators.
+                        // Client 2026-09-25: the two identifiers swapped roles.
+                        // The Citing Reference Code is the one the archive fills
+                        // in for every creator (676 of 676 in her file, all
+                        // distinct), so it is required and unique. The NAM code
+                        // is held for 80 of them, so it is optional — unique
+                        // where given, because two creators cannot share one.
+                        //
+                        // Neither carries a format rule any more. "Starts with
+                        // R or I" sat on the NAM code, whose values read
+                        // "MT AF-P000058", and "starts with MS" sat on the
+                        // Citing code, whose values read "R1". Both rules
+                        // described the other column, and a shape pinned in
+                        // code is what makes the next unusual code wait on a
+                        // release.
                         $g(Forms\Components\TextInput::make('alternative_identifier')
                             ->label(ColumnLabels::get('authority', 'alternative_identifier'))
+                            ->required()
+                            ->maxLength(32)
+                            ->unique(ignoreRecord: true)),
+                        $g(Forms\Components\TextInput::make('identifier')
+                            ->label(ColumnLabels::get('authority', 'identifier'))
                             ->maxLength(32)
                             ->unique(ignoreRecord: true)
-                            ->helperText('Starts with MS (optional)')
-                            ->rules([
-                                'nullable',
-                                'regex:/^MS/i',
-                            ])
-                            ->validationMessages([
-                                'regex' => ColumnLabels::get('authority', 'alternative_identifier') . ' must start with MS.',
-                            ])),
+                            ->helperText('Optional')),
                         // Client 2026-09-16 — the warrant number, a third
                         // identifier alongside the NAM code and the MS number.
                         // No MS prefix rule: it is a different numbering scheme,

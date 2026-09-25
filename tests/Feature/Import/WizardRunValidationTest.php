@@ -109,10 +109,10 @@ test('preflight applies the column cast before validating — no false error on 
     // INSTITUTION) would be falsely reported as invalid — the exact false error
     // that showed up when running the example authority template through the
     // wizard preflight.
-    $headers = ['Identifier', 'Type of Entity', 'Creator Surname'];
+    $headers = ['Citing Reference Code', 'Type of Entity', 'Creator Surname'];
     $rows = [
-        ['Identifier' => 'R1', 'Type of Entity' => 'Notary', 'Creator Surname' => 'Caruana'],
-        ['Identifier' => 'R2', 'Type of Entity' => 'PERSON', 'Creator Surname' => 'Borg'],
+        ['Citing Reference Code' => 'R1', 'Type of Entity' => 'Notary', 'Creator Surname' => 'Caruana'],
+        ['Citing Reference Code' => 'R2', 'Type of Entity' => 'PERSON', 'Creator Surname' => 'Borg'],
     ];
     $map = ImportWizard::guessColumnMap(AuthorityImporter::class, $headers);
 

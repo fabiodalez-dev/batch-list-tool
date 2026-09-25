@@ -120,8 +120,11 @@ function sr_failures(Import $import): array
 
 const SR_SERIES_MAP = ['code' => 'Identifier', 'title' => 'Standard title in English (Plural)', 'repository_code' => 'Repository'];
 const SR_AUTHORITY_MAP = [
-    'identifier' => 'Identifier',
-    'alternative_identifier' => 'Alternative Identifier',
+    // Client 2026-09-25: the R-codes in this historic file's "Identifier"
+    // column are the Citing Reference Code, and its "Alternative Identifier"
+    // (the MS numbers) is the Alternate Reference Code.
+    'alternative_identifier' => 'Identifier',
+    'alternative_identifier_warrant' => 'Alternative Identifier',
     'entity_type' => 'Type of Entity',
     'surname' => 'Creator Surname',
     'given_names' => 'Creator Name',
@@ -268,7 +271,7 @@ test('Authority: a real slice of the prod CSV, all soft-deleted, restores with z
     $this->actingAs($u);
 
     foreach ($rows as $row) {
-        Authority::create(['identifier' => $row['Identifier'], 'surname' => $row['Creator Surname'], 'entity_type' => 'PERSON'])->delete();
+        Authority::create(['alternative_identifier' => $row['Identifier'], 'surname' => $row['Creator Surname'], 'entity_type' => 'PERSON'])->delete();
     }
     expect(Authority::count())->toBe(0)
         ->and(Authority::withTrashed()->count())->toBe(count($rows));
@@ -284,8 +287,8 @@ test('Authority: mix of live/trashed/new identifiers drawn from the real CSV res
     $u = sr_admin();
     $this->actingAs($u);
 
-    Authority::create(['identifier' => 'R1', 'surname' => 'Abela', 'entity_type' => 'PERSON']); // live
-    Authority::create(['identifier' => 'R2', 'surname' => 'Abela', 'entity_type' => 'PERSON'])->delete(); // trashed
+    Authority::create(['alternative_identifier' => 'R1', 'surname' => 'Abela', 'entity_type' => 'PERSON']); // live
+    Authority::create(['alternative_identifier' => 'R2', 'surname' => 'Abela', 'entity_type' => 'PERSON'])->delete(); // trashed
 
     $import = sr_run(
         AuthorityImporter::class,
@@ -301,15 +304,15 @@ test('Authority: mix of live/trashed/new identifiers drawn from the real CSV res
     expect(sr_failures($import))->toBe([]);
     expect(Authority::count())->toBe(3)
         ->and(Authority::withTrashed()->count())->toBe(3)
-        ->and(Authority::where('identifier', 'R2')->first()->trashed())->toBeFalse()
-        ->and(Authority::where('identifier', 'R2')->value('given_names'))->toBe('Giovanni Andrea');
+        ->and(Authority::where('alternative_identifier', 'R2')->first()->trashed())->toBeFalse()
+        ->and(Authority::where('alternative_identifier', 'R2')->value('given_names'))->toBe('Giovanni Andrea');
 });
 
 test('Authority: skip_duplicates=true still restores a soft-deleted identifier instead of skipping it', function () {
     $u = sr_admin();
     $this->actingAs($u);
 
-    Authority::create(['identifier' => 'R4', 'surname' => 'Abela', 'entity_type' => 'PERSON'])->delete();
+    Authority::create(['alternative_identifier' => 'R4', 'surname' => 'Abela', 'entity_type' => 'PERSON'])->delete();
 
     $import = sr_run(
         AuthorityImporter::class,
@@ -320,7 +323,7 @@ test('Authority: skip_duplicates=true still restores a soft-deleted identifier i
     );
 
     expect(sr_failures($import))->toBe([]);
-    $row = Authority::where('identifier', 'R4')->first();
+    $row = Authority::where('alternative_identifier', 'R4')->first();
     expect($row->trashed())->toBeFalse()
         ->and($row->given_names)->toBe('Placido');
 });
@@ -329,7 +332,7 @@ test('Authority: skip_duplicates=true skips a LIVE existing identifier and leave
     $u = sr_admin();
     $this->actingAs($u);
 
-    Authority::create(['identifier' => 'R5', 'surname' => 'Original Surname', 'entity_type' => 'PERSON']);
+    Authority::create(['alternative_identifier' => 'R5', 'surname' => 'Original Surname', 'entity_type' => 'PERSON']);
 
     $import = sr_run(
         AuthorityImporter::class,
@@ -342,7 +345,7 @@ test('Authority: skip_duplicates=true skips a LIVE existing identifier and leave
     $failures = sr_failures($import);
     expect($failures)->toHaveCount(1)
         ->and(strtolower($failures[0]))->toContain('skip');
-    expect(Authority::where('identifier', 'R5')->value('surname'))->toBe('Original Surname');
+    expect(Authority::where('alternative_identifier', 'R5')->value('surname'))->toBe('Original Surname');
 });
 
 test('Authority: numeric Alternative Identifier cells from the real CSV survive a restore (no "must be a string")', function () {
@@ -351,7 +354,7 @@ test('Authority: numeric Alternative Identifier cells from the real CSV survive 
     $u = sr_admin();
     $this->actingAs($u);
 
-    Authority::create(['identifier' => 'R1', 'surname' => 'Abela', 'entity_type' => 'PERSON'])->delete();
+    Authority::create(['alternative_identifier' => 'R1', 'surname' => 'Abela', 'entity_type' => 'PERSON'])->delete();
 
     $import = sr_run(
         AuthorityImporter::class,
@@ -361,9 +364,10 @@ test('Authority: numeric Alternative Identifier cells from the real CSV survive 
     );
 
     expect(sr_failures($import))->toBe([]);
-    $row = Authority::where('identifier', 'R1')->first();
+    $row = Authority::where('alternative_identifier', 'R1')->first();
     expect($row->trashed())->toBeFalse()
-        ->and($row->alternative_identifier)->toBe('511');
+        // 511 was the MS number, which is the Alternate Reference Code now.
+        ->and($row->alternative_identifier_warrant)->toBe('511');
 });
 
 test('Authority: real prod CSV imported twice back-to-back is idempotent across 679 rows', function () {

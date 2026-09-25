@@ -94,16 +94,16 @@ test('Series: re-importing a soft-deleted code restores it instead of colliding 
         ->and($fresh->first()->id)->toBe($series->id);                     // same row
 });
 
-test('Authority: re-importing a soft-deleted identifier restores it instead of colliding', function () {
+test('Authority: re-importing a soft-deleted Citing Reference Code restores it instead of colliding', function () {
     $u = rrs_admin();
     $this->actingAs($u);
 
-    $authority = Authority::create(['identifier' => 'R642', 'surname' => 'Caruana', 'entity_type' => 'Notary']);
+    $authority = Authority::create(['alternative_identifier' => 'R642', 'surname' => 'Caruana', 'entity_type' => 'Notary']);
     $authority->delete();
 
-    rrs_import(AuthorityImporter::class, ['identifier' => 'R642', 'surname' => 'Caruana'], $u->id);
+    rrs_import(AuthorityImporter::class, ['alternative_identifier' => 'R642', 'surname' => 'Caruana'], $u->id);
 
-    $fresh = Authority::withTrashed()->where('identifier', 'R642')->get();
+    $fresh = Authority::withTrashed()->where('alternative_identifier', 'R642')->get();
     expect($fresh)->toHaveCount(1)
         ->and($fresh->first()->trashed())->toBeFalse()
         ->and($fresh->first()->id)->toBe($authority->id);

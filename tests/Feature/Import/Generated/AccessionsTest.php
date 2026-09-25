@@ -142,7 +142,7 @@ function axc_realRows(string $filePath, int $startRow, int $endRow, int $headerO
     return array_values(array_slice($rows, max($offset, 0), max($endRow - $startRow + 1, 0)));
 }
 
-// ─── Column map for nra/outbox/.../example_accession_import.xlsx ("Data" sheet) ──
+// ─── Column map for nra/outbox/.../example_accession_import.xlsx ("Accession Import" sheet) ──
 // Headers match the importer's own column LABELS verbatim.
 const AXC_EX_MAP = [
     'authority_identifier' => 'Authority Identifier',
@@ -159,7 +159,7 @@ const AXC_EX_MAP = [
     'current_box_type' => 'Current Box Type',
     'document_identifier' => 'Document Identifier',
     'document_type' => 'Document Type',
-    'series' => 'Series',
+    'series' => 'Subseries',
     'volume_number' => 'Volume No',
     'part_number' => 'Part Number',
     'practice' => 'Practice',

@@ -9,6 +9,7 @@ use App\Models\Repository;
 use App\Models\Scopes\RepositoryScope;
 use App\Models\Series;
 use App\Support\BulkImport\EntityResolver;
+use Illuminate\Database\UniqueConstraintViolationException;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Support\Facades\DB;
 
@@ -65,18 +66,25 @@ it('EntityResolver: resolveAuthority prefers identifier over alternative_identif
         ->and($res['method'])->toBe('identifier');
 });
 
-it('EntityResolver: resolveAuthority returns ambiguous_count when an alternate key collides (#9)', function () {
-    // alternative_identifier is indexed but NOT unique — a collision must be
-    // reported as ambiguous (never auto-assigned), like the surname strategy.
+it('EntityResolver: the database now prevents the alternate-key collision this used to report (#9)', function () {
+    // Until 2026-09-25 alternative_identifier was indexed but NOT unique, so
+    // two creators could share one and the resolver reported the pair as
+    // ambiguous rather than guessing between them.
+    //
+    // The client then told us that column IS the key ("The Citing Reference
+    // Code is the primary key"), and it is now unique, so the collision cannot
+    // be created at all — which is a stronger guarantee than reporting it.
+    // The ambiguity branch stays in EntityResolver as a net: if the constraint
+    // is ever relaxed, a collision must still never be auto-assigned.
     $alt = 'COLL-' . uniqid();
-    $x = Authority::create(['identifier' => 'R-C1-' . uniqid(), 'alternative_identifier' => $alt, 'surname' => 'One', 'entity_type' => 'PERSON']);
-    $y = Authority::create(['identifier' => 'R-C2-' . uniqid(), 'alternative_identifier' => $alt, 'surname' => 'Two', 'entity_type' => 'PERSON']);
+    Authority::create(['identifier' => 'R-C1-' . uniqid(), 'alternative_identifier' => $alt, 'surname' => 'One', 'entity_type' => 'PERSON']);
 
+    expect(fn () => Authority::create(['identifier' => 'R-C2-' . uniqid(), 'alternative_identifier' => $alt, 'surname' => 'Two', 'entity_type' => 'PERSON']))
+        ->toThrow(UniqueConstraintViolationException::class);
+
+    // And the single holder resolves outright, with no ambiguity to weigh.
     $res = EntityResolver::resolveAuthority($alt);
-    expect($res)->not->toBeNull()
-        ->and($res['ambiguous_count'] ?? null)->toBe(2)
-        ->and($res['candidates'] ?? [])->toContain($x->id)
-        ->and($res['candidates'] ?? [])->toContain($y->id);
+    expect($res['method'] ?? null)->toBe('alternative_identifier');
 });
 
 it('EntityResolver: resolveAuthority by surname+given returns surname_given method', function () {

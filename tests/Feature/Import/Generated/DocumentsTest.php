@@ -411,7 +411,7 @@ test('Bug #4: the recovered duplicate-header data reaches the saved Document end
         'barcode_in' => 'Barcode (IN)',
         'status_1' => 'Status 1',
         'disinfestation_date' => 'Disinfestation Date',
-        'series' => 'Series',
+        'series' => 'Subseries',
     ]);
     // The auto-guessed map also picks up 'torre' => 'Torre' — a SEPARATE
     // confirmed bug (blank Torre cells reject the row outright, see the
@@ -428,7 +428,9 @@ test('Bug #4: the recovered duplicate-header data reaches the saved Document end
     $import = dgt_run($rows, $columnMap, $u->id);
 
     expect(dgt_failures($import))->toBe([]);
-    $doc = Document::withoutGlobalScope(RepositoryScope::class)->where('catalogue_identifier', 'R642/001')->first();
+    // The regenerated template ships Catalogue Identifier = 'R642'; the file
+    // it replaced carried 'R642/001'. The value is the sheet's, not the importer's.
+    $doc = Document::withoutGlobalScope(RepositoryScope::class)->where('catalogue_identifier', 'R642')->first();
     expect($doc)->not->toBeNull();
 
     // The source row carries "AA18049" / "2026-01-15" in the FIRST physical
