@@ -118,7 +118,7 @@ it('A1: resolves a known Location code onto documents.location_id', function () 
     Series::firstOrCreate(['code' => 'REG'], ['title' => 'Reg', 'is_active' => true, 'is_wills_series' => false]);
     $loc = naf_loc($repo->id, 'SHELF-A3');
 
-    naf_import(DocumentImporter::class, ['Identifier' => 'A1', 'Series' => 'REG', 'Location' => 'SHELF-A3'], $u->id);
+    naf_import(DocumentImporter::class, ['Document Identifier' => 'A1', 'Series' => 'REG', 'Location' => 'SHELF-A3'], $u->id);
 
     expect(naf_doc('A1')?->location_id)->toBe($loc->id);
 });
@@ -127,7 +127,7 @@ it('A2: fails the row on an unknown Location code, persisting nothing', function
     [$repo, $u] = naf_admin();
     Series::firstOrCreate(['code' => 'REG'], ['title' => 'Reg', 'is_active' => true, 'is_wills_series' => false]);
 
-    expect(fn () => naf_import(DocumentImporter::class, ['Identifier' => 'A2', 'Series' => 'REG', 'Location' => 'NOPE'], $u->id))
+    expect(fn () => naf_import(DocumentImporter::class, ['Document Identifier' => 'A2', 'Series' => 'REG', 'Location' => 'NOPE'], $u->id))
         ->toThrow(ValidationException::class);
     expect(naf_doc('A2'))->toBeNull();
 });
@@ -136,7 +136,7 @@ it('A3: a blank Location leaves location_id null (inherits the box)', function (
     [$repo, $u] = naf_admin();
     Series::firstOrCreate(['code' => 'REG'], ['title' => 'Reg', 'is_active' => true, 'is_wills_series' => false]);
 
-    naf_import(DocumentImporter::class, ['Identifier' => 'A3', 'Series' => 'REG', 'Location' => ''], $u->id);
+    naf_import(DocumentImporter::class, ['Document Identifier' => 'A3', 'Series' => 'REG', 'Location' => ''], $u->id);
 
     expect(naf_doc('A3'))->not->toBeNull()->and(naf_doc('A3')->location_id)->toBeNull();
 });
@@ -146,7 +146,7 @@ it('A4: resolves the Location code case-insensitively', function () {
     Series::firstOrCreate(['code' => 'REG'], ['title' => 'Reg', 'is_active' => true, 'is_wills_series' => false]);
     $loc = naf_loc($repo->id, 'SHELF-B7');
 
-    naf_import(DocumentImporter::class, ['Identifier' => 'A4', 'Series' => 'REG', 'Location' => 'shelf-b7'], $u->id);
+    naf_import(DocumentImporter::class, ['Document Identifier' => 'A4', 'Series' => 'REG', 'Location' => 'shelf-b7'], $u->id);
 
     expect(naf_doc('A4')?->location_id)->toBe($loc->id);
 });
@@ -156,7 +156,7 @@ it('A5: trims surrounding whitespace before resolving the Location code', functi
     Series::firstOrCreate(['code' => 'REG'], ['title' => 'Reg', 'is_active' => true, 'is_wills_series' => false]);
     $loc = naf_loc($repo->id, 'SHELF-C1');
 
-    naf_import(DocumentImporter::class, ['Identifier' => 'A5', 'Series' => 'REG', 'Location' => '  SHELF-C1  '], $u->id);
+    naf_import(DocumentImporter::class, ['Document Identifier' => 'A5', 'Series' => 'REG', 'Location' => '  SHELF-C1  '], $u->id);
 
     expect(naf_doc('A5')?->location_id)->toBe($loc->id);
 });
@@ -167,12 +167,12 @@ it('A6: re-importing with a blank Location clears a prior document-level overrid
     $loc = naf_loc($repo->id, 'SHELF-D9');
 
     // First import sets a document-level location override.
-    naf_import(DocumentImporter::class, ['Identifier' => 'A6', 'Series' => 'REG', 'Location' => 'SHELF-D9'], $u->id);
+    naf_import(DocumentImporter::class, ['Document Identifier' => 'A6', 'Series' => 'REG', 'Location' => 'SHELF-D9'], $u->id);
     expect(naf_doc('A6')?->location_id)->toBe($loc->id);
 
     // Re-import the SAME identifier with a blank Location → override cleared, so
     // the document falls back to its box's location.
-    naf_import(DocumentImporter::class, ['Identifier' => 'A6', 'Series' => 'REG', 'Location' => ''], $u->id);
+    naf_import(DocumentImporter::class, ['Document Identifier' => 'A6', 'Series' => 'REG', 'Location' => ''], $u->id);
     expect(naf_doc('A6')?->location_id)->toBeNull();
 });
 
@@ -208,7 +208,7 @@ it('C3: imports a document Tracking Note via the new header', function () {
     [$repo, $u] = naf_admin();
     Series::firstOrCreate(['code' => 'REG'], ['title' => 'Reg', 'is_active' => true, 'is_wills_series' => false]);
 
-    naf_import(DocumentImporter::class, ['Identifier' => 'C3', 'Series' => 'REG', 'Tracking Note' => 'doc tracking'], $u->id);
+    naf_import(DocumentImporter::class, ['Document Identifier' => 'C3', 'Series' => 'REG', 'Tracking Note' => 'doc tracking'], $u->id);
 
     expect(naf_doc('C3')?->tracking)->toBe('doc tracking');
 });
@@ -217,7 +217,7 @@ it('C4: imports a document Tracking via the legacy header (backward compat, col 
     [$repo, $u] = naf_admin();
     Series::firstOrCreate(['code' => 'REG'], ['title' => 'Reg', 'is_active' => true, 'is_wills_series' => false]);
 
-    naf_import(DocumentImporter::class, ['Identifier' => 'C4', 'Series' => 'REG', 'Tracking' => 'legacy tracking'], $u->id);
+    naf_import(DocumentImporter::class, ['Document Identifier' => 'C4', 'Series' => 'REG', 'Tracking' => 'legacy tracking'], $u->id);
 
     expect(naf_doc('C4')?->tracking)->toBe('legacy tracking');
 });
@@ -320,7 +320,7 @@ it('NC1: imports Temporary Identifier / Citation Reference / Conservation Object
     Series::firstOrCreate(['code' => 'REG'], ['title' => 'Reg', 'is_active' => true, 'is_wills_series' => false]);
 
     naf_import(DocumentImporter::class, [
-        'Identifier' => 'NC1', 'Series' => 'REG',
+        'Document Identifier' => 'NC1', 'Series' => 'REG',
         'Temporary Identifier' => 'TMP-1',
         'Citation Reference' => 'Cite ABC 2026',
         'Conservation Object Reference Number' => 'COR 120-135',
@@ -337,15 +337,15 @@ it('NC2: Temporary Identifier must be unique — a clash on a DIFFERENT document
     [$repo, $u] = naf_admin();
     Series::firstOrCreate(['code' => 'REG'], ['title' => 'Reg', 'is_active' => true, 'is_wills_series' => false]);
 
-    naf_import(DocumentImporter::class, ['Identifier' => 'NC2A', 'Series' => 'REG', 'Temporary Identifier' => 'DUP-T'], $u->id);
+    naf_import(DocumentImporter::class, ['Document Identifier' => 'NC2A', 'Series' => 'REG', 'Temporary Identifier' => 'DUP-T'], $u->id);
 
     // A second, different document reusing the same Temporary Identifier is rejected.
-    expect(fn () => naf_import(DocumentImporter::class, ['Identifier' => 'NC2B', 'Series' => 'REG', 'Temporary Identifier' => 'DUP-T'], $u->id))
+    expect(fn () => naf_import(DocumentImporter::class, ['Document Identifier' => 'NC2B', 'Series' => 'REG', 'Temporary Identifier' => 'DUP-T'], $u->id))
         ->toThrow(RowImportFailedException::class);
     expect(naf_doc('NC2B'))->toBeNull();
 
     // Re-importing the SAME document with its own Temporary Identifier is fine (ignores self).
-    naf_import(DocumentImporter::class, ['Identifier' => 'NC2A', 'Series' => 'REG', 'Temporary Identifier' => 'DUP-T', 'Note' => 'again'], $u->id);
+    naf_import(DocumentImporter::class, ['Document Identifier' => 'NC2A', 'Series' => 'REG', 'Temporary Identifier' => 'DUP-T', 'Note' => 'again'], $u->id);
     expect(naf_doc('NC2A')?->notes)->toBe('again');
 });
 
@@ -353,7 +353,7 @@ it('AC1: imports Accession by NAME — creates it + links accession_id, keeps th
     [$repo, $u] = naf_admin();
     Series::firstOrCreate(['code' => 'REG'], ['title' => 'Reg', 'is_active' => true, 'is_wills_series' => false]);
 
-    naf_import(DocumentImporter::class, ['Identifier' => 'AC1', 'Series' => 'REG', 'Accession' => 'Hugh Grima Accession'], $u->id);
+    naf_import(DocumentImporter::class, ['Document Identifier' => 'AC1', 'Series' => 'REG', 'Accession' => 'Hugh Grima Accession'], $u->id);
 
     $acc = Accession::withoutGlobalScopes()->where('code', 'Hugh Grima Accession')->first();
     expect($acc)->not->toBeNull()
@@ -366,12 +366,12 @@ it('AC2: imports Accession by NUMBER — creates it, and a second document with 
     [$repo, $u] = naf_admin();
     Series::firstOrCreate(['code' => 'REG'], ['title' => 'Reg', 'is_active' => true, 'is_wills_series' => false]);
 
-    naf_import(DocumentImporter::class, ['Identifier' => 'AC2', 'Series' => 'REG', 'Accession' => '2025-124'], $u->id);
+    naf_import(DocumentImporter::class, ['Document Identifier' => 'AC2', 'Series' => 'REG', 'Accession' => '2025-124'], $u->id);
     $acc = Accession::withoutGlobalScopes()->where('accession_number', '2025-124')->first();
     expect($acc)->not->toBeNull();
     expect(naf_doc('AC2')?->accession_id)->toBe($acc->id);
 
-    naf_import(DocumentImporter::class, ['Identifier' => 'AC2B', 'Series' => 'REG', 'Accession' => '2025-124'], $u->id);
+    naf_import(DocumentImporter::class, ['Document Identifier' => 'AC2B', 'Series' => 'REG', 'Accession' => '2025-124'], $u->id);
     expect(naf_doc('AC2B')?->accession_id)->toBe($acc->id)
         ->and(Accession::withoutGlobalScopes()->where('accession_number', '2025-124')->count())->toBe(1);
 });
@@ -399,7 +399,7 @@ it('MV1: RAS / In-Situ movement columns are captured verbatim in the legacy colu
     Series::firstOrCreate(['code' => 'REG'], ['title' => 'Reg', 'is_active' => true, 'is_wills_series' => false]);
 
     naf_import(DocumentImporter::class, [
-        'Identifier' => 'MV1', 'Series' => 'REG',
+        'Document Identifier' => 'MV1', 'Series' => 'REG',
         'RAS Batch 2' => '5', 'RAS Box 2' => '7',
         'In Situ Box 1' => 'Small Box 12', 'In Situ Box 2' => 'NRA 3',
     ], $u->id);
@@ -417,7 +417,7 @@ it('DTP1: links document_type_id AND practice_id from the lookups, keeps the fre
     $dt = DocumentType::create(['identifier' => 'DEED', 'name' => 'Deed of Sale', 'is_active' => true]);
     $pr = Practice::create(['identifier' => 'PRAC-1', 'name' => 'Notary X', 'is_active' => true, 'repository_id' => $repo->id]);
 
-    naf_import(DocumentImporter::class, ['Identifier' => 'DTP1', 'Series' => 'REG', 'Document Type' => 'DEED', 'Practice' => 'PRAC-1'], $u->id);
+    naf_import(DocumentImporter::class, ['Document Identifier' => 'DTP1', 'Series' => 'REG', 'Document Type' => 'DEED', 'Practice' => 'PRAC-1'], $u->id);
 
     $doc = naf_doc('DTP1');
     expect($doc->document_type)->toBe('DEED')          // free text kept
@@ -430,7 +430,7 @@ it('DTP2: an unknown Document Type / Practice leaves the FK null and the row sti
     [$repo, $u] = naf_admin();
     Series::firstOrCreate(['code' => 'REG'], ['title' => 'Reg', 'is_active' => true, 'is_wills_series' => false]);
 
-    naf_import(DocumentImporter::class, ['Identifier' => 'DTP2', 'Series' => 'REG', 'Document Type' => 'NoSuchType', 'Practice' => 'NoSuchPractice'], $u->id);
+    naf_import(DocumentImporter::class, ['Document Identifier' => 'DTP2', 'Series' => 'REG', 'Document Type' => 'NoSuchType', 'Practice' => 'NoSuchPractice'], $u->id);
 
     $doc = naf_doc('DTP2');
     expect($doc)->not->toBeNull()
@@ -445,7 +445,7 @@ it('PA1: Prev Attributed Identifier / Volume are recorded in the identifier hist
     Series::firstOrCreate(['code' => 'REG'], ['title' => 'Reg', 'is_active' => true, 'is_wills_series' => false]);
 
     naf_import(DocumentImporter::class, [
-        'Identifier' => 'PA1', 'Series' => 'REG',
+        'Document Identifier' => 'PA1', 'Series' => 'REG',
         'Prev Attributed Identifier' => 'OLD-ID-1', 'Prev Attributed Volume' => 'V-3',
     ], $u->id);
 
@@ -458,7 +458,7 @@ it('PA1: Prev Attributed Identifier / Volume are recorded in the identifier hist
 
     // Re-import the same document → the SAME history row is updated, not duplicated.
     naf_import(DocumentImporter::class, [
-        'Identifier' => 'PA1', 'Series' => 'REG',
+        'Document Identifier' => 'PA1', 'Series' => 'REG',
         'Prev Attributed Identifier' => 'OLD-ID-1', 'Prev Attributed Volume' => 'V-4',
     ], $u->id);
 

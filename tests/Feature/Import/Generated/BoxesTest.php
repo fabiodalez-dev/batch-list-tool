@@ -3,6 +3,7 @@
 declare(strict_types=1);
 
 use App\Filament\Imports\BoxImporter;
+use App\Filament\Pages\ImportWizard;
 use App\Models\Batch;
 use App\Models\Box;
 use App\Models\BoxSealNumberHistory;
@@ -1027,5 +1028,42 @@ test('a box whose is_legacy column is MAPPED but BLANK imports (defaults to fals
     expect(bxt_failures($import))->toBe([]);
     $box = Box::withoutGlobalScope(ThroughBatchRepositoryScope::class)->where('box_number', '700')->first();
     expect($box)->not->toBeNull()
+        ->and($box->is_legacy)->toBeFalse();
+});
+
+test('PROD 2026-09-28: the client box sheet with a blank "Provenance Unknown" imports — the failure that rejected all 4,886 rows', function () {
+    $repo = Repository::factory()->create(['code' => 'BXPROV']);
+    $u = bxt_admin($repo->id);
+    $this->actingAs($u);
+
+    Batch::withoutGlobalScope(RepositoryScope::class)->create([
+        'batch_number' => '1', 'repository_id' => $repo->id, 'type' => 'MAIN_COLLECTION', 'is_active' => true,
+    ]);
+
+    // The row below is copied verbatim from failed_import_rows of production
+    // import #55 (box_template_2026-09-25_Blue_IN.xlsx, 4,886 rows, 0 successful).
+    // Every single row failed on "a required value is missing for
+    // 'provenance_unknown'": the template ships the column and blank is the
+    // normal answer, the ->boolean() cast turns blank into null, and the
+    // explicit null bypasses the column's DEFAULT 0 to hit NOT NULL.
+    $row = [
+        'box_type' => 'RAS', 'box_number' => '1', 'batch_number' => '1',
+        'parent_box_number' => '', 'barcode' => 'AA40822', 'barcode_status' => 'IN',
+        'is_legacy' => '', 'Provenance Unknown' => '', 'notes' => '',
+        'Tracking Note' => '', 'Seal Number' => '15329213', 'Destroyed' => 'No',
+        'Current Box Type' => 'RAS Box',
+    ];
+
+    // Guessed, not hand-written: the point is that the wizard DOES map
+    // 'Provenance Unknown' onto the field, which is what exposes the null.
+    $columnMap = ImportWizard::guessColumnMap(BoxImporter::class, array_keys($row));
+    expect($columnMap['provenance_unknown'])->toBe('Provenance Unknown');
+
+    $import = bxt_run([$row], $columnMap, $u->id);
+
+    expect(bxt_failures($import))->toBe([]);
+    $box = Box::withoutGlobalScope(ThroughBatchRepositoryScope::class)->where('barcode', 'AA40822')->first();
+    expect($box)->not->toBeNull()
+        ->and($box->provenance_unknown)->toBeFalse()
         ->and($box->is_legacy)->toBeFalse();
 });

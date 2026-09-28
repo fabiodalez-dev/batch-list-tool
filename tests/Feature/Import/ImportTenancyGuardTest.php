@@ -85,7 +85,7 @@ it('SECURITY: a privileged user with no default repository cannot overwrite anot
     $attacker->assignRole('super_admin');
 
     itg_runDoc([
-        'Identifier' => 'SHARED-1',
+        'Document Identifier' => 'SHARED-1',
         'Subseries' => 'REG',
         'Note' => 'HIJACKED',
     ], $attacker);
@@ -108,7 +108,7 @@ it('SECURITY: a privileged user with no default cannot RESTORE + overwrite anoth
     $attacker->assignRole('super_admin');
 
     itg_runDoc([
-        'Identifier' => 'SHARED-2',
+        'Document Identifier' => 'SHARED-2',
         'Subseries' => 'REG',
         'Note' => 'HIJACKED',
     ], $attacker);
@@ -129,7 +129,7 @@ it('the legitimate within-tenant re-import still updates the operator\'s own doc
     $operator->assignRole('super_admin');
 
     itg_runDoc([
-        'Identifier' => 'OWN-1',
+        'Document Identifier' => 'OWN-1',
         'Subseries' => 'REG',
         'Note' => 'updated in place',
     ], $operator);

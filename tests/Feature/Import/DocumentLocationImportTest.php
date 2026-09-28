@@ -62,7 +62,7 @@ it('resolves a known Location code onto documents.location_id', function () {
     ]);
 
     dli_import([
-        'Identifier' => 'DOC-LOC-1',
+        'Document Identifier' => 'DOC-LOC-1',
         'Series' => 'REG',
         'Location' => 'SHELF-A3',
     ], $u->id);
@@ -78,7 +78,7 @@ it('fails the row on an unknown Location code (per-row, like the box import)', f
     [$repo, $u] = dli_setup();
 
     expect(fn () => dli_import([
-        'Identifier' => 'DOC-LOC-2',
+        'Document Identifier' => 'DOC-LOC-2',
         'Series' => 'REG',
         'Location' => 'DOES-NOT-EXIST',
     ], $u->id))->toThrow(ValidationException::class);
@@ -94,7 +94,7 @@ it('leaves location_id null when the Location cell is blank (inherits the box)',
     [$repo, $u] = dli_setup();
 
     dli_import([
-        'Identifier' => 'DOC-LOC-3',
+        'Document Identifier' => 'DOC-LOC-3',
         'Series' => 'REG',
         'Location' => '',
     ], $u->id);
@@ -114,7 +114,7 @@ it('case-insensitively resolves the Location code', function () {
     ]);
 
     dli_import([
-        'Identifier' => 'DOC-LOC-4',
+        'Document Identifier' => 'DOC-LOC-4',
         'Series' => 'REG',
         'Location' => 'shelf-b7',
     ], $u->id);

@@ -908,8 +908,9 @@ class DocumentImporter extends Importer
             // cause every legacy import to auto-map the authority's R-code to the
             // Document.identifier field and leave the authority_identifier column
             // unmapped — all documents silently unlinked from their authorities.
-            // The document's own identifier should be mapped from 'Catalogue
-            // Identifier' or 'Document Identifier' columns in the source sheet.
+            // The document's own identifier is mapped from a 'Document
+            // Identifier' column. NOT from 'Catalogue Identifier', which since
+            // the 2026-08-31 template is a field of its own (catalogue_identifier).
             // Bug #22 — the identifier is OPTIONAL: when the sheet leaves it blank
             // the importer auto-creates one from Repository + Series + Document Type
             // (see afterFill()), so a mass upload by Series doesn't need pre-assigned
@@ -921,7 +922,11 @@ class DocumentImporter extends Importer
             // this guess list avoids re-introducing the F-004 mis-mapping.
             ImportColumn::make('identifier')
                 ->label('Document identifier (optional — auto-created from Repository/Series/Type when blank)')
-                ->guess(['identifier', 'Document Identifier', 'Doc ID'])
+                // NOT 'identifier': the comparison is case-insensitive, so that
+                // entry matched the very "Identifier" header the comment above
+                // says to keep out. The field name still matches it, which is why
+                // ImportWizard::NEVER_CLAIMS has to bar it explicitly.
+                ->guess(['Document Identifier', 'Doc ID'])
                 ->rules(['nullable', 'string', 'max:64']),
 
             ImportColumn::make('catalogue_identifier')
@@ -1327,7 +1332,13 @@ class DocumentImporter extends Importer
 
             ImportColumn::make('current_box_number')
                 ->label('Current box number (RAS Box 1)')
-                ->guess(['RAS Box 1', 'Current Box', 'current_box', 'Box'])
+                // Neither 'Current Box' nor 'current_box' is here. On the
+                // client's sheets that column holds the container TYPE ("RAS"),
+                // and it belongs to current_box_type further down. Both spellings
+                // have to go: Filament expands every guess into its spaced,
+                // hyphenated and underscored variants, so 'current_box' alone
+                // still matched a "Current Box" header.
+                ->guess(['RAS Box 1', 'Box'])
                 ->fillRecordUsing(function (Document $record, ?string $state): void {
                     if ($state === null || trim($state) === '') {
                         return;

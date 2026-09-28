@@ -82,7 +82,7 @@ it('imports a document Tracking Note into documents.tracking (new header)', func
     Series::firstOrCreate(['code' => 'REG'], ['title' => 'Registers', 'is_active' => true, 'is_wills_series' => false]);
 
     tni_runImporter(DocumentImporter::class, [
-        'Identifier' => 'DOC-TN-1',
+        'Document Identifier' => 'DOC-TN-1',
         'Series' => 'REG',
         'Tracking Note' => 'tracking via new header',
     ], $u->id);
@@ -99,7 +99,7 @@ it('still imports the legacy "Tracking" header into documents.tracking (backward
     Series::firstOrCreate(['code' => 'REG'], ['title' => 'Registers', 'is_active' => true, 'is_wills_series' => false]);
 
     tni_runImporter(DocumentImporter::class, [
-        'Identifier' => 'DOC-TN-2',
+        'Document Identifier' => 'DOC-TN-2',
         'Series' => 'REG',
         'Tracking' => 'tracking via legacy header',
     ], $u->id);

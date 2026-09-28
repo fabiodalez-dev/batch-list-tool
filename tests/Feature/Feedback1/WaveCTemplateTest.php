@@ -113,7 +113,7 @@ it('D11-Synonyms: guessColumnMap resolves NAf Feedback 1 column name variants fo
         'Batch Number',
         'Box No',
         'Box Barcode',
-        'Box Status',      // → box_type
+        'Box Status',      // → box_barcode_status (IN / Perm Out), NOT box_type
         'Document Identifier', // → document_identifier
         'Document Type',
         'Series',
@@ -140,7 +140,17 @@ it('D11-Synonyms: guessColumnMap resolves NAf Feedback 1 column name variants fo
     expect($map['part_number'])->toBe('Part Number');
 
     // NAf Feedback 1 renamed columns must also auto-resolve.
-    expect($map['box_type'])->toBe('Box Status');        // 'Box Status' → box_type
+    //
+    // 'Box Status' belongs to box_barcode_status, which lists it explicitly in
+    // its guess list, and NOT to box_type, which only ever reached it by fuzzy
+    // resemblance to 'Box Type'. Until guessColumnMap arbitrated between fields
+    // competing for one header, BOTH claimed it and this test asserted the
+    // fuzzy loser. Every real client sheet settles it: the column holds
+    // 'IN' / 'Perm Out' (2026-06-06 and 2026-06-23 accession samples,
+    // 2026-08-01 Boxes_1_Blue, example_accession_import), never a RAS/MAV/NRA
+    // box type. Feeding those values into box_type was silent corruption.
+    expect($map['box_barcode_status'])->toBe('Box Status');
+    expect($map['box_type'])->toBeNull();
     expect($map['document_identifier'])->toBe('Document Identifier'); // → document_identifier
     expect($map['volume_number'])->toBe('Volume No');     // 'Volume No' → volume_number
     expect($map['notes'])->toBe('Note');                 // singular 'Note' → notes

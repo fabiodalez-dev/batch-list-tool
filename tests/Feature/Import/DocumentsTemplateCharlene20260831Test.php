@@ -74,7 +74,7 @@ it('surfaces Part Number on the document template and imports it', function () {
 
     [, $u] = dtc_setup();
     dtc_import([
-        'Identifier' => 'DTC-PN-1',
+        'Document Identifier' => 'DTC-PN-1',
         'Subseries' => 'REG',
         'Part Number' => '7',
     ], $u->id);
@@ -89,7 +89,7 @@ it('resolves the FK from the new "Subseries" header', function () {
     $seriesId = Series::where('code', 'REG')->value('id');
 
     dtc_import([
-        'Identifier' => 'DTC-SUB-1',
+        'Document Identifier' => 'DTC-SUB-1',
         'Subseries' => 'REG',
     ], $u->id);
 
@@ -101,7 +101,7 @@ it('still resolves the FK from the legacy "Series" header (back-compat)', functi
     $seriesId = Series::where('code', 'REG')->value('id');
 
     dtc_import([
-        'Identifier' => 'DTC-SUB-2',
+        'Document Identifier' => 'DTC-SUB-2',
         'Series' => 'REG',
     ], $u->id);
 
@@ -130,7 +130,7 @@ it('resolves the NRA Location CODE onto documents.location_id', function () {
     ]);
 
     dtc_import([
-        'Identifier' => 'DTC-LOC-1',
+        'Document Identifier' => 'DTC-LOC-1',
         'Subseries' => 'REG',
         'NRA Location' => 'REPO-1-45',
     ], $u->id);
@@ -147,7 +147,7 @@ it('rejects a NAME under NRA Location — Charlene: "Archive 1" is wrong, use th
     [, $u] = dtc_setup();
 
     expect(fn () => dtc_import([
-        'Identifier' => 'DTC-LOC-2',
+        'Document Identifier' => 'DTC-LOC-2',
         'Subseries' => 'REG',
         'NRA Location' => 'Archive 1',
     ], $u->id))->toThrow(ValidationException::class);
@@ -161,7 +161,7 @@ it('imports Torre TRUE as true', function () {
     [, $u] = dtc_setup();
 
     dtc_import([
-        'Identifier' => 'DTC-TORRE-1',
+        'Document Identifier' => 'DTC-TORRE-1',
         'Subseries' => 'REG',
         'Torre' => 'TRUE',
     ], $u->id);
@@ -173,7 +173,7 @@ it('imports a blank Torre cell as FALSE on a new row', function () {
     [, $u] = dtc_setup();
 
     dtc_import([
-        'Identifier' => 'DTC-TORRE-2',
+        'Document Identifier' => 'DTC-TORRE-2',
         'Subseries' => 'REG',
         'Torre' => '',
     ], $u->id);

@@ -136,7 +136,7 @@ it('writes the active repository custom-field column into the real Document .xls
 
     // The row as the .xlsx delivers it — keyed by the (human) header labels.
     $data = [
-        'Identifier' => 'R-E2E-1',
+        'Document Identifier' => 'R-E2E-1',
         'Series' => $series->code,
         'OCR State' => 'verified',
     ];
@@ -145,7 +145,7 @@ it('writes the active repository custom-field column into the real Document .xls
     // importer column name → the file header it was matched to. The custom
     // column's importer name is custom_field_{key}; its header is the label.
     $columnMap = [
-        'identifier' => 'Identifier',
+        'identifier' => 'Document Identifier',
         'series' => 'Series',
         'custom_field_' . $def->key => 'OCR State',
     ];
