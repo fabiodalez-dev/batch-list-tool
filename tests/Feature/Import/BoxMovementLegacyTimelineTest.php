@@ -122,7 +122,7 @@ it('MV1: In-Situ 1/2/3 + current box build an ordered NULL-dated legacy chain', 
     mv_batch($repo->id, '1');
 
     mv_import(mv_row([
-        'Identifier' => 'MV1',
+        'Document Identifier' => 'MV1',
         'RAS Batch 1' => '1', 'RAS Box 1' => '100',            // → current box
         'In Situ Box 1' => 'Small Box 12',
         'In Situ Box 2' => 'NRA 3',
@@ -167,7 +167,7 @@ it('MV2: In-Situ "NRA 3" resolves to a box of type NRA number 3', function () {
     mv_batch($repo->id, '1');
 
     mv_import(mv_row([
-        'Identifier' => 'MV2',
+        'Document Identifier' => 'MV2',
         'RAS Batch 1' => '1', 'RAS Box 1' => '200',
         'In Situ Box 1' => 'NRA 3',
     ]), $u->id);
@@ -191,7 +191,7 @@ it('MV3: a row with only a current box (RAS Box 1) creates zero movements', func
     mv_batch($repo->id, '1');
 
     mv_import(mv_row([
-        'Identifier' => 'MV3',
+        'Document Identifier' => 'MV3',
         'RAS Batch 1' => '1', 'RAS Box 1' => '300',
     ]), $u->id);
 
@@ -207,7 +207,7 @@ it('MV4: re-importing does not duplicate legacy moves and keeps recorded ones', 
     mv_batch($repo->id, '1');
 
     $row = mv_row([
-        'Identifier' => 'MV4',
+        'Document Identifier' => 'MV4',
         'RAS Batch 1' => '1', 'RAS Box 1' => '400',
         'In Situ Box 1' => 'Small Box 1',
         'In Situ Box 2' => 'Small Box 2',
@@ -257,7 +257,7 @@ it('MV5: emptying a previously-populated In-Situ cell shrinks the chain on re-im
     mv_batch($repo->id, '1');
 
     mv_import(mv_row([
-        'Identifier' => 'MV5',
+        'Document Identifier' => 'MV5',
         'RAS Batch 1' => '1', 'RAS Box 1' => '500',
         'In Situ Box 1' => 'Small Box 1',
         'In Situ Box 2' => 'Small Box 2',
@@ -268,7 +268,7 @@ it('MV5: emptying a previously-populated In-Situ cell shrinks the chain on re-im
 
     // Re-import with In Situ Box 2 emptied → the stale tail is dropped.
     mv_import(mv_row([
-        'Identifier' => 'MV5',
+        'Document Identifier' => 'MV5',
         'RAS Batch 1' => '1', 'RAS Box 1' => '500',
         'In Situ Box 1' => 'Small Box 1',
         'In Situ Box 2' => '',
@@ -326,7 +326,7 @@ it('MV7: a bare number resolves to an IN_SITU box; unparseable/blank cells are s
     mv_batch($repo->id, '1');
 
     mv_import(mv_row([
-        'Identifier' => 'MV7',
+        'Document Identifier' => 'MV7',
         'RAS Batch 1' => '1', 'RAS Box 1' => '700',
         'In Situ Box 1' => '5',              // bare number → IN_SITU box 5
         'In Situ Box 2' => 'NoNumberHere',   // letters only, no digits → skipped
@@ -362,7 +362,7 @@ it('RP1: batch_id stays the archival RAS batch even though current_box_id follow
     $batch1 = mv_batch($repo->id, '1');
 
     mv_import(mv_row([
-        'Identifier' => 'RP1',
+        'Document Identifier' => 'RP1',
         'RAS Batch 1' => '1', 'RAS Box 1' => '11',
         'In Situ Box 1' => 'Small Box 1',
         'In Situ Box 2' => 'NRA 2',
@@ -383,7 +383,7 @@ it('RP2: current_box_id follows a batched RAS Box 2 while batch_id stays RAS Bat
 
     // RAS Batch 1 / Box 1 (current) + RAS Batch 2 / Box 2, no in-situ cells.
     mv_import(mv_row([
-        'Identifier' => 'RP2',
+        'Document Identifier' => 'RP2',
         'RAS Batch 1' => '1', 'RAS Box 1' => '10',
         'RAS Batch 2' => '2', 'RAS Box 2' => '20',
     ]), $u->id);
@@ -416,7 +416,7 @@ it('RP3: effectiveLocation follows the newest In-Situ box, and a document-level 
     ]);
 
     mv_import(mv_row([
-        'Identifier' => 'RP3',
+        'Document Identifier' => 'RP3',
         'RAS Batch 1' => '1', 'RAS Box 1' => '111',
         'In Situ Box 1' => '77',           // bare number → IN_SITU 77 (the pre-created box)
     ]), $u->id);
@@ -441,7 +441,7 @@ it('RP4: the RAS PERM_OUT status and disinfestation date survive the repoint ont
     mv_batch($repo->id, '1');
 
     mv_import(mv_row([
-        'Identifier' => 'RP4',
+        'Document Identifier' => 'RP4',
         'RAS Batch 1' => '1', 'RAS Box 1' => '222',
         'In Situ Box 1' => 'Small Box 9',   // newest, batch-less, null-status box
         'Status 1' => 'PERM_OUT',
@@ -473,7 +473,7 @@ it('RP5: a destroyed newest box is not repointed onto — current_box_id stays o
     ]);
 
     mv_import(mv_row([
-        'Identifier' => 'RP5',
+        'Document Identifier' => 'RP5',
         'RAS Batch 1' => '1', 'RAS Box 1' => '333',
         'In Situ Box 1' => '88',           // resolves to the pre-created DESTROYED box
     ]), $u->id);
@@ -504,7 +504,7 @@ it('RP6: a document in a batch-less non-PERM_OUT In-Situ box stays in the pendin
     // The repoint lands current_box_id on a batch-less In-Situ box; the
     // document has no disinfestation_date.
     mv_import(mv_row([
-        'Identifier' => 'RP6',
+        'Document Identifier' => 'RP6',
         'RAS Batch 1' => '1', 'RAS Box 1' => '444',
         'In Situ Box 1' => 'Small Box 6',
     ]), $u->id);

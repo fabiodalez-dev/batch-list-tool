@@ -188,7 +188,7 @@ it('BC1: two PERM OUT past barcodes (spaced spelling) → one undated legacy row
     bch_batch($repo->id, '1');
 
     bch_import(bch_row([
-        'Identifier' => 'BC1',
+        'Document Identifier' => 'BC1',
         'RAS Batch 1' => '1', 'RAS Box 1' => '111',
         'Barcode (IN)' => '',
         'Barcode RAS 1' => 'AA04969', 'Status 1' => 'PERM OUT',   // WITH the space
@@ -217,7 +217,7 @@ it('BC2: a past PERM OUT barcode then a current IN barcode → one row (PERM_OUT
     bch_batch($repo->id, '1');
 
     bch_import(bch_row([
-        'Identifier' => 'BC2',
+        'Document Identifier' => 'BC2',
         'RAS Batch 1' => '1', 'RAS Box 1' => '110',
         'Barcode RAS 1' => 'AA05760', 'Status 1' => 'PERM OUT',
         'Barcode (IN)' => 'AA88692',
@@ -245,7 +245,7 @@ it('BC3: two-box row — block 1 chains box A, block 2 (IN only) sets box B to I
     bch_batch($repo->id, '1');
 
     bch_import(bch_row([
-        'Identifier' => 'BC3',
+        'Document Identifier' => 'BC3',
         'RAS Batch 1' => '1', 'RAS Box 1' => '301',
         'Barcode RAS 1' => 'A1', 'Status 1' => 'OUT',
         'Barcode (IN)' => 'A2',
@@ -282,7 +282,7 @@ it('BC4: an In-Situ current box with barcode cells present → 0 history rows, b
     ]);
 
     bch_import(bch_row([
-        'Identifier' => 'BC4',
+        'Document Identifier' => 'BC4',
         'Current box barcode' => 'INSITU-OWN',  // resolves current_box_id to the In-Situ box
         'Barcode RAS 1' => 'ZZ1', 'Status 1' => 'PERM OUT',
         'Barcode (IN)' => 'ZZ2',
@@ -302,7 +302,7 @@ it('BC5: three documents in the same box + same block → one chain, no piling',
     bch_batch($repo->id, '1');
 
     $row = fn (string $id) => bch_row([
-        'Identifier' => $id,
+        'Document Identifier' => $id,
         'RAS Batch 1' => '1', 'RAS Box 1' => '505',
         'Barcode RAS 1' => 'M1', 'Status 1' => 'OUT',
         'Barcode (IN)' => 'M2',
@@ -323,7 +323,7 @@ it('BC6: re-import is idempotent and a corrected past barcode replaces the stale
     bch_batch($repo->id, '1');
 
     $row = bch_row([
-        'Identifier' => 'BC6',
+        'Document Identifier' => 'BC6',
         'RAS Batch 1' => '1', 'RAS Box 1' => '606',
         'Barcode RAS 1' => 'OLD', 'Status 1' => 'PERM OUT',
         'Barcode (IN)' => 'CUR',
@@ -338,7 +338,7 @@ it('BC6: re-import is idempotent and a corrected past barcode replaces the stale
 
     // Re-import with the past barcode CORRECTED.
     bch_import(bch_row([
-        'Identifier' => 'BC6',
+        'Document Identifier' => 'BC6',
         'RAS Batch 1' => '1', 'RAS Box 1' => '606',
         'Barcode RAS 1' => 'FIXED', 'Status 1' => 'PERM OUT',
         'Barcode (IN)' => 'CUR',
@@ -354,7 +354,7 @@ it('BC7: a recorded hook row survives re-import, and a later operator change sti
     bch_batch($repo->id, '1');
 
     bch_import(bch_row([
-        'Identifier' => 'BC7',
+        'Document Identifier' => 'BC7',
         'RAS Batch 1' => '1', 'RAS Box 1' => '707',
         'Barcode RAS 1' => 'P1', 'Status 1' => 'OUT',
         'Barcode (IN)' => 'P2',
@@ -376,7 +376,7 @@ it('BC7: a recorded hook row survives re-import, and a later operator change sti
 
     // Re-import → legacy rebuilt, recorded row untouched.
     bch_import(bch_row([
-        'Identifier' => 'BC7',
+        'Document Identifier' => 'BC7',
         'RAS Batch 1' => '1', 'RAS Box 1' => '707',
         'Barcode RAS 1' => 'P1', 'Status 1' => 'OUT',
         'Barcode (IN)' => 'P2',
@@ -397,7 +397,7 @@ it('BC8: the import\'s own box save creates ZERO recorded history rows', functio
     bch_batch($repo->id, '1');
 
     bch_import(bch_row([
-        'Identifier' => 'BC8',
+        'Document Identifier' => 'BC8',
         'RAS Batch 1' => '1', 'RAS Box 1' => '808',
         'Barcode RAS 1' => 'Q1', 'Status 1' => 'PERM OUT',
         'Barcode (IN)' => 'Q2',
@@ -415,7 +415,7 @@ it('normalises a status variant through a real import onto the box + history', f
     bch_batch($repo->id, '1');
 
     bch_import(bch_row([
-        'Identifier' => 'NORM',
+        'Document Identifier' => 'NORM',
         'RAS Batch 1' => '1', 'RAS Box 1' => '700',
         'Barcode RAS 1' => 'PAST', 'Status 1' => $raw,
         'Barcode RAS 2' => 'CUR',                       // a 2nd barcode so a history row exists
@@ -449,7 +449,7 @@ it('models a full block-2 chain oldest→newest with IN last (2 rows)', function
     bch_batch($repo->id, '1');
 
     bch_import(bch_row([
-        'Identifier' => 'B2CHAIN',
+        'Document Identifier' => 'B2CHAIN',
         'RAS Batch 1' => '1', 'RAS Box 1' => '900',
         'RAS Batch 2' => '2', 'RAS Box 2' => '901',
         'Barcode RAS 1 (2)' => 'C1', 'Status 1 (2)' => 'PERM OUT',
@@ -471,7 +471,7 @@ it('compacts a chain with a gap: RAS 1 blank but RAS 2 filled → RAS 2 is the f
     bch_batch($repo->id, '1');
 
     bch_import(bch_row([
-        'Identifier' => 'GAP',
+        'Document Identifier' => 'GAP',
         'RAS Batch 1' => '1', 'RAS Box 1' => '910',
         'Barcode RAS 1' => '', 'Status 1' => '',   // gap
         'Barcode RAS 2' => 'G2', 'Status 2' => 'OUT',
@@ -491,7 +491,7 @@ it('a barcode WITHOUT a status carries a null status in its transition slot', fu
     bch_batch($repo->id, '1');
 
     bch_import(bch_row([
-        'Identifier' => 'NOSTAT',
+        'Document Identifier' => 'NOSTAT',
         'RAS Batch 1' => '1', 'RAS Box 1' => '920',
         'Barcode RAS 1' => 'N1',        // no Status 1
         'Barcode (IN)' => 'N2',
@@ -510,7 +510,7 @@ it('a status WITHOUT a barcode is ignored entirely (no chain entry)', function (
     bch_batch($repo->id, '1');
 
     bch_import(bch_row([
-        'Identifier' => 'STATONLY',
+        'Document Identifier' => 'STATONLY',
         'RAS Batch 1' => '1', 'RAS Box 1' => '930',
         'Barcode RAS 1' => '', 'Status 1' => 'OUT',   // status, no barcode → ignored
         'Barcode (IN)' => 'S2',
@@ -527,7 +527,7 @@ it('only a current IN barcode, no past barcodes → 0 rows but box set to IN', f
     bch_batch($repo->id, '1');
 
     bch_import(bch_row([
-        'Identifier' => 'INONLY',
+        'Document Identifier' => 'INONLY',
         'RAS Batch 1' => '1', 'RAS Box 1' => '940',
         'Barcode (IN)' => 'I9',
     ]), $u->id);
@@ -542,7 +542,7 @@ it('only past PERM OUT barcodes, no IN → box PERM_OUT at the last past barcode
     bch_batch($repo->id, '1');
 
     bch_import(bch_row([
-        'Identifier' => 'NOIN',
+        'Document Identifier' => 'NOIN',
         'RAS Batch 1' => '1', 'RAS Box 1' => '950',
         'Barcode RAS 1' => 'K1', 'Status 1' => 'PERM OUT',
         'Barcode RAS 2' => 'K2', 'Status 2' => 'PERM OUT',
@@ -560,7 +560,7 @@ it('a single past barcode with no IN (chain length 1) → 0 rows, box barcode = 
     bch_batch($repo->id, '1');
 
     bch_import(bch_row([
-        'Identifier' => 'ONE',
+        'Document Identifier' => 'ONE',
         'RAS Batch 1' => '1', 'RAS Box 1' => '960',
         'Barcode RAS 1' => 'ONLY1', 'Status 1' => 'OUT',
     ]), $u->id);
@@ -577,7 +577,7 @@ it('a box currently IN keeps status IN even with PERM_OUT past barcodes (the old
     bch_batch($repo->id, '1');
 
     bch_import(bch_row([
-        'Identifier' => 'BUGIN',
+        'Document Identifier' => 'BUGIN',
         'RAS Batch 1' => '1', 'RAS Box 1' => '970',
         'Barcode RAS 1' => 'OLD1', 'Status 1' => 'PERM OUT',
         'Barcode RAS 2' => 'OLD2', 'Status 2' => 'PERM OUT',
@@ -597,7 +597,7 @@ it('the importer writes the box barcode itself (not only the status)', function 
     bch_batch($repo->id, '1');
 
     bch_import(bch_row([
-        'Identifier' => 'BCSET',
+        'Document Identifier' => 'BCSET',
         'RAS Batch 1' => '1', 'RAS Box 1' => '975',
         'Barcode (IN)' => 'WRITTEN',
     ]), $u->id);
@@ -610,7 +610,7 @@ it('the box state mirrors onto the document in the box (Task-7 mirror on the rea
     bch_batch($repo->id, '1');
 
     bch_import(bch_row([
-        'Identifier' => 'MIRROR',
+        'Document Identifier' => 'MIRROR',
         'RAS Batch 1' => '1', 'RAS Box 1' => '980',
         'Barcode RAS 1' => 'D1', 'Status 1' => 'PERM OUT',
         // no IN barcode → box ends PERM_OUT; current_box_id stays this box.
@@ -666,13 +666,13 @@ it('two rows sharing a box with conflicting blocks IN ONE RUN → last import wi
     // history stays last-import-wins either way.
     bch_importSameRun([
         bch_row([
-            'Identifier' => 'CONFA',
+            'Document Identifier' => 'CONFA',
             'RAS Batch 1' => '1', 'RAS Box 1' => '995',
             'Barcode RAS 1' => 'V1', 'Status 1' => 'OUT',
             'Barcode (IN)' => 'V2',
         ]),
         bch_row([
-            'Identifier' => 'CONFB',
+            'Document Identifier' => 'CONFB',
             'RAS Batch 1' => '1', 'RAS Box 1' => '995',
             'Barcode RAS 1' => 'W1', 'Status 1' => 'PERM OUT',
             'Barcode RAS 2' => 'W2', 'Status 2' => 'PERM OUT',
@@ -705,7 +705,7 @@ it('BLOCKER1: a doc row for a PRE-EXISTING PERM_OUT box does not fail and does n
     // block-1 chain that ends IN — under the OLD rule this would have flipped the
     // box to IN (and could trip the C2.2 PERM_OUT→IN guard); now it must not.
     bch_import(bch_row([
-        'Identifier' => 'BLK1',
+        'Document Identifier' => 'BLK1',
         'Current box barcode' => 'BOXSHEET-OWN',
         'Barcode RAS 1' => 'H1', 'Status 1' => 'OUT',
         'Barcode (IN)' => 'H2',
@@ -748,7 +748,7 @@ it('DESTROYED-BOX: a legacy import row lands in a DESTROYED box (historical trut
     ]);
 
     bch_import(bch_row([
-        'Identifier' => 'DEADDOC',
+        'Document Identifier' => 'DEADDOC',
         'Current box barcode' => 'DEAD-BOX',
     ]), $u->id);
 
@@ -763,7 +763,7 @@ it('barcodeHistory() lists dated recorded rows BEFORE undated legacy rows', func
     bch_batch($repo->id, '1');
 
     bch_import(bch_row([
-        'Identifier' => 'ORDER',
+        'Document Identifier' => 'ORDER',
         'RAS Batch 1' => '1', 'RAS Box 1' => '997',
         'Barcode RAS 1' => 'L1', 'Status 1' => 'OUT',
         'Barcode (IN)' => 'L2',
@@ -820,7 +820,7 @@ it('a second box given a duplicate IN barcode fails safely; the first box is int
     bch_batch($repo->id, '1');
 
     bch_import(bch_row([
-        'Identifier' => 'DUPA',
+        'Document Identifier' => 'DUPA',
         'RAS Batch 1' => '1', 'RAS Box 1' => '801',
         'Barcode (IN)' => 'DUP123',
     ]), $u->id);
@@ -833,7 +833,7 @@ it('a second box given a duplicate IN barcode fails safely; the first box is int
 
     try {
         bch_import(bch_row([
-            'Identifier' => 'DUPB',
+            'Document Identifier' => 'DUPB',
             'RAS Batch 1' => '1', 'RAS Box 1' => '802',
             'Barcode (IN)' => 'DUP123',
         ]), $u->id);
@@ -851,11 +851,11 @@ it('DIGITISED: an unrecognised digitised value (junk) is dropped to null, the ro
 
     // Real data had an accession name mis-filed in the Digitised column; that
     // must not fail the whole document row.
-    bch_import(bch_row(['Identifier' => 'DIGJUNK', 'Digitised' => 'Sam Abela Accession']), $u->id);
+    bch_import(bch_row(['Document Identifier' => 'DIGJUNK', 'Digitised' => 'Sam Abela Accession']), $u->id);
     $doc = bch_doc('DIGJUNK');
     expect($doc)->not->toBeNull()->and($doc->digitised)->toBeNull();
 
     // A case variant is normalised to the controlled vocabulary.
-    bch_import(bch_row(['Identifier' => 'DIGOK', 'Digitised' => 'vhmml']), $u->id);
+    bch_import(bch_row(['Document Identifier' => 'DIGOK', 'Digitised' => 'vhmml']), $u->id);
     expect(bch_doc('DIGOK')?->digitised)->toBe('VHMML');
 });

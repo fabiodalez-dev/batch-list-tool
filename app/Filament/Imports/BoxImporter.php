@@ -218,6 +218,17 @@ class BoxImporter extends Importer
             $record->is_legacy = false;
         }
 
+        // Same trap, same fix, for provenance_unknown — added later (client
+        // 2026-08-10) without inheriting the defence above. It cost the client's
+        // whole 4,886-row box upload of 2026-09-28: every row failed with
+        // "a required value is missing for 'provenance_unknown'" because the
+        // template ships the column blank and blank is the normal answer. A
+        // column default does NOT save this: the importer writes an EXPLICIT
+        // null, and an explicit null bypasses the default and hits NOT NULL.
+        if ($record->provenance_unknown === null) {
+            $record->provenance_unknown = false;
+        }
+
         // Default barcode_status to 'IN' when the cell is blank — the column is
         // NOT NULL DEFAULT 'IN', but the importer writes an explicit null for an
         // empty cell, which fails the row. The "Unknown"/"NULL" catch-all boxes

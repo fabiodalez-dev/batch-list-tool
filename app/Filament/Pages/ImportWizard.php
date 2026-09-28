@@ -163,7 +163,9 @@ class ImportWizard extends Page
         'creator surname' => ['surname'],
         'last name' => ['surname'],
         'family name' => ['surname'],
-        'authority name' => ['surname', 'given_names'],
+        // "Authority Name" is the given name — 'authority surname' below covers
+        // the surname. Listing both meant one sheet column filled two fields.
+        'authority name' => ['given_names'],
         'authority surname' => ['surname'],
         'name of inputter' => ['inputter', 'created_by'],
         'inputter' => ['inputter', 'created_by'],
@@ -383,6 +385,45 @@ class ImportWizard extends Page
             'name' => 'The type name.',
             'description' => 'Free text.',
             'is_active' => 'yes / no. Blank means active.',
+        ],
+    ];
+
+    /**
+     * Build the `columnMap` array Filament's import jobs expect:
+     * keys are Importer column names, values are the matching Excel
+     * header strings (or null if not present).
+     *
+     * Cascading match strategy (per Importer field):
+     *   1. exact name / label / `->guess()` alias (case-insensitive, trimmed);
+     *   2. {@see SYNONYMS} table lookup;
+     *   3. Levenshtein distance ≤ 3 fuzzy match against the field name.
+     *
+     * @param class-string<Importer> $importerClass
+     * @param array<int, string> $excelHeaders
+     * @param array<string, array<int, string>> $extraSynonyms per-profile aliases
+     * @return array<string, string|null>
+     */
+    /**
+     * Headers a given column must never claim, however well they match.
+     *
+     * A column's own field name is matched first and cannot be outranked, which
+     * is usually exactly right — and occasionally exactly wrong. The documents
+     * sheet is the case: its legacy "Identifier" column holds the AUTHORITY's
+     * R-code, not the document's own identifier, and DocumentImporter has a
+     * field literally called `identifier`. The comment above that column has
+     * said so since F-004 and asked for "Identifier" to be kept out of its guess
+     * list — but a field name is not a guess, so the mis-mapping happened
+     * anyway: every legacy import filed the creator's code as the document's own
+     * and left the creator unlinked.
+     *
+     * Keyed by importer, then field, with LOWERCASED headers.
+     *
+     * @var array<class-string, array<string, list<string>>>
+     */
+    private const array NEVER_CLAIMS = [
+        DocumentImporter::class => [
+            // F-004: this header belongs to authority_identifier.
+            'identifier' => ['identifier'],
         ],
     ];
 
@@ -811,21 +852,6 @@ class ImportWizard extends Page
         ]);
     }
 
-    /**
-     * Build the `columnMap` array Filament's import jobs expect:
-     * keys are Importer column names, values are the matching Excel
-     * header strings (or null if not present).
-     *
-     * Cascading match strategy (per Importer field):
-     *   1. exact name / label / `->guess()` alias (case-insensitive, trimmed);
-     *   2. {@see SYNONYMS} table lookup;
-     *   3. Levenshtein distance ≤ 3 fuzzy match against the field name.
-     *
-     * @param class-string<Importer> $importerClass
-     * @param array<int, string> $excelHeaders
-     * @param array<string, array<int, string>> $extraSynonyms per-profile aliases
-     * @return array<string, string|null>
-     */
     public static function guessColumnMap(string $importerClass, array $excelHeaders, array $extraSynonyms = []): array
     {
         $lowerExcel = [];
@@ -833,9 +859,49 @@ class ImportWizard extends Page
             $lowerExcel[mb_strtolower(trim($h))] = $h;
         }
 
+        // Each column guesses on its own, and more than one can land on the same
+        // header — the guess lists, the synonyms table and the fuzzy tier all
+        // overlap. Left unarbitrated that is a silent mis-fill: on the documents
+        // sheet the DOCUMENT's own `identifier` claims "Authority Identifier"
+        // through the shared synonyms table, so every document would be filed
+        // under its creator's code.
+        //
+        // So the claims are collected with the tier that produced them and the
+        // strongest one wins the header: an exact match beats a synonym, a
+        // synonym beats a resemblance. A column that loses is left unmapped,
+        // which is the honest answer — that header belongs to another column,
+        // and the operator can still map it by hand on the preview step.
         $map = [];
+        $claims = [];
+
         foreach ($importerClass::getColumns() as $column) {
-            $map[$column->getName()] = self::guessSingleColumn($column, $lowerExcel, $extraSynonyms);
+            $name = $column->getName();
+
+            // Hide the headers this column is not allowed to claim, so it looks
+            // for its next best match instead of winning one that is not its own.
+            $available = $lowerExcel;
+            foreach (self::NEVER_CLAIMS[$importerClass][$name] ?? [] as $banned) {
+                unset($available[$banned]);
+            }
+
+            [$header, $tier] = self::guessSingleColumnWithTier($column, $available, $extraSynonyms);
+            $map[$name] = $header;
+
+            if ($header === null) {
+                continue;
+            }
+
+            // Ties keep the first column declared, so the outcome does not
+            // depend on array ordering changing underfoot.
+            if (! isset($claims[$header]) || $tier < $claims[$header]['tier']) {
+                $claims[$header] = ['tier' => $tier, 'field' => $name];
+            }
+        }
+
+        foreach ($map as $name => $header) {
+            if ($header !== null && $claims[$header]['field'] !== $name) {
+                $map[$name] = null;
+            }
         }
 
         return $map;
@@ -2169,6 +2235,26 @@ class ImportWizard extends Page
         array $lowerExcel,
         array $extraSynonyms = [],
     ): ?string {
+        return self::guessSingleColumnWithTier($column, $lowerExcel, $extraSynonyms)[0];
+    }
+
+    /**
+     * The header this column claims, and HOW it claimed it.
+     *
+     * Tier 1 = the column's own name, label or an explicit guess. Tier 2 = the
+     * shared synonyms table. Tier 3 = Levenshtein resemblance. The tier is what
+     * lets guessColumnMap settle two columns reaching for the same header, so it
+     * has to travel with the answer rather than being recomputed.
+     *
+     * @param array<string, string> $lowerExcel
+     * @param array<string, list<string>> $extraSynonyms
+     * @return array{0: ?string, 1: int}
+     */
+    protected static function guessSingleColumnWithTier(
+        ImportColumn $column,
+        array $lowerExcel,
+        array $extraSynonyms = [],
+    ): array {
         // Tier 1: exact candidates (name, label, ->guess() aliases).
         $candidates = [
             $column->getName(),
@@ -2181,7 +2267,7 @@ class ImportWizard extends Page
             }
             $needle = mb_strtolower(trim((string) $candidate));
             if (array_key_exists($needle, $lowerExcel)) {
-                return $lowerExcel[$needle];
+                return [$lowerExcel[$needle], 1];
             }
         }
 
@@ -2195,7 +2281,7 @@ class ImportWizard extends Page
                 continue;
             }
             if (in_array($fieldName, $synonymTargets, true)) {
-                return $originalHeader;
+                return [$originalHeader, 2];
             }
         }
 
@@ -2218,7 +2304,7 @@ class ImportWizard extends Page
             }
         }
 
-        return $bestHeader;
+        return [$bestHeader, $bestHeader === null ? PHP_INT_MAX : 3];
     }
 
     /**
