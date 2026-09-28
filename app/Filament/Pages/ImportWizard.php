@@ -18,6 +18,7 @@ use App\Models\ImportProfile;
 use App\Models\User;
 use App\Support\BulkImport\SpreadsheetHeaders;
 use App\Support\BulkImport\TemplateGenerator;
+use App\Support\ColumnLabels\ColumnLabels;
 use Filament\Actions\Action as FilamentAction;
 use Filament\Actions\Imports\Events\ImportCompleted;
 use Filament\Actions\Imports\Events\ImportStarted;
@@ -300,6 +301,88 @@ class ImportWizard extends Page
         // operator already hears about it — a warning here would be noise.
         LocationImporter::class => [
             'parent_name' => 'No "Parent" column is mapped, so every location will be created at the top level instead of inside its room or shelf. Worse, a location that already exists inside a parent will not be recognised: you will get a second copy of it at the top level, or the row will fail if it has a code. Map the Parent column before importing into an existing hierarchy.',
+        ],
+    ];
+
+    /**
+     * Short "what goes in this column" hint, shown next to each column on the
+     * Download-template step so the operator fills the sheet correctly.
+     *
+     * KEYED BY ENTITY AND FIELD, never by header. The header is whatever the
+     * repository currently calls the column, so keying by header meant a rename
+     * silently dropped the explanation — and it dropped it from exactly the
+     * columns that needed one, since those are the ones people rename. The same
+     * reasoning already applies to TemplateGenerator::ENUM_COLUMNS.
+     *
+     * @var array<string, array<string, string>>
+     */
+    private const array HINTS = [
+        'box' => [
+            'box_type' => 'A code from the Box Types lookup (RAS, IN_SITU, NRA, MAV, STVC out of the box). Add a new type under Box Types to import it. Blank for the Unknown / NULL catch-alls.',
+            'box_number' => "This box's own number.",
+            'parent_barcode' => 'For IN_SITU / NRA boxes: the parent RAS box\'s NUMBER (e.g. "1") or its barcode. Leave blank for RAS boxes.',
+            'provenance_unknown' => 'Yes for an IN_SITU / NRA box that genuinely has NO parent RAS box; blank/No keeps the parent required. Ignored for RAS boxes.',
+            'barcode' => 'The physical barcode. Optional — leave blank if the box never had one or the trail was lost.',
+            'barcode_status' => 'IN, OUT or PERM_OUT. Blank defaults to IN. "Perm Out" / "PERM-OUT" are accepted.',
+            'is_legacy' => 'yes for a legacy box, otherwise leave blank.',
+            'tracking_note' => 'Movement / stock-take tracking, kept separate from the general note. Optional.',
+            'seal_number' => 'The physical seal id, if any.',
+            'current_box_type' => 'The physical container: RAS Box, Big Brown Box, Small Brown Box, Standard Blue Box, … (distinct from the box type).',
+            'destroyed' => 'Yes (or a date) to mark the box already destroyed; blank otherwise.',
+            'batch_number' => 'The batch number (must already exist). Usually numeric; "Unknown" / "NULL" are allowed.',
+            'notes' => 'Free text — any extra notes.',
+        ],
+        'batch' => [
+            'batch_number' => 'The batch number. Usually numeric; "Unknown" / "NULL" are allowed.',
+            'description' => 'Free text.',
+            'type' => 'A controlled code from the Batch Types lookup.',
+            'is_active' => 'yes / no. Blank means active.',
+            'repository_code' => 'The repository code (e.g. "NRA"). Blank = your default / a global record.',
+        ],
+        'location' => [
+            'name' => 'The location name.',
+            'parent_name' => 'The parent location\'s name — import parents first. Blank for a top-level location.',
+            'code' => 'Optional identifier — auto-generated if left blank.',
+            'sort_order' => 'Optional display order (a number).',
+            'type' => 'A controlled code: room, museum, repository, work_area, shelf, showcase, conservation, temp_holding or other.',
+            'is_active' => 'yes / no. Blank means active.',
+            'notes' => 'Free text — any extra notes.',
+            'repository_code' => 'The repository code (e.g. "NRA"). Blank = your default / a global record.',
+        ],
+        'series' => [
+            'code' => "The record's code / identifier.",
+            'title' => 'The title.',
+            'level_of_description' => 'ISAD level (usually "Series" or "SubSeries"). A label only — use the parent column to attach the row to another series.',
+            'parent_code' => 'The Identifier of the series this one sits under (e.g. REG sits under R). Blank for a top-level series. The parent may appear anywhere in this sheet or already exist.',
+            'date_of_creation' => 'A date or year range, e.g. "1607-1629". Informational.',
+            'name_of_inputter' => 'Who catalogued the record. Informational (the system also records who ran the import).',
+            'repository_code' => 'The repository code (e.g. "NRA").',
+        ],
+        'authority' => [
+            'alternative_identifier' => 'The code this archive cites the creator by. Required, and unique.',
+            'identifier' => 'The NAM code, where the archive holds one. Optional.',
+            'entity_type' => 'Person or Institution (e.g. "Notary" counts as Institution).',
+            'practice_dates_active' => 'A year range, e.g. "1607-1629".',
+            'ntg_dates_active' => 'A year range for Notary-to-Government service, e.g. "1882-1893".',
+            'name_suffix' => 'e.g. "Jr." — appended to the given name.',
+            'maiden_surname' => "The creator's maiden surname, if any.",
+            'surname' => "The creator's surname.",
+            'given_names' => "The creator's given name(s).",
+            'date_of_creation' => 'A date or year range. Informational.',
+            'notes' => 'Free text — any extra notes.',
+        ],
+        'volume' => [
+            'document_identifier' => 'The identifier of the document this volume belongs to. It must already exist.',
+            'volume_number' => "The volume's number.",
+            'dates_start' => 'Start of the volume\'s date range.',
+            'dates_end' => 'End of the volume\'s date range.',
+            'notes' => 'Free text — any extra notes.',
+        ],
+        'documentType' => [
+            'identifier' => 'Short code in the form DT00001 — this is what links documents to the type.',
+            'name' => 'The type name.',
+            'description' => 'Free text.',
+            'is_active' => 'yes / no. Blank means active.',
         ],
     ];
 
@@ -810,60 +893,41 @@ class ImportWizard extends Page
     }
 
     /**
-     * Short "what goes in this column" hint per template header, shown next to
-     * each column on the Download-template step so the operator fills the sheet
-     * correctly (especially the box parent link and the Location code, the two
-     * that caused the client's confusion). Unknown headers get no hint.
+     * The hints for one entity, keyed by the header that entity's template
+     * currently carries — so a renamed column keeps its explanation.
+     *
+     * @return array<string, string> header => hint
+     */
+    public static function columnHintsFor(string $entity): array
+    {
+        $hints = [];
+
+        foreach (self::HINTS[$entity] ?? [] as $field => $hint) {
+            $hints[ColumnLabels::get($entity, $field)] = $hint;
+        }
+
+        return $hints;
+    }
+
+    /**
+     * Every hint across every entity, keyed by current header.
+     *
+     * Headers are not unique across templates ("Notes" appears on several), so
+     * this collapses them; it is fine for the callers that only ask "is there a
+     * hint for this header", but the template step uses columnHintsFor() so each
+     * template gets its own entity's wording.
      *
      * @return array<string, string> header => hint
      */
     public static function columnHints(): array
     {
-        return [
-            // Boxes
-            'box_type' => 'A code from the Box Types lookup (RAS, IN_SITU, NRA, MAV, STVC out of the box). Add a new type under Box Types to import it. Blank for the Unknown / NULL catch-alls.',
-            'box_number' => "This box's own number.",
-            'parent_box_number' => 'For IN_SITU / NRA boxes: the parent RAS box\'s NUMBER (e.g. "1") or its barcode. Leave blank for RAS boxes.',
-            'Provenance Unknown' => 'Yes for an IN_SITU / NRA box that genuinely has NO parent RAS box; blank/No keeps the parent required. Ignored for RAS boxes.',
-            'barcode' => 'The physical barcode. Optional — leave blank if the box never had one or the trail was lost.',
-            'barcode_status' => 'IN, OUT or PERM_OUT. Blank defaults to IN. "Perm Out" / "PERM-OUT" are accepted.',
-            'disinfestation_date' => 'The box disinfestation date, if known. Optional (even for PERM_OUT).',
-            'is_legacy' => 'yes for a legacy box, otherwise leave blank.',
-            'Tracking Note' => 'Movement / stock-take tracking, kept separate from the general note. Optional.',
-            'Seal Number' => 'The physical seal id, if any.',
-            'Location' => 'The location CODE (e.g. "SHELF-A3"), NOT the room name. Optional (even for PERM_OUT).',
-            'Current Box Type' => 'The physical container: RAS Box, Big Brown Box, Small Brown Box, Standard Blue Box, … (distinct from box_type).',
-            'Destroyed' => 'Yes (or a date) to mark the box already destroyed; blank otherwise.',
-            // Batches / shared
-            'batch_number' => 'The batch number (must already exist for boxes). Usually numeric; "Unknown" / "NULL" are allowed.',
-            'description' => 'Free text.',
-            'type' => 'A controlled code (batch type / location type).',
-            'is_active' => 'yes / no. Blank means active.',
-            'repository_code' => 'The repository code (e.g. "NRA"). Blank = your default / a global record.',
-            // Locations
-            'name' => 'The location name.',
-            'parent_name' => 'The parent location\'s name — import parents first. Blank for a top-level location.',
-            'code' => 'Optional identifier — auto-generated if left blank.',
-            'sort_order' => 'Optional display order (a number).',
-            // Series / Authorities
-            'Identifier' => "The record's code / identifier.",
-            'Standard title in English (Plural)' => 'The title.',
-            'Level of description' => 'ISAD level (usually "Series" or "SubSeries"). A label only — use "Parent" to attach the row to another series.',
-            'Parent' => 'The Identifier of the series this one sits under (e.g. REG sits under R). Blank for a top-level series. The parent may appear anywhere in this sheet or already exist.',
-            'Date of creation' => 'A date or year range, e.g. "1607-1629". Informational.',
-            'Name of Inputter' => 'Who catalogued the record. Informational (the system also records who ran the import).',
-            'Repository' => 'The repository code (e.g. "NRA").',
-            'Alternative Identifier' => 'Any secondary identifier (e.g. an MS number).',
-            'Type of Entity' => 'Person or Institution (e.g. "Notary" counts as Institution).',
-            'Private Practice Dates Active' => 'A year range, e.g. "1607-1629".',
-            'NTG Dates Active' => 'A year range for Notary-to-Government service, e.g. "1882-1893".',
-            'Name Suffix' => 'e.g. "Jr." — appended to the given name.',
-            'Maiden Surname' => "The creator's maiden surname, if any.",
-            'Creator Surname' => "The creator's surname.",
-            'Creator Name' => "The creator's given name(s).",
-            'notes' => 'Free text — any extra notes.',
-            'Note' => 'Free text — any extra notes.',
-        ];
+        $hints = [];
+
+        foreach (array_keys(self::HINTS) as $entity) {
+            $hints = [...$hints, ...self::columnHintsFor($entity)];
+        }
+
+        return $hints;
     }
 
     /* ──────────────────────────────────────────────────────────────── */
@@ -1341,7 +1405,7 @@ class ImportWizard extends Page
                         $entity = self::TEMPLATE_KEYS[$type];
                         $headers = TemplateGenerator::headersFor($entity);
 
-                        $hints = self::columnHints();
+                        $hints = self::columnHintsFor($entity);
                         $items = '';
                         foreach ($headers as $h) {
                             if ($h === '') {

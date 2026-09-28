@@ -118,11 +118,12 @@ class AuthorityResource extends Resource
                             ->maxLength(65535)
                             ->columnSpanFull()),
                         $g(Forms\Components\TextInput::make('surname')
+                            ->label(ColumnLabels::get('authority', 'surname'))
                             ->required()
                             ->maxLength(255)),
                         // Feedback1 — "New Creator Given Name should be mandatory".
                         $g(Forms\Components\TextInput::make('given_names')
-                            ->label('Given name')
+                            ->label(ColumnLabels::get('authority', 'given_names'))
                             ->required()
                             ->maxLength(255)),
                         // Feedback1 — replace free-text "Person" with a
@@ -130,6 +131,7 @@ class AuthorityResource extends Resource
                         // values (e.g. legacy 'PERSON') are merged into the
                         // options so the record stays editable/saveable.
                         $g(Forms\Components\Select::make('entity_type')
+                            ->label(ColumnLabels::get('authority', 'entity_type'))
                             ->required()
                             ->native(false)
                             ->options(fn (?Authority $record): array => self::entityTypeOptions($record?->entity_type))
@@ -199,34 +201,34 @@ class AuthorityResource extends Resource
                     ->columns($twoCols)
                     ->schema([
                         $g(Forms\Components\Textarea::make('authorised_form_of_name')
-                            ->label('Authorised form of name')
+                            ->label(ColumnLabels::get('authority', 'authorised_form_of_name'))
                             ->rows(2)
                             ->columnSpanFull()),
                         $g(Forms\Components\Textarea::make('functions_occupations_activities')
-                            ->label('Functions, occupations and activities')
+                            ->label(ColumnLabels::get('authority', 'functions_occupations_activities'))
                             ->rows(3)
                             ->columnSpanFull()),
                         $g(Forms\Components\Select::make('level_of_detail')
-                            ->label('Level of detail')
+                            ->label(ColumnLabels::get('authority', 'level_of_detail'))
                             ->native(false)
                             ->options(array_combine(Authority::LEVELS_OF_DETAIL, Authority::LEVELS_OF_DETAIL))),
                         $g(Forms\Components\Select::make('status')
-                            ->label('Status')
+                            ->label(ColumnLabels::get('authority', 'status'))
                             ->native(false)
                             ->options(array_combine(Authority::RECORD_STATUSES, Authority::RECORD_STATUSES))),
                         $g(Forms\Components\Textarea::make('rules_and_conventions')
-                            ->label('Rules and/or conventions')
+                            ->label(ColumnLabels::get('authority', 'rules_and_conventions'))
                             ->rows(2)
                             ->columnSpanFull()),
                         // Free text, not a date picker: an archival creation date
                         // is often a span or an approximation, and a picker would
                         // force it into a single day.
                         $g(Forms\Components\TextInput::make('date_of_creation')
-                            ->label('Date of creation')
+                            ->label(ColumnLabels::get('authority', 'date_of_creation'))
                             ->helperText('As written in the record — a date, a year, or a span such as 1607-1629.')
                             ->maxLength(255)),
                         $g(Forms\Components\TextInput::make('creator_of_record')
-                            ->label('Creator of record')
+                            ->label(ColumnLabels::get('authority', 'creator_of_record'))
                             ->helperText('The cataloguer named in the sheet, not the account that imported it.')
                             ->maxLength(255)),
                     ]),
@@ -236,6 +238,7 @@ class AuthorityResource extends Resource
                     ->collapsed()
                     ->schema([
                         $g(Forms\Components\Textarea::make('notes')
+                            ->label(ColumnLabels::get('authority', 'notes'))
                             ->rows(3)
                             ->columnSpanFull()),
                     ]),
@@ -274,13 +277,13 @@ class AuthorityResource extends Resource
                             ->placeholder('—')
                             ->columnSpanFull(),
                         TextEntry::make('surname')
-                            ->label('Surname')
+                            ->label(ColumnLabels::get('authority', 'surname'))
                             ->placeholder('—'),
                         TextEntry::make('given_names')
-                            ->label('Given names')
+                            ->label(ColumnLabels::get('authority', 'given_names'))
                             ->placeholder('—'),
                         TextEntry::make('entity_type')
-                            ->label('Entity type')
+                            ->label(ColumnLabels::get('authority', 'entity_type'))
                             ->badge()
                             ->color('gray')
                             ->placeholder('—'),
@@ -346,32 +349,32 @@ class AuthorityResource extends Resource
                     ->columns($twoCols)
                     ->schema([
                         TextEntry::make('authorised_form_of_name')
-                            ->label('Authorised form of name')
+                            ->label(ColumnLabels::get('authority', 'authorised_form_of_name'))
                             ->placeholder('—')
                             ->columnSpanFull(),
                         TextEntry::make('functions_occupations_activities')
-                            ->label('Functions, occupations and activities')
+                            ->label(ColumnLabels::get('authority', 'functions_occupations_activities'))
                             ->placeholder('—')
                             ->columnSpanFull(),
                         TextEntry::make('level_of_detail')
-                            ->label('Level of detail')
+                            ->label(ColumnLabels::get('authority', 'level_of_detail'))
                             ->badge()
                             ->color('gray')
                             ->placeholder('—'),
                         TextEntry::make('status')
-                            ->label('Status')
+                            ->label(ColumnLabels::get('authority', 'status'))
                             ->badge()
                             ->color(fn (?string $state): string => $state === 'Complete' ? 'success' : 'warning')
                             ->placeholder('—'),
                         TextEntry::make('rules_and_conventions')
-                            ->label('Rules and/or conventions')
+                            ->label(ColumnLabels::get('authority', 'rules_and_conventions'))
                             ->placeholder('—')
                             ->columnSpanFull(),
                         TextEntry::make('date_of_creation')
-                            ->label('Date of creation')
+                            ->label(ColumnLabels::get('authority', 'date_of_creation'))
                             ->placeholder('—'),
                         TextEntry::make('creator_of_record')
-                            ->label('Creator of record')
+                            ->label(ColumnLabels::get('authority', 'creator_of_record'))
                             ->placeholder('—'),
                     ]),
 
@@ -380,6 +383,7 @@ class AuthorityResource extends Resource
                     ->collapsed()
                     ->schema([
                         TextEntry::make('notes')
+                            ->label(ColumnLabels::get('authority', 'notes'))
                             ->hiddenLabel()
                             ->prose()
                             ->placeholder('No notes.')
@@ -445,39 +449,41 @@ class AuthorityResource extends Resource
                 // The long descriptive fields are toggleable and off by default
                 // — useful on the record, noise in a list.
                 $gc(Tables\Columns\TextColumn::make('status')
-                    ->label('Status')
+                    ->label(ColumnLabels::get('authority', 'status'))
                     ->badge()
                     ->color(fn (?string $state): string => $state === 'Complete' ? 'success' : 'warning')
                     ->placeholder('—')
                     ->sortable()
                     ->toggleable()),
                 $gc(Tables\Columns\TextColumn::make('level_of_detail')
-                    ->label('Level of detail')
+                    ->label(ColumnLabels::get('authority', 'level_of_detail'))
                     ->badge()
                     ->color('gray')
                     ->placeholder('—')
                     ->sortable()
                     ->toggleable()),
                 $gc(Tables\Columns\TextColumn::make('date_of_creation')
-                    ->label('Date of creation')
+                    ->label(ColumnLabels::get('authority', 'date_of_creation'))
                     ->placeholder('—')
                     ->sortable()
                     ->toggleable(isToggledHiddenByDefault: true)),
                 $gc(Tables\Columns\TextColumn::make('creator_of_record')
-                    ->label('Creator of record')
+                    ->label(ColumnLabels::get('authority', 'creator_of_record'))
                     ->placeholder('—')
                     ->sortable()
                     ->toggleable(isToggledHiddenByDefault: true)),
                 $gc(Tables\Columns\TextColumn::make('surname')
+                    ->label(ColumnLabels::get('authority', 'surname'))
                     ->sortable()
                     ->searchable()
                     ->toggleable()),
                 $gc(Tables\Columns\TextColumn::make('given_names')
-                    ->label('Given name')
+                    ->label(ColumnLabels::get('authority', 'given_names'))
                     ->sortable()
                     ->searchable()
                     ->toggleable()),
                 $gc(Tables\Columns\TextColumn::make('entity_type')
+                    ->label(ColumnLabels::get('authority', 'entity_type'))
                     ->badge()
                     ->formatStateUsing(fn (?string $state): string => self::ENTITY_TYPES[$state] ?? (string) $state)
                     ->sortable()
@@ -536,15 +542,15 @@ class AuthorityResource extends Resource
                 QueryBuilder::make()
                     ->constraints([
                         TextConstraint::make('identifier')
-                            ->label('Identifier'),
+                            ->label(ColumnLabels::get('authority', 'identifier')),
                         TextConstraint::make('alternative_identifier')
-                            ->label('MS / alternative identifier'),
+                            ->label(ColumnLabels::get('authority', 'alternative_identifier')),
                         TextConstraint::make('surname')
-                            ->label('Surname'),
+                            ->label(ColumnLabels::get('authority', 'surname')),
                         TextConstraint::make('given_names')
-                            ->label('Given name'),
+                            ->label(ColumnLabels::get('authority', 'given_names')),
                         SelectConstraint::make('entity_type')
-                            ->label('Entity type')
+                            ->label(ColumnLabels::get('authority', 'entity_type'))
                             ->options(self::ENTITY_TYPES)
                             ->multiple(),
                         NumberConstraint::make('practice_dates_start')

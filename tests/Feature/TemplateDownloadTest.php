@@ -10,6 +10,7 @@ use App\Filament\Imports\DocumentImporter;
 use App\Filament\Imports\LocationImporter;
 use App\Filament\Imports\SeriesImporter;
 use App\Filament\Imports\VolumeImporter;
+use App\Filament\Pages\ImportWizard;
 use App\Models\Authority;
 use App\Models\Batch;
 use App\Models\Box;
@@ -345,25 +346,27 @@ test('Batch template uses synthesised headers that map 1:1 with BatchImporter co
 
     $generated = tpl_renderAndParse(TemplateGenerator::download('batch'))['headers'];
 
-    // No legacy sample dependency — synthesised from RFQ + BatchImporter.
+    // No legacy sample dependency — the header row IS ColumnLabels::DEFAULTS
+    // for this entity. Until 2026-09-28 these were the raw field names, which
+    // meant the sheet and the screen called the same column two things.
     expect($generated)->toBe([
-        'batch_number',
-        'description',
-        'type',
-        'is_active',
-        'repository_code',
+        'Batch Number',
+        'Description',
+        'Accession Type',
+        'Is active',
+        'Repository code',
     ]);
 
-    // Every generated header must correspond 1:1 to an ImportColumn name in
-    // BatchImporter — that's the contract that lets "download → fill →
-    // re-upload" work with zero remapping.
-    $importerColumnNames = array_map(
-        static fn ($c) => $c->getName(),
-        BatchImporter::getColumns(),
+    // Every generated header must be CLAIMED by a BatchImporter column — that's
+    // the contract that lets "download → fill → re-upload" work with zero
+    // remapping. Until 2026-09-28 this asserted the stronger "header equals the
+    // field name", which only held while the headers were the field names; the
+    // contract was never that they be spelled alike, only that each one maps.
+    $claimed = array_filter(
+        ImportWizard::guessColumnMap(BatchImporter::class, $generated),
+        static fn (?string $h): bool => $h !== null && $h !== '',
     );
-    foreach ($generated as $header) {
-        expect($importerColumnNames)->toContain($header);
-    }
+    expect(array_values(array_diff($generated, array_values($claimed))))->toBe([]);
 });
 
 test('Box template uses synthesised headers that map 1:1 with BoxImporter columns', function () {
@@ -382,15 +385,15 @@ test('Box template uses synthesised headers that map 1:1 with BoxImporter column
     // both columns (tolerant), so they are intentionally absent here but present
     // as importer columns — the cross-check below only walks header → column.
     expect($generated)->toBe([
-        'box_type',
-        'box_number',
-        'batch_number',
-        'parent_box_number',
-        'barcode',
-        'barcode_status',
-        'is_legacy',
+        'Box type',
+        'Box number',
+        'Batch number',
+        'Parent box number',
+        'Barcode',
+        'Barcode status',
+        'Is legacy',
         'Provenance Unknown',
-        'notes',
+        'Notes',
         'Tracking Note',
         'Seal Number',
         'Destroyed',
@@ -414,9 +417,18 @@ test('Box template uses synthesised headers that map 1:1 with BoxImporter column
         'Destroyed' => 'destroyed',
         'Provenance Unknown' => 'provenance_unknown',
     ];
-    foreach ($generated as $header) {
-        $aliased = $aliases[$header] ?? $header;
-        expect($importerColumnNames)->toContain($aliased);
+    // Same contract as the batch template: each header must be claimed by a
+    // column, whatever the two are called.
+    $claimed = array_filter(
+        ImportWizard::guessColumnMap(BoxImporter::class, $generated),
+        static fn (?string $h): bool => $h !== null && $h !== '',
+    );
+    expect(array_values(array_diff($generated, array_values($claimed))))->toBe([]);
+
+    // And the aliases still name real importer columns, so this list cannot rot
+    // into pointing at fields that no longer exist.
+    foreach ($aliases as $field) {
+        expect($importerColumnNames)->toContain($field);
     }
 });
 

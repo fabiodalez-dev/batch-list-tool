@@ -27,7 +27,7 @@ class ListVolumes extends ListRecords
     /**
      * Stream the currently filtered Volume list as CSV.
      *
-     * Fixed columns (in order defined by TemplateGenerator::synthesiseVolumeHeaders):
+     * Fixed columns (in order defined by ColumnLabels::DEFAULTS['volume']):
      *   document_identifier, volume_number, dates_start, dates_end, notes
      *
      * Followed by any active custom-field columns for the 'volume' entity
@@ -48,7 +48,7 @@ class ListVolumes extends ListRecords
     {
         abort_unless(auth()->user()?->can('view_any_volume'), 403, 'Not authorized to export volumes.');
 
-        // Fixed column map: keys match TemplateGenerator::synthesiseVolumeHeaders()
+        // Fixed column map: keys match ColumnLabels::DEFAULTS['volume']
         // so a downloaded template and a re-uploaded CSV stay in sync.
         $columns = [
             'document_identifier' => 'Document identifier',
@@ -162,7 +162,7 @@ class ListVolumes extends ListRecords
             // Download a blank template whose column headers match the
             // VolumeImporter column keys exactly — so download → fill → re-upload
             // needs no column remapping. Volume headers are defined by
-            // TemplateGenerator::synthesiseVolumeHeaders().
+            // ColumnLabels::DEFAULTS['volume'].
             Actions\Action::make('download_template')
                 ->label('Download template')
                 ->icon('heroicon-o-arrow-down-tray')

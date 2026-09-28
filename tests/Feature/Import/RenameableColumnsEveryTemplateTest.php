@@ -143,27 +143,30 @@ it('carries a batch rename into the template and the importer together', functio
     $repo = Repository::factory()->create(['code' => 'RET3']);
     $this->actingAs(ret_admin($repo));
 
-    // The batch template still ships the technical "batch_number".
-    expect(TemplateGenerator::headersFor('batch'))->toContain('batch_number');
+    // Until 2026-09-28 this template shipped the raw field name; it now ships
+    // the readable one, the same name the form and the table show.
+    expect(TemplateGenerator::headersFor('batch'))->toContain('Batch Number');
 
-    ret_rename($repo, 'batch', 'batch_number', 'Batch Number');
+    ret_rename($repo, 'batch', 'batch_number', 'Consignment No');
 
     $headers = TemplateGenerator::headersFor('batch');
 
-    expect($headers)->toContain('Batch Number')
-        ->and($headers)->not->toContain('batch_number')
-        ->and(ret_claimed(BatchImporter::class, $headers, 'batch_number'))->toBe('Batch Number');
+    expect($headers)->toContain('Consignment No')
+        ->and($headers)->not->toContain('Batch Number')
+        ->and(ret_claimed(BatchImporter::class, $headers, 'batch_number'))->toBe('Consignment No');
 });
 
 it('still imports a sheet saved before the rename', function (): void {
     $repo = Repository::factory()->create(['code' => 'RET4']);
     $this->actingAs(ret_admin($repo));
 
-    ret_rename($repo, 'batch', 'batch_number', 'Batch Number');
+    ret_rename($repo, 'batch', 'batch_number', 'Consignment No');
 
-    // The cataloguer's existing sheets carry the factory header. It keeps
-    // importing because it IS the field name, and guessSingleColumn tries the
-    // field name before the label — so renaming cannot strand a filled-in file.
+    // The cataloguer's existing sheets carry the technical header, both because
+    // that is what the template shipped before 2026-09-28 and because a sheet
+    // may predate any rename. It keeps importing because it IS the field name,
+    // and guessSingleColumn tries the field name before the label — so neither
+    // a rename nor the move to readable headers can strand a filled-in file.
     $oldSheet = ['batch_number', 'description', 'type', 'is_active', 'repository_code'];
 
     expect(ret_claimed(BatchImporter::class, $oldSheet, 'batch_number'))->toBe('batch_number');

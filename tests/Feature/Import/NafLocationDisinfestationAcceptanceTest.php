@@ -276,15 +276,22 @@ it('B4: the generator version was bumped for the template contract change', func
     // "Previous Temporary Identifiers"; to 1.18.0 on 2026-09-24 when the four
     // identifier columns were renamed to the archival vocabulary; to 1.19.0 on
     // 2026-09-25 when renaming reached every template and Subseries, Locations,
-    // Document Types and Notary Accessions gained added columns of their own.
-    expect(TemplateGenerator::GENERATOR_VERSION)->toBe('1.19.0');
+    // Document Types and Notary Accessions gained added columns of their own;
+    // to 1.20.0 on 2026-09-28 when the batch, box, location and volume headers
+    // stopped being raw field names and became the readable name the form and
+    // the table already used.
+    expect(TemplateGenerator::GENERATOR_VERSION)->toBe('1.20.0');
 });
 
 it('B5: every generated box header still maps to a BoxImporter column (round-trip)', function () {
     $headers = TemplateGenerator::headersFor('box');
     $cols = collect(BoxImporter::getColumns())->map(fn ($c) => $c->getName())->all();
+    // Header => importer field. The headers became the readable names on
+    // 2026-09-28, so most of them no longer equal the field they feed.
     $aliases = [
-        'parent_box_number' => 'parent_barcode', 'Tracking Note' => 'tracking_note',
+        'Box type' => 'box_type', 'Box number' => 'box_number', 'Batch number' => 'batch_number',
+        'Parent box number' => 'parent_barcode', 'Barcode' => 'barcode', 'Barcode status' => 'barcode_status',
+        'Is legacy' => 'is_legacy', 'Notes' => 'notes', 'Tracking Note' => 'tracking_note',
         'Seal Number' => 'seal_number', 'Current Box Type' => 'current_box_type', 'Destroyed' => 'destroyed',
         'Provenance Unknown' => 'provenance_unknown',
     ];

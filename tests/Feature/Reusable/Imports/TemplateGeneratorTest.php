@@ -21,17 +21,17 @@ beforeEach(function () {
 
 it('TemplateGenerator: headersFor("batch") returns the synthetic Batch header set', function () {
     $headers = TemplateGenerator::headersFor('batch');
-    expect($headers)->toContain('batch_number')
-        ->and($headers)->toContain('type')
-        ->and($headers)->toContain('repository_code');
+    expect($headers)->toContain('Batch Number')
+        ->and($headers)->toContain('Accession Type')
+        ->and($headers)->toContain('Repository code');
 });
 
 it('TemplateGenerator: headersFor("box") includes parent_box_number and barcode_status, no longer disinfestation_date/Location', function () {
     // Client feedback 2026-08-04: disinfestation_date and Location moved OFF the
     // box template onto the document template.
     $headers = TemplateGenerator::headersFor('box');
-    expect($headers)->toContain('parent_box_number')
-        ->and($headers)->toContain('barcode_status')
+    expect($headers)->toContain('Parent box number')
+        ->and($headers)->toContain('Barcode status')
         ->and($headers)->toContain('Tracking Note')
         ->and($headers)->not->toContain('disinfestation_date')
         ->and($headers)->not->toContain('Location');
@@ -114,5 +114,5 @@ it('TemplateGenerator: round-trips by writing then reading the xlsx', function (
     $sheet = $reader->load($tmp)->getActiveSheet();
     $headerA1 = $sheet->getCell('A1')->getValue();
 
-    expect($headerA1)->toBe('batch_number');
+    expect($headerA1)->toBe('Batch Number');
 });

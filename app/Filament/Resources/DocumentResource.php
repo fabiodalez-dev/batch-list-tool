@@ -16,6 +16,7 @@ use App\Models\Lookup\CurrentBoxType;
 use App\Models\Lookup\DigitisationStatus;
 use App\Models\Practice;
 use App\Models\Repository;
+use App\Support\ColumnLabels\ColumnLabels;
 use App\Support\CustomFields\CustomFieldSchema;
 use App\Support\LocationBreadcrumbCache;
 use Carbon\Carbon;
@@ -152,9 +153,9 @@ class DocumentResource extends Resource
                     ->columns(3)
                     ->schema([
                         $g(Forms\Components\TextInput::make('identifier')->required()->maxLength(64)),
-                        $g(Forms\Components\TextInput::make('catalogue_identifier')->maxLength(191)),
+                        $g(Forms\Components\TextInput::make('catalogue_identifier')->label(ColumnLabels::get('document', 'catalogue_identifier'))->maxLength(191)),
                         $g(Forms\Components\Select::make('document_type')
-                            ->label('Document type')
+                            ->label(ColumnLabels::get('document', 'document_type'))
                             ->searchable()
                             ->preload()
                             ->options(fn (): array => DocumentType::query()
@@ -184,10 +185,10 @@ class DocumentResource extends Resource
                             // the operator picks a different repository (GROUP A fix).
                             ->live()
                             ->default(fn () => auth()->user()?->default_repository_id)),
-                        $g(Forms\Components\TextInput::make('volume_number')->label('Volume No')->maxLength(64)),
-                        $g(Forms\Components\TextInput::make('part_number')->label('Part No')->maxLength(64)->nullable()),
+                        $g(Forms\Components\TextInput::make('volume_number')->label(ColumnLabels::get('document', 'volume_number'))->maxLength(64)),
+                        $g(Forms\Components\TextInput::make('part_number')->label(ColumnLabels::get('document', 'part_number'))->maxLength(64)->nullable()),
                         $g(Forms\Components\Select::make('practice')
-                            ->label('Practice')
+                            ->label(ColumnLabels::get('document', 'practice'))
                             ->searchable()
                             ->options(fn (): array => Practice::query()
                                 ->where('is_active', true)->orderBy('name')->pluck('name', 'name')->all())
@@ -198,10 +199,10 @@ class DocumentResource extends Resource
                             ->createOptionUsing(fn (array $data): string => Practice::create([
                                 'name' => $data['name'], 'description' => $data['description'] ?? null, 'is_active' => true,
                             ])->name)),
-                        $g(Forms\Components\TextInput::make('dates')->label('Dates (text)')->maxLength(191)
+                        $g(Forms\Components\TextInput::make('dates')->label(ColumnLabels::get('document', 'dates'))->maxLength(191)
                             ->helperText('Free-text dates as in POC, e.g. "1607-1629" or "Jun 1997 - Nov 1998"')
                             ->columnSpanFull()),
-                        $g(Forms\Components\TextInput::make('deeds')->maxLength(2000)->columnSpanFull()),
+                        $g(Forms\Components\TextInput::make('deeds')->label(ColumnLabels::get('document', 'deeds'))->maxLength(2000)->columnSpanFull()),
                         $g(Forms\Components\TextInput::make('number_of_acts')->label('No of Acts')->maxLength(64)),
                         $g(Forms\Components\TextInput::make('pages_folios')->label('Pages/Folios')->maxLength(128)),
                     ]),
@@ -373,31 +374,31 @@ class DocumentResource extends Resource
                             })
                             ->native(false)
                             ->nullable()),
-                        $g(Forms\Components\Select::make('digitised')
+                        $g(Forms\Components\Select::make('digitised')->label(ColumnLabels::get('document', 'digitised'))
                             ->options(fn (): array => DigitisationStatus::options())
                             ->nullable()
                             ->helperText('Digitisation source per RFQ APP2-xiii.')),
-                        $g(Forms\Components\Toggle::make('torre')->columnSpanFull()),
-                        $g(Forms\Components\TextInput::make('accession_code_legacy')->label('Accession (legacy text)')->maxLength(191)),
+                        $g(Forms\Components\Toggle::make('torre')->label(ColumnLabels::get('document', 'torre'))->columnSpanFull()),
+                        $g(Forms\Components\TextInput::make('accession_code_legacy')->label(ColumnLabels::get('document', 'accession_code_legacy'))->maxLength(191)),
                         // Client feedback 2026-08-18 #27: relabel to the client's
                         // wording. This is NOT guaranteed unique (multiple documents
                         // may share a conservation object), so it stays free-text.
-                        $g(Forms\Components\TextInput::make('object_reference_number')->label('Conservation Object Reference Number')->maxLength(500)),
+                        $g(Forms\Components\TextInput::make('object_reference_number')->label(ColumnLabels::get('document', 'object_reference_number'))->maxLength(500)),
                         // Client feedback 2026-08-18 #26: a per-document temporary
                         // identifier, unique across the archive (enforced by a DB
                         // unique index + the importer's afterFill check).
                         $g(Forms\Components\TextInput::make('temporary_identifier')
-                            ->label('Temporary Identifier')
+                            ->label(ColumnLabels::get('document', 'temporary_identifier'))
                             ->maxLength(191)
                             ->unique(ignoreRecord: true)
                             ->nullable()),
                         // Client feedback 2026-08-18 #28: free-text citation reference.
-                        $g(Forms\Components\Textarea::make('citation_reference')->label('Citation Reference')->rows(2)->columnSpanFull()),
+                        $g(Forms\Components\Textarea::make('citation_reference')->label(ColumnLabels::get('document', 'citation_reference'))->rows(2)->columnSpanFull()),
                         // Client feedback 2026-08-04: a Tracking Note distinct
                         // from the general note (this is the existing `tracking`
                         // column, relabelled and promoted to a multi-line field).
-                        $g(Forms\Components\Textarea::make('tracking')->label('Tracking Note')->rows(3)->maxLength(500)->columnSpanFull()),
-                        $g(Forms\Components\TextInput::make('museum_reference')->maxLength(500)->columnSpanFull()),
+                        $g(Forms\Components\Textarea::make('tracking')->label(ColumnLabels::get('document', 'tracking'))->rows(3)->maxLength(500)->columnSpanFull()),
+                        $g(Forms\Components\TextInput::make('museum_reference')->label(ColumnLabels::get('document', 'museum_reference'))->maxLength(500)->columnSpanFull()),
                     ]),
 
                 Section::make('Attachments')
@@ -424,14 +425,14 @@ class DocumentResource extends Resource
                         $g(Forms\Components\TextInput::make('ras_batch_1')->label('RAS Batch 1')->maxLength(50)),
                         $g(Forms\Components\TextInput::make('ras_box_1')->label('RAS Box 1')->maxLength(50)),
                         $g(Forms\Components\TextInput::make('ras_1_box_destroyed')->label('RAS 1 Destroyed?')->maxLength(10)),
-                        $g(Forms\Components\TextInput::make('in_situ_box_1')->label('In Situ Box 1')->maxLength(50)),
+                        $g(Forms\Components\TextInput::make('in_situ_box_1')->label(ColumnLabels::get('document', 'in_situ_box_1'))->maxLength(50)),
                         $g(Forms\Components\TextInput::make('in_situ_box_1_destroyed')->label('In Situ 1 Destroyed?')->maxLength(10)),
-                        $g(Forms\Components\TextInput::make('ras_batch_2')->label('RAS Batch 2')->maxLength(50)),
-                        $g(Forms\Components\TextInput::make('ras_box_2')->label('RAS Box 2')->maxLength(50)),
+                        $g(Forms\Components\TextInput::make('ras_batch_2')->label(ColumnLabels::get('document', 'ras_batch_2'))->maxLength(50)),
+                        $g(Forms\Components\TextInput::make('ras_box_2')->label(ColumnLabels::get('document', 'ras_box_2'))->maxLength(50)),
                         $g(Forms\Components\TextInput::make('ras_2_box_destroyed')->label('RAS 2 Destroyed?')->maxLength(10)),
-                        $g(Forms\Components\TextInput::make('in_situ_box_2')->label('In Situ Box 2')->maxLength(50)),
+                        $g(Forms\Components\TextInput::make('in_situ_box_2')->label(ColumnLabels::get('document', 'in_situ_box_2'))->maxLength(50)),
                         $g(Forms\Components\TextInput::make('in_situ_box_2_destroyed')->label('In Situ 2 Destroyed?')->maxLength(10)),
-                        $g(Forms\Components\TextInput::make('in_situ_box_3')->label('In Situ Box 3')->maxLength(50)),
+                        $g(Forms\Components\TextInput::make('in_situ_box_3')->label(ColumnLabels::get('document', 'in_situ_box_3'))->maxLength(50)),
                         $g(Forms\Components\TextInput::make('in_situ_box_3_destroyed')->label('In Situ 3 Destroyed?')->maxLength(10)),
                     ]),
 
@@ -446,10 +447,10 @@ class DocumentResource extends Resource
                         $g(Forms\Components\TextInput::make('status_1')->label('Status 1')->maxLength(20)),
                         $g(Forms\Components\TextInput::make('barcode_ras_2')->label('Barcode RAS 2')->maxLength(50)),
                         $g(Forms\Components\TextInput::make('status_2')->label('Status 2')->maxLength(20)),
-                        $g(Forms\Components\TextInput::make('barcode_ras_3')->label('Barcode RAS 3')->maxLength(50)),
-                        $g(Forms\Components\TextInput::make('status_3')->label('Status 3')->maxLength(20)),
-                        $g(Forms\Components\TextInput::make('barcode_ras_4')->label('Barcode RAS 4')->maxLength(50)),
-                        $g(Forms\Components\TextInput::make('status_4')->label('Status 4')->maxLength(20)),
+                        $g(Forms\Components\TextInput::make('barcode_ras_3')->label(ColumnLabels::get('document', 'barcode_ras_3'))->maxLength(50)),
+                        $g(Forms\Components\TextInput::make('status_3')->label(ColumnLabels::get('document', 'status_3'))->maxLength(20)),
+                        $g(Forms\Components\TextInput::make('barcode_ras_4')->label(ColumnLabels::get('document', 'barcode_ras_4'))->maxLength(50)),
+                        $g(Forms\Components\TextInput::make('status_4')->label(ColumnLabels::get('document', 'status_4'))->maxLength(20)),
                         $g(Forms\Components\TextInput::make('barcode_ras_2_alt')->label('Barcode RAS 2 alt')->maxLength(50)),
                         $g(Forms\Components\TextInput::make('status_1_alt')->label('Status 1 alt')->maxLength(20)),
                         $g(Forms\Components\TextInput::make('barcode_ras_2_alt2')->label('Barcode RAS 2 alt 2')->maxLength(50)),
@@ -461,7 +462,7 @@ class DocumentResource extends Resource
                     ->collapsed()
                     ->columns(1)
                     ->schema([
-                        $g(Forms\Components\Textarea::make('notes')->columnSpanFull()->rows(3)),
+                        $g(Forms\Components\Textarea::make('notes')->label(ColumnLabels::get('document', 'notes'))->columnSpanFull()->rows(3)),
                         $g(Forms\Components\KeyValue::make('extra')->label('Extra (schemaless)')->columnSpanFull()),
                         $g(Forms\Components\KeyValue::make('custom_fields')->label('Custom fields (POC json)')->columnSpanFull()),
                         $g(Forms\Components\KeyValue::make('metadata')->label('Metadata (POC json)')->columnSpanFull()),
@@ -640,8 +641,8 @@ class DocumentResource extends Resource
                 Section::make('Document')
                     ->columns($twoCols)
                     ->schema([
-                        TextEntry::make('catalogue_identifier')->label('Catalogue ID')->copyable()->placeholder('—'),
-                        TextEntry::make('document_type')->placeholder('—'),
+                        TextEntry::make('catalogue_identifier')->label(ColumnLabels::get('document', 'catalogue_identifier'))->copyable()->placeholder('—'),
+                        TextEntry::make('document_type')->label(ColumnLabels::get('document', 'document_type'))->placeholder('—'),
                         TextEntry::make('series.code')
                             ->label('Series')
                             ->badge()
@@ -650,11 +651,11 @@ class DocumentResource extends Resource
                                 : null)
                             ->openUrlInNewTab(false)
                             ->placeholder('—'),
-                        TextEntry::make('practice')->placeholder('—'),
-                        TextEntry::make('volume_number')->label('Volume No')->placeholder('—'),
+                        TextEntry::make('practice')->label(ColumnLabels::get('document', 'practice'))->placeholder('—'),
+                        TextEntry::make('volume_number')->label(ColumnLabels::get('document', 'volume_number'))->placeholder('—'),
                         TextEntry::make('number_of_acts')->label('No of Acts')->placeholder('—'),
                         TextEntry::make('pages_folios')->label('Pages/Folios')->placeholder('—'),
-                        TextEntry::make('dates')->label('Dates (free text)')->placeholder('—'),
+                        TextEntry::make('dates')->label(ColumnLabels::get('document', 'dates'))->placeholder('—'),
                         TextEntry::make('year_range_display')
                             ->label('Year range')
                             ->state(function (?Document $record): string {
@@ -674,7 +675,7 @@ class DocumentResource extends Resource
                             }),
                         TextEntry::make('dates_start')->label('Date start')->date()->placeholder('—'),
                         TextEntry::make('dates_end')->label('Date end')->date()->placeholder('—'),
-                        TextEntry::make('deeds')->placeholder('—')->columnSpanFull(),
+                        TextEntry::make('deeds')->label(ColumnLabels::get('document', 'deeds'))->placeholder('—')->columnSpanFull(),
                     ]),
 
                 Section::make('Authorities (Creators)')
@@ -801,7 +802,7 @@ class DocumentResource extends Resource
                             ->columnSpanFull()
                             ->visible(fn (?Document $record): bool => filled($record?->nra_location)),
                         TextEntry::make('museum_location')
-                            ->label('Museum location (legacy)')
+                            ->label(ColumnLabels::get('document', 'museum_location'))
                             ->placeholder('—')
                             ->columnSpanFull()
                             ->visible(fn (?Document $record): bool => filled($record?->museum_location)),
@@ -873,7 +874,7 @@ class DocumentResource extends Resource
                     ->columns($twoCols)
                     ->schema([
                         TextEntry::make('identifier')->badge()->color('primary')->copyable()->placeholder('—'),
-                        TextEntry::make('catalogue_identifier')->label('Catalogue ID')->copyable()->placeholder('—'),
+                        TextEntry::make('catalogue_identifier')->label(ColumnLabels::get('document', 'catalogue_identifier'))->copyable()->placeholder('—'),
                         // U1 — document barcode visible in read mode (was edit-only before).
                         // Custody status is authoritative from the box, not from this field.
                         TextEntry::make('barcode')
@@ -891,14 +892,14 @@ class DocumentResource extends Resource
                         TextEntry::make('ras_batch_1')->label('RAS Batch 1')->placeholder('—'),
                         TextEntry::make('ras_box_1')->label('RAS Box 1')->placeholder('—'),
                         TextEntry::make('ras_1_box_destroyed')->label('RAS 1 destroyed?')->placeholder('—'),
-                        TextEntry::make('in_situ_box_1')->label('In Situ Box 1')->placeholder('—'),
+                        TextEntry::make('in_situ_box_1')->label(ColumnLabels::get('document', 'in_situ_box_1'))->placeholder('—'),
                         TextEntry::make('in_situ_box_1_destroyed')->label('In Situ 1 destroyed?')->placeholder('—'),
-                        TextEntry::make('ras_batch_2')->label('RAS Batch 2')->placeholder('—'),
-                        TextEntry::make('ras_box_2')->label('RAS Box 2')->placeholder('—'),
+                        TextEntry::make('ras_batch_2')->label(ColumnLabels::get('document', 'ras_batch_2'))->placeholder('—'),
+                        TextEntry::make('ras_box_2')->label(ColumnLabels::get('document', 'ras_box_2'))->placeholder('—'),
                         TextEntry::make('ras_2_box_destroyed')->label('RAS 2 destroyed?')->placeholder('—'),
-                        TextEntry::make('in_situ_box_2')->label('In Situ Box 2')->placeholder('—'),
+                        TextEntry::make('in_situ_box_2')->label(ColumnLabels::get('document', 'in_situ_box_2'))->placeholder('—'),
                         TextEntry::make('in_situ_box_2_destroyed')->label('In Situ 2 destroyed?')->placeholder('—'),
-                        TextEntry::make('in_situ_box_3')->label('In Situ Box 3')->placeholder('—'),
+                        TextEntry::make('in_situ_box_3')->label(ColumnLabels::get('document', 'in_situ_box_3'))->placeholder('—'),
                         TextEntry::make('in_situ_box_3_destroyed')->label('In Situ 3 destroyed?')->placeholder('—'),
                     ]),
 
@@ -912,10 +913,10 @@ class DocumentResource extends Resource
                         TextEntry::make('status_1')->label('Status 1')->placeholder('—'),
                         TextEntry::make('barcode_ras_2')->label('Barcode RAS 2')->placeholder('—'),
                         TextEntry::make('status_2')->label('Status 2')->placeholder('—'),
-                        TextEntry::make('barcode_ras_3')->label('Barcode RAS 3')->placeholder('—'),
-                        TextEntry::make('status_3')->label('Status 3')->placeholder('—'),
-                        TextEntry::make('barcode_ras_4')->label('Barcode RAS 4')->placeholder('—'),
-                        TextEntry::make('status_4')->label('Status 4')->placeholder('—'),
+                        TextEntry::make('barcode_ras_3')->label(ColumnLabels::get('document', 'barcode_ras_3'))->placeholder('—'),
+                        TextEntry::make('status_3')->label(ColumnLabels::get('document', 'status_3'))->placeholder('—'),
+                        TextEntry::make('barcode_ras_4')->label(ColumnLabels::get('document', 'barcode_ras_4'))->placeholder('—'),
+                        TextEntry::make('status_4')->label(ColumnLabels::get('document', 'status_4'))->placeholder('—'),
                         TextEntry::make('barcode_ras_2_alt')->label('Barcode RAS 2 alt')->placeholder('—'),
                         TextEntry::make('status_1_alt')->label('Status 1 alt')->placeholder('—'),
                         TextEntry::make('barcode_ras_2_alt2')->label('Barcode RAS 2 alt 2')->placeholder('—'),
@@ -927,21 +928,21 @@ class DocumentResource extends Resource
                     ->collapsed()
                     ->schema([
                         TextEntry::make('colour_code')->label('Colour code')->placeholder('—'),
-                        TextEntry::make('digitised')->placeholder('—'),
-                        IconEntry::make('torre')->boolean(),
-                        TextEntry::make('accession_code_legacy')->label('Accession (legacy)')->placeholder('—'),
-                        TextEntry::make('object_reference_number')->label('Conservation Object Reference Number')->placeholder('—'),
-                        TextEntry::make('temporary_identifier')->label('Temporary Identifier')->copyable()->placeholder('—'),
-                        TextEntry::make('citation_reference')->label('Citation Reference')->placeholder('—')->columnSpanFull(),
-                        TextEntry::make('tracking')->label('Tracking Note')->placeholder('—')->columnSpanFull(),
-                        TextEntry::make('museum_reference')->label('Museum reference')->placeholder('—')->columnSpanFull(),
+                        TextEntry::make('digitised')->label(ColumnLabels::get('document', 'digitised'))->placeholder('—'),
+                        IconEntry::make('torre')->label(ColumnLabels::get('document', 'torre'))->boolean(),
+                        TextEntry::make('accession_code_legacy')->label(ColumnLabels::get('document', 'accession_code_legacy'))->placeholder('—'),
+                        TextEntry::make('object_reference_number')->label(ColumnLabels::get('document', 'object_reference_number'))->placeholder('—'),
+                        TextEntry::make('temporary_identifier')->label(ColumnLabels::get('document', 'temporary_identifier'))->copyable()->placeholder('—'),
+                        TextEntry::make('citation_reference')->label(ColumnLabels::get('document', 'citation_reference'))->placeholder('—')->columnSpanFull(),
+                        TextEntry::make('tracking')->label(ColumnLabels::get('document', 'tracking'))->placeholder('—')->columnSpanFull(),
+                        TextEntry::make('museum_reference')->label(ColumnLabels::get('document', 'museum_reference'))->placeholder('—')->columnSpanFull(),
                     ]),
 
                 Section::make('Notes')
                     ->columns(1)
                     ->collapsed()
                     ->schema([
-                        TextEntry::make('notes')
+                        TextEntry::make('notes')->label(ColumnLabels::get('document', 'notes'))
                             ->hiddenLabel()
                             ->prose()
                             ->placeholder('No notes.')
@@ -1069,7 +1070,7 @@ class DocumentResource extends Resource
                     ->listWithLineBreaks()
                     ->limitList(2)
                     ->toggleable()),
-                $gc(Tables\Columns\TextColumn::make('document_type')->sortable()->toggleable()),
+                $gc(Tables\Columns\TextColumn::make('document_type')->label(ColumnLabels::get('document', 'document_type'))->sortable()->toggleable()),
                 $gc(Tables\Columns\TextColumn::make('series.code')->label('Series')->badge()->sortable()->toggleable(), 'series_id'),
                 $gc(Tables\Columns\TextColumn::make('batch.batch_number')->label('Batch')->sortable()->alignCenter()->toggleable(), 'batch_id'),
                 $gc(Tables\Columns\TextColumn::make('currentBox.box_number')->label('Box')
@@ -1095,21 +1096,21 @@ class DocumentResource extends Resource
                         ? route('filament.admin.resources.locations.view', ['record' => $loc->getKey()])
                         : null)
                     ->toggleable(), 'location_id'),
-                $gc(Tables\Columns\TextColumn::make('practice')->sortable()->toggleable()),
-                $gc(Tables\Columns\TextColumn::make('volume_number')->label('Vol.')->sortable()->toggleable()),
-                $gc(Tables\Columns\TextColumn::make('part_number')->label('Part No')->sortable()->toggleable(isToggledHiddenByDefault: true)),
-                $gc(Tables\Columns\TextColumn::make('dates')->label('Dates')->sortable()->toggleable()->limit(30)),
+                $gc(Tables\Columns\TextColumn::make('practice')->label(ColumnLabels::get('document', 'practice'))->sortable()->toggleable()),
+                $gc(Tables\Columns\TextColumn::make('volume_number')->label(ColumnLabels::get('document', 'volume_number'))->sortable()->toggleable()),
+                $gc(Tables\Columns\TextColumn::make('part_number')->label(ColumnLabels::get('document', 'part_number'))->sortable()->toggleable(isToggledHiddenByDefault: true)),
+                $gc(Tables\Columns\TextColumn::make('dates')->label(ColumnLabels::get('document', 'dates'))->sortable()->toggleable()->limit(30)),
                 $gc(Tables\Columns\TextColumn::make('dates_year_start')->label('From')->numeric(thousandsSeparator: '')->sortable()->alignEnd()->toggleable()),
                 $gc(Tables\Columns\TextColumn::make('dates_year_end')->label('To')->numeric(thousandsSeparator: '')->sortable()->alignEnd()->toggleable()),
                 $gc(Tables\Columns\TextColumn::make('number_of_acts')->label('No of Acts')->sortable()->toggleable(isToggledHiddenByDefault: true)),
                 $gc(Tables\Columns\TextColumn::make('pages_folios')->label('Pages/Folios')->sortable()->toggleable(isToggledHiddenByDefault: true)),
                 $gc(Tables\Columns\TextColumn::make('barcode_in')->label('Barcode (IN)')->sortable()->toggleable(isToggledHiddenByDefault: true)),
-                $gc(Tables\Columns\TextColumn::make('catalogue_identifier')->label('Catalogue ID')->sortable()->toggleable(isToggledHiddenByDefault: true)),
-                $gc(Tables\Columns\TextColumn::make('temporary_identifier')->label('Temporary ID')->searchable()->sortable()->toggleable(isToggledHiddenByDefault: true)),
+                $gc(Tables\Columns\TextColumn::make('catalogue_identifier')->label(ColumnLabels::get('document', 'catalogue_identifier'))->sortable()->toggleable(isToggledHiddenByDefault: true)),
+                $gc(Tables\Columns\TextColumn::make('temporary_identifier')->label(ColumnLabels::get('document', 'temporary_identifier'))->searchable()->sortable()->toggleable(isToggledHiddenByDefault: true)),
                 // Bug #31 — Notes visible by default: some documents can only be
                 // identified by the note (no known creator, date or type). Hideable
                 // via the column picker; truncated with the full text on hover.
-                $gc(Tables\Columns\TextColumn::make('notes')->label('Notes')->limit(60)->tooltip(fn (?string $state): ?string => $state)->sortable()->toggleable()),
+                $gc(Tables\Columns\TextColumn::make('notes')->label(ColumnLabels::get('document', 'notes'))->limit(60)->tooltip(fn (?string $state): ?string => $state)->sortable()->toggleable()),
                 $gc(Tables\Columns\TextColumn::make('repository.code')->label('Repo')->badge()->color('gray')->sortable()->toggleable(), 'repository_id'),
                 // Two-level disinfestation: show the effective date — the
                 // document's own if set, otherwise inherited from its box
@@ -1119,7 +1120,7 @@ class DocumentResource extends Resource
                     ->date()
                     ->description(fn (?Document $record): ?string => $record?->disinfestationDateIsInherited() ? 'from box' : null)
                     ->toggleable(isToggledHiddenByDefault: true)),
-                $gc(Tables\Columns\IconColumn::make('torre')->boolean()->sortable()->toggleable(isToggledHiddenByDefault: true)),
+                $gc(Tables\Columns\IconColumn::make('torre')->label(ColumnLabels::get('document', 'torre'))->boolean()->sortable()->toggleable(isToggledHiddenByDefault: true)),
                 $gc(Tables\Columns\TextColumn::make('updated_at')->dateTime()->sortable()->toggleable(isToggledHiddenByDefault: true)),
                 // A9 — inputter column (who created the record).
                 CreatorColumn::make(),
@@ -1140,7 +1141,7 @@ class DocumentResource extends Resource
                 QueryBuilder::make()
                     ->constraints([
                         RelationshipConstraint::make('series')
-                            ->label('Series')
+                            ->label(ColumnLabels::get('document', 'series'))
                             ->selectable(
                                 IsRelatedToOperator::make()
                                     ->titleAttribute('code')
@@ -1164,9 +1165,9 @@ class DocumentResource extends Resource
                                     ->multiple(),
                             ),
                         TextConstraint::make('document_type')
-                            ->label('Document type'),
+                            ->label(ColumnLabels::get('document', 'document_type')),
                         TextConstraint::make('dates')
-                            ->label('Dates (free text)'),
+                            ->label(ColumnLabels::get('document', 'dates')),
                         NumberConstraint::make('dates_year_start')
                             ->label('Year start')
                             ->integer(),
@@ -1176,7 +1177,7 @@ class DocumentResource extends Resource
                     ]),
 
                 // Relationship multi-selects (parity with POC creators/series/batch filters)
-                SelectFilter::make('series')
+                SelectFilter::make('series')->label(ColumnLabels::get('document', 'series'))
                     ->relationship('series', 'code')->searchable()->preload()->multiple(),
 
                 // Heavy relations (669 boxes, 669 batches, 808 authorities):
@@ -1227,7 +1228,7 @@ class DocumentResource extends Resource
                 self::fullTextFilter('museum_reference', 'Search in Museum Reference'),
 
                 // volume_number is special — also searches the JSON path extra->volume; kept inline.
-                Filter::make('volume_number')
+                Filter::make('volume_number')->label(ColumnLabels::get('document', 'volume_number'))
                     ->form([
                         Forms\Components\TextInput::make('value')->label('Search in Volume No'),
                     ])
@@ -1290,7 +1291,7 @@ class DocumentResource extends Resource
                         )),
 
                 // Ternary filters
-                TernaryFilter::make('torre')
+                TernaryFilter::make('torre')->label(ColumnLabels::get('document', 'torre'))
                     ->placeholder('Any')->trueLabel('Torre = yes')->falseLabel('Torre = no'),
 
                 TernaryFilter::make('disinfestation_date')

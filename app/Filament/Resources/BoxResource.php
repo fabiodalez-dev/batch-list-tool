@@ -13,6 +13,7 @@ use App\Models\Box;
 use App\Models\Location;
 use App\Models\Lookup\BarcodeStatus;
 use App\Models\Lookup\BoxType;
+use App\Support\ColumnLabels\ColumnLabels;
 use App\Support\CustomFields\CustomFieldSchema;
 use App\Support\LocationBreadcrumbCache;
 use Carbon\Carbon;
@@ -93,7 +94,7 @@ class BoxResource extends Resource
                 Section::make('Identification')
                     ->columns($twoCols)
                     ->schema([
-                        $g(Forms\Components\Select::make('box_type')
+                        $g(Forms\Components\Select::make('box_type')->label(ColumnLabels::get('box', 'box_type'))
                             // C4 — keep the record's current (possibly inactive) value selectable on edit.
                             ->options(fn (?Box $record): array => BoxType::optionsWith($record?->box_type))
                             ->required()
@@ -114,7 +115,7 @@ class BoxResource extends Resource
                         // box_type). Free text — legacy values vary in casing
                         // (RAS Box / RAS box) and wording (Standard Blue Box - Mould).
                         $g(Forms\Components\TextInput::make('current_box_type')
-                            ->label('Current box type')
+                            ->label(ColumnLabels::get('box', 'current_box_type'))
                             ->maxLength(64)
                             ->helperText('Physical container: RAS Box, Big Brown Box, Small Brown Box, Standard Blue Box, …')),
                         // Batches dropdown: ~30 rows in production, but kept on the
@@ -144,7 +145,15 @@ class BoxResource extends Resource
                             // is a numeric box number unique within its batch;
                             // for IN_SITU / NRA it is the box IDENTIFIER (e.g.
                             // "NRA1", "MAV1") stored in the same column.
-                            ->label(fn (Get $get): string => $isInSitu($get) ? 'Box identifier' : 'Box number')
+                            //
+                            // The RAS branch follows the repository's own name for
+                            // the column, so a rename reaches this field like any
+                            // other. The IN_SITU branch deliberately does not: it
+                            // is not the column's name, it is what this one field
+                            // means when the box has no number to give.
+                            ->label(fn (Get $get): string => $isInSitu($get)
+                                ? 'Box identifier'
+                                : ColumnLabels::get('box', 'box_number'))
                             // C2.1 — RAS box numbers are numeric only; IN_SITU /
                             // NRA identifiers are free-text (alphanumeric).
                             ->numeric(fn (Get $get): bool => $isRas($get))
@@ -180,7 +189,7 @@ class BoxResource extends Resource
                         // box. The DB column defaults to false, so hidden = false. Kept
                         // visible on edit when the record is already flagged legacy so
                         // historical rows still render the value.
-                        $g(Forms\Components\Toggle::make('is_legacy')
+                        $g(Forms\Components\Toggle::make('is_legacy')->label(ColumnLabels::get('box', 'is_legacy'))
                             ->helperText('Marks data migrated from the legacy spreadsheet; must be on for legacy box types (MAV / STVC).')
                             ->default(false)
                             ->visible(fn (Get $get, ?Box $record): bool => in_array($get('box_type'), self::legacyBoxTypeCodes(), true)
@@ -201,7 +210,7 @@ class BoxResource extends Resource
                         // null `parent_box_id` only when this flag is set.
                         // NOT gated — see comment at the top of this method.
                         $g(Forms\Components\Toggle::make('provenance_unknown')
-                            ->label('Provenance unknown (no RAS parent)')
+                            ->label(ColumnLabels::get('box', 'provenance_unknown'))
                             ->helperText('Only tick this if the RAS box of origin is genuinely unknown — RFQ A1.3 / Appendix-1 rule #3 escape hatch. Use sparingly.')
                             ->default(false)
                             ->live()
@@ -265,7 +274,7 @@ class BoxResource extends Resource
                         // A10 — Barcode is required and globally unique across all boxes
                         // (never null; a duplicate triggers a friendly validation message).
                         $g(Forms\Components\TextInput::make('barcode')
-                            ->label('Box barcode')
+                            ->label(ColumnLabels::get('box', 'barcode'))
                             ->helperText('Barcode label affixed to this box. Must be globally unique. Distinct from any per-document barcodes inside it.')
                             ->required(fn (Get $get): bool => $isRas($get))
                             ->maxLength(64)
@@ -285,10 +294,10 @@ class BoxResource extends Resource
                         // closes the box belongs to the BOX; every change is
                         // logged to box_seal_number_history (see Seal history).
                         $g(Forms\Components\TextInput::make('seal_number')
-                            ->label('Seal #')
+                            ->label(ColumnLabels::get('box', 'seal_number'))
                             ->maxLength(255)
                             ->helperText('Yellow security seal closing the box. Changes are kept in the seal history.')),
-                        $g(Forms\Components\Select::make('barcode_status')
+                        $g(Forms\Components\Select::make('barcode_status')->label(ColumnLabels::get('box', 'barcode_status'))
                             // C4 — keep the record's current (possibly inactive) value selectable on edit.
                             ->options(fn (?Box $record): array => BarcodeStatus::optionsWith($record?->barcode_status))
                             ->required()
@@ -414,7 +423,7 @@ class BoxResource extends Resource
                                     ->label('Date changed')
                                     ->default(now()),
                                 Forms\Components\Textarea::make('notes')
-                                    ->label('Notes')
+                                    ->label(ColumnLabels::get('box', 'notes'))
                                     ->rows(2)
                                     ->columnSpanFull(),
                             ]),
@@ -446,13 +455,13 @@ class BoxResource extends Resource
                     ->columns(1)
                     ->collapsed()
                     ->schema([
-                        $g(Forms\Components\Textarea::make('notes')
+                        $g(Forms\Components\Textarea::make('notes')->label(ColumnLabels::get('box', 'notes'))
                             ->rows(3)
                             ->columnSpanFull()),
                         // Client feedback 2026-08-04: a Tracking Note kept
                         // separate from the general note (movement / stock-take).
                         $g(Forms\Components\Textarea::make('tracking_note')
-                            ->label('Tracking Note')
+                            ->label(ColumnLabels::get('box', 'tracking_note'))
                             ->helperText('Movement / stock-take tracking, kept separate from the general note.')
                             ->rows(3)
                             ->columnSpanFull()),
@@ -504,13 +513,13 @@ class BoxResource extends Resource
                     ->columns($twoCols)
                     ->schema([
                         TextEntry::make('box_number')
-                            ->label('Box number')
+                            ->label(ColumnLabels::get('box', 'box_number'))
                             ->badge()
                             ->color('primary')
                             ->copyable()
                             ->placeholder('—'),
                         TextEntry::make('box_type')
-                            ->label('Type')
+                            ->label(ColumnLabels::get('box', 'box_type'))
                             ->badge()
                             ->color('gray')
                             ->placeholder('—'),
@@ -524,7 +533,7 @@ class BoxResource extends Resource
                             ->openUrlInNewTab(false)
                             ->placeholder('—'),
                         IconEntry::make('is_legacy')
-                            ->label('Legacy')
+                            ->label(ColumnLabels::get('box', 'is_legacy'))
                             ->boolean(),
                     ]),
 
@@ -563,17 +572,17 @@ class BoxResource extends Resource
                     ->columns($twoCols)
                     ->schema([
                         TextEntry::make('barcode')
-                            ->label('Barcode')
+                            ->label(ColumnLabels::get('box', 'barcode'))
                             ->copyable()
                             ->placeholder('—'),
                         TextEntry::make('seal_number')
-                            ->label('Seal #')
+                            ->label(ColumnLabels::get('box', 'seal_number'))
                             ->badge()
                             ->color('primary')
                             ->copyable()
                             ->placeholder('—'),
                         TextEntry::make('barcode_status')
-                            ->label('Status')
+                            ->label(ColumnLabels::get('box', 'barcode_status'))
                             ->badge()
                             ->color(fn (?string $state): string => match ($state) {
                                 'IN' => 'success',
@@ -626,7 +635,7 @@ class BoxResource extends Resource
                     ->columns(1)
                     ->collapsed()
                     ->schema([
-                        TextEntry::make('notes')
+                        TextEntry::make('notes')->label(ColumnLabels::get('box', 'notes'))
                             ->hiddenLabel()
                             ->prose()
                             ->placeholder('No notes.')
@@ -634,7 +643,7 @@ class BoxResource extends Resource
                         // Client feedback 2026-08-04: Tracking Note, separate
                         // from the general note (movement / stock-take).
                         TextEntry::make('tracking_note')
-                            ->label('Tracking Note')
+                            ->label(ColumnLabels::get('box', 'tracking_note'))
                             ->prose()
                             ->placeholder('No tracking note.')
                             ->columnSpanFull(),
@@ -752,7 +761,7 @@ class BoxResource extends Resource
                     ->sortable()
                     ->toggleable(), 'batch_id'),
                 $gc(Tables\Columns\TextColumn::make('box_number')
-                    ->label('Box')
+                    ->label(ColumnLabels::get('box', 'box_number'))
                     ->searchable()
                     // Bug #2 — a combined "Batch then Box" sort: clicking Box orders
                     // by the parent batch number first, then the box number.
@@ -771,12 +780,12 @@ class BoxResource extends Resource
                     })
                     ->toggleable()),
                 $gc(Tables\Columns\TextColumn::make('barcode')
-                    ->label('Barcode')
+                    ->label(ColumnLabels::get('box', 'barcode'))
                     ->searchable()
                     ->sortable()
                     ->toggleable()),
                 $gc(Tables\Columns\TextColumn::make('barcode_status')
-                    ->label('Barcode Status')
+                    ->label(ColumnLabels::get('box', 'barcode_status'))
                     ->sortable()
                     ->toggleable()),
                 $gc(Tables\Columns\TextColumn::make('disinfestation_date')
@@ -785,11 +794,11 @@ class BoxResource extends Resource
                     ->sortable()
                     ->toggleable()),
                 $gc(Tables\Columns\TextColumn::make('box_type')
-                    ->label('Box Type')
+                    ->label(ColumnLabels::get('box', 'box_type'))
                     ->sortable()
                     ->toggleable()),
                 $gc(Tables\Columns\TextColumn::make('current_box_type')
-                    ->label('Current Box Type')
+                    ->label(ColumnLabels::get('box', 'current_box_type'))
                     ->placeholder('—')
                     ->sortable()
                     ->toggleable(isToggledHiddenByDefault: true)),
@@ -836,7 +845,7 @@ class BoxResource extends Resource
                     ->sortable()
                     ->toggleable()),
                 $gc(Tables\Columns\IconColumn::make('is_legacy')
-                    ->label('Is Legacy')
+                    ->label(ColumnLabels::get('box', 'is_legacy'))
                     ->boolean()
                     ->sortable()
                     ->toggleable()),
@@ -884,15 +893,15 @@ class BoxResource extends Resource
                                     ->multiple(),
                             ),
                         SelectConstraint::make('box_type')
-                            ->label('Box type')
+                            ->label(ColumnLabels::get('box', 'box_type'))
                             ->options(array_combine(Box::TYPES, Box::TYPES))
                             ->multiple(),
                         TextConstraint::make('box_number')
-                            ->label('Box number'),
+                            ->label(ColumnLabels::get('box', 'box_number')),
                         TextConstraint::make('barcode')
-                            ->label('Barcode'),
+                            ->label(ColumnLabels::get('box', 'barcode')),
                         SelectConstraint::make('barcode_status')
-                            ->label('Barcode status')
+                            ->label(ColumnLabels::get('box', 'barcode_status'))
                             ->options(array_combine(Box::BARCODE_STATUSES, Box::BARCODE_STATUSES))
                             ->multiple(),
                         RelationshipConstraint::make('location')
@@ -978,7 +987,7 @@ class BoxResource extends Resource
                                 ->label('Disinfestation date (optional)')
                                 ->visible(fn (Get $get): bool => (bool) $get('set_perm_out')),
                             Forms\Components\TextInput::make('tracking_note')
-                                ->label('Tracking note')
+                                ->label(ColumnLabels::get('box', 'tracking_note'))
                                 ->maxLength(255),
                         ])
                         ->action(function (Collection $records, array $data): void {

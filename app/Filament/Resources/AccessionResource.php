@@ -8,6 +8,7 @@ use App\Filament\Support\SearchableSelects;
 use App\Models\Accession;
 use App\Models\Batch;
 use App\Models\Repository;
+use App\Support\ColumnLabels\ColumnLabels;
 use App\Support\CustomFields\CustomFieldSchema;
 use Filament\Actions\BulkActionGroup;
 use Filament\Actions\DeleteBulkAction;
@@ -75,7 +76,7 @@ class AccessionResource extends Resource
                         // A3 — "Notary Accession Number" → "Accession Number".
                         // Feedback1 C1.3 — YYYY-NNN format; optional/nullable.
                         Forms\Components\TextInput::make('accession_number')
-                            ->label('Accession Number')
+                            ->label(ColumnLabels::get('accession', 'accession_number'))
                             ->maxLength(32)
                             ->placeholder('2025-124')
                             ->helperText('Format: YYYY-NNN (e.g. 2025-124)')
@@ -164,6 +165,7 @@ class AccessionResource extends Resource
                     ->collapsed()
                     ->schema([
                         Forms\Components\Textarea::make('notes')
+                            ->label(ColumnLabels::get('accession', 'notes'))
                             ->rows(3)
                             ->columnSpanFull(),
                     ]),
@@ -205,7 +207,7 @@ class AccessionResource extends Resource
                             ->placeholder('—'),
                         // A3 — "Notary Accession Number" → "Accession Number".
                         TextEntry::make('accession_number')
-                            ->label('Accession Number')
+                            ->label(ColumnLabels::get('accession', 'accession_number'))
                             ->copyable()
                             ->placeholder('—'),
                         // A3 — "Accession date" → "Accession Date" (capitalised).
@@ -256,6 +258,7 @@ class AccessionResource extends Resource
                     ->collapsed()
                     ->schema([
                         TextEntry::make('notes')
+                            ->label(ColumnLabels::get('accession', 'notes'))
                             ->hiddenLabel()
                             ->prose()
                             ->placeholder('No notes.')
@@ -335,7 +338,7 @@ class AccessionResource extends Resource
                 // A3 — "Notary Accession Number" → "Accession Number".
                 // Feedback1 C1.3 — searchable + sortable.
                 Tables\Columns\TextColumn::make('accession_number')
-                    ->label('Accession Number')
+                    ->label(ColumnLabels::get('accession', 'accession_number'))
                     ->searchable()
                     ->sortable()
                     ->placeholder('—')
@@ -397,7 +400,7 @@ class AccessionResource extends Resource
                     ->searchable()
                     ->multiple(),
                 SelectFilter::make('repository')
-                    ->label('Repository')
+                    ->label(ColumnLabels::get('accession', 'repository'))
                     ->relationship('repository', 'code')
                     ->searchable()
                     ->preload(),

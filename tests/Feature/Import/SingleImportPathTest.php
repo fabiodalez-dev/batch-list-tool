@@ -115,7 +115,7 @@ it('offers volumes, which had an importer and a template but no way in', functio
     $claimed = array_values(array_filter($map, fn ($h) => $h !== null));
 
     expect(array_values(array_diff($headers, $claimed)))->toBe([]);
-    expect($map['document_identifier'] ?? null)->toBe('document_identifier');
+    expect($map['document_identifier'] ?? null)->toBe('Document identifier');
 });
 
 it('every wizard type has a template, a label and a description', function (): void {

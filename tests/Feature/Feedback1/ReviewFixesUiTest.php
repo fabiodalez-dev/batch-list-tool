@@ -17,6 +17,7 @@ use App\Support\BulkImport\EntityResolver;
 use App\Support\BulkImport\TemplateGenerator;
 use Filament\Actions\Imports\Importer;
 use Filament\Actions\Imports\Models\Import;
+use Filament\Forms\Components\Field;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Schema;
@@ -296,11 +297,13 @@ it('F07.2: LocationResource create form code field is labelled Identifier', func
     Livewire::test(CreateLocation::class)
         ->assertFormFieldExists('code');
 
-    // Verify the label in the PHP source (the form input at line 107 carries the label).
-    $src = (string) file_get_contents(
-        base_path('app/Filament/Resources/LocationResource.php')
-    );
-    expect(str_contains($src, "->label('Identifier')"))->toBeTrue('code field not relabelled Identifier in LocationResource');
+    // Assert the label the operator actually sees, not the text of the source.
+    // Until 2026-09-28 this grepped LocationResource.php for "->label('Identifier')"
+    // and broke the day the label started coming from ColumnLabels — while still
+    // reading "Identifier" on screen. A test that reads the source cannot tell a
+    // rename from a refactor.
+    Livewire::test(CreateLocation::class)
+        ->assertFormFieldExists('code', fn (Field $field): bool => $field->getLabel() === 'Identifier');
 });
 
 // ─── F08: sort_order hidden from Location form and infolist ──────────────────

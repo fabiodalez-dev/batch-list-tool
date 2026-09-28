@@ -304,7 +304,9 @@ class LocationImporter extends Importer
 
             ImportColumn::make('code')
                 ->label('Short code')
-                ->guess(['Code', 'code', 'Short code'])
+                // "Identifier" is what the location form and the template call
+                // this column; no other location column answers to that name.
+                ->guess(['Identifier', 'Code', 'code', 'Short code'])
                 // max:32 matches the locations.code column (was 64 — too loose).
                 ->rules(['nullable', 'string', 'max:32']),
 
