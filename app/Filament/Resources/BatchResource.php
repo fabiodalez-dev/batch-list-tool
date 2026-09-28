@@ -10,6 +10,7 @@ use App\Models\Accession;
 use App\Models\Batch;
 use App\Models\Lookup\BatchType;
 use App\Models\Repository;
+use App\Support\ColumnLabels\ColumnLabels;
 use App\Support\CustomFields\CustomFieldSchema;
 use Carbon\Carbon;
 use Filament\Actions\Action;
@@ -74,7 +75,7 @@ class BatchResource extends Resource
                     ->columns($twoCols)
                     ->schema([
                         $g(Forms\Components\TextInput::make('batch_number')
-                            ->label('Batch Number')
+                            ->label(ColumnLabels::get('batch', 'batch_number'))
                             ->required()
                             ->maxLength(64)
                             // Usually numeric, but non-numeric catch-all batches
@@ -161,7 +162,7 @@ class BatchResource extends Resource
                         $g(Forms\Components\Select::make('type')
                             // Feedback1 gaps — client renamed "Batch Type" to
                             // "Accession Type" (Lookups nav already renamed).
-                            ->label('Accession Type')
+                            ->label(ColumnLabels::get('batch', 'type'))
                             // C4 — include the record's CURRENT value even if it
                             // has since been deactivated, so editing other fields
                             // never drops/blanks a stored-but-inactive type.
@@ -175,6 +176,7 @@ class BatchResource extends Resource
                         // operator has not manually typed anything (the field is "dirty"
                         // relative to the auto-derived value only when they have typed).
                         $g(Forms\Components\TextInput::make('description')
+                            ->label(ColumnLabels::get('batch', 'description'))
                             ->maxLength(255)
                             ->placeholder('Auto-derived from linked accession titles')
                             ->columnSpanFull()),
@@ -268,6 +270,7 @@ class BatchResource extends Resource
                         // but is no longer offered when assigning a parent batch
                         // to new Boxes or Documents.
                         $g(Forms\Components\Toggle::make('is_active')
+                            ->label(ColumnLabels::get('batch', 'is_active'))
                             ->default(true)
                             ->helperText('Inactive batches stay listed and editable here, '
                                 . 'but are hidden from the batch picker when creating new Boxes or Documents.')),
@@ -315,18 +318,18 @@ class BatchResource extends Resource
                     ->columns($twoCols)
                     ->schema([
                         TextEntry::make('batch_number')
-                            ->label('Batch number')
+                            ->label(ColumnLabels::get('batch', 'batch_number'))
                             ->badge()
                             ->color('primary')
                             ->copyable()
                             ->placeholder('—'),
                         TextEntry::make('type')
-                            ->label('Accession Type')
+                            ->label(ColumnLabels::get('batch', 'type'))
                             ->badge()
                             ->color('gray')
                             ->placeholder('—'),
                         TextEntry::make('description')
-                            ->label('Description')
+                            ->label(ColumnLabels::get('batch', 'description'))
                             ->placeholder('—')
                             ->columnSpanFull(),
                     ]),
@@ -344,7 +347,7 @@ class BatchResource extends Resource
                             ->openUrlInNewTab(false)
                             ->placeholder('—'),
                         IconEntry::make('is_active')
-                            ->label('Active')
+                            ->label(ColumnLabels::get('batch', 'is_active'))
                             ->boolean(),
                         TextEntry::make('boxes_count')
                             ->label('Boxes')
@@ -430,7 +433,7 @@ class BatchResource extends Resource
             // text.  View / Edit remain reachable via the row-actions column.
             ->columns([
                 $gc(Tables\Columns\TextColumn::make('batch_number')
-                    ->label('Batch Number')
+                    ->label(ColumnLabels::get('batch', 'batch_number'))
                     // NOT ->numeric(): batch_number is a string that can hold
                     // non-numeric catch-all labels ("Unknown", "NULL") which must
                     // display verbatim, not through numeric formatting.
@@ -444,12 +447,13 @@ class BatchResource extends Resource
                 // can remove preset columns; batch_number (the key/hyperlink
                 // column) intentionally stays fixed.
                 $gc(Tables\Columns\TextColumn::make('description')
+                    ->label(ColumnLabels::get('batch', 'description'))
                     ->searchable()
                     ->sortable()
                     ->toggleable()),
                 $gc(Tables\Columns\TextColumn::make('type')
                     // Feedback1 gaps — client renamed "Batch Type" to "Accession Type".
-                    ->label('Accession Type')
+                    ->label(ColumnLabels::get('batch', 'type'))
                     ->sortable()
                     ->toggleable()),
                 $gc(Tables\Columns\TextColumn::make('repository.name')
@@ -457,7 +461,7 @@ class BatchResource extends Resource
                     ->sortable()
                     ->toggleable(), 'repository_id'),
                 $gc(Tables\Columns\IconColumn::make('is_active')
-                    ->label('Active')
+                    ->label(ColumnLabels::get('batch', 'is_active'))
                     ->boolean()
                     ->sortable()
                     ->toggleable()),
@@ -483,7 +487,7 @@ class BatchResource extends Resource
                 // free-text search on `description`. BatchResource is light
                 // enough that plain SelectFilters cover it (no QueryBuilder).
                 SelectFilter::make('batch_number')
-                    ->label('Batch number')
+                    ->label(ColumnLabels::get('batch', 'batch_number'))
                     ->options(fn (): array => Batch::query()
                         ->orderByRaw('batch_number + 0')
                         ->pluck('batch_number', 'batch_number')
@@ -491,10 +495,11 @@ class BatchResource extends Resource
                     ->searchable()
                     ->multiple(),
                 SelectFilter::make('type')
+                    ->label(ColumnLabels::get('batch', 'type'))
                     ->options(fn (): array => BatchType::optionsWith(null))
                     ->multiple(),
                 TernaryFilter::make('is_active')
-                    ->label('Active')
+                    ->label(ColumnLabels::get('batch', 'is_active'))
                     ->placeholder('All')
                     ->trueLabel('Active only')
                     ->falseLabel('Inactive only'),

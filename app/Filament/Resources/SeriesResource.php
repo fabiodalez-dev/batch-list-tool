@@ -7,6 +7,7 @@ use App\Filament\Resources\SeriesResource\Pages;
 use App\Filament\Support\CreatorColumn;
 use App\Models\Repository;
 use App\Models\Series;
+use App\Support\ColumnLabels\ColumnLabels;
 use App\Support\CustomFields\CustomFieldSchema;
 use Filament\Actions\BulkActionGroup;
 use Filament\Actions\DeleteBulkAction;
@@ -71,7 +72,7 @@ class SeriesResource extends Resource
                         // Feedback1 — Series code must be unique.
                         // A3/D9 — user-facing label is "Identifier"; DB column stays 'code'.
                         $g(Forms\Components\TextInput::make('code')
-                            ->label('Identifier')
+                            ->label(ColumnLabels::get('series', 'code'))
                             ->required()
                             ->maxLength(16)
                             ->unique(ignoreRecord: true)
@@ -79,6 +80,7 @@ class SeriesResource extends Resource
                                 'unique' => 'This series identifier is already in use.',
                             ])),
                         $g(Forms\Components\TextInput::make('title')
+                            ->label(ColumnLabels::get('series', 'title'))
                             ->required()
                             ->maxLength(255)),
                         // Feedback1 C1.4 — multi-level hierarchy. A series may
@@ -192,13 +194,13 @@ class SeriesResource extends Resource
                     ->columns($twoCols)
                     ->schema([
                         TextEntry::make('code')
-                            ->label('Identifier')
+                            ->label(ColumnLabels::get('series', 'code'))
                             ->badge()
                             ->color('primary')
                             ->copyable()
                             ->placeholder('—'),
                         TextEntry::make('title')
-                            ->label('Title')
+                            ->label(ColumnLabels::get('series', 'title'))
                             ->placeholder('—'),
                         // Feedback1 C1.4 — show the full hierarchy path and a
                         // link to the parent series.
@@ -237,13 +239,13 @@ class SeriesResource extends Resource
                     ->columns($twoCols)
                     ->schema([
                         TextEntry::make('level_of_description')
-                            ->label('Level of description')
+                            ->label(ColumnLabels::get('series', 'level_of_description'))
                             ->placeholder('—'),
                         TextEntry::make('date_of_creation')
-                            ->label('Date of creation')
+                            ->label(ColumnLabels::get('series', 'date_of_creation'))
                             ->placeholder('—'),
                         TextEntry::make('name_of_inputter')
-                            ->label('Name of Inputter (from sheet)')
+                            ->label(ColumnLabels::get('series', 'name_of_inputter'))
                             ->placeholder('—')
                             ->columnSpanFull(),
                     ]),
@@ -291,10 +293,11 @@ class SeriesResource extends Resource
                     ->sortable()
                     ->toggleable()),
                 $gc(Tables\Columns\TextColumn::make('code')
-                    ->label('Identifier')
+                    ->label(ColumnLabels::get('series', 'code'))
                     ->searchable()
                     ->sortable()),
                 $gc(Tables\Columns\TextColumn::make('title')
+                    ->label(ColumnLabels::get('series', 'title'))
                     ->searchable()
                     ->sortable()
                     ->toggleable()),
@@ -308,7 +311,7 @@ class SeriesResource extends Resource
                 // description had no column at all. The values were imported
                 // correctly the whole time; the list simply never showed them.
                 $gc(Tables\Columns\TextColumn::make('level_of_description')
-                    ->label('Level of description')
+                    ->label(ColumnLabels::get('series', 'level_of_description'))
                     ->badge()
                     ->color('gray')
                     ->placeholder('—')
@@ -316,7 +319,7 @@ class SeriesResource extends Resource
                     ->sortable()
                     ->toggleable()),
                 $gc(Tables\Columns\TextColumn::make('date_of_creation')
-                    ->label('Date of creation')
+                    ->label(ColumnLabels::get('series', 'date_of_creation'))
                     // Deliberately NOT ->dateTime(): the column is free text so
                     // an ISAD(G) span such as "1607-1629" stays readable. Piping
                     // it through a date formatter would either mangle the span
@@ -326,7 +329,7 @@ class SeriesResource extends Resource
                     ->sortable()
                     ->toggleable()),
                 $gc(Tables\Columns\TextColumn::make('name_of_inputter')
-                    ->label('Name of Inputter')
+                    ->label(ColumnLabels::get('series', 'name_of_inputter'))
                     ->placeholder('—')
                     ->searchable()
                     ->sortable()
@@ -389,7 +392,7 @@ class SeriesResource extends Resource
                 // distinct codes plus the two boolean flags as TernaryFilters.
                 // A3/D9 — filter label matches the column rename: "Identifier".
                 SelectFilter::make('code')
-                    ->label('Identifier')
+                    ->label(ColumnLabels::get('series', 'code'))
                     ->options(fn (): array => Series::query()
                         ->orderBy('code')
                         ->pluck('code', 'code')

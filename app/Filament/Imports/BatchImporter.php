@@ -244,7 +244,10 @@ class BatchImporter extends Importer
 
             ImportColumn::make('type')
                 ->label('Type (MAIN_COLLECTION / NOTARY_ACCESSION)')
-                ->guess(['Type', 'type', 'Batch type'])
+                // "Accession Type" is what this column is called on the template
+                // and on screen since 2026-09-28; the older spellings stay so a
+                // sheet saved before then still maps itself.
+                ->guess(['Accession Type', 'Type', 'type', 'Batch type'])
                 ->castStateUsing(function (?string $state): string {
                     $s = strtoupper(trim((string) $state));
                     if (in_array($s, ['MAIN_COLLECTION', 'NOTARY_ACCESSION'], true)) {

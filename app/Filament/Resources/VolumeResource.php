@@ -6,6 +6,7 @@ use App\Filament\Resources\VolumeResource\Pages;
 use App\Filament\Support\SearchableSelects;
 use App\Models\Document;
 use App\Models\Volume;
+use App\Support\ColumnLabels\ColumnLabels;
 use App\Support\CustomFields\CustomFieldSchema;
 use Carbon\Carbon;
 use Filament\Actions\BulkActionGroup;
@@ -69,6 +70,7 @@ class VolumeResource extends Resource
                             ->live()
                             ->columnSpanFull(),
                         Forms\Components\TextInput::make('volume_number')
+                            ->label(ColumnLabels::get('volume', 'volume_number'))
                             ->required()
                             ->maxLength(32)
                             ->columnSpanFull(),
@@ -77,8 +79,10 @@ class VolumeResource extends Resource
                 Section::make('Dates')
                     ->columns($twoCols)
                     ->schema([
-                        Forms\Components\DatePicker::make('dates_start'),
-                        Forms\Components\DatePicker::make('dates_end'),
+                        Forms\Components\DatePicker::make('dates_start')
+                            ->label(ColumnLabels::get('volume', 'dates_start')),
+                        Forms\Components\DatePicker::make('dates_end')
+                            ->label(ColumnLabels::get('volume', 'dates_end')),
                     ]),
 
                 Section::make('Notes')
@@ -86,6 +90,7 @@ class VolumeResource extends Resource
                     ->collapsed()
                     ->schema([
                         Forms\Components\Textarea::make('notes')
+                            ->label(ColumnLabels::get('volume', 'notes'))
                             ->rows(3)
                             ->columnSpanFull(),
                     ]),
@@ -146,7 +151,7 @@ class VolumeResource extends Resource
                             ->placeholder('—')
                             ->columnSpanFull(),
                         TextEntry::make('volume_number')
-                            ->label('Volume number')
+                            ->label(ColumnLabels::get('volume', 'volume_number'))
                             ->copyable()
                             ->placeholder('—')
                             ->columnSpanFull(),
@@ -156,11 +161,11 @@ class VolumeResource extends Resource
                     ->columns($twoCols)
                     ->schema([
                         TextEntry::make('dates_start')
-                            ->label('From')
+                            ->label(ColumnLabels::get('volume', 'dates_start'))
                             ->date()
                             ->placeholder('—'),
                         TextEntry::make('dates_end')
-                            ->label('To')
+                            ->label(ColumnLabels::get('volume', 'dates_end'))
                             ->date()
                             ->placeholder('—'),
                     ]),
@@ -170,6 +175,7 @@ class VolumeResource extends Resource
                     ->collapsed()
                     ->schema([
                         TextEntry::make('notes')
+                            ->label(ColumnLabels::get('volume', 'notes'))
                             ->hiddenLabel()
                             ->prose()
                             ->placeholder('No notes.')
@@ -237,14 +243,17 @@ class VolumeResource extends Resource
                     ->numeric()
                     ->sortable(),
                 Tables\Columns\TextColumn::make('volume_number')
+                    ->label(ColumnLabels::get('volume', 'volume_number'))
                     ->searchable()
                     ->sortable()
                     ->toggleable(),
                 Tables\Columns\TextColumn::make('dates_start')
+                    ->label(ColumnLabels::get('volume', 'dates_start'))
                     ->date()
                     ->sortable()
                     ->toggleable(),
                 Tables\Columns\TextColumn::make('dates_end')
+                    ->label(ColumnLabels::get('volume', 'dates_end'))
                     ->date()
                     ->sortable()
                     ->toggleable(),

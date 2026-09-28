@@ -76,11 +76,11 @@ test('the Box template parent_box_number column maps to the parent barcode impor
     // (named parent_box_number, holding the parent RAS barcode) must resolve to
     // the importer's parent_barcode column.
     $headers = TemplateGenerator::headersFor('box');
-    expect($headers)->toContain('parent_box_number');
+    expect($headers)->toContain('Parent box number');
 
     $map = ImportWizard::guessColumnMap(BoxImporter::class, $headers);
 
-    expect($map['parent_barcode'] ?? null)->toBe('parent_box_number');
+    expect($map['parent_barcode'] ?? null)->toBe('Parent box number');
 });
 
 test('logUnrecognisedHeaders warns about spreadsheet columns the importer will not consume', function () {
@@ -107,10 +107,12 @@ test('logUnrecognisedHeaders stays silent when every column is recognised', func
 test('the Download-template step has a hint for every tricky/known box column', function () {
     $hints = ImportWizard::columnHints();
     // The two that caused the client's confusion must be explained.
-    expect($hints)->toHaveKey('parent_box_number')
-        ->and($hints['parent_box_number'])->toContain('RAS')
-        ->and($hints)->toHaveKey('Location')
-        ->and($hints['Location'])->toContain('CODE');
+    // Hints are keyed by the header the template currently carries, which is
+    // the point: they are stored per FIELD and resolved through ColumnLabels, so
+    // renaming a column keeps its explanation instead of dropping it.
+    $hints = ImportWizard::columnHintsFor('box');
+    expect($hints)->toHaveKey('Parent box number')
+        ->and($hints['Parent box number'])->toContain('RAS');
 
     // Every STATIC box template column that is not free-form has an explanation.
     // Exclude the dynamic custom-field columns the template appends (their labels
@@ -119,7 +121,7 @@ test('the Download-template step has a hint for every tricky/known box column', 
     $customFieldLabels = CustomFieldResolver::definitionsFor('box')
         ->pluck('label')
         ->all();
-    $noHintNeeded = array_merge(['notes'], $customFieldLabels);
+    $noHintNeeded = $customFieldLabels;
 
     foreach (TemplateGenerator::headersFor('box') as $h) {
         if (in_array($h, $noHintNeeded, true)) {

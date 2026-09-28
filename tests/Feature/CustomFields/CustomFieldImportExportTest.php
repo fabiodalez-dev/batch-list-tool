@@ -390,9 +390,9 @@ test('[Template/Batch] headersFor appends active text+date custom labels after s
     $headers = TemplateGenerator::headersFor('batch');
 
     // Static headers must be present first.
-    expect($headers[0])->toBe('batch_number');
-    expect($headers)->toContain('description');
-    expect($headers)->toContain('type');
+    expect($headers[0])->toBe('Batch Number');
+    expect($headers)->toContain('Description');
+    expect($headers)->toContain('Accession Type');
 
     // Custom labels appended at the end.
     expect($headers)->toContain('Batch Text Field');
@@ -455,11 +455,11 @@ test('[Template/Box] headersFor appends active text+date custom labels after sta
 
     $headers = TemplateGenerator::headersFor('box');
 
-    // Static headers from synthesiseBoxHeaders().
-    expect($headers[0])->toBe('box_type');
-    expect($headers)->toContain('box_number');
-    expect($headers)->toContain('batch_number');
-    expect($headers)->toContain('barcode');
+    // Static headers from ColumnLabels::DEFAULTS['box'].
+    expect($headers[0])->toBe('Box type');
+    expect($headers)->toContain('Box number');
+    expect($headers)->toContain('Batch number');
+    expect($headers)->toContain('Barcode');
 
     // Custom labels appended.
     expect($headers)->toContain('Box Text Field');
@@ -522,12 +522,12 @@ test('[Template/Volume] headersFor appends active text+date custom labels after 
 
     $headers = TemplateGenerator::headersFor('volume');
 
-    // Static headers from synthesiseVolumeHeaders().
-    expect($headers[0])->toBe('document_identifier');
-    expect($headers)->toContain('volume_number');
-    expect($headers)->toContain('dates_start');
-    expect($headers)->toContain('dates_end');
-    expect($headers)->toContain('notes');
+    // Static headers from ColumnLabels::DEFAULTS['volume'].
+    expect($headers[0])->toBe('Document identifier');
+    expect($headers)->toContain('Volume number');
+    expect($headers)->toContain('Dates start');
+    expect($headers)->toContain('Dates end');
+    expect($headers)->toContain('Notes');
 
     // Custom labels appended.
     expect($headers)->toContain('Vol Text Field');

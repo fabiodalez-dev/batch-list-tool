@@ -9,6 +9,7 @@ use App\Filament\Support\CreatorColumn;
 use App\Models\Location;
 use App\Models\LocationType;
 use App\Models\Repository;
+use App\Support\ColumnLabels\ColumnLabels;
 use App\Support\CustomFields\CustomFieldSchema;
 use Filament\Actions\BulkAction;
 use Filament\Actions\BulkActionGroup;
@@ -112,7 +113,7 @@ class LocationResource extends Resource
                             ->helperText('Select the repository this location belongs to.')
                             ->default(fn () => auth()->user()?->default_repository_id),
                         Forms\Components\Select::make('type')
-                            ->label('Type')
+                            ->label(ColumnLabels::get('location', 'type'))
                             // Feedback1 gaps — options come from the editable
                             // location_types lookup (active rows, ordered by
                             // sort_order); stored value stays the lowercase code
@@ -124,6 +125,7 @@ class LocationResource extends Resource
                             ->required()
                             ->native(false),
                         Forms\Components\TextInput::make('name')
+                            ->label(ColumnLabels::get('location', 'name'))
                             ->required()
                             ->maxLength(100)
                             // Bug #17 — location name unique per repository. Use the
@@ -146,7 +148,7 @@ class LocationResource extends Resource
                             }),
                         // Wave D3: code is auto-generated on create when blank.
                         Forms\Components\TextInput::make('code')
-                            ->label('Identifier')
+                            ->label(ColumnLabels::get('location', 'code'))
                             ->maxLength(32)
                             ->helperText('Auto-generated if left blank. Must be unique within the repository.')
                             ->columnSpanFull()
@@ -174,6 +176,7 @@ class LocationResource extends Resource
                     ->columns($twoCols)
                     ->schema([
                         Forms\Components\Toggle::make('is_active')
+                            ->label(ColumnLabels::get('location', 'is_active'))
                             ->default(true)
                             ->required(),
                         // F08 (review finding) — sort_order hidden from the
@@ -186,7 +189,10 @@ class LocationResource extends Resource
                     ->columns(1)
                     ->collapsed()
                     ->schema([
-                        Forms\Components\Textarea::make('notes')->rows(3)->columnSpanFull(),
+                        Forms\Components\Textarea::make('notes')
+                            ->label(ColumnLabels::get('location', 'notes'))
+                            ->rows(3)
+                            ->columnSpanFull(),
                     ]),
                 // The columns this repository added itself.
                 // Client 2026-09-25: standalone columns reach every entity, so
@@ -217,10 +223,10 @@ class LocationResource extends Resource
                     ->columns($twoCols)
                     ->schema([
                         TextEntry::make('name')
-                            ->label('Name')
+                            ->label(ColumnLabels::get('location', 'name'))
                             ->placeholder('—'),
                         TextEntry::make('type')
-                            ->label('Type')
+                            ->label(ColumnLabels::get('location', 'type'))
                             ->badge()
                             ->color(fn (?string $state): string => $state ? self::typeColor($state) : 'gray')
                             ->formatStateUsing(fn (?string $state): string => $state
@@ -230,7 +236,7 @@ class LocationResource extends Resource
                         // D3/D8 — relabel 'Code' → 'Identifier' in the infolist
                         // to match the form input and table column labels.
                         TextEntry::make('code')
-                            ->label('Identifier')
+                            ->label(ColumnLabels::get('location', 'code'))
                             ->copyable()
                             ->placeholder('—'),
                         // F04/F07 (review findings) — breadcrumb (Path) and
@@ -254,7 +260,7 @@ class LocationResource extends Resource
                         // removed from infolist per decision D8: "Remove depth;
                         // sort_order kept internally but hidden from the simple UI."
                         IconEntry::make('is_active')
-                            ->label('Active')
+                            ->label(ColumnLabels::get('location', 'is_active'))
                             ->boolean(),
                     ]),
 
@@ -278,6 +284,7 @@ class LocationResource extends Resource
                     ->collapsed()
                     ->schema([
                         TextEntry::make('notes')
+                            ->label(ColumnLabels::get('location', 'notes'))
                             ->hiddenLabel()
                             ->prose()
                             ->placeholder('No notes.')
@@ -305,9 +312,11 @@ class LocationResource extends Resource
             ->reorderableColumns()
             ->columns([
                 Tables\Columns\TextColumn::make('name')
+                    ->label(ColumnLabels::get('location', 'name'))
                     ->searchable()
                     ->sortable(),
                 Tables\Columns\TextColumn::make('type')
+                    ->label(ColumnLabels::get('location', 'type'))
                     ->badge()
                     ->formatStateUsing(fn (string $state) => self::typeLabel($state))
                     ->color(fn (string $state) => self::typeColor($state))
@@ -321,7 +330,7 @@ class LocationResource extends Resource
                     ->sortable()
                     ->toggleable(),
                 Tables\Columns\TextColumn::make('code')
-                    ->label('Identifier')
+                    ->label(ColumnLabels::get('location', 'code'))
                     ->searchable()
                     ->copyable()
                     ->placeholder('—')
@@ -340,6 +349,7 @@ class LocationResource extends Resource
                     ->sortable()
                     ->toggleable(),
                 Tables\Columns\IconColumn::make('is_active')
+                    ->label(ColumnLabels::get('location', 'is_active'))
                     ->boolean()
                     ->sortable()
                     ->toggleable(),
@@ -365,6 +375,7 @@ class LocationResource extends Resource
                     ->searchable()
                     ->preload(),
                 TernaryFilter::make('is_active')
+                    ->label(ColumnLabels::get('location', 'is_active'))
                     ->placeholder('Any')
                     ->trueLabel('Active')
                     ->falseLabel('Inactive'),

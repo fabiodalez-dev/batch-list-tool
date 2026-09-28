@@ -28,7 +28,7 @@ use Illuminate\Validation\ValidationException;
  * a document that belongs to a different repository is rejected so an operator
  * cannot accidentally move volumes across tenants.
  *
- * Static column contract (mirrors TemplateGenerator::synthesiseVolumeHeaders()):
+ * Static column contract (mirrors ColumnLabels::DEFAULTS['volume']):
  *
  *   document_identifier  — required; resolves Volume.document_id.
  *   volume_number        — Volume.volume_number.
@@ -228,7 +228,7 @@ class VolumeImporter extends Importer
 
     /**
      * Static import columns — must stay in sync with
-     * TemplateGenerator::synthesiseVolumeHeaders() (same keys, same order).
+     * ColumnLabels::DEFAULTS['volume'] (same keys, same order).
      *
      * @return array<ImportColumn>
      */

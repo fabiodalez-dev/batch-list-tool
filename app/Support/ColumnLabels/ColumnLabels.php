@@ -29,6 +29,15 @@ final class ColumnLabels
     /**
      * The factory names, per entity, in template order.
      *
+     * ONE NAME PER COLUMN. What is written here is the name the column carries
+     * everywhere it is seen: the template header, the importer's column-mapping
+     * dropdown, the form, the record page and the table heading. Client
+     * 2026-09-28: "although the template columns are correct, the headers in the
+     * page are different than the one in the template" — the template said
+     * "Creator Surname" and the table said "Surname", and she had no way to tell
+     * which of the two the system actually meant. A screen that disagrees with
+     * the sheet is not a cosmetic problem; it is two names for one column.
+     *
      * This is the single source of truth for what a renameable column is
      * called before anyone renames it, and for which fields may be renamed at
      * all: a key absent from here cannot be overridden, by design — the
@@ -68,37 +77,43 @@ final class ColumnLabels
             'name_of_inputter' => 'Name of Inputter',
             'repository_code' => 'Repository',
         ],
+        // Client 2026-09-28: the headers below used to be the raw field names
+        // ("batch_number", "dates_start"), while the screen already showed the
+        // readable ones. One column cannot have two names — see the note above
+        // DEFAULTS — so the readable name won and the template was raised to it.
+        // The technical spelling still imports: it IS the field name, and
+        // ImportWizard::guessSingleColumn tries the field name first.
         'batch' => [
-            'batch_number' => 'batch_number',
-            'description' => 'description',
-            'type' => 'type',
-            'is_active' => 'is_active',
-            'repository_code' => 'repository_code',
+            'batch_number' => 'Batch Number',
+            'description' => 'Description',
+            'type' => 'Accession Type',
+            'is_active' => 'Is active',
+            'repository_code' => 'Repository code',
         ],
         'box' => [
-            'box_type' => 'box_type',
-            'box_number' => 'box_number',
-            'batch_number' => 'batch_number',
-            'parent_barcode' => 'parent_box_number',
-            'barcode' => 'barcode',
-            'barcode_status' => 'barcode_status',
-            'is_legacy' => 'is_legacy',
+            'box_type' => 'Box type',
+            'box_number' => 'Box number',
+            'batch_number' => 'Batch number',
+            'parent_barcode' => 'Parent box number',
+            'barcode' => 'Barcode',
+            'barcode_status' => 'Barcode status',
+            'is_legacy' => 'Is legacy',
             'provenance_unknown' => 'Provenance Unknown',
-            'notes' => 'notes',
+            'notes' => 'Notes',
             'tracking_note' => 'Tracking Note',
             'seal_number' => 'Seal Number',
             'destroyed' => 'Destroyed',
             'current_box_type' => 'Current Box Type',
         ],
         'location' => [
-            'name' => 'name',
-            'type' => 'type',
-            'parent_name' => 'parent_name',
-            'repository_code' => 'repository_code',
-            'code' => 'code',
-            'notes' => 'notes',
-            'sort_order' => 'sort_order',
-            'is_active' => 'is_active',
+            'name' => 'Name',
+            'type' => 'Type',
+            'parent_name' => 'Parent location',
+            'repository_code' => 'Repository code',
+            'code' => 'Identifier',
+            'notes' => 'Notes',
+            'sort_order' => 'Sort order',
+            'is_active' => 'Is active',
         ],
         'documentType' => [
             'identifier' => 'Identifier',
@@ -142,11 +157,11 @@ final class ColumnLabels
             'part_number' => 'Part Number',
         ],
         'volume' => [
-            'document_identifier' => 'document_identifier',
-            'volume_number' => 'volume_number',
-            'dates_start' => 'dates_start',
-            'dates_end' => 'dates_end',
-            'notes' => 'notes',
+            'document_identifier' => 'Document identifier',
+            'volume_number' => 'Volume number',
+            'dates_start' => 'Dates start',
+            'dates_end' => 'Dates end',
+            'notes' => 'Notes',
         ],
         'accession' => [
             'authority_identifier' => 'Authority Identifier',

@@ -7,6 +7,7 @@ namespace App\Filament\Resources;
 use App\Filament\Resources\DocumentTypeResource\Pages;
 use App\Filament\Support\CreatorColumn;
 use App\Models\DocumentType;
+use App\Support\ColumnLabels\ColumnLabels;
 use App\Support\CustomFields\CustomFieldResolver;
 use App\Support\CustomFields\CustomFieldSchema;
 use Filament\Actions\BulkAction;
@@ -73,20 +74,23 @@ class DocumentTypeResource extends Resource
                 // pre-filled with the next consecutive DT##### code (still
                 // user-editable and uniqueness-validated).
                 Forms\Components\TextInput::make('identifier')
-                    ->label('Identifier')
+                    ->label(ColumnLabels::get('documentType', 'identifier'))
                     ->required()
                     ->maxLength(64)
                     ->unique(ignoreRecord: true)
                     ->default(fn () => static::nextIdentifier())
                     ->helperText('Short code in the form DT00001. Pre-filled with the next free code; must be unique.'),
                 Forms\Components\TextInput::make('name')
+                    ->label(ColumnLabels::get('documentType', 'name'))
                     ->required()
                     ->maxLength(100)
                     ->unique(ignoreRecord: true),
                 Forms\Components\Textarea::make('description')
+                    ->label(ColumnLabels::get('documentType', 'description'))
                     ->maxLength(500)
                     ->rows(3),
                 Forms\Components\Toggle::make('is_active')
+                    ->label(ColumnLabels::get('documentType', 'is_active'))
                     ->default(true),
 
                 // The columns this repository added itself.
@@ -113,14 +117,25 @@ class DocumentTypeResource extends Resource
             ->reorderableColumns()
             ->columns([
                 Tables\Columns\TextColumn::make('identifier')
-                    ->label('Identifier')
+                    ->label(ColumnLabels::get('documentType', 'identifier'))
                     ->searchable()
                     ->sortable()
                     ->placeholder('—')
                     ->toggleable(),
-                Tables\Columns\TextColumn::make('name')->searchable()->sortable(),
-                Tables\Columns\TextColumn::make('description')->limit(60)->toggleable()->sortable(),
-                Tables\Columns\IconColumn::make('is_active')->boolean()->sortable()->toggleable(),
+                Tables\Columns\TextColumn::make('name')
+                    ->label(ColumnLabels::get('documentType', 'name'))
+                    ->searchable()
+                    ->sortable(),
+                Tables\Columns\TextColumn::make('description')
+                    ->label(ColumnLabels::get('documentType', 'description'))
+                    ->limit(60)
+                    ->toggleable()
+                    ->sortable(),
+                Tables\Columns\IconColumn::make('is_active')
+                    ->label(ColumnLabels::get('documentType', 'is_active'))
+                    ->boolean()
+                    ->sortable()
+                    ->toggleable(),
                 Tables\Columns\TextColumn::make('updated_at')->dateTime('Y-m-d H:i')->sortable()->toggleable(),
                 CreatorColumn::make(),
             ])

@@ -4,8 +4,6 @@ declare(strict_types=1);
 
 namespace App\Support\BulkImport;
 
-use App\Filament\Imports\BatchImporter;
-use App\Filament\Imports\BoxImporter;
 use App\Models\Authority;
 use App\Support\ColumnLabels\ColumnLabels;
 use App\Support\CustomFields\CustomFieldResolver;
@@ -170,12 +168,12 @@ final class TemplateGenerator
      * version tells you whether the operator is working from a stale
      * download. Bump on any change to the header contract.
      */
-    public const string GENERATOR_VERSION = '1.19.0';
+    public const string GENERATOR_VERSION = '1.20.0';
 
     /**
      * Supported template entities. Headers come from the in-repo constants
      * ({@see AUTHORITY_HEADERS}, {@see SERIES_HEADERS}, {@see DOCUMENT_HEADERS})
-     * or the `synthesise*Headers()` methods — never from an external file.
+     * or from {@see ColumnLabels::DEFAULTS} — never from an external file.
      *
      * Kept public so the wizard page and tests can read the same key set
      * without duplicating literals.
@@ -283,7 +281,8 @@ final class TemplateGenerator
      * FIRST (byte-for-byte contract preserved), then the active custom-field
      * labels for the resolved repository are APPENDED in sort_order order.
      *
-     * - "Static" headers = the legacy constants / synthesise*Headers() output.
+     * - "Static" headers = ColumnLabels::DEFAULTS, or the legacy constant for
+     *   the two templates that cannot be rebuilt from a name list.
      *   Their position, spelling, and duplicate behaviour are frozen contracts.
      * - "Dynamic" headers = the label of each active CustomFieldDefinition
      *   for the entity in the active repository (via CustomFieldResolver).
@@ -301,18 +300,22 @@ final class TemplateGenerator
         }
 
         $staticHeaders = match ($entity) {
-            // Renameable from the admin since 2026-09-24: the header text comes
-            // from ColumnLabels, which falls back to AUTHORITY_HEADERS' own
-            // wording when nothing has been renamed. The ORDER and the set of
-            // columns stay in code — only the names move.
-            'authority' => ColumnLabels::headers('authority'),
-            'series' => self::SERIES_HEADERS,
-            'documentType' => self::DOCUMENT_TYPE_HEADERS,
+            // Seven templates have every one of their columns in ColumnLabels,
+            // so the header row IS the list of names — which is what makes one
+            // name per column true: the sheet, the form and the table all read
+            // the same entry. The ORDER and the set of columns stay in code;
+            // only the names move. There is no second list of these headers to
+            // keep in step: ColumnLabels::DEFAULTS is the one place the set, the
+            // order and the names live, and the round-trip test pins it against
+            // each importer.
+            'authority', 'series', 'batch', 'box', 'location', 'documentType', 'volume' => ColumnLabels::headers($entity),
+
+            // These two cannot be rebuilt from a name list. The document
+            // template repeats headers on purpose and the accession one has two
+            // columns a single header could belong to, so some of their columns
+            // are not renameable at all; their header row is built in code and
+            // has renamed columns substituted into it below.
             'document' => self::DOCUMENT_HEADERS,
-            'batch' => self::synthesiseBatchHeaders(),
-            'box' => self::synthesiseBoxHeaders(),
-            'location' => self::synthesiseLocationHeaders(),
-            'volume' => self::synthesiseVolumeHeaders(),
             'accession' => self::synthesiseAccessionHeaders(),
         };
         // Note: the `array_key_exists` guard above narrows $entity to the
@@ -352,90 +355,6 @@ final class TemplateGenerator
             ->all();
 
         return array_merge($staticHeaders, $customLabels);
-    }
-
-    /**
-     * Synthetic Batch headers — mirrors {@see BatchImporter::getColumns()}
-     * exactly, including order. The names match the labels operators see
-     * inside the Filament Import modal (column-mapping dropdown), so a
-     * "download → fill → re-upload" cycle requires zero remapping.
-     *
-     * Reflects RFQ Appendix-2 §4 (Batch is the root tenancy unit).
-     *
-     * @return array<int, string>
-     */
-    private static function synthesiseBatchHeaders(): array
-    {
-        return [
-            'batch_number',
-            'description',
-            'type',           // MAIN_COLLECTION | NOTARY_ACCESSION
-            'is_active',
-            'repository_code',
-        ];
-    }
-
-    /**
-     * Synthetic Box headers — mirrors {@see BoxImporter::getColumns()}
-     * exactly. Order is significant: `batch_number` precedes `parent_box_number`
-     * so an operator filling top-to-bottom understands the parent must
-     * already exist in the destination batch.
-     *
-     * @return array<int, string>
-     */
-    private static function synthesiseBoxHeaders(): array
-    {
-        return [
-            'box_type',          // RAS | IN_SITU | NRA | MAV | STVC  (optional; blank for the Unknown/NULL catch-alls)
-            'box_number',
-            'batch_number',
-            'parent_box_number', // barcode of the parent RAS box (IN_SITU/NRA require it — RFQ #3)
-            'barcode',           // optional even for RAS (some legacy boxes lost the barcode trail)
-            'barcode_status',    // IN | OUT | PERM_OUT
-            // Client feedback 2026-08-04: disinfestation_date and Location moved
-            // OFF the box template and onto the document template — they are
-            // tracked at document level now. BoxImporter still ACCEPTS both
-            // columns (tolerant) so box sheets already in circulation import
-            // cleanly, but the generated box template no longer offers them.
-            'is_legacy',
-            // Client 2026-08-10: In-Situ / NRA boxes that genuinely have no RAS
-            // parent. Yes lets the row skip the parent-RAS requirement (RFQ #3);
-            // blank/No keeps it enforced. Mirrors the create form's toggle.
-            'Provenance Unknown',
-            'notes',
-            // Client feedback 2026-08-04: a Tracking Note distinct from the
-            // general note. Order mirrors BoxImporter's columns (after notes).
-            'Tracking Note',
-            // F05 — Seal Number added per client request.
-            'Seal Number',       // optional physical seal id on the box
-            // Client feedback 2026-08-01. Order mirrors BoxImporter's columns
-            // (destroyed before current_box_type).
-            'Destroyed',         // Yes / a date / blank — bulk-mark boxes already destroyed
-            'Current Box Type',  // physical container: RAS Box | Big Brown Box | Small Brown Box | Standard Blue Box | …
-        ];
-    }
-
-    /**
-     * Location template — driven by LocationImporter columns; the `type`
-     * column accepts any active Location Type code (configured in the lookup).
-     * Operators describe their tree top-down: roots first (parent_name blank),
-     * then children. Re-runs are safe; missing-parent rows fail but the next
-     * run picks them up once the parent exists.
-     *
-     * @return array<int, string>
-     */
-    private static function synthesiseLocationHeaders(): array
-    {
-        return [
-            'name',
-            'type',             // any active Location Type code (configured in the Location Types lookup)
-            'parent_name',      // blank for root rows
-            'repository_code',  // e.g. NRA
-            'code',
-            'notes',
-            'sort_order',
-            'is_active',
-        ];
     }
 
     /**
@@ -496,36 +415,6 @@ final class TemplateGenerator
             'No of Acts',             // optional; number/count of acts
             'Pages/Folios',           // optional; page or folio count
             'Note',                   // optional
-        ];
-    }
-
-    /**
-     * Synthetic Volume headers — mirrors the VolumeImporter static columns
-     * exactly (import phase §4 must keep these names in sync):
-     *
-     *   document_identifier  — required; resolves the parent Document by its
-     *                          identifier, scoped to the active repository.
-     *   volume_number        — the Volume.volume_number column.
-     *   dates_start          — Volume.dates_start (Y-m-d or human-readable).
-     *   dates_end            — Volume.dates_end   (Y-m-d or human-readable).
-     *   notes                — Volume.notes (free text).
-     *
-     * CONTRACT: the Import phase (spec §4, VolumeImporter::getColumns()) MUST
-     * declare exactly these column keys in the same order so that a
-     * "download template → fill → re-upload" round-trip requires zero remapping.
-     * If the VolumeImporter static columns ever change, update BOTH this method
-     * AND the importer, then bump GENERATOR_VERSION.
-     *
-     * @return array<int, string>
-     */
-    private static function synthesiseVolumeHeaders(): array
-    {
-        return [
-            'document_identifier', // FK: resolves Volume.document_id via Document.identifier
-            'volume_number',
-            'dates_start',
-            'dates_end',
-            'notes',
         ];
     }
 
