@@ -941,8 +941,7 @@ class ImportWizard extends Page
      */
     public static function logUnrecognisedHeaders(string $importerClass, array $headers, array $columnMap, string $context): void
     {
-        $claimed = array_filter(array_values($columnMap), static fn ($h): bool => $h !== null && $h !== '');
-        $ignored = array_values(array_diff($headers, $claimed));
+        $ignored = self::unrecognisedHeaders($headers, $columnMap);
 
         if ($ignored === []) {
             return;
@@ -956,6 +955,55 @@ class ImportWizard extends Page
                 'ignored_columns' => $ignored,
             ],
         );
+    }
+
+    /**
+     * The spreadsheet headers no importer field consumes — the columns whose
+     * data silently never reaches the model.
+     *
+     * Shared by the log trail and the mapping step's on-screen warning so the
+     * two can never disagree about what is being dropped.
+     *
+     * Blank headers are excluded: a trailing empty column in the sheet is not a
+     * column the operator forgot to map, and listing it would be noise.
+     *
+     * @param array<int, string|null> $headers
+     * @param array<string, string|null> $columnMap column name => matched header
+     * @return array<int, string>
+     */
+    public static function unrecognisedHeaders(array $headers, array $columnMap): array
+    {
+        $claimed = array_filter(array_values($columnMap), static fn ($h): bool => $h !== null && $h !== '');
+        $present = array_filter(
+            $headers,
+            static fn ($h): bool => $h !== null && trim((string) $h) !== '',
+        );
+
+        return array_values(array_diff($present, $claimed));
+    }
+
+    /**
+     * The mapping step's warning about columns the importer will not consume.
+     *
+     * Empty string when there is nothing to say, so the placeholder collapses
+     * rather than showing an empty box on the common case.
+     *
+     * @param array<int, string|null> $headers
+     * @param array<string, string|null> $columnMap
+     */
+    public static function renderIgnoredColumns(array $headers, array $columnMap): string
+    {
+        $ignored = self::unrecognisedHeaders($headers, $columnMap);
+
+        if ($ignored === []) {
+            return '';
+        }
+
+        return '<p class="text-sm font-medium text-warning-600">'
+            . 'These columns of your file are <strong>not</strong> being imported: <code>'
+            . e(implode(', ', $ignored))
+            . '</code>. That is fine for columns you keep for your own reference. '
+            . 'If one of them should end up in the archive, map it above.</p>';
     }
 
     /**
@@ -1686,6 +1734,34 @@ class ImportWizard extends Page
                             . e(implode(', ', $missing))
                             . '</code>. Pick the right Excel header above before you continue.</p>'
                         );
+                    })
+                    ->columnSpanFull(),
+
+                // Columns of the operator's file that no importer field claims.
+                // Extra columns are allowed and never block the import, but
+                // until now their data vanished without a word on screen — the
+                // only trace was a line in storage/logs/import-*.log, which the
+                // operator never reads. A client sheet headed "Barcode" instead
+                // of "Barcode RAS 1" imported "successfully" and quietly lost
+                // the whole barcode history (2026-09-29).
+                Placeholder::make('ignored_columns')
+                    ->hiddenLabel()
+                    ->content(function (Get $get): HtmlString {
+                        $type = (string) ($get('import_type') ?? '');
+                        if (! array_key_exists($type, self::IMPORTERS)) {
+                            return new HtmlString('');
+                        }
+                        $info = $this->parseFilePreview($get('file'), (int) ($get('sheet') ?? 0));
+                        if ($info === null) {
+                            return new HtmlString('');
+                        }
+                        $columnMap = $get('column_map');
+                        if (! is_array($columnMap)) {
+                            $columnMap = [];
+                        }
+
+                        /** @var array<string, string|null> $columnMap */
+                        return new HtmlString(self::renderIgnoredColumns($info['headers'], $columnMap));
                     })
                     ->columnSpanFull(),
             ])
