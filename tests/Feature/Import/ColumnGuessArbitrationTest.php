@@ -299,3 +299,86 @@ it('still maps every required column of the sheets already uploaded', function (
 
     expect($broken)->toBe([]);
 });
+
+// ── Columns the importer silently ignores ────────────────────────────────────
+
+it('names the client sheet column that would have been dropped without a word', function (): void {
+    // Charlene, 2026-09-29: a RAS box whose current barcode is IN but which
+    // previously carried another RAS barcode that went PERM OUT. Her sheet
+    // headed the past barcode simply "Barcode"; the importer wants
+    // "Barcode RAS 1". The column maps to nothing, so the barcode history
+    // would have been lost on an import that reported complete success.
+    $headers = [
+        'RAS Batch 1', 'RAS Box 1', 'RAS Batch 2', 'RAS Box 2',
+        'In Situ Box 1', 'In Situ Box 2', 'Box 2 Destroyed',
+        'In Situ Box 3 Destroyed', 'Barcode (IN)', 'Barcode', 'Status 1',
+    ];
+
+    $map = ImportWizard::guessColumnMap(DocumentImporter::class, $headers);
+
+    expect(ImportWizard::unrecognisedHeaders($headers, $map))
+        ->toContain('Barcode');
+
+    // Renaming it to the header the template ships is the whole fix.
+    $fixed = $headers;
+    $fixed[array_search('Barcode', $fixed, true)] = 'Barcode RAS 1';
+    $fixedMap = ImportWizard::guessColumnMap(DocumentImporter::class, $fixed);
+
+    expect($fixedMap['barcode_ras_1'])->toBe('Barcode RAS 1')
+        ->and($fixedMap['barcode_in'])->toBe('Barcode (IN)')
+        ->and($fixedMap['status_1'])->toBe('Status 1')
+        ->and(ImportWizard::unrecognisedHeaders($fixed, $fixedMap))->not->toContain('Barcode RAS 1');
+});
+
+it('does not call a blank trailing column an ignored column', function (): void {
+    // A sheet with an empty column at the end is not an operator mistake, and
+    // listing it on screen would train them to ignore the warning.
+    $headers = ['Code', 'Title', '', null, '   '];
+    $map = ['code' => 'Code', 'title' => 'Title'];
+
+    expect(ImportWizard::unrecognisedHeaders($headers, $map))->toBe([]);
+});
+
+it('says nothing about the templates we ship ourselves', function (): void {
+    // If one of our own templates carried a column its own importer ignores,
+    // every operator would see the warning on every import and stop reading it.
+    $ignored = [];
+
+    foreach ([
+        'authority' => AuthorityImporter::class,
+        'series' => SeriesImporter::class,
+        'batch' => BatchImporter::class,
+        'box' => BoxImporter::class,
+        'location' => LocationImporter::class,
+        'documentType' => DocumentTypeImporter::class,
+        'document' => DocumentImporter::class,
+        'volume' => VolumeImporter::class,
+        'accession' => AccessionRowImporter::class,
+    ] as $entity => $importer) {
+        $headers = TemplateGenerator::headersFor($entity);
+        foreach (ImportWizard::unrecognisedHeaders($headers, cga_map($importer, $headers)) as $header) {
+            $ignored[] = "{$entity}: \"{$header}\"";
+        }
+    }
+
+    expect($ignored)->toBe([]);
+});
+
+it('renders the warning the operator actually reads, naming the dropped column', function (): void {
+    $headers = ['RAS Batch 1', 'RAS Box 1', 'Barcode (IN)', 'Barcode', 'Status 1'];
+    $map = ImportWizard::guessColumnMap(DocumentImporter::class, $headers);
+
+    $html = ImportWizard::renderIgnoredColumns($headers, $map);
+
+    expect($html)->toContain('not')
+        ->and($html)->toContain('being imported')
+        ->and($html)->toContain('Barcode')
+        ->and($html)->not->toContain('Barcode (IN)');
+});
+
+it('renders nothing at all when every column is consumed', function (): void {
+    $headers = TemplateGenerator::headersFor('location');
+    $map = ImportWizard::guessColumnMap(LocationImporter::class, $headers);
+
+    expect(ImportWizard::renderIgnoredColumns($headers, $map))->toBe('');
+});
