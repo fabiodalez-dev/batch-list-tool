@@ -128,10 +128,12 @@ function rex_csvRows(string $content): int
 
 function rex_xlsxRows(string $content): int
 {
-    $path = tempnam(sys_get_temp_dir(), 'rex') . '.xlsx';
-    file_put_contents($path, $content);
-    $rows = IOFactory::load($path)->getActiveSheet()->getHighestDataRow() - 1; // minus the header
-    @unlink($path);
+    // tmpfile() removes itself on fclose(), so nothing is left to delete.
+    $handle = tmpfile();
+    fwrite($handle, $content);
+    $path = stream_get_meta_data($handle)['uri'];
+    $rows = IOFactory::createReader('Xlsx')->load($path)->getActiveSheet()->getHighestDataRow() - 1; // minus the header
+    fclose($handle);
 
     return max(0, $rows);
 }
