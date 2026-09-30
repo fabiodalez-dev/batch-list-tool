@@ -40,7 +40,7 @@ trait CapsExportRows
      * preserve through `slice()->values()`; the export consumers iterate
      * with model-typed closures and do not need a tighter return.
      *
-     * @param Builder<Model> $query
+     * @param Builder<covariant Model> $query any report model — the method only reads
      * @return Collection<int, Model>
      */
     protected function fetchExportRowsWithCap(Builder $query): Collection

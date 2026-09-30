@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace App\Filament\Pages\Account;
 
 use App\Filament\Concerns\ExplainsPage;
+use App\Providers\AppServiceProvider;
 use Filament\Actions\Action;
 use Filament\Forms\Components\Select;
 use Filament\Notifications\Notification;
@@ -78,12 +79,10 @@ class PreferencesPage extends Page
             ->schema([
                 Select::make('preferred_page_size')
                     ->label('Default table page size')
-                    ->options([
-                        10 => '10',
-                        25 => '25',
-                        50 => '50',
-                        100 => '100',
-                    ])
+                    ->options(array_combine(
+                        AppServiceProvider::TABLE_PAGE_SIZES,
+                        array_map('strval', AppServiceProvider::TABLE_PAGE_SIZES),
+                    ))
                     ->required()
                     ->helperText('Number of rows shown per page in every table.'),
 

@@ -588,9 +588,15 @@ test('PDF export returns Content-Type: application/pdf with non-empty body', fun
     /** @var Response $resp */
     $resp = $page->exportPdf();
 
+    // The PDF is a streamed download (Livewire only treats streamed and binary
+    // file responses as downloads), so its body is read by sending it.
+    ob_start();
+    $resp->sendContent();
+    $body = (string) ob_get_clean();
+
     expect($resp->headers->get('Content-Type'))->toBe('application/pdf');
-    expect(strlen((string) $resp->getContent()))->toBeGreaterThan(1000);
-    expect(substr((string) $resp->getContent(), 0, 5))->toBe('%PDF-');
+    expect(strlen($body))->toBeGreaterThan(1000);
+    expect(substr($body, 0, 5))->toBe('%PDF-');
 });
 
 test('PDF export sets attachment Content-Disposition with date-stamped filename', function () {

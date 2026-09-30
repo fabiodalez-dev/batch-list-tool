@@ -7,6 +7,7 @@ namespace App\Filament\Pages\Reports;
 use App\Filament\Concerns\ExplainsPage;
 use App\Filament\Concerns\ResolvesEffectiveLocationBreadcrumb;
 use App\Filament\Pages\Reports\Concerns\CapsExportRows;
+use App\Filament\Pages\Reports\Concerns\ExportsWhatIsOnScreen;
 use App\Filament\Pages\Reports\Concerns\HasReportTemplates;
 use App\Filament\Pages\Reports\Filters\DateRangeFilter;
 use App\Filament\Widgets\PendingDisinfestationTable;
@@ -42,6 +43,7 @@ class PendingDisinfestationReport extends Page implements HasTable
 {
     use CapsExportRows;
     use ExplainsPage;
+    use ExportsWhatIsOnScreen;
     use HasReportTemplates;
     use InteractsWithTable;
     use ResolvesEffectiveLocationBreadcrumb;
@@ -278,7 +280,7 @@ class PendingDisinfestationReport extends Page implements HasTable
                     ->trueLabel('Currently out')
                     ->falseLabel('Not currently out'),
             ])
-            ->paginated([25, 50, 100, 'all']);
+            ->paginated();
     }
 
     public function exportCsv(): StreamedResponse
@@ -300,7 +302,7 @@ class PendingDisinfestationReport extends Page implements HasTable
                 'Created at' => 'created_at',
                 'Days waiting' => 'days_waiting',
             ],
-            query: $this->reportQuery()->orderBy('documents.id'),
+            query: $this->exportQuery()->orderBy('documents.id'),
             rowMapper: fn (Document $r): array => $this->pendingRow($r),
         );
     }
@@ -311,7 +313,7 @@ class PendingDisinfestationReport extends Page implements HasTable
 
         $rows = [];
         /** @var Document $r */
-        foreach ($this->reportQuery()->orderBy('documents.created_at')->limit(5000)->get() as $r) {
+        foreach ($this->exportQuery()->orderBy('documents.created_at')->limit(5000)->get() as $r) {
             $rows[] = $this->pendingRow($r);
         }
 
@@ -327,7 +329,7 @@ class PendingDisinfestationReport extends Page implements HasTable
     {
         abort_unless(static::canAccess(), 403);
 
-        $query = $this->getFilteredTableQuery() ?? $this->reportQuery();
+        $query = $this->exportQuery();
         $rows = $this->fetchExportRowsWithCap(
             $query
                 ->with(['currentBox:id,box_number,barcode,barcode_status', 'batch:id,batch_number', 'series:id,code'])

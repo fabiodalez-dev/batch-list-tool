@@ -6,6 +6,7 @@ namespace App\Filament\Pages\Reports;
 
 use App\Filament\Concerns\ExplainsPage;
 use App\Filament\Pages\Reports\Concerns\CapsExportRows;
+use App\Filament\Pages\Reports\Concerns\ExportsWhatIsOnScreen;
 use App\Filament\Pages\Reports\Concerns\HasReportTemplates;
 use App\Models\Document;
 use App\Models\ReportTemplate;
@@ -34,6 +35,7 @@ class RasNraReconciliationReport extends Page implements HasTable
 {
     use CapsExportRows;
     use ExplainsPage;
+    use ExportsWhatIsOnScreen;
     use HasReportTemplates;
     use InteractsWithTable;
 
@@ -147,7 +149,7 @@ class RasNraReconciliationReport extends Page implements HasTable
                                     ->whereDoesntHave('currentBox', fn (Builder $box) => $box->where('barcode_status', 'IN')->whereNotNull('barcode')->where('barcode', '!=', '')))),
                     ),
             ])
-            ->paginated([25, 50, 100, 'all']);
+            ->paginated();
     }
 
     public function exportCsv(): StreamedResponse
@@ -167,7 +169,7 @@ class RasNraReconciliationReport extends Page implements HasTable
                 'Current box' => 'current_box',
                 'Reconcilable' => 'reconcilable',
             ],
-            query: $this->reportQuery()->orderBy('documents.id'),
+            query: $this->exportQuery()->orderBy('documents.id'),
             rowMapper: fn (Document $r): array => self::reconciliationRow($r),
         );
     }
@@ -178,7 +180,7 @@ class RasNraReconciliationReport extends Page implements HasTable
 
         $rows = [];
         /** @var Document $r */
-        foreach ($this->reportQuery()->orderBy('identifier')->limit(5000)->get() as $r) {
+        foreach ($this->exportQuery()->orderBy('identifier')->limit(5000)->get() as $r) {
             $rows[] = self::reconciliationRow($r);
         }
 
@@ -194,7 +196,7 @@ class RasNraReconciliationReport extends Page implements HasTable
     {
         abort_unless(static::canAccess(), 403);
 
-        $query = $this->getFilteredTableQuery() ?? $this->reportQuery();
+        $query = $this->exportQuery();
         $rows = $this->fetchExportRowsWithCap(
             $query->with(['batch:id,batch_number', 'currentBox:id,box_number,barcode,barcode_status'])
         );

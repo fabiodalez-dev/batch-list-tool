@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace App\Filament\Pages\Reports;
 
 use App\Filament\Concerns\ExplainsPage;
+use App\Filament\Pages\Reports\Concerns\ExportsWhatIsOnScreen;
 use App\Filament\Pages\Reports\Concerns\HasReportTemplates;
 use App\Filament\Resources\DocumentResource\RelationManagers\FlagsRelationManager;
 use App\Models\DocumentFlag;
@@ -45,6 +46,7 @@ use Symfony\Component\HttpFoundation\StreamedResponse;
 class FlagsByTypeReport extends Page implements HasTable
 {
     use ExplainsPage;
+    use ExportsWhatIsOnScreen;
     use HasReportTemplates;
     use InteractsWithTable;
 
@@ -118,23 +120,23 @@ class FlagsByTypeReport extends Page implements HasTable
                 SelectFilter::make('type')
                     ->label('Type')
                     ->options(FlagsRelationManager::typeOptions())
-                    ->query(fn (Builder $q, array $data): Builder => empty($data['value'])
-                        ? $q
-                        : $q->where('document_flags.type', $data['value'])),
+                    ->query(fn (Builder $query, array $data): Builder => empty($data['value'])
+                        ? $query
+                        : $query->where('document_flags.type', $data['value'])),
 
                 SelectFilter::make('severity')
                     ->label('Severity')
                     ->options(FlagsRelationManager::severityOptions())
-                    ->query(fn (Builder $q, array $data): Builder => empty($data['value'])
-                        ? $q
-                        : $q->where('document_flags.severity', $data['value'])),
+                    ->query(fn (Builder $query, array $data): Builder => empty($data['value'])
+                        ? $query
+                        : $query->where('document_flags.severity', $data['value'])),
 
                 SelectFilter::make('status')
                     ->label('Status')
                     ->options(FlagsRelationManager::statusOptions())
-                    ->query(fn (Builder $q, array $data): Builder => empty($data['value'])
-                        ? $q
-                        : $q->where('document_flags.status', $data['value'])),
+                    ->query(fn (Builder $query, array $data): Builder => empty($data['value'])
+                        ? $query
+                        : $query->where('document_flags.status', $data['value'])),
 
                 SelectFilter::make('repository_id')
                     ->label('Repository')
@@ -143,9 +145,9 @@ class FlagsByTypeReport extends Page implements HasTable
                         ->limit(500)
                         ->pluck('code', 'id')
                         ->all())
-                    ->query(fn (Builder $q, array $data): Builder => empty($data['value'])
-                        ? $q
-                        : $q->where('document_flags.repository_id', $data['value'])),
+                    ->query(fn (Builder $query, array $data): Builder => empty($data['value'])
+                        ? $query
+                        : $query->where('document_flags.repository_id', $data['value'])),
 
                 Filter::make('date_range')
                     ->label('Flagged between')
@@ -153,7 +155,7 @@ class FlagsByTypeReport extends Page implements HasTable
                         Forms\Components\DatePicker::make('from')->label('From date'),
                         Forms\Components\DatePicker::make('to')->label('To date'),
                     ])
-                    ->query(fn (Builder $q, array $data): Builder => $q
+                    ->query(fn (Builder $query, array $data): Builder => $query
                         ->when(
                             $data['from'] ?? null,
                             fn (Builder $b, $date): Builder => $b->where('document_flags.flagged_at', '>=', $date),
@@ -174,7 +176,7 @@ class FlagsByTypeReport extends Page implements HasTable
                         return $out;
                     }),
             ])
-            ->paginated([25, 50, 100, 'all']);
+            ->paginated();
     }
 
     public function exportCsv(): StreamedResponse
@@ -243,7 +245,7 @@ class FlagsByTypeReport extends Page implements HasTable
     protected function collectRows(): array
     {
         $rows = [];
-        $records = $this->reportQuery()
+        $records = $this->exportQuery()
             ->orderByDesc('count_open')
             ->orderBy('document_flags.type')
             ->get();

@@ -1249,10 +1249,10 @@ class DocumentResource extends Resource
                         Forms\Components\TextInput::make('year_from')->label('Year from')->numeric(),
                         Forms\Components\TextInput::make('year_to')->label('Year to')->numeric(),
                     ])
-                    ->query(fn (Builder $q, array $data) => $q
-                        ->when($data['year_from'] ?? null, fn ($q, $v) => $q->where(fn ($q) => $q->whereNull('dates_year_end')
+                    ->query(fn (Builder $query, array $data) => $query
+                        ->when($data['year_from'] ?? null, fn ($query, $v) => $query->where(fn ($query) => $query->whereNull('dates_year_end')
                             ->orWhere('dates_year_end', '>=', (int) $v)))
-                        ->when($data['year_to'] ?? null, fn ($q, $v) => $q->where(fn ($q) => $q->whereNull('dates_year_start')
+                        ->when($data['year_to'] ?? null, fn ($query, $v) => $query->where(fn ($query) => $query->whereNull('dates_year_start')
                             ->orWhere('dates_year_start', '<=', (int) $v))))
                     ->indicateUsing(function (array $data): array {
                         $i = [];
@@ -1280,14 +1280,14 @@ class DocumentResource extends Resource
                     // expression — the document's own date, else its (non-deleted)
                     // box's. One whereRaw per bound keeps the two bounds ANDed and
                     // avoids the nested-closure builder pitfalls.
-                    ->query(fn (Builder $q, array $data): Builder => $q
+                    ->query(fn (Builder $query, array $data): Builder => $query
                         ->when(
                             $data['disinfested_from'] ?? null,
-                            fn (Builder $q, $v): Builder => $q->whereRaw(self::EFFECTIVE_DISINFESTATION_SQL . ' >= ?', [$v])
+                            fn (Builder $query, $v): Builder => $query->whereRaw(self::EFFECTIVE_DISINFESTATION_SQL . ' >= ?', [$v])
                         )
                         ->when(
                             $data['disinfested_to'] ?? null,
-                            fn (Builder $q, $v): Builder => $q->whereRaw(self::EFFECTIVE_DISINFESTATION_SQL . ' <= ?', [$v])
+                            fn (Builder $query, $v): Builder => $query->whereRaw(self::EFFECTIVE_DISINFESTATION_SQL . ' <= ?', [$v])
                         )),
 
                 // Ternary filters
@@ -1797,7 +1797,7 @@ class DocumentResource extends Resource
 
         return Filter::make($name)
             ->form([Forms\Components\TextInput::make('value')->label($label)])
-            ->query(fn (Builder $q, array $data) => $q->when($data['value'] ?? null, fn ($q, $v) => $q->where($col, 'like', '%' . trim((string) $v) . '%')));
+            ->query(fn (Builder $query, array $data) => $query->when($data['value'] ?? null, fn ($query, $v) => $query->where($col, 'like', '%' . trim((string) $v) . '%')));
     }
 
     /**
@@ -1816,9 +1816,9 @@ class DocumentResource extends Resource
 
         return Filter::make($name)
             ->form([Forms\Components\TextInput::make('value')->label($label)])
-            ->query(fn (Builder $q, array $data) => $q->when(
+            ->query(fn (Builder $query, array $data) => $query->when(
                 $data['value'] ?? null,
-                fn (Builder $q, string $v) => $q->searchFullText($v, [$col]),
+                fn (Builder $query, string $v) => $query->searchFullText($v, [$col]),
             ));
     }
 

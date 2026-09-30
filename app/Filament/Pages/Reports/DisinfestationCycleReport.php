@@ -6,6 +6,7 @@ namespace App\Filament\Pages\Reports;
 
 use App\Filament\Concerns\ExplainsPage;
 use App\Filament\Pages\Reports\Concerns\CapsExportRows;
+use App\Filament\Pages\Reports\Concerns\ExportsWhatIsOnScreen;
 use App\Filament\Pages\Reports\Concerns\HasReportTemplates;
 use App\Models\Box;
 use App\Models\ReportTemplate;
@@ -41,6 +42,7 @@ class DisinfestationCycleReport extends Page implements HasTable
 {
     use CapsExportRows;
     use ExplainsPage;
+    use ExportsWhatIsOnScreen;
     use HasReportTemplates;
     use InteractsWithTable;
 
@@ -163,7 +165,7 @@ class DisinfestationCycleReport extends Page implements HasTable
                         return empty($values) ? $query : $query->whereIn('box_type', $values);
                     }),
             ])
-            ->paginated([25, 50, 100, 'all']);
+            ->paginated();
     }
 
     public function exportCsv(): StreamedResponse
@@ -182,7 +184,7 @@ class DisinfestationCycleReport extends Page implements HasTable
                 'Cycle status' => 'cycle_status',
                 'Next due' => 'next_due',
             ],
-            query: $this->reportQuery()->orderBy('boxes.id'),
+            query: $this->exportQuery()->orderBy('boxes.id'),
             rowMapper: fn (Box $r): array => self::cycleRow($r),
         );
     }
@@ -193,7 +195,7 @@ class DisinfestationCycleReport extends Page implements HasTable
 
         $rows = [];
         /** @var Box $r */
-        foreach ($this->reportQuery()->orderByRaw('disinfestation_date is not null')->orderBy('disinfestation_date')->limit(5000)->get() as $r) {
+        foreach ($this->exportQuery()->orderByRaw('disinfestation_date is not null')->orderBy('disinfestation_date')->limit(5000)->get() as $r) {
             $rows[] = self::cycleRow($r);
         }
 
@@ -209,7 +211,7 @@ class DisinfestationCycleReport extends Page implements HasTable
     {
         abort_unless(static::canAccess(), 403);
 
-        $query = $this->getFilteredTableQuery() ?? $this->reportQuery();
+        $query = $this->exportQuery();
         $rows = $this->fetchExportRowsWithCap(
             $query->with(['batch:id,batch_number', 'location:id,name', 'documents:id,current_box_id,current_box_type'])
         );

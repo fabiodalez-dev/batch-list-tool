@@ -13,6 +13,11 @@ use App\Settings\AuditSettings;
 use App\Settings\BackupSettings;
 use App\Support\BackupDestinations;
 use Filament\Actions\Action;
+use Filament\Actions\BulkAction;
+use Filament\Actions\DeleteBulkAction;
+use Filament\Actions\DetachBulkAction;
+use Filament\Actions\ForceDeleteBulkAction;
+use Filament\Actions\RestoreBulkAction;
 use Filament\Tables\Table;
 use Illuminate\Auth\Events\Failed;
 use Illuminate\Auth\Events\Lockout;
@@ -47,6 +52,14 @@ use Spatie\Health\Facades\Health;
 class AppServiceProvider extends ServiceProvider
 {
     /**
+     * Rows per page offered by every table, and the only values the
+     * Preferences page lets a user choose.
+     *
+     * @var list<int>
+     */
+    public const array TABLE_PAGE_SIZES = [10, 25, 50, 100];
+
+    /**
      * Guard so the pre-migrate safety backup runs at most once per process,
      * even if MigrationsStarted fires for several migration batches.
      */
@@ -76,7 +89,29 @@ class AppServiceProvider extends ServiceProvider
         // option for every Filament table. The closure runs at table-render time
         // (after the request is bootstrapped), so auth() is available.
         // Wrapped defensively: a null/invalid value must never break a page.
+        // Filament loads every selected record into memory at once unless told
+        // to chunk. Selecting "all" on 7,000 boxes or ~26,000 documents and
+        // pressing Delete hydrated every model in a single request on a shared
+        // host. Chunked, the selection streams through a LazyCollection.
+        //
+        // Only the built-in actions: their callbacks accept a LazyCollection.
+        // Our own bulk actions call modelKeys() or type-hint Collection, and a
+        // blanket BulkAction::configureUsing() would break them with a
+        // TypeError on the first click.
+        foreach ([DeleteBulkAction::class, RestoreBulkAction::class, ForceDeleteBulkAction::class, DetachBulkAction::class] as $bulkAction) {
+            $bulkAction::configureUsing(fn (BulkAction $action) => $action->chunkSelectedRecords(250));
+        }
+
         Table::configureUsing(function (Table $table): void {
+            // One set of page sizes everywhere, equal to the choices on the
+            // Preferences page. Filament's own default is [5, 10, 25, 50], so a
+            // user who picked 100 got 100 rows with no "100" in the menu, and
+            // the reports offered [25, 50, 100, 'all'], so a user who picked 10
+            // could not get back to it. No 'all': with the client's ~26,000
+            // documents, one click rendered the whole table in a single PHP
+            // request on a shared host. Everything is still one export away.
+            $table->paginationPageOptions(self::TABLE_PAGE_SIZES);
+
             try {
                 $size = auth()->user()?->preferred_page_size;
                 if ($size && is_int($size) && $size > 0) {

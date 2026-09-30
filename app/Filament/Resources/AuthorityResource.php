@@ -30,6 +30,7 @@ use Filament\Tables\Filters\TernaryFilter;
 use Filament\Tables\Table;
 use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Database\Eloquent\Collection as EloquentCollection;
+use Illuminate\Support\LazyCollection;
 
 class AuthorityResource extends Resource
 {
@@ -660,7 +661,10 @@ class AuthorityResource extends Resource
                     // deletes document-free creators in the selection and tells
                     // the operator how many were skipped.
                     DeleteBulkAction::make()
-                        ->action(function (EloquentCollection $records): void {
+                        // LazyCollection too: every built-in bulk delete loads its
+                        // selection in chunks (AppServiceProvider), and this override
+                        // only iterates, so it takes either.
+                        ->action(function (EloquentCollection|LazyCollection $records): void {
                             $deleted = 0;
                             $skipped = 0;
 
