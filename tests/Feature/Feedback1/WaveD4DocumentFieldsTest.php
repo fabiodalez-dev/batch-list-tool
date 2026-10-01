@@ -2,11 +2,12 @@
 
 declare(strict_types=1);
 
-use App\Filament\Actions\Documents\ExportSelectedAction;
 use App\Models\Document;
 use App\Models\Repository;
 use App\Models\Scopes\RepositoryScope;
 use App\Models\Series;
+use App\Support\BulkImport\TemplateGenerator;
+use App\Support\Export\EntityExport;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Support\Facades\DB;
 
@@ -97,44 +98,25 @@ it('D4-Model.3: volume_number and part_number are both nullable', function (): v
 // Export column set
 // ===========================================================================
 
-it('D4-Export.1: ExportSelectedAction $allColumns includes part_number', function (): void {
-    // Call the action via reflection to access the private column map.
-    $reflection = new ReflectionClass(ExportSelectedAction::class);
-    $method = $reflection->getMethod('perform');
+it('D4-Export.1: the documents export carries a Part Number column with the value in it', function (): void {
+    // Both document exports (the list's Export CSV and Export selected) write
+    // the documents import template's columns through EntityExport, so the
+    // check is on the file itself rather than on a hand-written column list.
+    $repo = wd4_repo();
+    $series = wd4_series($repo->id);
+    $doc = wd4_doc($repo->id, $series->id, ['part_number' => 'PT-7']);
 
-    // Rather than invoking perform, we verify the allColumns array is declared
-    // correctly by checking via the bulk() method structure or by calling
-    // visibleExportColumns indirectly. The simplest check: create an empty
-    // collection and let the method respond with a stream — but we can't call
-    // it without a proper response context. Instead we check via the
-    // FiltersExportColumns trait's underlying logic.
-    //
-    // The safe approach: inspect the private 'allColumns' through the action's
-    // bulk() closure which calls perform(). We can unit-test the column map by
-    // checking the method body reflection or using the public behaviour.
-    //
-    // Simpler approach: use a partial mock / closure capture.
-    // Since allColumns is defined as a local variable inside perform(), we
-    // test it indirectly: a real Document + empty collection returns a response
-    // that WOULD include part_number in the header if the column is present.
-    //
-    // Most direct approach for this codebase pattern: read the source to confirm
-    // 'part_number' appears as a key in the perform() method's $allColumns.
-    $source = file_get_contents(
-        app_path('Filament/Actions/Documents/ExportSelectedAction.php')
-    );
-    expect($source)->toContain("'part_number'");
-    expect($source)->toContain("'Part Number'");
+    $headers = EntityExport::headers('document');
+    expect($headers)->toContain('Part Number');
+
+    $field = EntityExport::fieldsFor('document', $headers)[array_search('Part Number', $headers, true)];
+    expect($field)->toBe('part_number')
+        ->and(EntityExport::value('document', $doc, $field))->toBe('PT-7');
 });
 
-it('D4-Export.2: ExportSelectedAction $allColumns has at least 9 entries (8 original + part_number)', function (): void {
-    $source = file_get_contents(
-        app_path('Filament/Actions/Documents/ExportSelectedAction.php')
-    );
+it('D4-Export.2: the documents export has every template column, plus the document identifier', function (): void {
+    $headers = EntityExport::headers('document');
 
-    // Count occurrences of '=> ' in the $allColumns array definition block.
-    // This is a structural proxy for the column count.
-    preg_match_all("/'\w+'\s*=>\s*'[^']+'/", $source, $matches);
-    // At least 9 pairs (the original 8 + part_number).
-    expect(count($matches[0]))->toBeGreaterThanOrEqual(9);
+    expect($headers[0])->toBe('Document Identifier')
+        ->and(array_slice($headers, 1))->toBe(TemplateGenerator::headersFor('document'));
 });

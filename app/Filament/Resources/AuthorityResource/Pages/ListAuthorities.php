@@ -3,6 +3,7 @@
 namespace App\Filament\Resources\AuthorityResource\Pages;
 
 use App\Filament\Concerns\ExplainsPage;
+use App\Filament\Concerns\ExportsLikeTheTemplate;
 use App\Filament\Pages\ImportWizard;
 use App\Filament\Resources\AuthorityResource;
 use App\Models\Authority;
@@ -13,8 +14,14 @@ use Filament\Resources\Pages\ListRecords;
 class ListAuthorities extends ListRecords
 {
     use ExplainsPage;
+    use ExportsLikeTheTemplate;
 
     protected static string $resource = AuthorityResource::class;
+
+    protected static function exportEntity(): string
+    {
+        return 'authority';
+    }
 
     /**
      * Header actions for the Authorities list page.
@@ -51,6 +58,8 @@ class ListAuthorities extends ListRecords
             // Blank xlsx whose row-1 headers match Authorities_Sample.xlsx
             // verbatim. Gated on the create policy so a viewer cannot
             // probe the schema by downloading the template.
+            $this->exportCsvAction(),
+
             Actions\Action::make('download_template')
                 ->label('Download template')
                 ->icon('heroicon-o-arrow-down-tray')

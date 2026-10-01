@@ -1159,8 +1159,11 @@ class BoxResource extends Resource
     public static function getRelations(): array
     {
         return [
+            // The whole chronology first; the per-log tabs follow for detail.
+            BoxResource\RelationManagers\HistoryRelationManager::class,
             BoxResource\RelationManagers\BarcodeHistoryRelationManager::class,
             BoxResource\RelationManagers\SealNumberHistoryRelationManager::class,
+            BoxResource\RelationManagers\LocationHistoryRelationManager::class,
         ];
     }
 

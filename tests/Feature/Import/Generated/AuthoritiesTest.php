@@ -500,7 +500,7 @@ test('entity_type "Person" (real CSV casing) normalises to PERSON', function () 
     expect(Authority::where('alternative_identifier', 'R60')->value('entity_type'))->toBe('PERSON');
 });
 
-test('entity_type "Notary" (real NAF example file value) normalises to INSTITUTION, the documented unknown-value fallback', function () {
+test('entity_type "Notary" (real NAF example file value) is kept as Notary, the value the Creator form offers', function () {
     $u = at_admin();
     $this->actingAs($u);
 
@@ -509,7 +509,10 @@ test('entity_type "Notary" (real NAF example file value) normalises to INSTITUTI
     $rows = at_loadXlsx(AT_NAF_EXAMPLE_XLSX);
     at_run([$rows[0]], at_mapFromHeaders($rows), $u->id);
 
-    expect(Authority::where('alternative_identifier', 'R646')->value('entity_type'))->toBe('INSTITUTION');
+    // It used to become INSTITUTION — the old catch-all for anything that was
+    // not PERSON. A notary is not an institution, and the client asked for
+    // Notary as the default (feedback 1, 2026-06-06).
+    expect(Authority::where('alternative_identifier', 'R646')->value('entity_type'))->toBe('Notary');
 })->skip(fn () => ! is_file(AT_NAF_EXAMPLE_XLSX), 'NAF example file not present');
 
 // ─── practice_dates_active / NTG / maiden surname / name suffix ───────────

@@ -234,6 +234,15 @@ class DocumentImporter extends Importer
     protected static array $rowSealStash = [];
 
     /**
+     * RFQ App.2 §iii — per-row "Destroyed" cells of the historical boxes, keyed
+     * by chain step (CURRENT = RAS Box 1, ras_box_2, in_situ_box_1..3), read in
+     * afterSave() once each step has been resolved to a box.
+     *
+     * @var array<int, array<string, string>>
+     */
+    protected static array $rowDestroyedStash = [];
+
+    /**
      * Per-row transactional safety (review I2 / Fix 5).
      *
      * Filament's import job wraps an entire CHUNK in one DB::transaction and
@@ -1411,6 +1420,13 @@ class DocumentImporter extends Importer
                 ->guess(['In Situ Box 3', 'in_situ_box_3'])
                 ->rules(['nullable', 'string', 'max:50']),
 
+            // RFQ App.2 §iii "Box History": each historical box on the row has
+            // its own Destroyed column ("RAS 1 Box Destroyed" … "In Situ Box 3
+            // Destroyed"). The client's sheet spells two of them "Box 2
+            // Destroyed" and the like, so both spellings are recognised. A Yes
+            // or a date marks THAT box destroyed, once the row has resolved it.
+            ...self::historicalDestroyedColumns(),
+
             // ── Barcodes ───────────────────────────────────────────────
             ImportColumn::make('barcode_in')
                 ->label('Barcode (IN)')
@@ -1685,6 +1701,7 @@ class DocumentImporter extends Importer
         // Resolve each chain step to a box id, in order, compacting away empty
         // cells and unresolvable steps (no gap rows).
         $boxIds = [];
+        $boxIdByStep = [];
         foreach (self::LEGACY_MOVE_CHAIN as $step) {
             $boxId = match ($step) {
                 'CURRENT' => $record->current_box_id !== null ? (int) $record->current_box_id : null,
@@ -1693,8 +1710,13 @@ class DocumentImporter extends Importer
             };
             if ($boxId !== null) {
                 $boxIds[] = $boxId;
+                $boxIdByStep[$step] = $boxId;
             }
         }
+
+        // Before the single-box early return below: a row with only RAS Box 1
+        // can still say that box was destroyed.
+        $this->markHistoricalBoxesDestroyed($record, $boxIdByStep);
 
         // Idempotency (delete-and-rebuild): remove ONLY this document's legacy
         // moves before inserting the fresh chain. Never touches 'recorded' rows.
@@ -2258,6 +2280,70 @@ class DocumentImporter extends Importer
         // rows may lack a location); the seal write itself is unrelated to it.
         $box->skipPermOutGuard = true;
         $box->save();
+    }
+
+    /**
+     * The five per-box Destroyed columns of the documents sheet.
+     *
+     * @return list<ImportColumn>
+     */
+    private static function historicalDestroyedColumns(): array
+    {
+        $columns = [];
+        foreach ([
+            'CURRENT' => ['ras_box_1_destroyed', 'RAS 1 Box Destroyed', ['RAS 1 Box Destroyed', 'RAS Box 1 Destroyed', 'Box 1 Destroyed', 'ras_box_1_destroyed']],
+            'ras_box_2' => ['ras_box_2_destroyed', 'RAS 2 Box Destroyed', ['RAS 2 Box Destroyed', 'RAS Box 2 Destroyed', 'Box 2 Destroyed', 'ras_box_2_destroyed']],
+            'in_situ_box_1' => ['in_situ_box_1_destroyed', 'In Situ Box 1 Destroyed', ['In Situ Box 1 Destroyed', 'in_situ_box_1_destroyed']],
+            'in_situ_box_2' => ['in_situ_box_2_destroyed', 'In Situ Box 2 Destroyed', ['In Situ Box 2 Destroyed', 'in_situ_box_2_destroyed']],
+            'in_situ_box_3' => ['in_situ_box_3_destroyed', 'In Situ Box 3 Destroyed', ['In Situ Box 3 Destroyed', 'in_situ_box_3_destroyed']],
+        ] as $step => [$name, $label, $guesses]) {
+            $columns[] = ImportColumn::make($name)
+                ->label($label . ' (Yes / a date / blank)')
+                ->guess($guesses)
+                ->fillRecordUsing(function (Document $record, ?string $state) use ($step): void {
+                    if ($state !== null && trim($state) !== '') {
+                        self::$rowDestroyedStash[spl_object_id($record)][$step] = trim($state);
+                    }
+                });
+        }
+
+        return $columns;
+    }
+
+    /**
+     * Mark each historical box the row declares destroyed.
+     *
+     * Same rule as the box sheet's Destroyed column: Yes or a date, the legacy
+     * reason, and no "every document catalogued" check — on a legacy sheet the
+     * client is recording that the box WAS destroyed, not asking to destroy it.
+     * A box already destroyed keeps its date; a cell that is not a Yes or a
+     * date is ignored, as on the box sheet.
+     *
+     * @param array<string, int> $boxIdByStep
+     */
+    private function markHistoricalBoxesDestroyed(Document $record, array $boxIdByStep): void
+    {
+        $key = spl_object_id($record);
+        $cells = self::$rowDestroyedStash[$key] ?? [];
+        unset(self::$rowDestroyedStash[$key]);
+
+        foreach ($cells as $step => $cell) {
+            $boxId = $boxIdByStep[$step] ?? null;
+            $destroyedAt = SpreadsheetParsers::parseDestroyed($cell);
+            if ($boxId === null || $destroyedAt === null) {
+                continue;
+            }
+
+            $box = Box::withoutGlobalScopes()->find($boxId);
+            if ($box === null || $box->isDestroyed()) {
+                continue;
+            }
+
+            $box->destroyed_at = $destroyedAt;
+            $box->destroyed_by_user_id = $this->import->user->getKey();
+            $box->destroyed_reason = 'Imported as already destroyed (legacy documents sheet, document ' . $record->identifier . ')';
+            $box->save();
+        }
     }
 
     /**

@@ -5,7 +5,7 @@ declare(strict_types=1);
 namespace App\Filament\Resources\DocumentResource\Pages;
 
 use App\Filament\Concerns\ExplainsPage;
-use App\Filament\Concerns\FiltersExportColumns;
+use App\Filament\Concerns\ExportsLikeTheTemplate;
 use App\Filament\Imports\DocumentImporter;
 use App\Filament\Pages\ImportWizard;
 use App\Filament\Resources\DocumentResource;
@@ -14,135 +14,23 @@ use App\Models\Document;
 use App\Models\Scopes\RepositoryScope;
 use App\Support\ActiveRepository;
 use App\Support\BulkImport\TemplateGenerator;
-use App\Support\CustomFields\CustomFieldCsv;
 use App\Support\CustomFields\CustomFieldResolver;
 use Filament\Actions;
 use Filament\Forms\Components\TextInput;
 use Filament\Notifications\Notification;
 use Filament\Resources\Pages\ListRecords;
 use Illuminate\Support\Collection;
-use Illuminate\Support\Str;
-use Symfony\Component\HttpFoundation\StreamedResponse;
 
 class ListDocuments extends ListRecords
 {
     use ExplainsPage;
-    use FiltersExportColumns;
+    use ExportsLikeTheTemplate;
 
     protected static string $resource = DocumentResource::class;
 
-    /**
-     * Stream the currently filtered Document list as CSV.
-     * - Honours every active filter / search term (uses the same query the table
-     *   is currently displaying via getFilteredTableQuery()).
-     * - Uses fputcsv + streamDownload to stay memory-safe for 50k+ rows.
-     * - Loads only the columns we render; eager-loads relations to avoid N+1.
-     */
-    public function exportToCsv(): StreamedResponse
+    protected static function exportEntity(): string
     {
-        // Defense-in-depth: even if the action button is bypassed (direct method
-        // call, Livewire payload tampering, …), the method itself rejects.
-        abort_unless(auth()->user()?->can('view_any_document'), 403, 'Not authorized to export documents.');
-
-        // Full column map in canonical order. Keys are the field names consulted
-        // by FieldPermissions; values are the CSV header labels.
-        // Filter through FieldPermissions for the current user (RFQ §3.1.4).
-        $columns = self::visibleExportColumns([
-            'identifier' => 'Identifier',
-            'document_type' => 'Type',
-            'creator' => 'Creator(s)',
-            'series' => 'Subseries',
-            'batch' => 'Batch',
-            'current_box' => 'Current box',
-            'disinfestation_date' => 'Disinfestation date',
-            'notes' => 'Notes',
-            'part_number' => 'Part Number',
-            'number_of_acts' => 'No of Acts',
-            'pages_folios' => 'Pages/Folios',
-        ]);
-
-        // Append active custom-field columns after the fixed ones.
-        // Column key: 'cf_<key>' to avoid collision with any fixed column name.
-        // Column header: definition label (human-readable, matches the UI).
-        $customFieldDefs = $this->getActiveCustomFieldDefinitions();
-        $customFieldColumns = [];
-        foreach ($customFieldDefs as $def) {
-            $customFieldColumns['cf_' . $def->key] = $def->label;
-        }
-
-        $allColumns = array_merge($columns, $customFieldColumns);
-
-        $user = auth()->user();
-        $repoCode = optional($user?->defaultRepository ?? null)->code ?? 'all';
-        $filename = sprintf(
-            'documents_%s_%s.csv',
-            Str::slug($repoCode, '_'),
-            now()->format('Ymd_His'),
-        );
-
-        // Snapshot the filtered query NOW (before streaming starts) so it
-        // reflects the user's current filters / search / sort.
-        $query = $this->getFilteredTableQuery()
-            ->with([
-                'series:id,code',
-                'batch:id,batch_number',
-                'currentBox:id,box_number',
-                'authorities:id,surname',
-                // Eager-load custom field values with their definitions so the
-                // CSV row builder can resolve typed values without N+1.
-                'customFieldValues.definition',
-            ]);
-
-        return response()->streamDownload(function () use ($query, $allColumns, $customFieldDefs): void {
-            $out = fopen('php://output', 'wb');
-            // UTF-8 BOM — Excel on Windows needs it for non-ASCII (Maltese accents).
-            fwrite($out, "\xEF\xBB\xBF");
-            fputcsv($out, array_values($allColumns), escape: '\\');
-
-            $query->orderBy('id')->chunk(500, function ($documents) use ($out, $allColumns, $customFieldDefs): void {
-                /** @var Collection<int, Document> $documents */
-                foreach ($documents as $doc) {
-                    // Build a full cell map keyed by field name, then emit only
-                    // the visible columns (same keys as $allColumns) in order.
-                    $allCells = [
-                        'identifier' => $this->sanitizeCsvCell($doc->identifier),
-                        'document_type' => $this->sanitizeCsvCell($doc->document_type),
-                        'creator' => $this->sanitizeCsvCell(
-                            $doc->authorities->pluck('surname')->filter()->implode('; ')
-                        ),
-                        'series' => $this->sanitizeCsvCell($doc->series?->code),
-                        // batch_number is an integer in DB — safe, but cast to string for fputcsv.
-                        'batch' => (string) ($doc->batch?->batch_number ?? ''),
-                        'current_box' => $this->sanitizeCsvCell($doc->currentBox?->box_number),
-                        // Date in canonical Y-m-d form — never starts with a CSV-dangerous char.
-                        'disinfestation_date' => $doc->disinfestation_date ? $doc->disinfestation_date->format('Y-m-d') : '',
-                        'notes' => $this->sanitizeCsvCell($doc->notes),
-                        'part_number' => $this->sanitizeCsvCell($doc->part_number),
-                        'number_of_acts' => $this->sanitizeCsvCell($doc->number_of_acts),
-                        'pages_folios' => $this->sanitizeCsvCell($doc->pages_folios),
-                    ];
-
-                    // Append custom-field values. Use the already-eager-loaded
-                    // customFieldValues collection to avoid per-row queries.
-                    foreach ($customFieldDefs as $def) {
-                        $valueModel = $doc->customFieldValues
-                            ->firstWhere('custom_field_definition_id', $def->id);
-                        $typed = $valueModel?->getTypedValueAttribute();
-                        $raw = CustomFieldCsv::format($def, $typed);
-                        $allCells['cf_' . $def->key] = $raw !== '' ? $this->sanitizeCsvCell($raw) : '';
-                    }
-
-                    fputcsv($out, array_intersect_key($allCells, $allColumns), escape: '\\');
-                }
-            });
-
-            fclose($out);
-        }, $filename, [
-            'Content-Type' => 'text/csv; charset=UTF-8',
-            'Cache-Control' => 'no-store, no-cache, must-revalidate, max-age=0',
-            'Pragma' => 'no-cache',
-            'X-Content-Type-Options' => 'nosniff',
-        ]);
+        return 'document';
     }
 
     protected function getHeaderActions(): array

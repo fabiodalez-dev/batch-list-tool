@@ -241,6 +241,17 @@ class Box extends Model implements AuditableContract, Sortable
     }
 
     /**
+     * Append-only log of this box's location changes (RFQ §3.1.6), newest
+     * first. Written by the created / updated hooks in booted().
+     */
+    public function locationHistory(): HasMany
+    {
+        return $this->hasMany(BoxLocationHistory::class)
+            ->orderByDesc('changed_at')
+            ->orderByDesc('id');
+    }
+
+    /**
      * Distinct list of previous barcodes this box has ever held.
      * Built from the `barcodeHistory` log; uniqueness is enforced in PHP
      * so the result is stable across DB drivers (SQLite collation quirks).
@@ -713,6 +724,31 @@ class Box extends Model implements AuditableContract, Sortable
         // deliberately, so bulk/seed/provisional paths that create a RAS row
         // before its physical barcode sticker is assigned are not broken.
 
+        // RFQ §3.1.6 — box LOCATION history. Same created / updated split as
+        // the seal and document-location logs, so the "from" side is never
+        // ambiguous: null on insert, the pre-save original on update.
+        static::created(function (self $box): void {
+            if ($box->location_id !== null) {
+                $box->recordLocationChange(null, (int) $box->location_id, 'create');
+            }
+        });
+
+        static::updated(function (self $box): void {
+            if (! $box->wasChanged('location_id')) {
+                return;
+            }
+            $old = $box->getOriginal('location_id');
+            $new = $box->location_id;
+            if ($old === $new) {
+                return;
+            }
+            $box->recordLocationChange(
+                $old !== null ? (int) $old : null,
+                $new !== null ? (int) $new : null,
+                'update',
+            );
+        });
+
         static::updating(function (self $box): void {
             $box->captureBarcodeTransition();
         });
@@ -890,5 +926,23 @@ class Box extends Model implements AuditableContract, Sortable
             previousStatus: $transition['previous_status'],
             newStatus: $transition['new_status'],
         );
+    }
+
+    private function recordLocationChange(?int $from, ?int $to, string $source): void
+    {
+        $label = static fn (?int $id): ?string => $id === null
+            ? null
+            : Location::withoutGlobalScopes()->find($id)?->breadcrumb();
+
+        $this->locationHistory()->create([
+            'from_location_id' => $from,
+            'to_location_id' => $to,
+            'from_location_label' => $label($from),
+            'to_location_label' => $label($to),
+            'changed_by_user_id' => Auth::id(),
+            'changed_at' => now(),
+            'source' => $source,
+            'repository_id' => $this->customFieldRepositoryId(),
+        ]);
     }
 }

@@ -7,6 +7,7 @@ namespace App\Support\BulkImport;
 use App\Console\Commands\ImportSampleData;
 use App\Models\Authority;
 use App\Models\Document;
+use Illuminate\Support\Carbon;
 use PhpOffice\PhpSpreadsheet\Shared\Date as ExcelDate;
 
 /**
@@ -34,6 +35,19 @@ final class SpreadsheetParsers
      * error, so the row saves a wrong date and nothing complains.
      */
     public const int MAX_DATE_SERIAL = 73415;
+
+    /**
+     * Every "Type of Entity" the system accepts, in its stored spelling.
+     *
+     * Two vocabularies are live and both stay valid: PERSON / INSTITUTION, which
+     * the client's own authority sheets carry ("Person" on all 676 production
+     * rows), and Notary / Interventor, which the Creator form offers because the
+     * client asked for Notary as the default (feedback 1, 2026-06-06). Which one
+     * becomes THE vocabulary is the client's decision, not the importer's.
+     *
+     * @var list<string>
+     */
+    public const array ENTITY_TYPES = ['PERSON', 'INSTITUTION', 'Notary', 'Interventor'];
 
     /**
      * Parse a free-text date string into a (start, end) integer-year pair.
@@ -184,18 +198,52 @@ final class SpreadsheetParsers
     }
 
     /**
-     * Trim and lowercase entity-type tokens to the canonical PERSON /
-     * INSTITUTION codes used by `authorities.entity_type`. Unknown values
-     * default to INSTITUTION (corporate notaries / churches were the only
-     * non-PERSON entities in the legacy POC).
+     * A "Destroyed" cell → the moment the box was destroyed, or null.
+     *
+     * "Yes" (and the other truthy flags) means destroyed, date unknown, so now;
+     * a date means destroyed on that date; anything else means not destroyed.
+     * The flags are checked FIRST: parseDate('1') would read "1" as the Excel
+     * serial 1900-01-01 rather than a yes. Shared by the box sheet's Destroyed
+     * column and the documents sheet's per-box Destroyed columns, so one cell
+     * means the same thing on both.
+     */
+    public static function parseDestroyed(?string $value): ?Carbon
+    {
+        $s = trim((string) $value);
+        if ($s === '') {
+            return null;
+        }
+        if (in_array(mb_strtolower($s), ['yes', 'y', '1', 'true', 'x', 'destroyed'], true)) {
+            return Carbon::now();
+        }
+        $date = self::parseDate($s);
+
+        return $date === null ? null : Carbon::parse($date);
+    }
+
+    /**
+     * Map a "Type of Entity" cell onto its stored spelling, case-insensitively.
+     *
+     * Blank stays PERSON, as before. An UNKNOWN value is returned as written so
+     * the column's `in:` rule rejects the row with a message the operator can
+     * act on. It used to become INSTITUTION without a word: a typo, an ISAAR
+     * "Family", or the form's own "Notary" all turned a creator into an
+     * institution — and a Notary set in the form came back as INSTITUTION from
+     * every export-and-reimport.
      */
     public static function normaliseEntityType(?string $value): string
     {
-        if ($value === null) {
+        $trimmed = trim((string) $value);
+        if ($trimmed === '') {
             return 'PERSON';
         }
-        $s = strtoupper(trim($value));
 
-        return $s === 'PERSON' ? 'PERSON' : 'INSTITUTION';
+        foreach (self::ENTITY_TYPES as $type) {
+            if (strcasecmp($type, $trimmed) === 0) {
+                return $type;
+            }
+        }
+
+        return $trimmed;
     }
 }

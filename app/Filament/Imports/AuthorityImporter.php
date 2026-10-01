@@ -174,7 +174,7 @@ class AuthorityImporter extends Importer
                 ->label('Type of Entity')
                 ->guess(['Type of Entity', 'Entity Type', 'Type'])
                 ->castStateUsing(fn (?string $state) => SpreadsheetParsers::normaliseEntityType($state))
-                ->rules(['nullable', 'in:PERSON,INSTITUTION']),
+                ->rules(['nullable', 'in:' . implode(',', SpreadsheetParsers::ENTITY_TYPES)]),
 
             // Year range — we parse "1607-1629" → two integer columns. The
             // virtual column name (`practice_dates_active`) does NOT map to

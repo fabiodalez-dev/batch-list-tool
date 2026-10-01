@@ -54,3 +54,9 @@ parameters:
         -
             identifier: trait.unused
             path: app/Filament/Concerns/AppliesFieldPermissions.php
+
+        # Used only by the resource list pages, which excludePaths leaves out of
+        # the analysis, so PHPStan never sees a user of it.
+        -
+            identifier: trait.unused
+            path: app/Filament/Concerns/ExportsLikeTheTemplate.php
