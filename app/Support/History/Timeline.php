@@ -87,6 +87,84 @@ final class Timeline
     }
 
     /**
+     * The field changes of one audit row, each with a readable label and its
+     * old and new values resolved to names — the same wording the History tab
+     * uses. Empty for created / deleted / restored events.
+     *
+     * @return list<array{field: string, label: string, from: ?string, to: ?string}>
+     */
+    public static function fieldChanges(Audit $audit, ?self $resolver = null): array
+    {
+        if ((string) $audit->getAttribute('event') !== 'updated') {
+            return [];
+        }
+
+        $self = $resolver ?? new self;
+        $entity = self::entityFor((string) $audit->getAttribute('auditable_type'));
+        $old = (array) ($audit->getAttribute('old_values') ?? []);
+        $new = (array) ($audit->getAttribute('new_values') ?? []);
+
+        $changes = [];
+        foreach (array_unique(array_merge(array_keys($old), array_keys($new))) as $field) {
+            $field = (string) $field;
+            if (in_array($field, self::NOISE, true)) {
+                continue;
+            }
+            $changes[] = [
+                'field' => $field,
+                'label' => $self->fieldLabel($entity, $field),
+                'from' => $self->display($field, $old[$field] ?? null),
+                'to' => $self->display($field, $new[$field] ?? null),
+            ];
+        }
+
+        return $changes;
+    }
+
+    /**
+     * What a person calls the audited record: a box by type, number and
+     * barcode, a document by its identifier, anything else by its first
+     * recognisable name field — instead of a bare id.
+     */
+    public static function recordLabel(string $auditableType, mixed $id, ?self $resolver = null): string
+    {
+        $self = $resolver ?? new self;
+        $short = class_basename($auditableType);
+
+        return $self->memo('record:' . $auditableType . ':' . $id, function () use ($self, $auditableType, $short, $id): string {
+            if ($auditableType === Box::class) {
+                return (string) $self->boxLabel($id);
+            }
+            if (! class_exists($auditableType) || ! is_subclass_of($auditableType, Model::class)) {
+                return $short . ' #' . $id;
+            }
+            // withoutGlobalScopes() lifts the soft-delete scope too, so a
+            // record deleted since is still named.
+            $record = $auditableType::query()->withoutGlobalScopes()->find($id);
+            if ($record === null) {
+                return $short . ' #' . $id . ' (deleted)';
+            }
+            foreach (['identifier', 'code', 'batch_number', 'name', 'title', 'email', 'surname'] as $attribute) {
+                $value = $record->getAttribute($attribute);
+                if ($value !== null && $value !== '') {
+                    return $short . ' ' . $value;
+                }
+            }
+
+            return $short . ' #' . $id;
+        }) ?? ($short . ' #' . $id);
+    }
+
+    /**
+     * The renameable-columns key of a model class: Box → box, DocumentType →
+     * documentType.
+     */
+    public static function entityFor(string $auditableType): string
+    {
+        return Str::camel(class_basename($auditableType));
+    }
+
+    /**
      * Newest first; undated legacy moves at the end, in their recorded order.
      *
      * @param Collection<int, array<string, mixed>> $entries
@@ -106,6 +184,17 @@ final class Timeline
 
             return [$b['sequence'], $b['key']] <=> [$a['sequence'], $a['key']];
         })->values();
+    }
+
+    /**
+     * A resolver to pass to fieldChanges() / recordLabel() when labelling many
+     * audit rows at once (a page, an export), so they share their lookups.
+     * Deliberately not a static singleton: in a long-lived worker or a test
+     * run, a process-wide memo would keep yesterday's names for reused ids.
+     */
+    public static function resolver(): self
+    {
+        return new self;
     }
 
     /**

@@ -3,8 +3,11 @@
 namespace App\Filament\Resources;
 
 use App\Filament\Resources\AuditResource\Pages;
+use App\Models\User;
+use App\Support\History\Timeline;
 use Filament\Actions\ViewAction;
 use Filament\Forms\Components\DatePicker;
+use Filament\Forms\Components\TextInput;
 use Filament\Resources\Resource;
 use Filament\Tables;
 use Filament\Tables\Filters\Filter;
@@ -105,6 +108,24 @@ class AuditResource extends Resource
                 Tables\Columns\TextColumn::make('auditable_id')
                     ->label('Record ID')
                     ->sortable()
+                    ->toggleable(isToggledHiddenByDefault: true),
+                // RFQ §3.1.5 asks for the old value, the new value, the user and
+                // the time of every change. The row used to say only that a
+                // "Box #4211" was "updated": what changed was one click away
+                // per row. Named record, then each changed field as old → new,
+                // with ids resolved the way the History tab resolves them.
+                Tables\Columns\TextColumn::make('record')
+                    ->label('Record')
+                    ->state(fn (Audit $record): string => Timeline::recordLabel((string) $record->auditable_type, $record->auditable_id))
+                    ->wrap()
+                    ->toggleable(),
+                Tables\Columns\TextColumn::make('changes')
+                    ->label('Changes')
+                    ->state(fn (Audit $record): ?string => self::changesSummary($record))
+                    ->placeholder('—')
+                    ->limit(140)
+                    ->tooltip(fn (Audit $record): ?string => self::changesSummary($record))
+                    ->wrap()
                     ->toggleable(),
                 Tables\Columns\TextColumn::make('ip_address')
                     ->sortable()
@@ -133,6 +154,38 @@ class AuditResource extends Resource
                         ->pluck('auditable_type')
                         ->mapWithKeys(fn (string $type) => [$type => class_basename($type)])
                         ->all()),
+                SelectFilter::make('user_id')
+                    ->label('Who')
+                    ->searchable()
+                    ->options(fn (): array => User::query()
+                        ->whereIn('id', Audit::query()->select('user_id')->whereNotNull('user_id')->distinct())
+                        ->orderBy('name')
+                        ->pluck('name', 'id')
+                        ->all()),
+                Filter::make('field')
+                    ->form([
+                        TextInput::make('field')
+                            ->label('Field changed')
+                            ->helperText('The column name, e.g. barcode_status or location_id.'),
+                    ])
+                    ->query(fn (Builder $query, array $data): Builder => $query->when(
+                        filled($data['field'] ?? null),
+                        fn (Builder $query): Builder => $query->where(function (Builder $query) use ($data): void {
+                            // The JSON key in quotes. No escaping of _ : a backslash
+                            // escape works on MySQL but not on SQLite, and the quotes
+                            // already pin the match to one key.
+                            $needle = '%"' . trim((string) $data['field']) . '"%';
+                            $query->where('old_values', 'like', $needle)->orWhere('new_values', 'like', $needle);
+                        }),
+                    ))
+                    ->indicateUsing(fn (array $data): ?string => filled($data['field'] ?? null) ? 'Field: ' . $data['field'] : null),
+                Filter::make('record_id')
+                    ->form([TextInput::make('id')->label('Record ID')->numeric()])
+                    ->query(fn (Builder $query, array $data): Builder => $query->when(
+                        filled($data['id'] ?? null),
+                        fn (Builder $query): Builder => $query->where('auditable_id', (int) $data['id']),
+                    ))
+                    ->indicateUsing(fn (array $data): ?string => filled($data['id'] ?? null) ? 'Record #' . $data['id'] : null),
                 Filter::make('date')
                     ->form([
                         DatePicker::make('from')->label('From'),
@@ -147,6 +200,19 @@ class AuditResource extends Resource
                 ViewAction::make(),
             ])
             ->bulkActions([]); // no delete — write-only table
+    }
+
+    /**
+     * "Batch: 27 → 29; Notes: — → Water damage" for one audit row.
+     */
+    public static function changesSummary(Audit $audit): ?string
+    {
+        $parts = array_map(
+            fn (array $c): string => $c['label'] . ': ' . ($c['from'] ?? '—') . ' → ' . ($c['to'] ?? '—'),
+            Timeline::fieldChanges($audit),
+        );
+
+        return $parts === [] ? null : implode('; ', $parts);
     }
 
     public static function getPages(): array
