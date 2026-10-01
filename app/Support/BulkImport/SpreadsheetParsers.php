@@ -130,7 +130,10 @@ final class SpreadsheetParsers
         // dates such as "31/05/2023" (the format in the NRA sheets). Parse
         // these explicitly, preferring the day-first order used in Malta/Europe
         // and only using month-first when the first part cannot be a day.
-        if (preg_match('#^(\d{1,4})[/.\-](\d{1,2})[/.\-](\d{1,4})$#', $str, $m)) {
+        // A time after the date ("06/03/2024 00:00", how Excel writes a datetime
+        // cell to CSV) is allowed and ignored: without it in the pattern the
+        // cell fell through to strtotime() and came back as 3 June.
+        if (preg_match('#^(\d{1,4})[/.\-](\d{1,2})[/.\-](\d{1,4})(?:[ T]\d{1,2}:\d{2}(?::\d{2})?)?$#', $str, $m)) {
             $a = (int) $m[1];
             $b = (int) $m[2];
             $c = (int) $m[3];

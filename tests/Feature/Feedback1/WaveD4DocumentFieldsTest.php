@@ -114,9 +114,14 @@ it('D4-Export.1: the documents export carries a Part Number column with the valu
         ->and(EntityExport::value('document', $doc, $field))->toBe('PT-7');
 });
 
-it('D4-Export.2: the documents export has every template column, plus the document identifier', function (): void {
+it('D4-Export.2: the documents export has every template column, plus the document identifier and the fields the template lacks', function (): void {
     $headers = EntityExport::headers('document');
 
-    expect($headers[0])->toBe('Document Identifier')
-        ->and(array_slice($headers, 1))->toBe(TemplateGenerator::headersFor('document'));
+    expect($headers)->toBe([
+        'Document Identifier',
+        ...TemplateGenerator::headersFor('document'),
+        'No of Acts', 'Pages/Folios',
+        'RAS 1 Box Destroyed', 'RAS 2 Box Destroyed', 'In Situ Box 1 Destroyed', 'In Situ Box 2 Destroyed', 'In Situ Box 3 Destroyed',
+        'Current Box',
+    ]);
 });

@@ -17,6 +17,7 @@ use App\Models\Repository;
 use App\Models\Scopes\RepositoryScope;
 use App\Models\Series;
 use App\Models\User;
+use App\Support\BulkImport\TemplateGenerator;
 use Database\Seeders\DemoDataSeeder;
 use Filament\Widgets\StatsOverviewWidget\Stat;
 use Illuminate\Database\Eloquent\Builder;
@@ -506,24 +507,20 @@ test('Export CSV contains the expected column order in the header row', function
 
     [$_resp, $body] = captureCsvExport();
 
-    $firstLine = strtok($body, "\n");
-    expect($firstLine)
-        ->toContain('Identifier')
-        ->toContain('Type')
-        ->toContain('Creator')
-        ->toContain('Subseries') // Client 2026-08-31: 'Series' → 'Subseries'
-        ->toContain('Batch')
-        ->toContain('Current box')
-        ->toContain('Disinfestation date')
-        ->toContain('Notes');
-
-    // Column order assertion — Wave F added No of Acts + Pages/Folios as cols 10 and 11.
-    $headers = str_getcsv($firstLine, escape: '\\');
+    // The export is shaped like the documents import template, so it can be
+    // edited and imported back: the document's identifier, the template's
+    // columns in the template's order, then the document fields the template
+    // has no column for — No of Acts and Pages/Folios among them (Wave F).
+    $headers = str_getcsv((string) strtok($body, "\n"), escape: '\\');
     expect($headers)->toBe([
-        'Identifier', 'Type', 'Creator(s)', 'Subseries', 'Batch',
-        'Current box', 'Disinfestation date', 'Notes', 'Part Number',
+        'Document Identifier',
+        ...TemplateGenerator::headersFor('document'),
         'No of Acts', 'Pages/Folios',
-    ]);
+        'RAS 1 Box Destroyed', 'RAS 2 Box Destroyed', 'In Situ Box 1 Destroyed', 'In Situ Box 2 Destroyed', 'In Situ Box 3 Destroyed',
+        'Current Box',
+    ])
+        ->and($headers)->toContain('Subseries') // Client 2026-08-31: 'Series' → 'Subseries'
+        ->and($headers)->toContain('Document Type');
 });
 
 test('Export CSV row count matches filtered query (no filter = all visible rows)', function () {
@@ -588,7 +585,7 @@ test('Export CSV respects active filters (filter by document_type returns matchi
     $dataRows = array_slice($rows, 1);
     expect(count($dataRows))->toBe(1);
     expect($dataRows[0][0])->toBe($token . '-B1');
-    expect($dataRows[0][1])->toBe('TYPE_B');
+    expect($dataRows[0][array_search('Document Type', $rows[0], true)])->toBe('TYPE_B');
 });
 
 /* -------------------------------------------------------------------------
@@ -742,7 +739,10 @@ test('it sanitizes CSV formula injection in document fields', function () {
     }
     fclose($fh);
 
-    // Build identifier → notes map from the parsed CSV (col 0 = identifier, col 7 = notes).
+    // Build identifier → row map from the parsed CSV (col 0 = identifier; the
+    // notes are the template's "Note" column).
+    $notesIdx = array_search('Note', $rows[0], true);
+    expect($notesIdx)->not->toBeFalse();
     $byIdentifier = [];
     foreach (array_slice($rows, 1) as $r) {
         // After sanitization, the identifier column for the formula-prefixed row
@@ -754,7 +754,7 @@ test('it sanitizes CSV formula injection in document fields', function () {
     // Every token → its notes cell must start with "'" (neutralized).
     foreach ($payloads as $token => $payload) {
         expect($byIdentifier)->toHaveKey($token);
-        $notesCell = $byIdentifier[$token][7] ?? '';
+        $notesCell = $byIdentifier[$token][$notesIdx] ?? '';
         expect($notesCell)
             ->toStartWith("'")
             ->and(substr($notesCell, 1))->toBe($payload);
@@ -772,6 +772,6 @@ test('it sanitizes CSV formula injection in document fields', function () {
     // Sanity: a plain ASCII identifier (no dangerous lead char) is NOT prefixed.
     // Insert one and re-check the same export pass would have left it untouched.
     // (We use the "plain safe text" row's notes column: it must NOT start with "'".)
-    $safeNotes = $byIdentifier[$idPayload][7] ?? '';
+    $safeNotes = $byIdentifier[$idPayload][$notesIdx] ?? '';
     expect($safeNotes)->toBe('plain safe text');
 });

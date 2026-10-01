@@ -230,7 +230,9 @@ it('A4: CSV export contains a Repository column header', function (): void {
     $firstLine = strtok($csv, "\n");
     $headers = str_getcsv($firstLine, escape: '\\');
 
-    expect($headers)->toContain('Repository');
+    // The batch template's name for it: the export is shaped like the
+    // template so it can be imported back.
+    expect($headers)->toContain('Repository code');
 });
 
 it('A4: CSV export row includes the repository code value', function (): void {

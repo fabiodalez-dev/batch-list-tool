@@ -100,6 +100,12 @@ it('marks RAS Box 2 destroyed from "Box 2 Destroyed", and leaves RAS Box 1 alone
         ->and($ras2->destroyed_reason)->toContain('HBD-1')
         ->and($ras2->destroyed_by_user_id)->toBe($this->user->id)
         ->and(hbd_box('RAS', '101')?->destroyed_at)->toBeNull();
+
+    // The document keeps the cell in its own "RAS 2 destroyed?" field, which its
+    // page shows and the export writes back.
+    $doc = Document::withoutGlobalScopes()->where('identifier', 'HBD-1')->firstOrFail();
+    expect($doc->ras_2_box_destroyed)->toBe('Yes')
+        ->and($doc->ras_1_box_destroyed)->toBeNull();
 });
 
 it('takes a date in an In Situ Destroyed column as the date of destruction', function (): void {
@@ -110,7 +116,18 @@ it('takes a date in an In Situ Destroyed column as the date of destruction', fun
         'In Situ Box 3 Destroyed' => '2024-03-06',
     ]), $this->user->id);
 
-    expect(hbd_box('NRA', '33')?->destroyed_at?->toDateString())->toBe('2024-03-06');
+    expect(hbd_box('NRA', '33')?->destroyed_at?->toDateString())->toBe('2024-03-06')
+        ->and(Document::withoutGlobalScopes()->where('identifier', 'HBD-2')->value('in_situ_box_3_destroyed'))->toBe('2024-03-06');
+});
+
+it('keeps a long date cell on the document as its ISO day, not cut to ten characters', function (): void {
+    hbd_import(hbd_row([
+        'Document Identifier' => 'HBD-7',
+        'RAS Batch 1' => '1', 'RAS Box 1' => '108', 'RAS Batch 2' => '2', 'RAS Box 2' => '208',
+        'Box 2 Destroyed' => '06/03/2024 00:00',
+    ]), $this->user->id);
+
+    expect(Document::withoutGlobalScopes()->where('identifier', 'HBD-7')->value('ras_2_box_destroyed'))->toBe('2024-03-06');
 });
 
 it('marks a lone RAS Box 1 destroyed even though the row builds no box chain', function (): void {

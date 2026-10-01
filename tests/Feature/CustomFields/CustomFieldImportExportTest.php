@@ -600,6 +600,8 @@ test('[Export/Document] text custom field value appears in CSV', function (): vo
 })->group('export-document');
 
 test('[Export/Document] boolean custom field renders as 1 or 0', function (): void {
+    // Labelled "Digitised" like the fixed documents column on purpose: the
+    // added column is written under cf_<key>, so the two stay apart.
     $repo = ce2_repo('EXDBOOL');
     $user = ce2_user($repo);
     $series = ce2_series();
@@ -616,10 +618,10 @@ test('[Export/Document] boolean custom field renders as 1 or 0', function (): vo
     $this->actingAs($user);
     $csv = ce2_docCsv();
 
-    expect($csv)->toContain('Digitised');
     $lines = array_values(array_filter(explode("\n", trim($csv))));
     $header = str_getcsv((string) array_shift($lines), escape: '\\');
-    $colIdx = array_search('Digitised', $header, true);
+    expect(array_count_values($header)['Digitised'] ?? 0)->toBe(1, 'the fixed column and the added one share a header');
+    $colIdx = array_search('cf_doc_digitised', $header, true);
     expect($colIdx)->not->toBeFalse();
 
     foreach ($lines as $line) {

@@ -866,7 +866,9 @@ class DocumentImporter extends Importer
         foreach ($defs as $def) {
             $columns[] = ImportColumn::make('custom_field_' . $def->key)
                 ->label($def->label . ' (custom field)')
-                ->guess([$def->label, $def->key, 'cf_' . $def->key])
+                // cf_<key> first: it is the header an added column gets when its label is
+                // taken by a fixed field, and only this column answers to it.
+                ->guess(['cf_' . $def->key, $def->label, $def->key])
                 ->rules(['nullable', 'string'])
                 ->fillRecordUsing(static function (Document $record, ?string $state) use ($def): void {
                     $key = spl_object_id($record);
@@ -2291,23 +2293,46 @@ class DocumentImporter extends Importer
     {
         $columns = [];
         foreach ([
-            'CURRENT' => ['ras_box_1_destroyed', 'RAS 1 Box Destroyed', ['RAS 1 Box Destroyed', 'RAS Box 1 Destroyed', 'Box 1 Destroyed', 'ras_box_1_destroyed']],
-            'ras_box_2' => ['ras_box_2_destroyed', 'RAS 2 Box Destroyed', ['RAS 2 Box Destroyed', 'RAS Box 2 Destroyed', 'Box 2 Destroyed', 'ras_box_2_destroyed']],
-            'in_situ_box_1' => ['in_situ_box_1_destroyed', 'In Situ Box 1 Destroyed', ['In Situ Box 1 Destroyed', 'in_situ_box_1_destroyed']],
-            'in_situ_box_2' => ['in_situ_box_2_destroyed', 'In Situ Box 2 Destroyed', ['In Situ Box 2 Destroyed', 'in_situ_box_2_destroyed']],
-            'in_situ_box_3' => ['in_situ_box_3_destroyed', 'In Situ Box 3 Destroyed', ['In Situ Box 3 Destroyed', 'in_situ_box_3_destroyed']],
-        ] as $step => [$name, $label, $guesses]) {
+            'CURRENT' => ['ras_box_1_destroyed', 'ras_1_box_destroyed', 'RAS 1 Box Destroyed', ['RAS 1 Box Destroyed', 'RAS Box 1 Destroyed', 'Box 1 Destroyed', 'ras_box_1_destroyed']],
+            'ras_box_2' => ['ras_box_2_destroyed', 'ras_2_box_destroyed', 'RAS 2 Box Destroyed', ['RAS 2 Box Destroyed', 'RAS Box 2 Destroyed', 'Box 2 Destroyed', 'ras_box_2_destroyed']],
+            'in_situ_box_1' => ['in_situ_box_1_destroyed', 'in_situ_box_1_destroyed', 'In Situ Box 1 Destroyed', ['In Situ Box 1 Destroyed', 'in_situ_box_1_destroyed']],
+            'in_situ_box_2' => ['in_situ_box_2_destroyed', 'in_situ_box_2_destroyed', 'In Situ Box 2 Destroyed', ['In Situ Box 2 Destroyed', 'in_situ_box_2_destroyed']],
+            'in_situ_box_3' => ['in_situ_box_3_destroyed', 'in_situ_box_3_destroyed', 'In Situ Box 3 Destroyed', ['In Situ Box 3 Destroyed', 'in_situ_box_3_destroyed']],
+        ] as $step => [$name, $documentColumn, $label, $guesses]) {
             $columns[] = ImportColumn::make($name)
                 ->label($label . ' (Yes / a date / blank)')
                 ->guess($guesses)
-                ->fillRecordUsing(function (Document $record, ?string $state) use ($step): void {
-                    if ($state !== null && trim($state) !== '') {
-                        self::$rowDestroyedStash[spl_object_id($record)][$step] = trim($state);
+                ->fillRecordUsing(function (Document $record, ?string $state) use ($step, $documentColumn): void {
+                    if ($state === null || trim($state) === '') {
+                        return;
                     }
+                    self::$rowDestroyedStash[spl_object_id($record)][$step] = trim($state);
+                    // The document has its own "… destroyed?" field for each
+                    // historical box (shown on its page). Keep the cell there
+                    // too, so the page and a later export say what the sheet said.
+                    $record->setAttribute($documentColumn, self::destroyedCellForDocument(trim($state)));
                 });
         }
 
         return $columns;
+    }
+
+    /**
+     * The cell as the document's 10-character "… destroyed?" field keeps it:
+     * as written when it fits ("Yes", "No", "2024-03-06"); a longer date
+     * ("06/03/2024 00:00") as its ISO day; anything else longer, cut — the
+     * field is a legacy note, and the box itself carries the real state.
+     */
+    private static function destroyedCellForDocument(string $cell): string
+    {
+        if (mb_strlen($cell) <= 10) {
+            return $cell;
+        }
+
+        $date = SpreadsheetParsers::parseDestroyed($cell);
+
+        // Every "Yes" spelling is shorter than 10, so a parse here is a date.
+        return $date !== null ? $date->toDateString() : mb_substr($cell, 0, 10);
     }
 
     /**

@@ -4,7 +4,9 @@ declare(strict_types=1);
 
 namespace App\Support\BulkImport;
 
+use App\Filament\Pages\ImportWizard;
 use App\Models\Authority;
+use App\Models\CustomFieldDefinition;
 use App\Support\ColumnLabels\ColumnLabels;
 use App\Support\CustomFields\CustomFieldResolver;
 use PhpOffice\PhpSpreadsheet\Cell\Coordinate;
@@ -341,20 +343,74 @@ final class TemplateGenerator
         // columns are filled in on the accession record itself, which is where
         // there is exactly one of them per row.
         if ($entity === 'accession') {
-            $customLabels = CustomFieldResolver::definitionsFor('document')
-                ->pluck('label')
-                ->all();
-
-            return array_merge($staticHeaders, $customLabels);
+            return array_merge($staticHeaders, self::customFieldHeaders('accession', CustomFieldResolver::definitionsFor('document')->all(), $staticHeaders));
         }
 
         // Append active custom-field labels for the resolved repository,
         // ordered by sort_order (resolver handles repo resolution + memo).
-        $customLabels = CustomFieldResolver::definitionsFor($entity)
-            ->pluck('label')
-            ->all();
+        return array_merge($staticHeaders, self::customFieldHeaders($entity, CustomFieldResolver::definitionsFor($entity)->all(), $staticHeaders));
+    }
 
-        return array_merge($staticHeaders, $customLabels);
+    /**
+     * The header of each added column: its label — unless that label is
+     * already a header of the sheet, or a name the importer reads as one of its
+     * own fixed fields. Then it is `cf_<key>`, which only that added column
+     * answers to.
+     *
+     * Without this, an added column called "Digitised" on documents, or
+     * "Location" on boxes, sat next to the fixed field of the same name: on
+     * import the fixed field took the header (a tie goes to the column declared
+     * first), and the added column's values went into the fixed field or
+     * nowhere. The export uses the same headers, so the two files stay alike.
+     *
+     * @param iterable<CustomFieldDefinition> $definitions
+     * @param list<string> $headers the sheet's header row so far
+     * @return list<string>
+     */
+    public static function customFieldHeaders(string $entity, iterable $definitions, array $headers): array
+    {
+        $taken = array_map(static fn ($h): string => mb_strtolower(trim((string) $h)), $headers);
+        $reserved = null;
+        $out = [];
+        foreach ($definitions as $definition) {
+            $label = trim((string) $definition->label);
+            $lower = mb_strtolower($label);
+            $reserved ??= self::fixedFieldNames($entity);
+            $header = ($label === '' || in_array($lower, $taken, true) || in_array($lower, $reserved, true))
+                ? 'cf_' . $definition->key
+                : $label;
+            $out[] = $header;
+            $taken[] = mb_strtolower($header);
+        }
+
+        return $out;
+    }
+
+    /**
+     * Every name — field name, label, guess — by which the entity's importer
+     * recognises one of its fixed (not added) columns, lower-cased.
+     *
+     * @return list<string>
+     */
+    private static function fixedFieldNames(string $entity): array
+    {
+        $importKey = array_search($entity, ImportWizard::TEMPLATE_KEYS, true);
+        $importer = $importKey === false ? null : (ImportWizard::IMPORTERS[$importKey] ?? null);
+        if ($importer === null) {
+            return [];
+        }
+
+        $names = [];
+        foreach ($importer::getColumns() as $column) {
+            if (str_starts_with($column->getName(), 'custom_field_')) {
+                continue;
+            }
+            foreach ([$column->getName(), $column->getLabel(), ...$column->getGuesses()] as $name) {
+                $names[] = mb_strtolower(trim((string) $name));
+            }
+        }
+
+        return $names;
     }
 
     /**

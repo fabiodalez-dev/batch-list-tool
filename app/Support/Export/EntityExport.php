@@ -19,9 +19,11 @@ use App\Support\FieldPermissions;
 use App\Support\Reports\ReportRenderer;
 use Closure;
 use DateTimeInterface;
+use Filament\Actions\Imports\ImportColumn;
 use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Database\Eloquent\Collection as EloquentCollection;
 use Illuminate\Database\Eloquent\Model;
+use Illuminate\Support\Facades\Schema;
 use Illuminate\Support\Str;
 use Symfony\Component\HttpFoundation\StreamedResponse;
 
@@ -50,6 +52,12 @@ final class EntityExport
      * result: 26,000 documents stream through in pages of this size.
      */
     private const int CHUNK = 500;
+
+    /** @var array<string, list<string>> table => its columns, read once per request */
+    private static array $tableColumns = [];
+
+    /** @var array<int, string|null> repository id => code, read once per request */
+    private static array $repositoryCodes = [];
 
     /**
      * Template entity (TemplateGenerator key) => importer class.
@@ -84,15 +92,19 @@ final class EntityExport
             array_unshift($headers, 'Document Identifier');
         }
 
+        // Fields the importer reads that the template has no column for, but
+        // that are real data on the record ("No of Acts", a box's location, a
+        // subseries' description). Left out, editing an export and importing it
+        // back would be the only way to lose them without being told.
+        foreach (self::extraHeaders($entity, $headers) as $header) {
+            $headers[] = $header;
+        }
+
         // In "All repositories" no repository's added columns are active, so the
         // template has none — but the records still carry their values. Append
         // every added column defined for this type, once per key.
         if (CustomFieldResolver::activeRepositoryId() === null) {
-            foreach (self::allRepositoryDefinitions($entity) as $definition) {
-                if (! in_array($definition->label, $headers, true)) {
-                    $headers[] = $definition->label;
-                }
-            }
+            $headers = array_merge($headers, TemplateGenerator::customFieldHeaders($entity, self::allRepositoryDefinitions($entity), $headers));
         }
 
         return array_values($headers);
@@ -136,6 +148,8 @@ final class EntityExport
     {
         [$headers, $fields] = self::columns($entity);
         $definitions = self::definitionsByKey($entity);
+        // A code renamed since the last export must not come back stale.
+        self::$repositoryCodes = [];
 
         $with = array_merge(self::relationsFor($entity), $definitions === [] ? [] : ['customFieldValues.definition']);
         $query->with($with);
@@ -215,6 +229,72 @@ final class EntityExport
     }
 
     /**
+     * One header per importer field the template does not cover and whose
+     * value is stored on the record itself. Each header is one the importer
+     * maps back to that same field — checked, not assumed — so the extra
+     * columns survive a round trip exactly like the template's own.
+     *
+     * Fields with no storage of their own (a lookup such as "Current box
+     * barcode", or the accession's box type) are left out: there is nothing on
+     * the record to write in them.
+     *
+     * @param list<string> $headers
+     * @return list<string>
+     */
+    private static function extraHeaders(string $entity, array $headers): array
+    {
+        $importer = self::importers()[$entity];
+        $model = $importer::getModel();
+        $table = (new $model)->getTable();
+        self::$tableColumns[$table] ??= Schema::getColumnListing($table);
+
+        $covered = array_filter(self::fieldsFor($entity, $headers));
+        $extra = [];
+        foreach ($importer::getColumns() as $column) {
+            $field = $column->getName();
+            $storage = self::storageColumn()[$entity][$field] ?? $field;
+            if (in_array($field, $covered, true)
+                || str_starts_with($field, 'custom_field_')
+                || ! in_array($storage, self::$tableColumns[$table], true)) {
+                continue;
+            }
+
+            $header = self::headerFor($importer, $column, $field, [...$headers, ...$extra]);
+            if ($header !== null) {
+                $extra[] = $header;
+            }
+        }
+
+        return $extra;
+    }
+
+    /**
+     * The first of the field's own guesses — then its label — that the
+     * importer, given the rest of the header row, hands back to that field.
+     *
+     * @param class-string $importer
+     * @param list<string> $headers
+     */
+    private static function headerFor(string $importer, ImportColumn $column, string $field, array $headers): ?string
+    {
+        /** @var list<string> $guesses */
+        $guesses = (fn (): array => (array) $this->evaluate($this->guesses))->call($column);
+        $taken = array_map('mb_strtolower', $headers);
+
+        foreach ([...$guesses, $column->getLabel()] as $candidate) {
+            if ($candidate === '' || in_array(mb_strtolower($candidate), $taken, true)) {
+                continue;
+            }
+            $map = ImportWizard::guessColumnMap($importer, SpreadsheetHeaders::dedupe([...$headers, $candidate]));
+            if (($map[$field] ?? null) === $candidate) {
+                return $candidate;
+            }
+        }
+
+        return null;
+    }
+
+    /**
      * A column is readable when the user may read both the importer field and
      * the model column the value actually lives in: a derived column ("RAS
      * Batch 1" → batch_id, "Creator" → extra) is checked against its storage,
@@ -254,12 +334,13 @@ final class EntityExport
             'series' => ['parent_code' => 'parent_id', 'repository_code' => 'repository_id'],
             'batch' => ['repository_code' => 'repository_id'],
             'location' => ['parent_name' => 'parent_id', 'repository_code' => 'repository_id'],
-            'box' => ['batch_number' => 'batch_id', 'parent_barcode' => 'parent_box_id', 'destroyed' => 'destroyed_at'],
+            'box' => ['batch_number' => 'batch_id', 'parent_barcode' => 'parent_box_id', 'destroyed' => 'destroyed_at', 'location' => 'location_id'],
             'volume' => ['document_identifier' => 'document_id'],
             'document' => [
                 'batch_number' => 'batch_id', 'current_box_number' => 'current_box_id', 'location' => 'location_id',
                 'series' => 'series_id', 'authority_identifier' => 'authorities', 'creator_legacy_text' => 'extra',
                 'prev_attributed_identifier' => 'identifier', 'prev_attributed_volume' => 'volume_number',
+                'ras_box_1_destroyed' => 'ras_1_box_destroyed', 'ras_box_2_destroyed' => 'ras_2_box_destroyed',
             ],
             'accession' => [
                 'authority_identifier' => 'authorities', 'authority_name' => 'authorities', 'authority_surname' => 'authorities',
@@ -316,6 +397,7 @@ final class EntityExport
                     return $parent === null ? null : ($parent->getAttribute('barcode') ?: $parent->getAttribute('box_number'));
                 },
                 'destroyed' => static fn (Model $r): string => $r->getAttribute('destroyed_at') !== null ? 'Yes' : 'No',
+                'location' => static fn (Model $r): mixed => $r->getRelationValue('location')?->getAttribute('code'),
             ],
             'volume' => [
                 'document_identifier' => static fn (Model $r): mixed => $r->getRelationValue('document')?->getAttribute('identifier'),
@@ -332,6 +414,9 @@ final class EntityExport
                 'creator_legacy_text' => static fn (Model $r): mixed => $r instanceof Document ? $r->extra->get('legacy_creator_text') : null,
                 'prev_attributed_identifier' => static fn (Model $r): mixed => self::previousAttribution($r)?->getAttribute('previous_identifier'),
                 'prev_attributed_volume' => static fn (Model $r): mixed => self::previousAttribution($r)?->getAttribute('previous_volume'),
+                // The sheet's "RAS 1/2 Box Destroyed" cells, as the document keeps them.
+                'ras_box_1_destroyed' => static fn (Model $r): mixed => $r->getAttribute('ras_1_box_destroyed'),
+                'ras_box_2_destroyed' => static fn (Model $r): mixed => $r->getAttribute('ras_2_box_destroyed'),
             ],
             // The accession sheet is one row per DOCUMENT: the record here is a
             // Document, and the accession, batch and box columns are read from
@@ -368,7 +453,7 @@ final class EntityExport
             'series' => ['parent', 'repository'],
             'batch' => ['repository'],
             'location' => ['parent', 'repository'],
-            'box' => ['batch', 'parent'],
+            'box' => ['batch', 'parent', 'location'],
             'volume' => ['document'],
             'document' => ['batch', 'currentBox', 'location', 'series', 'authorities', 'identifierHistory'],
             'accession' => ['accession', 'batch', 'currentBox', 'series', 'authorities'],
@@ -388,11 +473,22 @@ final class EntityExport
         };
     }
 
+    /**
+     * Read once per repository, not once per row: a handful of repositories
+     * against tens of thousands of exported records.
+     */
     private static function repositoryCode(Model $record): mixed
     {
         $repositoryId = $record->getAttribute('repository_id');
+        if ($repositoryId === null) {
+            return null;
+        }
 
-        return $repositoryId === null ? null : Repository::query()->whereKey($repositoryId)->value('code');
+        if (! array_key_exists((int) $repositoryId, self::$repositoryCodes)) {
+            self::$repositoryCodes[(int) $repositoryId] = Repository::query()->whereKey($repositoryId)->value('code');
+        }
+
+        return self::$repositoryCodes[(int) $repositoryId];
     }
 
     /**
@@ -493,7 +589,7 @@ final class EntityExport
     private static function customFieldFor(string $entity, string $header): ?string
     {
         foreach (self::definitionsByKey($entity) as $key => $definition) {
-            if ($definition->label === $header) {
+            if ($definition->label === $header || 'cf_' . $key === $header) {
                 return 'custom_field_' . $key;
             }
         }

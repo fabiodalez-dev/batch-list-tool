@@ -15,6 +15,7 @@ use App\Models\Scopes\RepositoryScope;
 use App\Models\Series;
 use App\Models\User;
 use App\Models\Volume;
+use App\Support\BulkImport\TemplateGenerator;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Livewire\Livewire;
 use Spatie\Permission\Models\Role;
@@ -199,7 +200,7 @@ test('Batch export: custom field value appears in CSV', function (): void {
     // Header must include the custom field label.
     expect($csv)->toContain('Provenance');
     // Fixed columns still present.
-    expect($csv)->toContain('Batch number');
+    expect($csv)->toContain('Batch Number');
     // Value row must contain the stored text.
     expect($csv)->toContain('Malta National Archives');
 });
@@ -258,15 +259,10 @@ test('Batch export: no custom field columns when no definitions exist', function
     $lines = array_values(array_filter(explode("\n", trim($csv))));
     $header = str_getcsv((string) array_shift($lines), escape: '\\');
 
-    // Fixed columns present (A4 Wave A added Repository as a 5th fixed column).
-    expect($header)->toContain('Batch number');
-    expect($header)->toContain('Type');
-    expect($header)->toContain('Description');
-    expect($header)->toContain('Repository');
-    expect($header)->toContain('Is active?');
-
-    // Exactly 5 fixed columns (Batch number, Type, Description, Repository, Is active?), no extras.
-    expect(count($header))->toBe(5);
+    // The batch template's own columns — repository included (A4) — and
+    // nothing else: no definitions, no added columns.
+    expect($header)->toBe(['Batch Number', 'Description', 'Accession Type', 'Is active', 'Repository code'])
+        ->and($header)->toBe(TemplateGenerator::headersFor('batch'));
 });
 
 test('Batch export: row without custom field value emits empty cell', function (): void {
@@ -406,11 +402,10 @@ test('Box export: no custom field columns when no definitions exist', function (
     $lines = array_values(array_filter(explode("\n", trim($csv))));
     $header = str_getcsv((string) array_shift($lines), escape: '\\');
 
-    expect($header)->toContain('Box number');
-    expect($header)->toContain('Batch number');
-    expect($header)->toContain('Barcode');
-    // 8 fixed columns, no extras.
-    expect(count($header))->toBe(8);
+    // The box template's columns, then the two box fields the template has no
+    // column for (they are on the record, and the importer reads them) — and no
+    // added columns, as none are defined.
+    expect($header)->toBe([...TemplateGenerator::headersFor('box'), 'Disinfestation date', 'Location']);
 });
 
 test('Box export: row without custom field value emits empty cell', function (): void {

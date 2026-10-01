@@ -10,6 +10,7 @@ use App\Models\Repository;
 use App\Models\Scopes\RepositoryScope;
 use App\Models\Series;
 use App\Models\User;
+use App\Support\BulkImport\TemplateGenerator;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Livewire\Livewire;
 
@@ -175,12 +176,15 @@ test('no custom field columns in export when no definitions exist', function ():
     $lines = array_values(array_filter(explode("\n", trim($csv))));
     $header = str_getcsv((string) array_shift($lines), escape: '\\');
 
-    // Fixed columns must be present.
-    expect($header)->toContain('Identifier');
-    expect($header)->toContain('Notes');
-
-    // Should be exactly 11 fixed columns (per the fixed column map in exportToCsv).
-    // Wave D4 — part_number added as the 9th column.
-    // Wave F — number_of_acts (10th) and pages_folios (11th) added.
-    expect(count($header))->toBe(11);
+    // The document's identifier, the documents template, then the document
+    // fields the template has no column for — No of Acts and Pages/Folios
+    // (Wave F), the legacy per-box Destroyed cells, the Current Box type — and
+    // no added columns, as none are defined.
+    expect($header)->toBe([
+        'Document Identifier',
+        ...TemplateGenerator::headersFor('document'),
+        'No of Acts', 'Pages/Folios',
+        'RAS 1 Box Destroyed', 'RAS 2 Box Destroyed', 'In Situ Box 1 Destroyed', 'In Situ Box 2 Destroyed', 'In Situ Box 3 Destroyed',
+        'Current Box',
+    ]);
 });

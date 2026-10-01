@@ -3,16 +3,21 @@
 declare(strict_types=1);
 
 use App\Filament\Imports\AccessionRowImporter;
+use App\Filament\Imports\DocumentImporter;
+use App\Filament\Pages\ImportWizard;
+use App\Filament\Resources\DocumentResource\Pages\ListDocuments;
 use App\Models\Document;
 use App\Models\Repository;
 use App\Models\Scopes\RepositoryScope;
 use App\Models\Series;
 use App\Models\User;
 use App\Support\BulkImport\EntityResolver;
+use App\Support\BulkImport\SpreadsheetHeaders;
 use Filament\Actions\Imports\Importer;
 use Filament\Actions\Imports\Models\Import;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Support\Facades\DB;
+use Livewire\Livewire;
 use Spatie\Permission\Models\Role;
 
 /**
@@ -180,45 +185,49 @@ it('F2-Import.1: importer row populates number_of_acts and pages_folios', functi
 });
 
 // ===========================================================================
-// Export column set (string-proxy assertions, matching WaveD4 pattern)
+// Export: both fields travel in the CSV, under the headers the importer reads
 // ===========================================================================
 
-it('F2-Export.1: ExportSelectedAction source includes number_of_acts key and label', function (): void {
-    $source = file_get_contents(
-        app_path('Filament/Actions/Documents/ExportSelectedAction.php')
-    );
-    expect($source)->toContain("'number_of_acts'");
-    expect($source)->toContain("'No of Acts'");
+it('F2-Export: the documents export carries No of Acts and Pages/Folios, with their values', function (): void {
+    $repo = wf2_repo();
+    $series = wf2_series();
+    $this->actingAs(wf2_sa($repo->id));
+    Document::withoutGlobalScope(RepositoryScope::class)->create([
+        'identifier' => 'F2-EXP-1', 'repository_id' => $repo->id, 'series_id' => $series->id,
+        'document_type' => 'Original', 'number_of_acts' => '55', 'pages_folios' => 'ff. 1-120',
+    ]);
+
+    $component = Livewire::test(ListDocuments::class)->callAction('export_csv');
+    $csv = preg_replace('/^\x{FEFF}/u', '', (string) base64_decode((string) $component->effects['download']['content'], true)) ?? '';
+    $lines = array_values(array_filter(explode("\n", $csv)));
+    $header = str_getcsv($lines[0], escape: '\\');
+    $row = str_getcsv($lines[1], escape: '\\');
+
+    expect($row[array_search('No of Acts', $header, true)])->toBe('55')
+        ->and($row[array_search('Pages/Folios', $header, true)])->toBe('ff. 1-120');
+
+    // ...and the importer maps those headers straight back onto the two fields.
+    $map = ImportWizard::guessColumnMap(DocumentImporter::class, SpreadsheetHeaders::dedupe($header));
+    expect($map['number_of_acts'])->toBe('No of Acts')
+        ->and($map['pages_folios'])->toBe('Pages/Folios');
 });
 
-it('F2-Export.2: ExportSelectedAction source includes pages_folios key and label', function (): void {
-    $source = file_get_contents(
-        app_path('Filament/Actions/Documents/ExportSelectedAction.php')
-    );
-    expect($source)->toContain("'pages_folios'");
-    expect($source)->toContain("'Pages/Folios'");
-});
+it('F2-Export: the selected-rows export carries them too', function (): void {
+    $repo = wf2_repo();
+    $series = wf2_series();
+    $this->actingAs(wf2_sa($repo->id));
+    $doc = Document::withoutGlobalScope(RepositoryScope::class)->create([
+        'identifier' => 'F2-EXP-2', 'repository_id' => $repo->id, 'series_id' => $series->id,
+        'document_type' => 'Original', 'number_of_acts' => '7', 'pages_folios' => 'pp. 1-30',
+    ]);
 
-it('F2-Export.3: ListDocuments export source includes number_of_acts and pages_folios', function (): void {
-    $source = file_get_contents(
-        app_path('Filament/Resources/DocumentResource/Pages/ListDocuments.php')
-    );
-    expect($source)->toContain("'number_of_acts'");
-    expect($source)->toContain("'pages_folios'");
-    expect($source)->toContain("'No of Acts'");
-    expect($source)->toContain("'Pages/Folios'");
-});
+    // The table's own bulk action, on the selected row.
+    $component = Livewire::test(ListDocuments::class)->callTableBulkAction('bulkExportSelected', [$doc]);
+    $csv = preg_replace('/^\x{FEFF}/u', '', (string) base64_decode((string) $component->effects['download']['content'], true)) ?? '';
+    $lines = array_values(array_filter(explode("\n", $csv)));
+    $header = str_getcsv($lines[0], escape: '\\');
+    $row = str_getcsv($lines[1], escape: '\\');
 
-it('F2-Export.4: ExportSelectedAction $allColumns has exactly the expected entries', function (): void {
-    $source = file_get_contents(
-        app_path('Filament/Actions/Documents/ExportSelectedAction.php')
-    );
-
-    // Scope the count to the $allColumns map only, so an unrelated key=>value
-    // elsewhere in the file can never mask a regression in the export columns.
-    expect(preg_match('/\$allColumns\s*=\s*\[(.*?)\];/s', (string) $source, $block))->toBe(1);
-
-    preg_match_all("/'[^']+'\s*=>\s*'[^']+'/", $block[1], $matches);
-    // Original 8 + part_number + number_of_acts + pages_folios = 11.
-    expect(count($matches[0]))->toBe(11);
+    expect($row[array_search('No of Acts', $header, true)])->toBe('7')
+        ->and($row[array_search('Pages/Folios', $header, true)])->toBe('pp. 1-30');
 });

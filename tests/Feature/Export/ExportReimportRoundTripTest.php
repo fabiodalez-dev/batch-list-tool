@@ -17,6 +17,8 @@ use App\Models\Authority;
 use App\Models\Batch;
 use App\Models\Box;
 use App\Models\ColumnLabelOverride;
+use App\Models\CustomFieldDefinition;
+use App\Models\CustomFieldValue;
 use App\Models\Document;
 use App\Models\DocumentType;
 use App\Models\Location;
@@ -28,6 +30,7 @@ use App\Models\User;
 use App\Models\Volume;
 use App\Support\BulkImport\EntityResolver;
 use App\Support\ColumnLabels\ColumnLabels;
+use App\Support\CustomFields\CustomFieldResolver;
 use App\Support\Export\EntityExport;
 use Filament\Actions\Imports\Models\Import;
 use Illuminate\Foundation\Testing\RefreshDatabase;
@@ -135,7 +138,8 @@ function ert_survives(string $entity, string $page, Closure $delete, int $userId
 
 it('round-trips subseries', function (): void {
     $parent = Series::create(['code' => 'ERTP', 'title' => 'Parent subseries', 'is_active' => true, 'repository_id' => $this->repo->id]);
-    Series::create(['code' => 'ERTC', 'title' => 'Child — notes, with a comma', 'is_active' => true, 'parent_id' => $parent->id, 'repository_id' => $this->repo->id]);
+    // Description and the wills flag are not template columns: the export adds them.
+    Series::create(['code' => 'ERTC', 'title' => 'Child — notes, with a comma', 'is_active' => true, 'parent_id' => $parent->id, 'repository_id' => $this->repo->id, 'description' => 'Legacy label 7', 'is_wills_series' => true]);
 
     ert_survives('series', ListSeries::class, fn () => Series::query()->whereIn('code', ['ERTP', 'ERTC'])->orderByDesc('id')->get()->each->forceDelete(), $this->user->id, 2);
 });
@@ -165,12 +169,15 @@ it('round-trips batches', function (): void {
     ert_survives('batch', ListBatches::class, fn () => Batch::withoutGlobalScopes()->whereIn('batch_number', ['9501', '9502'])->get()->each->forceDelete(), $this->user->id, 2);
 });
 
-it('round-trips boxes — parent, seal, destroyed and tracking note included', function (): void {
+it('round-trips boxes — parent, seal, destroyed, tracking note, location and disinfestation included', function (): void {
     $batch = ert_batch($this->repo->id, '9601');
+    $room = Location::factory()->create(['code' => 'ERT-B-1', 'name' => 'Box room', 'repository_id' => $this->repo->id]);
     $ras = Box::withoutGlobalScope(ThroughBatchRepositoryScope::class)->create([
         'box_type' => 'RAS', 'box_number' => '61', 'batch_id' => $batch->id, 'barcode' => 'AA960001',
         'barcode_status' => 'IN', 'is_legacy' => false, 'seal_number' => '15329213', 'tracking_note' => 'Checked 2026-09',
         'notes' => '=not a formula', 'current_box_type' => 'RAS Box',
+        // Not template columns: the export adds them, the importer reads them.
+        'location_id' => $room->id, 'disinfestation_date' => '2025-11-04',
     ]);
     Box::withoutGlobalScope(ThroughBatchRepositoryScope::class)->create([
         'box_type' => 'IN_SITU', 'box_number' => '62', 'batch_id' => $batch->id, 'barcode_status' => 'IN',
@@ -199,6 +206,10 @@ it('round-trips documents — box chain, barcodes, location, creators', function
         'current_box_id' => $box->id, 'location_id' => $shelf->id, 'document_type' => 'Register', 'catalogue_identifier' => 'CAT-1',
         'barcode_in' => 'AA970001', 'barcode_ras_1' => 'AA05760', 'status_1' => 'PERM_OUT', 'dates' => '1701-1702',
         'deeds' => '1-120', 'notes' => '+ loose leaf', 'part_number' => '2', 'torre' => true, 'museum_reference' => 'MR-9',
+        // Not template columns (client feedback F2, and the legacy sheet's
+        // per-box Destroyed cells): the export adds them.
+        'number_of_acts' => '55', 'pages_folios' => 'ff. 1-120', 'current_box_type' => 'RAS Box',
+        'ras_1_box_destroyed' => 'No', 'in_situ_box_2_destroyed' => '2024-03-06',
     ]);
     $doc->authorities()->attach($notary->id);
 
@@ -211,6 +222,33 @@ it('round-trips volumes', function (): void {
     Volume::create(['document_id' => $doc->id, 'volume_number' => '3', 'dates_start' => '1701-01-01', 'dates_end' => '1702-12-31', 'notes' => 'Bound with vol. 4']);
 
     ert_survives('volume', ListVolumes::class, fn () => Volume::query()->where('document_id', $doc->id)->get()->each->forceDelete(), $this->user->id, 1);
+});
+
+it('keeps an added column apart from the fixed field it shares a name with', function (): void {
+    // "Digitised" is a fixed documents column, "Location" a name the box
+    // importer reads as the box's location. Both used to be written under the
+    // label, and on re-import the fixed field took the header.
+    $series = Series::create(['code' => 'ERTX', 'title' => 'X', 'is_active' => true, 'repository_id' => $this->repo->id]);
+    $doc = Document::withoutGlobalScope(RepositoryScope::class)->create(['identifier' => 'R9951/001', 'repository_id' => $this->repo->id, 'series_id' => $series->id, 'document_type' => 'Register', 'digitised' => 'NRA']);
+    $docDef = CustomFieldDefinition::create(['repository_id' => $this->repo->id, 'entity_type' => 'document', 'key' => 'scan_done', 'label' => 'Digitised', 'type' => 'boolean', 'is_active' => true, 'sort_order' => 1]);
+    CustomFieldValue::create(['custom_field_definition_id' => $docDef->id, 'customizable_type' => $doc->getMorphClass(), 'customizable_id' => $doc->id, 'value' => '1']);
+
+    $batch = ert_batch($this->repo->id, '9951');
+    $box = Box::withoutGlobalScope(ThroughBatchRepositoryScope::class)->create(['box_type' => 'RAS', 'box_number' => '95', 'batch_id' => $batch->id, 'barcode' => 'AA995001', 'barcode_status' => 'IN', 'is_legacy' => false]);
+    $boxDef = CustomFieldDefinition::create(['repository_id' => $this->repo->id, 'entity_type' => 'box', 'key' => 'old_place', 'label' => 'Location', 'type' => 'text', 'is_active' => true, 'sort_order' => 1]);
+    CustomFieldValue::create(['custom_field_definition_id' => $boxDef->id, 'customizable_type' => $box->getMorphClass(), 'customizable_id' => $box->id, 'value' => 'Old store, shelf 3']);
+    CustomFieldResolver::flush();
+
+    expect(EntityExport::headers('document'))->toContain('cf_scan_done')
+        ->and(EntityExport::headers('box'))->toContain('cf_old_place');
+
+    ert_survives('document', ListDocuments::class, fn () => Document::withoutGlobalScopes()->whereKey($doc->id)->get()->each->forceDelete(), $this->user->id, 1);
+    ert_survives('box', ListBoxes::class, fn () => Box::withoutGlobalScopes()->whereKey($box->id)->get()->each->forceDelete(), $this->user->id, 1);
+
+    $reimported = Document::withoutGlobalScopes()->where('identifier', 'R9951/001')->firstOrFail();
+    expect($reimported->digitised)->toBe('NRA')
+        ->and($reimported->getCustomFieldData()['scan_done'] ?? null)->toBeTrue()
+        ->and(Box::withoutGlobalScopes()->where('box_number', '95')->firstOrFail()->location_id)->toBeNull();
 });
 
 it('writes a renamed column under its new name, and re-imports it', function (): void {
