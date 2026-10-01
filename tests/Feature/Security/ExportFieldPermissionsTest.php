@@ -9,6 +9,7 @@ use App\Models\Repository;
 use App\Models\Scopes\RepositoryScope;
 use App\Models\Series;
 use App\Models\User;
+use App\Support\Export\EntityExport;
 use App\Support\FieldPermissions;
 use Illuminate\Database\Eloquent\Collection as EloquentCollection;
 use Illuminate\Foundation\Testing\RefreshDatabase;
@@ -210,8 +211,8 @@ test('§3.1.4 #1: viewer with notes hidden does NOT receive notes column in filt
 
     [$headers, $rows] = efp_parseCsv($csv);
 
-    // Assert — header must not contain "Notes".
-    expect($headers)->not->toContain('Notes');
+    // Assert — header must not contain "Note" (the template's name for the notes).
+    expect($headers)->not->toContain('Note');
 
     // And the unique notes value must not appear anywhere in the raw CSV body.
     expect($csv)->not->toContain($notesValue);
@@ -245,7 +246,7 @@ test('§3.1.4 #2: super_admin always receives all columns (including notes) in f
     $csv = efp_captureFilteredCsv();
     [$headers, $rows] = efp_parseCsv($csv);
 
-    expect($headers)->toContain('Notes');
+    expect($headers)->toContain('Note');
     expect($csv)->toContain($notesValue);
 });
 
@@ -275,7 +276,10 @@ test('§3.1.4 #3: editor with disinfestation_date hidden does NOT receive that c
     $csv = efp_captureFilteredCsv();
     [$headers, $rows] = efp_parseCsv($csv);
 
-    expect($headers)->not->toContain('Disinfestation date');
+    // The documents template repeats "Disinfestation Date": only the first is
+    // the field, the repeats are always-empty provenance columns. So the check
+    // is on the field itself, and on its value.
+    expect(EntityExport::columns('document')[1])->not->toContain('disinfestation_date');
     expect($csv)->not->toContain('2026-01-15');
 });
 
@@ -308,7 +312,7 @@ test('§3.1.4 #4: viewer with notes hidden does NOT receive notes column in sele
     $csv = efp_captureSelectedCsv($records);
     [$headers, $rows] = efp_parseCsv($csv);
 
-    expect($headers)->not->toContain('Notes');
+    expect($headers)->not->toContain('Note');
     expect($csv)->not->toContain($notesValue);
 });
 
@@ -341,7 +345,7 @@ test('§3.1.4 #5: super_admin receives all columns in selected-rows CSV', functi
     $csv = efp_captureSelectedCsv($records);
     [$headers, $rows] = efp_parseCsv($csv);
 
-    expect($headers)->toContain('Notes');
+    expect($headers)->toContain('Note');
     expect($csv)->toContain($notesValue);
 });
 
@@ -377,6 +381,6 @@ test('§3.1.4 #6: filtered-CSV and selected-CSV produce the same column set for 
     expect($filteredHeaders)->toBe($selectedHeaders);
 
     // Neither must contain "Notes".
-    expect($filteredHeaders)->not->toContain('Notes');
-    expect($selectedHeaders)->not->toContain('Notes');
+    expect($filteredHeaders)->not->toContain('Note');
+    expect($selectedHeaders)->not->toContain('Note');
 });

@@ -65,6 +65,9 @@ class ReportTemplate extends Model implements AuditableContract
 
     public const SOURCE_STOCK_TAKE = 'stock_take';
 
+    // RFQ Appendix 2 §vii — boxes whose documents are all catalogued.
+    public const SOURCE_BOXES_READY_TO_DESTROY = 'boxes_ready_to_destroy';
+
     /**
      * Whitelist of accepted source values — exposed so forms / validation
      * never drift from the actual report pages.
@@ -83,6 +86,7 @@ class ReportTemplate extends Model implements AuditableContract
         self::SOURCE_DISINFESTATION_CYCLE,
         self::SOURCE_RAS_NRA_RECONCILIATION,
         self::SOURCE_STOCK_TAKE,
+        self::SOURCE_BOXES_READY_TO_DESTROY,
     ];
 
     /**

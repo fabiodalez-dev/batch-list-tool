@@ -174,7 +174,7 @@ class AuthorityImporter extends Importer
                 ->label('Type of Entity')
                 ->guess(['Type of Entity', 'Entity Type', 'Type'])
                 ->castStateUsing(fn (?string $state) => SpreadsheetParsers::normaliseEntityType($state))
-                ->rules(['nullable', 'in:PERSON,INSTITUTION']),
+                ->rules(['nullable', 'in:' . implode(',', SpreadsheetParsers::ENTITY_TYPES)]),
 
             // Year range — we parse "1607-1629" → two integer columns. The
             // virtual column name (`practice_dates_active`) does NOT map to
@@ -398,7 +398,9 @@ class AuthorityImporter extends Importer
         foreach ($defs as $def) {
             $columns[] = ImportColumn::make('custom_field_' . $def->key)
                 ->label($def->label . ' (custom field)')
-                ->guess([$def->label, $def->key, 'cf_' . $def->key])
+                // cf_<key> first: it is the header an added column gets when its label is
+                // taken by a fixed field, and only this column answers to it.
+                ->guess(['cf_' . $def->key, $def->label, $def->key])
                 ->rules(['nullable', 'string'])
                 ->fillRecordUsing(static function (Authority $record, ?string $state) use ($def): void {
                     $key = spl_object_id($record);

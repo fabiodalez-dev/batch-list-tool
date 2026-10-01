@@ -1432,7 +1432,9 @@ class AccessionRowImporter extends Importer
         foreach ($defs as $def) {
             $columns[] = ImportColumn::make('custom_field_' . $def->key)
                 ->label($def->label . ' (custom field)')
-                ->guess([$def->label, $def->key, 'cf_' . $def->key])
+                // cf_<key> first: it is the header an added column gets when its label is
+                // taken by a fixed field, and only this column answers to it.
+                ->guess(['cf_' . $def->key, $def->label, $def->key])
                 ->rules(['nullable', 'string'])
                 ->fillRecordUsing(static function (Document $record, ?string $state) use ($def): void {
                     $key = spl_object_id($record);

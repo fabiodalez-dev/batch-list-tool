@@ -255,4 +255,25 @@ final class ReportRenderer
 
         return $string;
     }
+
+    /**
+     * The inverse of sanitizeCsvCell(), applied when a sheet is read back in.
+     *
+     * Exports guard a cell that starts with = + - @ TAB or CR by prefixing a
+     * single quote, so Excel shows it as text instead of running it as a
+     * formula. Without this inverse that quote survived the round trip: a note
+     * reading "- see box 4" went out as "'- see box 4" and came back changed,
+     * and every export-and-reimport added another layer.
+     *
+     * Only that exact shape is undone — one quote followed by one of the guarded
+     * characters — so a value that merely starts with a quote is left alone.
+     */
+    public static function restoreCsvCell(string $value): string
+    {
+        if (preg_match("/^'[=+\-@\t\r]/", $value)) {
+            return substr($value, 1);
+        }
+
+        return $value;
+    }
 }

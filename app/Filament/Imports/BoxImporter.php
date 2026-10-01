@@ -22,7 +22,6 @@ use Filament\Actions\Imports\Importer;
 use Filament\Actions\Imports\Models\Import;
 use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Database\Eloquent\Collection as EloquentCollection;
-use Illuminate\Support\Carbon;
 use Illuminate\Support\Facades\Log;
 use Illuminate\Validation\ValidationException;
 
@@ -610,20 +609,11 @@ class BoxImporter extends Importer
                 ->label('Destroyed (Yes / a date / blank)')
                 ->guess(['Destroyed', 'destroyed', 'Box Destroyed', 'Destroyed?'])
                 ->fillRecordUsing(function (Box $record, ?string $state): void {
-                    if ($state === null || trim($state) === '') {
+                    $destroyedAt = SpreadsheetParsers::parseDestroyed($state);
+                    if ($destroyedAt === null) {
                         return;
                     }
-                    $s = trim($state);
-                    // Truthy flags FIRST — parseDate('1') would read "1" as the
-                    // Excel serial 1900-01-01, not a truthy "yes". Only fall back
-                    // to date parsing for a value that isn't a known flag.
-                    if (in_array(mb_strtolower($s), ['yes', 'y', '1', 'true', 'x', 'destroyed'], true)) {
-                        $record->destroyed_at = now();
-                    } elseif (($date = SpreadsheetParsers::parseDate($s)) !== null) {
-                        $record->destroyed_at = Carbon::parse($date);
-                    } else {
-                        return;
-                    }
+                    $record->destroyed_at = $destroyedAt;
                     if ($record->destroyed_reason === null || trim((string) $record->destroyed_reason) === '') {
                         $record->destroyed_reason = 'Imported as already destroyed (legacy)';
                     }
@@ -663,7 +653,9 @@ class BoxImporter extends Importer
         foreach ($defs as $def) {
             $columns[] = ImportColumn::make('custom_field_' . $def->key)
                 ->label($def->label . ' (custom field)')
-                ->guess([$def->label, $def->key, 'cf_' . $def->key])
+                // cf_<key> first: it is the header an added column gets when its label is
+                // taken by a fixed field, and only this column answers to it.
+                ->guess(['cf_' . $def->key, $def->label, $def->key])
                 ->rules(['nullable', 'string'])
                 ->fillRecordUsing(static function (Box $record, ?string $state) use ($def): void {
                     $key = spl_object_id($record);

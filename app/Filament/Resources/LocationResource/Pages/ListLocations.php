@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace App\Filament\Resources\LocationResource\Pages;
 
 use App\Filament\Concerns\ExplainsPage;
+use App\Filament\Concerns\ExportsLikeTheTemplate;
 use App\Filament\Pages\ImportWizard;
 use App\Filament\Resources\LocationResource;
 use App\Models\Location;
@@ -15,8 +16,14 @@ use Filament\Resources\Pages\ListRecords;
 class ListLocations extends ListRecords
 {
     use ExplainsPage;
+    use ExportsLikeTheTemplate;
 
     protected static string $resource = LocationResource::class;
+
+    protected static function exportEntity(): string
+    {
+        return 'location';
+    }
 
     protected function getHeaderActions(): array
     {
@@ -39,6 +46,8 @@ class ListLocations extends ListRecords
             // Blank xlsx with the canonical Location import columns
             // (name, type, parent_name, repository_code, code, notes,
             // sort_order, is_active). Gated on the create policy.
+            $this->exportCsvAction(),
+
             Actions\Action::make('download_template')
                 ->label('Download template')
                 ->icon('heroicon-o-arrow-down-tray')

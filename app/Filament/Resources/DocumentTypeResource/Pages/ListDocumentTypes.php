@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace App\Filament\Resources\DocumentTypeResource\Pages;
 
 use App\Filament\Concerns\ExplainsPage;
+use App\Filament\Concerns\ExportsLikeTheTemplate;
 use App\Filament\Pages\ImportWizard;
 use App\Filament\Resources\DocumentTypeResource;
 use App\Models\DocumentType;
@@ -15,8 +16,14 @@ use Filament\Resources\Pages\ListRecords;
 class ListDocumentTypes extends ListRecords
 {
     use ExplainsPage;
+    use ExportsLikeTheTemplate;
 
     protected static string $resource = DocumentTypeResource::class;
+
+    protected static function exportEntity(): string
+    {
+        return 'documentType';
+    }
 
     protected function getHeaderActions(): array
     {
@@ -24,6 +31,8 @@ class ListDocumentTypes extends ListRecords
             // Blank .xlsx whose row-1 headers match the Document Types import
             // contract (#17). Bulk creation itself is done through the Import
             // Wizard — the button below links straight to it.
+            $this->exportCsvAction(),
+
             Actions\Action::make('download_template')
                 ->label('Download template')
                 ->icon('heroicon-o-arrow-down-tray')

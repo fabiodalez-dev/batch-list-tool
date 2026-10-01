@@ -104,22 +104,22 @@ test('the wizard submit button SUBMITS the surrounding form (never a mountable a
 
 test('preflight applies the column cast before validating — no false error on values the import would normalise', function () {
     // AuthorityImporter casts "Type of Entity" via normaliseEntityType() before
-    // the in:PERSON,INSTITUTION rule. The preflight must apply that cast too,
-    // otherwise a legitimate "Notary" row (which the real import normalises to
-    // INSTITUTION) would be falsely reported as invalid — the exact false error
-    // that showed up when running the example authority template through the
-    // wizard preflight.
+    // its in: rule. The preflight must apply that cast too, otherwise a
+    // legitimate lower-case "notary" or "person" (which the real import maps to
+    // Notary / PERSON) would be falsely reported as invalid — the exact false
+    // error that showed up when running the example authority template through
+    // the wizard preflight.
     $headers = ['Citing Reference Code', 'Type of Entity', 'Creator Surname'];
     $rows = [
-        ['Citing Reference Code' => 'R1', 'Type of Entity' => 'Notary', 'Creator Surname' => 'Caruana'],
-        ['Citing Reference Code' => 'R2', 'Type of Entity' => 'PERSON', 'Creator Surname' => 'Borg'],
+        ['Citing Reference Code' => 'R1', 'Type of Entity' => 'notary', 'Creator Surname' => 'Caruana'],
+        ['Citing Reference Code' => 'R2', 'Type of Entity' => 'person', 'Creator Surname' => 'Borg'],
     ];
     $map = ImportWizard::guessColumnMap(AuthorityImporter::class, $headers);
 
     $result = ImportWizard::validateRows(AuthorityImporter::class, $rows, $map);
 
-    // Both rows valid: "Notary" casts to INSTITUTION and passes the
-    // in:PERSON,INSTITUTION rule (before the fix it was falsely reported invalid).
+    // Both rows valid: the cast maps the casing onto the stored spelling
+    // before the rule runs (before that fix they were falsely reported invalid).
     expect($result['invalid'])->toBe(0)
         ->and($result['valid'])->toBe(2);
 });
@@ -167,4 +167,17 @@ test('a sheet with a header row and nothing under it is reported as a problem, n
         ->assertNotNotified('Validation complete');
 
     expect($component->instance()->preflightResult['total'])->toBe(0);
+});
+
+test('preflight rejects a Type of Entity it does not know, instead of turning it into INSTITUTION', function () {
+    $headers = ['Citing Reference Code', 'Type of Entity', 'Creator Surname'];
+    $rows = [
+        ['Citing Reference Code' => 'R3', 'Type of Entity' => 'Persn', 'Creator Surname' => 'Grech'],
+    ];
+    $map = ImportWizard::guessColumnMap(AuthorityImporter::class, $headers);
+
+    $result = ImportWizard::validateRows(AuthorityImporter::class, $rows, $map);
+
+    expect($result['invalid'])->toBe(1)
+        ->and($result['valid'])->toBe(0);
 });

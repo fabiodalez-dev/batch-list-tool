@@ -19,6 +19,7 @@ use App\Models\User;
 use App\Support\BulkImport\SpreadsheetHeaders;
 use App\Support\BulkImport\TemplateGenerator;
 use App\Support\ColumnLabels\ColumnLabels;
+use App\Support\Reports\ReportRenderer;
 use Filament\Actions\Action as FilamentAction;
 use Filament\Actions\Imports\Events\ImportCompleted;
 use Filament\Actions\Imports\Events\ImportStarted;
@@ -2461,7 +2462,9 @@ class ImportWizard extends Page
         foreach (array_slice($records, 1) as $record) {
             $row = [];
             foreach ($headers as $i => $key) {
-                $row[$key] = (string) ($record[$i] ?? '');
+                // Undo the formula guard our own exports add, so an exported
+                // sheet re-imports with its values unchanged.
+                $row[$key] = ReportRenderer::restoreCsvCell((string) ($record[$i] ?? ''));
             }
             $rows[] = $row;
         }

@@ -5,122 +5,25 @@ declare(strict_types=1);
 namespace App\Filament\Resources\BatchResource\Pages;
 
 use App\Filament\Concerns\ExplainsPage;
+use App\Filament\Concerns\ExportsLikeTheTemplate;
 use App\Filament\Imports\BatchImporter;
 use App\Filament\Pages\ImportWizard;
 use App\Filament\Resources\BatchResource;
 use App\Models\Batch;
-use App\Models\CustomFieldDefinition;
 use App\Support\BulkImport\TemplateGenerator;
-use App\Support\CustomFields\CustomFieldCsv;
-use App\Support\CustomFields\CustomFieldResolver;
 use Filament\Actions;
 use Filament\Resources\Pages\ListRecords;
-use Illuminate\Support\Str;
-use Symfony\Component\HttpFoundation\StreamedResponse;
 
 class ListBatches extends ListRecords
 {
     use ExplainsPage;
+    use ExportsLikeTheTemplate;
 
     protected static string $resource = BatchResource::class;
 
-    /**
-     * Stream the currently filtered Batch list as CSV.
-     *
-     * Fixed columns come first in canonical order, followed by any active
-     * custom-field columns for the 'batch' entity type in the active
-     * repository (CustomFieldResolver::definitionsFor).
-     *
-     * Value formatting: boolean→1/0, date→Y-m-d, datetime→Y-m-d H:i:s,
-     * else (string). User-controlled strings are sanitised against CSV
-     * injection (CWE-1236 / OWASP) via sanitizeCsvCell().
-     *
-     * Eager-loads customFieldValues.definition to avoid N+1.
-     */
-    public function exportToCsv(): StreamedResponse
+    protected static function exportEntity(): string
     {
-        abort_unless(auth()->user()?->can('view_any_batch'), 403, 'Not authorized to export batches.');
-
-        // A4 — include Repository column in the CSV export.
-        // Header uses sentence-case to match the original label and existing tests.
-        $columns = [
-            'batch_number' => 'Batch number',
-            'type' => 'Type',
-            'description' => 'Description',
-            'repository' => 'Repository',
-            'is_active' => 'Is active?',
-        ];
-
-        // Append active custom-field columns after the fixed ones.
-        $customFieldDefs = CustomFieldResolver::definitionsFor('batch');
-        $customFieldColumns = [];
-        foreach ($customFieldDefs as $def) {
-            $customFieldColumns['cf_' . $def->key] = $def->label;
-        }
-
-        $allColumns = array_merge($columns, $customFieldColumns);
-
-        $user = auth()->user();
-        $repoCode = optional($user?->defaultRepository ?? null)->code ?? 'all';
-        $filename = sprintf(
-            'batches_%s_%s.csv',
-            Str::slug($repoCode, '_'),
-            now()->format('Ymd_His'),
-        );
-
-        $query = $this->getFilteredTableQuery()
-            ->with([
-                // Eager-load custom field values with their definitions so the
-                // CSV row builder can resolve typed values without N+1.
-                'customFieldValues.definition',
-                // A4 — eager-load the repository so the Repository column
-                // can be resolved without N+1.
-                'repository',
-            ]);
-
-        return response()->streamDownload(function () use ($query, $allColumns, $customFieldDefs): void {
-            $out = fopen('php://output', 'wb');
-            // UTF-8 BOM — Excel on Windows needs it for non-ASCII characters.
-            fwrite($out, "\xEF\xBB\xBF");
-            fputcsv($out, array_values($allColumns), escape: '\\');
-
-            $query->orderBy('id')->chunk(500, function ($batches) use ($out, $allColumns, $customFieldDefs): void {
-                foreach ($batches as $batch) {
-                    /** @var Batch $batch */
-                    $allCells = [
-                        // batch_number is an integer — safe, no injection risk.
-                        'batch_number' => (string) ($batch->batch_number ?? ''),
-                        'type' => $this->sanitizeCsvCell($batch->type),
-                        'description' => $this->sanitizeCsvCell($batch->description),
-                        // A4 — Repository: use the code field for a compact
-                        // identifier; fall back to the name if code is blank.
-                        'repository' => $this->sanitizeCsvCell(
-                            $batch->repository?->code ?? $batch->repository?->name ?? '',
-                        ),
-                        // Boolean cast to 1/0 for spreadsheet compatibility.
-                        'is_active' => $batch->is_active ? '1' : '0',
-                    ];
-
-                    foreach ($customFieldDefs as $def) {
-                        /** @var CustomFieldDefinition $def */
-                        $valueModel = $batch->customFieldValues
-                            ->firstWhere('custom_field_definition_id', $def->id);
-                        $typed = $valueModel?->getTypedValueAttribute();
-                        $raw = CustomFieldCsv::format($def, $typed);
-                        $allCells['cf_' . $def->key] = $raw !== '' ? $this->sanitizeCsvCell($raw) : '';
-                    }
-
-                    fputcsv($out, array_intersect_key($allCells, $allColumns), escape: '\\');
-                }
-            });
-
-            fclose($out);
-        }, $filename, [
-            'Content-Type' => 'text/csv; charset=UTF-8',
-            'Cache-Control' => 'no-store, no-cache, must-revalidate, max-age=0',
-            'Pragma' => 'no-cache',
-            'X-Content-Type-Options' => 'nosniff',
-        ]);
+        return 'batch';
     }
 
     /**

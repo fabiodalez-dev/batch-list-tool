@@ -2,6 +2,7 @@
 
 namespace Tests;
 
+use App\Support\ColumnLabels\ColumnLabels;
 use App\Support\CustomFields\CustomFieldResolver;
 use App\Support\LocationBreadcrumbCache;
 use Illuminate\Foundation\Testing\TestCase as BaseTestCase;
@@ -26,6 +27,9 @@ abstract class TestCase extends BaseTestCase
         // resets the DB (and reuses ids) but not the static cache, so flush it
         // per test to prevent a stale breadcrumb bleeding across scenarios.
         LocationBreadcrumbCache::flush();
+        // Same for renamed column names: a rename made in one test outlived its
+        // rolled-back row and renamed the column in every test after it.
+        ColumnLabels::flushMemo();
 
         // Schema audit (#14): SQLite's built-in LOWER() folds only ASCII, while
         // the MySQL/MariaDB prod database (utf8mb4) folds accented Latin. The

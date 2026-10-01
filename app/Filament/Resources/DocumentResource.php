@@ -1406,11 +1406,15 @@ class DocumentResource extends Resource
     public static function getRelations(): array
     {
         return [
+            // The whole chronology first; the per-log tabs follow for detail.
+            DocumentResource\RelationManagers\HistoryRelationManager::class,
             DocumentResource\RelationManagers\IdentifierHistoryRelationManager::class,
             DocumentResource\RelationManagers\FlagsRelationManager::class,
             DocumentResource\RelationManagers\BarcodeHistoryRelationManager::class,
             // Client 2026-08-18 (#1) — box-movement timeline (legacy + recorded).
             DocumentResource\RelationManagers\BoxMovementsRelationManager::class,
+            // RFQ §3.1.6 — location trail (recorded since Feedback-1 #19, now visible).
+            DocumentResource\RelationManagers\LocationHistoryRelationManager::class,
             // NAF Queries Q5 — box itemisation.
             DocumentResource\RelationManagers\ItemsRelationManager::class,
         ];

@@ -3,6 +3,7 @@
 namespace App\Filament\Resources\SeriesResource\Pages;
 
 use App\Filament\Concerns\ExplainsPage;
+use App\Filament\Concerns\ExportsLikeTheTemplate;
 use App\Filament\Imports\SeriesImporter;
 use App\Filament\Pages\ImportWizard;
 use App\Filament\Resources\SeriesResource;
@@ -14,8 +15,14 @@ use Filament\Resources\Pages\ListRecords;
 class ListSeries extends ListRecords
 {
     use ExplainsPage;
+    use ExportsLikeTheTemplate;
 
     protected static string $resource = SeriesResource::class;
+
+    protected static function exportEntity(): string
+    {
+        return 'series';
+    }
 
     /**
      * Header actions for the Series list page.
@@ -47,6 +54,8 @@ class ListSeries extends ListRecords
             // Blank xlsx whose row-1 headers match Series_Sample.xlsx
             // (the first 6 populated columns — trailing NULLs in the
             // sample are stripped). Gated on the create policy.
+            $this->exportCsvAction(),
+
             Actions\Action::make('download_template')
                 ->label('Download template')
                 ->icon('heroicon-o-arrow-down-tray')

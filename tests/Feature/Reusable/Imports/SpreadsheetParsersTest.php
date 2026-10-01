@@ -61,6 +61,14 @@ it('SpreadsheetParsers: parseDate accepts ISO, dot and dash separators and Excel
     expect(SpreadsheetParsers::parseDate('44927'))->toBe('2023-01-01');
 });
 
+it('SpreadsheetParsers: parseDate keeps day-first when the cell carries a time (Excel datetime written to CSV)', function () {
+    // Used to fall through to strtotime(), which read 06/03 as 3 June.
+    expect(SpreadsheetParsers::parseDate('06/03/2024 00:00'))->toBe('2024-03-06');
+    expect(SpreadsheetParsers::parseDate('31/05/2023 23:59:59'))->toBe('2023-05-31');
+    expect(SpreadsheetParsers::parseDate('2024-03-06T08:00'))->toBe('2024-03-06');
+    expect(SpreadsheetParsers::parseDate('03/13/2024 00:00'))->toBe('2024-03-13'); // 2nd part > 12 → US
+});
+
 it('SpreadsheetParsers: parseDate rejects an impossible date', function () {
     expect(SpreadsheetParsers::parseDate('32/13/2023'))->toBeNull();
 });

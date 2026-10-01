@@ -5,6 +5,8 @@ declare(strict_types=1);
 namespace App\Filament\Pages;
 
 use App\Filament\Concerns\ExplainsPage;
+use App\Filament\Pages\Reports\ActivityOverTimeReport;
+use App\Filament\Pages\Reports\BoxesReadyToDestroyReport;
 use App\Filament\Pages\Reports\BoxMovementHistoryReport;
 use App\Filament\Pages\Reports\DisinfestationCycleReport;
 use App\Filament\Pages\Reports\DocumentLocationReport;
@@ -161,6 +163,22 @@ class Reports extends Page
                 'count' => ($counts['stocktake'] ?? 0) . ' locations',
             ],
             [
+                'key' => 'activity-over-time',
+                'title' => 'Activity over time',
+                'description' => 'The last twelve months, month by month: changes recorded, moves, disinfestations and cataloguing.',
+                'icon' => 'heroicon-o-chart-bar',
+                'url' => ActivityOverTimeReport::getUrl(),
+                'count' => '12 months',
+            ],
+            [
+                'key' => 'boxes-ready-to-destroy',
+                'title' => 'Boxes ready to be destroyed',
+                'description' => 'Boxes whose documents all have a catalogue identifier — the ones that can now be marked destroyed (RFQ Appendix 2 §vii).',
+                'icon' => 'heroicon-o-archive-box-x-mark',
+                'url' => BoxesReadyToDestroyReport::getUrl(),
+                'count' => 'Box lifecycle',
+            ],
+            [
                 'key' => 'flags-by-type',
                 'title' => 'Flags by type',
                 'description' => 'Counts of issue flags grouped by category and severity (RFQ APP2-xviii).',
@@ -203,6 +221,7 @@ class Reports extends Page
                 ReportTemplate::SOURCE_DISINFESTATION_CYCLE => DisinfestationCycleReport::class,
                 ReportTemplate::SOURCE_RAS_NRA_RECONCILIATION => RasNraReconciliationReport::class,
                 ReportTemplate::SOURCE_STOCK_TAKE => StockTakeReport::class,
+                ReportTemplate::SOURCE_BOXES_READY_TO_DESTROY => BoxesReadyToDestroyReport::class,
                 ReportTemplate::SOURCE_BOX_MOVEMENTS => BoxMovementHistoryReport::class,
                 ReportTemplate::SOURCE_FLAGS_BY_TYPE => FlagsByTypeReport::class,
                 default => null,
@@ -238,6 +257,7 @@ class Reports extends Page
             ReportTemplate::SOURCE_DISINFESTATION_CYCLE => 'Disinfestation cycle plan',
             ReportTemplate::SOURCE_RAS_NRA_RECONCILIATION => 'RAS ↔ NRA reconciliation',
             ReportTemplate::SOURCE_STOCK_TAKE => 'Stock take',
+            ReportTemplate::SOURCE_BOXES_READY_TO_DESTROY => 'Boxes ready to be destroyed',
             ReportTemplate::SOURCE_BOX_MOVEMENTS => 'Box movement history',
             ReportTemplate::SOURCE_FLAGS_BY_TYPE => 'Flags by type',
             ReportTemplate::SOURCE_DOCUMENTS => 'Documents',
