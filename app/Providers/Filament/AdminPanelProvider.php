@@ -71,9 +71,12 @@ class AdminPanelProvider extends PanelProvider
             ])
             // Security Baseline §15: NO external CDNs at runtime —
             // Inter font is served from /fonts/inter/ (rsms/inter v4.1, OFL-1.1)
+            // and declared with @font-face in the theme. No url here: Filament
+            // writes the url as a <link rel="stylesheet">, and pointing it at the
+            // .woff2 file made every page fetch the font as a stylesheet and log
+            // a console error when the browser refused it.
             ->font(
                 family: 'Inter',
-                url: '/fonts/inter/InterVariable.woff2',
                 provider: LocalFontProvider::class,
             )
             // ui-avatars.com replaced by laravolt/avatar (server-side SVG)
