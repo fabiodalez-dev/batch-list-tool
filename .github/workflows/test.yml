@@ -21,7 +21,11 @@ jobs:
     # Pest+PHPStan alone fill the 30 min budget and Pint got cut off mid-step
     # (PR #137, two attempts). --parallel stays off (Filament tests race on the
     # shared in-memory SQLite connection, per the run step below).
-    timeout-minutes: 40
+    # Raised 40→60 on 2026-10-01: at ~2850 tests the pull_request run took
+    # 39m58s and 39m31s on two PRs and was cancelled at 40m on the third (#249),
+    # while the push run of the same commit finished in ~20 min — runner speed
+    # varies that much, so the cap needs the headroom.
+    timeout-minutes: 60
 
     # PHP 8.3 dropped from the matrix on 2026-05-27: symfony/* 8.x (bumped
     # to 8.0.13 for CVE-2026-48761/48760/48736/48784) requires PHP 8.4 in

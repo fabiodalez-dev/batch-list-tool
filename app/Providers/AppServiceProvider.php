@@ -2,8 +2,6 @@
 
 namespace App\Providers;
 
-use App\Listeners\LogAuthenticationEvent;
-use App\Listeners\RecordBackupRun;
 use App\Models\BackupDestination;
 use App\Models\Document;
 use App\Models\User;
@@ -19,11 +17,6 @@ use Filament\Actions\DetachBulkAction;
 use Filament\Actions\ForceDeleteBulkAction;
 use Filament\Actions\RestoreBulkAction;
 use Filament\Tables\Table;
-use Illuminate\Auth\Events\Failed;
-use Illuminate\Auth\Events\Lockout;
-use Illuminate\Auth\Events\Login;
-use Illuminate\Auth\Events\Logout;
-use Illuminate\Auth\Events\PasswordReset;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Events\MigrationsStarted;
 use Illuminate\Support\Facades\Artisan;
@@ -34,10 +27,6 @@ use Illuminate\Support\Facades\Log;
 use Illuminate\Support\ServiceProvider;
 use Laravel\Telescope\TelescopeServiceProvider;
 use OwenIt\Auditing\Models\Audit;
-use Spatie\Backup\Events\BackupHasFailed;
-use Spatie\Backup\Events\BackupWasSuccessful;
-use Spatie\Backup\Events\CleanupHasFailed;
-use Spatie\Backup\Events\CleanupWasSuccessful;
 use Spatie\Backup\Notifications\Notifications\BackupHasFailedNotification;
 use Spatie\Backup\Notifications\Notifications\BackupWasSuccessfulNotification;
 use Spatie\Backup\Notifications\Notifications\CleanupHasFailedNotification;
@@ -145,22 +134,13 @@ class AppServiceProvider extends ServiceProvider
             $table->filtersFormColumns(2);
         });
 
-        // Authentication event listeners — write every login lifecycle event to
-        // the audit trail (RFQ §3.1.5). Registered here to mirror the
-        // LogImpersonation pattern (no separate EventServiceProvider needed).
-        Event::listen(Login::class, [LogAuthenticationEvent::class, 'handleLogin']);
-        Event::listen(Logout::class, [LogAuthenticationEvent::class, 'handleLogout']);
-        Event::listen(Failed::class, [LogAuthenticationEvent::class, 'handleFailed']);
-        Event::listen(Lockout::class, [LogAuthenticationEvent::class, 'handleLockout']);
-        Event::listen(PasswordReset::class, [LogAuthenticationEvent::class, 'handlePasswordReset']);
-
-        // Backup lifecycle listeners — record every spatie/laravel-backup run
-        // (and cleanup) into backup_runs so the Backup Center can show history.
-        // Same Event::listen() pattern as the auth listeners above.
-        Event::listen(BackupWasSuccessful::class, [RecordBackupRun::class, 'handleBackupWasSuccessful']);
-        Event::listen(BackupHasFailed::class, [RecordBackupRun::class, 'handleBackupHasFailed']);
-        Event::listen(CleanupWasSuccessful::class, [RecordBackupRun::class, 'handleCleanupWasSuccessful']);
-        Event::listen(CleanupHasFailed::class, [RecordBackupRun::class, 'handleCleanupHasFailed']);
+        // The audit listeners for login, logout, failed logins, lockouts and
+        // password resets (LogAuthenticationEvent) and the backup history
+        // (RecordBackupRun) are registered by Laravel's listener discovery, from
+        // the event type of each handle* method — like LogImpersonation and
+        // LogTwoFactorChange. They used to be registered here as well, so every
+        // one of them ran twice: two "login" rows per sign-in in the audit trail,
+        // two rows per backup run.
 
         $this->configureBackupNotifications();
 
