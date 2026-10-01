@@ -32,6 +32,15 @@ class StatsOverviewWidget extends BaseStatsOverviewWidget
     /** Render this widget first — it's the headline. */
     protected static ?int $sort = 1;
 
+    /**
+     * No polling. Filament polls stats and chart widgets every 5 seconds by
+     * default, but these figures come from a 5-minute cache: 60 requests per
+     * cache window, every one answered with the same numbers, for every open
+     * dashboard tab, on a shared host. They change on an import, not by the
+     * second, so a page load is fresh enough.
+     */
+    protected ?string $pollingInterval = null;
+
     protected ?string $heading = 'Overview';
 
     protected function getStats(): array

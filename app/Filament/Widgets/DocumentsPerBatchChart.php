@@ -27,6 +27,15 @@ class DocumentsPerBatchChart extends ChartWidget
 
     protected static ?int $sort = 4;
 
+    /**
+     * No polling. Filament polls stats and chart widgets every 5 seconds by
+     * default, but these figures come from a 5-minute cache: 60 requests per
+     * cache window, every one answered with the same numbers, for every open
+     * dashboard tab, on a shared host. They change on an import, not by the
+     * second, so a page load is fresh enough.
+     */
+    protected ?string $pollingInterval = null;
+
     protected ?string $heading = 'Top 15 Batches by Document Count';
 
     protected ?string $maxHeight = '300px';

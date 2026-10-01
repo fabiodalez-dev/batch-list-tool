@@ -6,6 +6,7 @@ namespace App\Filament\Pages\Reports;
 
 use App\Filament\Concerns\ExplainsPage;
 use App\Filament\Pages\Reports\Concerns\CapsExportRows;
+use App\Filament\Pages\Reports\Concerns\ExportsWhatIsOnScreen;
 use App\Filament\Pages\Reports\Concerns\HasReportTemplates;
 use App\Filament\Pages\Reports\Filters\DateRangeFilter;
 use App\Models\Box;
@@ -40,6 +41,7 @@ class BoxMovementHistoryReport extends Page implements HasTable
 {
     use CapsExportRows;
     use ExplainsPage;
+    use ExportsWhatIsOnScreen;
     use HasReportTemplates;
     use InteractsWithTable;
 
@@ -202,7 +204,7 @@ class BoxMovementHistoryReport extends Page implements HasTable
                         }),
                     ),
             ])
-            ->paginated([25, 50, 100, 'all']);
+            ->paginated();
     }
 
     public function exportCsv(): StreamedResponse
@@ -220,7 +222,7 @@ class BoxMovementHistoryReport extends Page implements HasTable
                 'Reason' => 'reason',
                 'By' => 'user',
             ],
-            query: $this->reportQuery()->orderBy('box_movements.id'),
+            query: $this->exportQuery()->orderBy('box_movements.id'),
             rowMapper: fn (BoxMovement $r): array => self::movementRow($r),
         );
     }
@@ -231,7 +233,7 @@ class BoxMovementHistoryReport extends Page implements HasTable
 
         $rows = [];
         /** @var BoxMovement $r */
-        foreach ($this->reportQuery()->orderByDesc('movement_date')->limit(5000)->get() as $r) {
+        foreach ($this->exportQuery()->orderByDesc('movement_date')->limit(5000)->get() as $r) {
             $rows[] = self::movementRow($r);
         }
 
@@ -247,7 +249,7 @@ class BoxMovementHistoryReport extends Page implements HasTable
     {
         abort_unless(static::canAccess(), 403);
 
-        $query = $this->getFilteredTableQuery() ?? $this->reportQuery();
+        $query = $this->exportQuery();
         $rows = $this->fetchExportRowsWithCap(
             $query
                 ->with([

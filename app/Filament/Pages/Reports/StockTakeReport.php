@@ -6,6 +6,7 @@ namespace App\Filament\Pages\Reports;
 
 use App\Filament\Concerns\ExplainsPage;
 use App\Filament\Pages\Reports\Concerns\CapsExportRows;
+use App\Filament\Pages\Reports\Concerns\ExportsWhatIsOnScreen;
 use App\Filament\Pages\Reports\Concerns\HasReportTemplates;
 use App\Models\Box;
 use App\Models\Document;
@@ -40,6 +41,7 @@ class StockTakeReport extends Page implements HasTable
 {
     use CapsExportRows;
     use ExplainsPage;
+    use ExportsWhatIsOnScreen;
     use HasReportTemplates;
     use InteractsWithTable;
 
@@ -151,7 +153,7 @@ class StockTakeReport extends Page implements HasTable
                     ->searchable()
                     ->multiple(),
             ])
-            ->paginated([25, 50, 100, 'all']);
+            ->paginated();
     }
 
     public function exportCsv(): StreamedResponse
@@ -317,7 +319,7 @@ class StockTakeReport extends Page implements HasTable
      */
     protected function exportRows(?int $limit = null): array
     {
-        $query = $this->getFilteredTableQuery() ?? $this->reportQuery();
+        $query = $this->exportQuery();
         $query
             ->orderBy('nra_location')
             ->orderBy('stock_type')

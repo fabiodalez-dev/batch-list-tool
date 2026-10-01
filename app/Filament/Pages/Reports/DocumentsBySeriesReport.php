@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace App\Filament\Pages\Reports;
 
 use App\Filament\Concerns\ExplainsPage;
+use App\Filament\Pages\Reports\Concerns\ExportsWhatIsOnScreen;
 use App\Filament\Pages\Reports\Concerns\HasReportTemplates;
 use App\Filament\Pages\Reports\Filters\DateRangeFilter;
 use App\Models\Document;
@@ -36,6 +37,7 @@ use Symfony\Component\HttpFoundation\StreamedResponse;
 class DocumentsBySeriesReport extends Page implements HasTable
 {
     use ExplainsPage;
+    use ExportsWhatIsOnScreen;
     use HasReportTemplates;
     use InteractsWithTable;
 
@@ -205,7 +207,7 @@ class DocumentsBySeriesReport extends Page implements HasTable
                     ->trueLabel('Currently out')
                     ->falseLabel('Not currently out'),
             ])
-            ->paginated([25, 50, 100, 'all']);
+            ->paginated();
     }
 
     public function exportCsv(): StreamedResponse
@@ -307,7 +309,7 @@ class DocumentsBySeriesReport extends Page implements HasTable
     protected function collectRows(): array
     {
         $rows = [];
-        $records = $this->reportQuery()->orderByDesc('document_count')->get();
+        $records = $this->exportQuery()->orderByDesc('document_count')->get();
 
         foreach ($records as $r) {
             $attrs = $r->getAttributes();
@@ -331,7 +333,7 @@ class DocumentsBySeriesReport extends Page implements HasTable
     protected function collectRowsAsAssoc(): array
     {
         $rows = [];
-        $records = $this->reportQuery()->orderByDesc('document_count')->get();
+        $records = $this->exportQuery()->orderByDesc('document_count')->get();
 
         foreach ($records as $r) {
             $attrs = $r->getAttributes();

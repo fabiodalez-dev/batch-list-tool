@@ -162,12 +162,25 @@ final class ReportRenderer
             'total_rows' => count($rowsArray),
         ])->setPaper('a4', 'portrait');
 
-        return response(
-            $pdf->output(),
-            200,
+        // Rendered here, before the response exists, so a DomPDF failure is
+        // an ordinary exception rather than a half-sent download.
+        $bytes = $pdf->output();
+
+        // A StreamedResponse, not response($bytes): every report exports from a
+        // Livewire action, and Livewire only treats StreamedResponse and
+        // BinaryFileResponse as file downloads. Anything else lands in the
+        // JSON payload as an action return value, and Illuminate's Response
+        // carries its body in the PUBLIC $original property — so json_encode
+        // met raw PDF bytes, failed with "Malformed UTF-8", and the Export PDF
+        // button answered with a 500 on every report. The direct-call tests
+        // never saw it because they bypassed the button.
+        return response()->streamDownload(
+            static function () use ($bytes): void {
+                echo $bytes;
+            },
+            $filename,
             [
                 'Content-Type' => 'application/pdf',
-                'Content-Disposition' => 'attachment; filename="' . $filename . '"',
                 'Cache-Control' => 'no-store, no-cache, must-revalidate, max-age=0',
                 'Pragma' => 'no-cache',
                 'X-Content-Type-Options' => 'nosniff',

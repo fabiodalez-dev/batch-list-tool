@@ -7,6 +7,7 @@ namespace App\Filament\Pages\Reports;
 use App\Filament\Concerns\ExplainsPage;
 use App\Filament\Concerns\ResolvesEffectiveLocationBreadcrumb;
 use App\Filament\Pages\Reports\Concerns\CapsExportRows;
+use App\Filament\Pages\Reports\Concerns\ExportsWhatIsOnScreen;
 use App\Filament\Pages\Reports\Concerns\HasReportTemplates;
 use App\Models\Document;
 use App\Models\Location;
@@ -40,6 +41,7 @@ class DocumentLocationReport extends Page implements HasTable
 {
     use CapsExportRows;
     use ExplainsPage;
+    use ExportsWhatIsOnScreen;
     use HasReportTemplates;
     use InteractsWithTable;
     use ResolvesEffectiveLocationBreadcrumb;
@@ -158,7 +160,7 @@ class DocumentLocationReport extends Page implements HasTable
                         });
                     }),
             ])
-            ->paginated([25, 50, 100, 'all']);
+            ->paginated();
     }
 
     public function exportCsv(): StreamedResponse
@@ -177,7 +179,7 @@ class DocumentLocationReport extends Page implements HasTable
                 'In a box' => 'in_a_box',
             ],
             // Honour the active table filters in the export, not just the table.
-            query: ($this->getFilteredTableQuery() ?? $this->reportQuery())
+            query: $this->exportQuery()
                 ->with(['currentBox.location', 'location'])
                 ->reorder('documents.identifier'),
             rowMapper: fn (Document $r): array => $this->locationRow($r),
@@ -189,7 +191,7 @@ class DocumentLocationReport extends Page implements HasTable
         abort_unless(static::canAccess(), 403);
 
         $rows = [];
-        $query = ($this->getFilteredTableQuery() ?? $this->reportQuery())
+        $query = $this->exportQuery()
             ->with(['currentBox.location', 'location'])
             ->reorder('documents.identifier')
             ->limit(5000);
@@ -210,7 +212,7 @@ class DocumentLocationReport extends Page implements HasTable
     {
         abort_unless(static::canAccess(), 403);
 
-        $query = $this->getFilteredTableQuery() ?? $this->reportQuery();
+        $query = $this->exportQuery();
         $rows = $this->fetchExportRowsWithCap(
             $query->with(['currentBox.location', 'location'])->orderBy('documents.identifier'),
         );
