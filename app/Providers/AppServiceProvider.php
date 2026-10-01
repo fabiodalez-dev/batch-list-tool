@@ -24,6 +24,7 @@ use Illuminate\Auth\Events\Lockout;
 use Illuminate\Auth\Events\Login;
 use Illuminate\Auth\Events\Logout;
 use Illuminate\Auth\Events\PasswordReset;
+use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Events\MigrationsStarted;
 use Illuminate\Support\Facades\Artisan;
 use Illuminate\Support\Facades\DB;
@@ -84,6 +85,13 @@ class AppServiceProvider extends ServiceProvider
     public function boot(): void
     {
         Document::observe(DocumentObserver::class);
+
+        // A relation read in a loop without being eager-loaded is one query per
+        // row: on a 26,000-document list that is the difference between one
+        // query and thousands. Outside production it throws, so the suite and
+        // local use catch it the day it is written; in production a missed
+        // case still works — slower — rather than breaking a page.
+        Model::preventLazyLoading(! $this->app->isProduction());
 
         // Apply each user's preferred_page_size as the default pagination page
         // option for every Filament table. The closure runs at table-render time

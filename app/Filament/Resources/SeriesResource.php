@@ -100,7 +100,7 @@ class SeriesResource extends Resource
                                     $query->whereNotIn('id', $record->disallowedParentIds());
                                 }
 
-                                return $query->get()
+                                return Series::linkParents($query->get())
                                     ->mapWithKeys(fn (Series $s): array => [
                                         $s->getKey() => $s->qualifiedTitle() . ' — ' . $s->title,
                                     ])
@@ -422,9 +422,7 @@ class SeriesResource extends Resource
                     ),
                 SelectFilter::make('parent_id')
                     ->label('Parent subseries')
-                    ->options(fn (): array => Series::query()
-                        ->orderBy('code')
-                        ->get()
+                    ->options(fn (): array => Series::linkParents(Series::query()->orderBy('code')->get())
                         ->mapWithKeys(fn (Series $s): array => [$s->getKey() => $s->qualifiedTitle()])
                         ->all())
                     ->searchable(),
@@ -453,7 +451,9 @@ class SeriesResource extends Resource
             // parent chain per row — eager-load them so the default view does
             // not fire a query per row for the repository and immediate parent.
             'repository',
-            'parent',
+            // Three levels: the Hierarchy column prints the whole path, and the
+            // archive's tree is two deep. A deeper chain is loaded on demand.
+            'parent.parent.parent',
         ]);
     }
 

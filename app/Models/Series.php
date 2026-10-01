@@ -86,7 +86,7 @@ class Series extends Model implements AuditableContract, Sortable
     public function ancestors(): array
     {
         $chain = [];
-        $node = $this->parent;
+        $node = self::parentOf($this);
         $guard = 0;
 
         // The guard is defence-in-depth against a malformed cycle that
@@ -94,11 +94,31 @@ class Series extends Model implements AuditableContract, Sortable
         // beyond the number of series rows.
         while ($node !== null && $guard < 100) {
             array_unshift($chain, $node);
-            $node = $node->parent;
+            $node = self::parentOf($node);
             $guard++;
         }
 
         return $chain;
+    }
+
+    /**
+     * Give every series in $series its whole parent chain, from one query, so
+     * qualifiedTitle() on each of them runs no query at all. For option lists
+     * that print the path of every subseries.
+     *
+     * @param EloquentCollection<int, self> $series
+     * @return EloquentCollection<int, self>
+     */
+    public static function linkParents(EloquentCollection $series): EloquentCollection
+    {
+        /** @var array<int, self> $byId */
+        $byId = self::query()->get()->keyBy('id')->all();
+        foreach ([...$series->all(), ...array_values($byId)] as $node) {
+            $parentId = $node->getAttribute('parent_id');
+            $node->setRelation('parent', $parentId === null ? null : ($byId[(int) $parentId] ?? null));
+        }
+
+        return $series;
     }
 
     /**
@@ -165,5 +185,22 @@ class Series extends Model implements AuditableContract, Sortable
             [(int) $this->getKey()],
             $this->descendants()->pluck('id')->map(static fn ($id): int => (int) $id)->all()
         );
+    }
+
+    /**
+     * The parent, from the loaded relation when there is one (a list eager-
+     * loads it, linkParents() sets it in memory) and loaded on purpose when
+     * there is not, so a chain deeper than what was eager-loaded still works.
+     */
+    private static function parentOf(self $node): ?self
+    {
+        if ($node->getAttribute('parent_id') === null) {
+            return null;
+        }
+
+        /** @var self|null $parent */
+        $parent = $node->loadMissing('parent')->getRelation('parent');
+
+        return $parent;
     }
 }

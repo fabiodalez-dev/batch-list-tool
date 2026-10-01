@@ -151,7 +151,7 @@ it('marks a box destroyed when Destroyed = Yes', function () {
 it('stamps destroyed_by to the importing user', function () {
     $b = blc_import()->get('902');
     expect($b?->destroyed_by_user_id)->not->toBeNull()
-        ->and($b?->destroyedBy?->is_active)->toBeTrue();
+        ->and($b?->loadMissing('destroyedBy')->destroyedBy?->is_active)->toBeTrue();
 });
 
 it('records a destroyed_reason for an imported destruction', function () {
