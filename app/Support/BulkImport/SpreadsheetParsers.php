@@ -216,8 +216,23 @@ final class SpreadsheetParsers
         if ($s === '') {
             return null;
         }
-        if (in_array(mb_strtolower($s), ['yes', 'y', '1', 'true', 'x', 'destroyed'], true)) {
+        if (self::isDestroyedYes($s)) {
             return Carbon::now();
+        }
+
+        return self::parseDestroyedDate($s);
+    }
+
+    /**
+     * The date a Destroyed cell gives, or null when it gives none — blank, a
+     * plain "Yes", or not a date. A "Yes" carries no date of its own: the
+     * caller decides whether "now" is right or an existing date must stay.
+     */
+    public static function parseDestroyedDate(?string $value): ?Carbon
+    {
+        $s = trim((string) $value);
+        if ($s === '' || self::isDestroyedYes($s)) {
+            return null;
         }
         $date = self::parseDate($s);
 
@@ -248,5 +263,10 @@ final class SpreadsheetParsers
         }
 
         return $trimmed;
+    }
+
+    private static function isDestroyedYes(string $value): bool
+    {
+        return in_array(mb_strtolower(trim($value)), ['yes', 'y', '1', 'true', 'x', 'destroyed'], true);
     }
 }

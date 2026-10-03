@@ -605,6 +605,14 @@ class BoxImporter extends Importer
                     if ($destroyedAt === null) {
                         return;
                     }
+                    // A plain "Yes" on a box already destroyed says nothing new:
+                    // keep its date. It used to become the time of every
+                    // re-import, so a box sheet loaded once per barcode
+                    // generation moved the destruction date each time. A date in
+                    // the cell is information, and is taken.
+                    if ($record->destroyed_at !== null && SpreadsheetParsers::parseDestroyedDate($state) === null) {
+                        return;
+                    }
                     $record->destroyed_at = $destroyedAt;
                     if ($record->destroyed_reason === null || trim((string) $record->destroyed_reason) === '') {
                         $record->destroyed_reason = 'Imported as already destroyed (legacy)';
