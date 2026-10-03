@@ -5,6 +5,7 @@ namespace App\Models;
 use App\Models\Concerns\HasCustomFields;
 use App\Models\Lookup\BarcodeStatus;
 use App\Models\Lookup\BoxType;
+use App\Models\Scopes\RepositoryScope;
 use App\Models\Scopes\ThroughBatchRepositoryScope;
 use App\Support\ActiveRepository;
 use App\Support\Lookups;
@@ -43,6 +44,9 @@ class Box extends Model implements AuditableContract, Sortable
 
     public const BARCODE_STATUSES = ['IN', 'OUT', 'PERM_OUT'];
 
+    /** box_location_history.source of a location taken from the box's documents. */
+    public const string LOCATION_SOURCE_DOCUMENTS = 'documents';
+
     /**
      * Boxes are ordered WITHIN their batch — sort_order is unique per batch_id,
      * not globally. The override below scopes the sort query so renumbering
@@ -59,6 +63,12 @@ class Box extends Model implements AuditableContract, Sortable
      * Does NOT bypass any other guards (disinfestation_date, parent_box, etc.).
      */
     public bool $skipPermOutGuard = false;
+
+    /**
+     * Source written to box_location_history by the next save, when it is not
+     * an ordinary move ('update'). Set by syncLocationFromDocuments().
+     */
+    public ?string $locationChangeSource = null;
 
     /**
      * Transient (never persisted) flag that suppresses the barcode-history
@@ -487,6 +497,59 @@ class Box extends Model implements AuditableContract, Sortable
     }
 
     /**
+     * Client 2026-10-02: locations come in with the documents, not the box
+     * sheet — "if all the documents of a box have the same location, can we
+     * imply that the box is in that location?"
+     *
+     * Yes, and only that far. A box with no location takes the one location
+     * shared by every document of it that has one. A location set this way
+     * follows its documents (another shared location, or none once they
+     * disagree). A location somebody set on the box is never touched.
+     */
+    public function syncLocationFromDocuments(): void
+    {
+        if ($this->isDestroyed()) {
+            return;
+        }
+
+        $shared = Document::withoutGlobalScope(RepositoryScope::class)
+            ->where('current_box_id', $this->getKey())
+            ->whereNotNull('location_id')
+            ->distinct()
+            ->limit(2)
+            ->pluck('location_id')
+            ->map(static fn (mixed $id): int => (int) $id)
+            ->all();
+        $target = count($shared) === 1 ? $shared[0] : null;
+
+        if ($this->location_id === null) {
+            if ($target === null) {
+                return;
+            }
+        } else {
+            // Only a location this rule set may be changed by it.
+            $last = $this->locationHistory()->latest('id')->first();
+            if ($last === null
+                || $last->getAttribute('source') !== self::LOCATION_SOURCE_DOCUMENTS
+                || (int) $last->getAttribute('to_location_id') !== (int) $this->location_id
+                || $target === (int) $this->location_id) {
+                return;
+            }
+        }
+
+        $this->location_id = $target;
+        $this->locationChangeSource = self::LOCATION_SOURCE_DOCUMENTS;
+        $this->skipPermOutGuard = true;
+
+        try {
+            $this->save();
+        } finally {
+            $this->locationChangeSource = null;
+            $this->skipPermOutGuard = false;
+        }
+    }
+
+    /**
      * Multi-tenant scoping (RFQ §3.5.1).
      *
      * Tenancy is derived from `boxes.batch_id → batches.repository_id`, and for
@@ -572,6 +635,17 @@ class Box extends Model implements AuditableContract, Sortable
         // the box. A PERM_OUT box may therefore be saved without either. The
         // disinfestation_date is still propagated to documents WHEN present (see
         // the syncBarcodeStatusToDocuments hook below).
+
+        // A box can never contain itself. Seen on 2026-10-02: a box sheet
+        // carried each box's PREVIOUS barcode in "Parent box number", which
+        // resolved to the box itself, and five RAS boxes became their own
+        // parent. The importer rejects that row with an explanation; this is
+        // the guard for every other path.
+        static::saving(function (self $box): void {
+            if ($box->exists && $box->parent_box_id !== null && (int) $box->parent_box_id === (int) $box->getKey()) {
+                throw new \DomainException('A box cannot be its own parent box.');
+            }
+        });
 
         static::saving(function (self $box): void {
             if (! $box->requiresParent()) {
@@ -742,10 +816,12 @@ class Box extends Model implements AuditableContract, Sortable
             if ($old === $new) {
                 return;
             }
+            $source = $box->locationChangeSource ?? 'update';
             $box->recordLocationChange(
                 $old !== null ? (int) $old : null,
                 $new !== null ? (int) $new : null,
-                'update',
+                $source,
+                $source === self::LOCATION_SOURCE_DOCUMENTS ? 'Taken from its documents: every document of the box with a location has this one.' : null,
             );
         });
 
@@ -928,7 +1004,7 @@ class Box extends Model implements AuditableContract, Sortable
         );
     }
 
-    private function recordLocationChange(?int $from, ?int $to, string $source): void
+    private function recordLocationChange(?int $from, ?int $to, string $source, ?string $notes = null): void
     {
         $label = static fn (?int $id): ?string => $id === null
             ? null
@@ -942,6 +1018,7 @@ class Box extends Model implements AuditableContract, Sortable
             'changed_by_user_id' => Auth::id(),
             'changed_at' => now(),
             'source' => $source,
+            'notes' => $notes,
             'repository_id' => $this->customFieldRepositoryId(),
         ]);
     }
