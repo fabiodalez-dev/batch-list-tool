@@ -67,6 +67,7 @@ final class LocationHistoryTable
                     ->formatStateUsing(fn (?string $state): string => match ($state) {
                         'create' => 'Set on creation',
                         'update' => 'Moved',
+                        'documents' => 'From its documents',
                         default => (string) $state,
                     })
                     ->toggleable(isToggledHiddenByDefault: true),

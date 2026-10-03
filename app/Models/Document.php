@@ -743,14 +743,20 @@ class Document extends Model implements AuditableContract, HasMedia, Sortable
         }
     }
 
-    /**
-     * Boot hooks for Document — enforces the enum + Batch-50 invariants on
-     * every save(). The identifier audit trail lives in the dedicated
-     * {@see DocumentObserver} class. (Seal-number history is a property of
-     * the Box, not the Document — see {@see Box::sealNumberHistory()}.)
-     */
     protected static function booted(): void
     {
+        // A box with no location of its own takes the one its documents share
+        // (Box::syncLocationFromDocuments). Re-checked for the box a document
+        // is in, and the box it left, whenever its location or box changes.
+        static::saved(function (Document $document): void {
+            if (! $document->wasRecentlyCreated && ! $document->wasChanged(['location_id', 'current_box_id'])) {
+                return;
+            }
+            $document->syncBoxLocations([$document->current_box_id, $document->getOriginal('current_box_id')]);
+        });
+        static::deleted(fn (Document $document) => $document->syncBoxLocations([$document->current_box_id]));
+        static::restored(fn (Document $document) => $document->syncBoxLocations([$document->current_box_id]));
+
         // RFQ-2026-06 APP2-ix / APP2-xiii — gate the two lookup enums in PHP
         // so the constraint is enforced on every driver (SQLite test runs
         // included, where a DB-level CHECK cannot be retro-fitted).
@@ -995,6 +1001,22 @@ class Document extends Model implements AuditableContract, HasMedia, Sortable
             return parent::performUpdate($query);
         } finally {
             self::$bypassAuditGuard = $previous;
+        }
+    }
+
+    /**
+     * Boot hooks for Document — enforces the enum + Batch-50 invariants on
+     * every save(). The identifier audit trail lives in the dedicated
+     * {@see DocumentObserver} class. (Seal-number history is a property of
+     * the Box, not the Document — see {@see Box::sealNumberHistory()}.)
+     */
+    /**
+     * @param array<int, mixed> $boxIds
+     */
+    private function syncBoxLocations(array $boxIds): void
+    {
+        foreach (array_unique(array_filter(array_map('intval', $boxIds))) as $boxId) {
+            Box::withoutGlobalScopes()->find($boxId)?->syncLocationFromDocuments();
         }
     }
 

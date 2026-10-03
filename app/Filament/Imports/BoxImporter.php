@@ -189,16 +189,6 @@ class BoxImporter extends Importer
         return $record;
     }
 
-    /**
-     * Apply the three RFQ rules that depend on multiple fields:
-     *
-     *  #3 — IN_SITU and NRA require a parent RAS box. If the operator
-     *       supplied no parent barcode we cannot proceed safely; we leave
-     *       parent_box_id null and let the row fail with an explicit
-     *       validation message via the `before save` check.
-     *  #4 — MAV / STVC force `is_legacy = true`.
-     *  (RFQ #5 PERM_OUT preconditions were dropped — client feedback 2026-08-01.)
-     */
     public function afterFill(): void
     {
         /** @var Box $record */
@@ -439,6 +429,7 @@ class BoxImporter extends Importer
                                 ]);
                             }
 
+                            self::rejectSelfParent($record, (int) $res['box_id'], $state);
                             $record->parent_box_id = $res['box_id'];
 
                             return;
@@ -473,6 +464,7 @@ class BoxImporter extends Importer
                         // Only the {box_id, batch_id} shape can reach here — the
                         // ambiguous case threw above and a no-match is null. Same
                         // repository by construction (scoped in the resolver).
+                        self::rejectSelfParent($record, (int) $byNumber['box_id'], $state);
                         $record->parent_box_id = $byNumber['box_id'];
 
                         return;
@@ -666,6 +658,42 @@ class BoxImporter extends Importer
         }
 
         return $columns;
+    }
+
+    /**
+     * Apply the three RFQ rules that depend on multiple fields:
+     *
+     *  #3 — IN_SITU and NRA require a parent RAS box. If the operator
+     *       supplied no parent barcode we cannot proceed safely; we leave
+     *       parent_box_id null and let the row fail with an explicit
+     *       validation message via the `before save` check.
+     *  #4 — MAV / STVC force `is_legacy = true`.
+     *  (RFQ #5 PERM_OUT preconditions were dropped — client feedback 2026-08-01.)
+     */
+    /**
+     * "Parent box number" naming the row's own box — typically a box's previous
+     * barcode, put there to record its barcode history. That history is kept
+     * automatically when the box comes in with a new barcode; the parent is the
+     * RAS box an In Situ box sits in. Linking the box to itself is refused with
+     * that explanation instead of saving a box that contains itself.
+     */
+    private static function rejectSelfParent(Box $record, int $parentId, string $value): void
+    {
+        if (! $record->exists || $parentId !== (int) $record->getKey()) {
+            return;
+        }
+
+        unset(
+            self::$rowRepositoryStash[spl_object_id($record)],
+            self::$rowCustomFieldStash[spl_object_id($record)],
+        );
+
+        throw ValidationException::withMessages([
+            'parent_barcode' => __(
+                'Parent box number ":value" is this box itself. Leave Parent box number empty here: a box\'s earlier barcodes are recorded in its barcode history automatically when it is imported with a new barcode. Parent box number is only for In Situ boxes — the RAS box they sit in.',
+                ['value' => $value],
+            ),
+        ]);
     }
 
     /**

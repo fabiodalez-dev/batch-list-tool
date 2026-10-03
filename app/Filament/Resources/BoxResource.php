@@ -839,9 +839,15 @@ class BoxResource extends Resource
                     ->color(fn (string $state): string => $state === 'Yes' ? 'danger' : 'gray')
                     ->sortable()
                     ->toggleable(),
+                // The parent as people know it (type, number, barcode), not its
+                // internal id: "6,088" told the operator nothing.
                 $gc(Tables\Columns\TextColumn::make('parent_box_id')
-                    ->label('Parent Box Id')
-                    ->numeric()
+                    ->label('Parent box')
+                    ->formatStateUsing(fn (Box $record): string => $record->parent === null
+                        ? '—'
+                        : trim($record->parent->box_type . ' ' . $record->parent->box_number . ($record->parent->barcode ? ' · ' . $record->parent->barcode : '')))
+                    ->url(fn (Box $record): ?string => $record->parent_box_id ? static::getUrl('view', ['record' => $record->parent_box_id]) : null)
+                    ->placeholder('—')
                     ->sortable()
                     ->toggleable()),
                 $gc(Tables\Columns\IconColumn::make('is_legacy')
@@ -1186,6 +1192,8 @@ class BoxResource extends Resource
         return parent::getEloquentQuery()->with([
             'customFieldValues.definition',
             'batch',
+            // The Parent box column prints the parent's type, number and barcode.
+            'parent',
             // The Location column renders `location.full_path` (an accessor that
             // walks the location's ancestors); eager-load the relation so the
             // default box list doesn't fire one query per row.
