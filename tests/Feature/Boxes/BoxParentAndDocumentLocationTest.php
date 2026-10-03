@@ -19,6 +19,7 @@ use App\Support\BulkImport\EntityResolver;
 use Filament\Actions\Imports\Exceptions\RowImportFailedException;
 use Filament\Actions\Imports\Models\Import;
 use Illuminate\Foundation\Testing\RefreshDatabase;
+use Illuminate\Support\Carbon;
 use Illuminate\Validation\ValidationException;
 use Livewire\Livewire;
 use Spatie\Permission\Models\Role;
@@ -216,4 +217,24 @@ it('does it through the documents import, the path the client uses', function ()
 
     expect(Document::withoutGlobalScopes()->whereIn('identifier', ['IMP-1', 'IMP-2'])->pluck('current_box_id')->unique()->all())->toBe([$box->id])
         ->and($box->refresh()->location_id)->toBe($shelf->id);
+});
+
+it('keeps the destruction date when the same box is imported again with Destroyed = Yes', function (): void {
+    $box = bpl_box($this->batch->id, '50', 'AA00050');
+
+    Carbon::setTestNow('2026-10-02 05:58:01');
+    bpl_importBox(bpl_boxRow(['Box number' => '50', 'Barcode RAS 3' => 'AB00050', 'Destroyed' => 'Yes']), $this->user->id);
+    expect($box->refresh()->destroyed_at?->toDateTimeString())->toBe('2026-10-02 05:58:01');
+
+    // The next barcode generation, five minutes later: same Yes, same date.
+    Carbon::setTestNow('2026-10-02 06:03:02');
+    bpl_importBox(bpl_boxRow(['Box number' => '50', 'Barcode RAS 3' => 'AC00050', 'Destroyed' => 'Yes']), $this->user->id);
+    expect($box->refresh()->destroyed_at?->toDateTimeString())->toBe('2026-10-02 05:58:01')
+        ->and($box->barcode)->toBe('AC00050');
+
+    // A date in the cell is information: it is taken.
+    bpl_importBox(bpl_boxRow(['Box number' => '50', 'Barcode RAS 3' => 'AC00050', 'Destroyed' => '15/06/2024']), $this->user->id);
+    expect($box->refresh()->destroyed_at?->toDateString())->toBe('2024-06-15');
+
+    Carbon::setTestNow();
 });
