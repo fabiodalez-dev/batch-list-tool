@@ -1720,6 +1720,8 @@ class DocumentImporter extends Importer
         // can still say that box was destroyed.
         $this->markHistoricalBoxesDestroyed($record, $boxIdByStep);
 
+        $this->linkInSituBoxesToRasBox($boxIdByStep);
+
         // Idempotency (delete-and-rebuild): remove ONLY this document's legacy
         // moves before inserting the fresh chain. Never touches 'recorded' rows.
         BoxMovement::query()
@@ -2282,6 +2284,36 @@ class DocumentImporter extends Importer
         // rows may lack a location); the seal write itself is unrelated to it.
         $box->skipPermOutGuard = true;
         $box->save();
+    }
+
+    /**
+     * Client, 2026-10-05: an In Situ box can hold documents that came from
+     * several RAS boxes — MAV1 from Batch 28 Box 110 and Box 143. The box sheet
+     * names one parent per box; each documents row names its own, so every In
+     * Situ box of the row is linked to the row's RAS Box 1 as an additional
+     * parent ("Assembled from" on the box). Additive and idempotent: a row
+     * links, never unlinks.
+     *
+     * @param array<string, int> $boxIdByStep
+     */
+    private function linkInSituBoxesToRasBox(array $boxIdByStep): void
+    {
+        $rasId = $boxIdByStep['CURRENT'] ?? null;
+        if ($rasId === null) {
+            return;
+        }
+        $ras = Box::withoutGlobalScopes()->find($rasId, ['id', 'box_type']);
+        if ($ras === null || $ras->box_type !== 'RAS') {
+            return;
+        }
+
+        foreach (['in_situ_box_1', 'in_situ_box_2', 'in_situ_box_3'] as $step) {
+            $inSituId = $boxIdByStep[$step] ?? null;
+            if ($inSituId === null || $inSituId === $rasId) {
+                continue;
+            }
+            Box::withoutGlobalScopes()->find($inSituId)?->parents()->syncWithoutDetaching([$rasId]);
+        }
     }
 
     /**

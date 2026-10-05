@@ -567,8 +567,9 @@ class BoxResource extends Resource
                 Section::make('Additional parent boxes')
                     ->visible(fn (?Box $record): bool => (bool) $record?->parents()->exists())
                     ->schema([
-                        TextEntry::make('parents.box_number')
+                        TextEntry::make('assembled_from')
                             ->label('Assembled from')
+                            ->state(fn (?Box $record): array => $record === null ? [] : $record->parents()->with('batch')->orderBy('boxes.id')->get()->map(fn (Box $p): string => $p->label())->all())
                             ->badge()
                             ->color('gray')
                             ->placeholder('—'),
@@ -849,9 +850,13 @@ class BoxResource extends Resource
                 // internal id: "6,088" told the operator nothing.
                 $gc(Tables\Columns\TextColumn::make('parent_box_id')
                     ->label('Parent box')
-                    ->formatStateUsing(fn (Box $record): string => $record->parent === null
-                        ? '—'
-                        : trim($record->parent->box_type . ' ' . $record->parent->box_number . ($record->parent->barcode ? ' · ' . $record->parent->barcode : '')))
+                    // A box assembled from several RAS boxes has no single
+                    // parent: the list names them instead of a dash.
+                    ->getStateUsing(fn (Box $record): ?string => match (true) {
+                        $record->parent !== null => $record->parent->label(),
+                        $record->parents->isNotEmpty() => 'Assembled from ' . $record->parents->map(fn (Box $p): string => $p->label())->implode(', '),
+                        default => null,
+                    })
                     ->url(fn (Box $record): ?string => $record->parent_box_id ? static::getUrl('view', ['record' => $record->parent_box_id]) : null)
                     ->placeholder('—')
                     ->sortable()
@@ -1221,8 +1226,10 @@ class BoxResource extends Resource
         return parent::getEloquentQuery()->with([
             'customFieldValues.definition',
             'batch',
-            // The Parent box column prints the parent's type, number and barcode.
-            'parent',
+            // The Parent box column prints the parent's type, number and barcode
+            // — or, with no single parent, the boxes it was assembled from.
+            'parent.batch',
+            'parents.batch',
             // The Location column renders `location.full_path` (an accessor that
             // walks the location's ancestors); eager-load the relation so the
             // default box list doesn't fire one query per row.

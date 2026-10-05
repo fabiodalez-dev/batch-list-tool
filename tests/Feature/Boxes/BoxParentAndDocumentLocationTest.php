@@ -145,7 +145,7 @@ it('shows the parent in the box list by type, number and barcode, not its id', f
     $child = Box::withoutGlobalScope(ThroughBatchRepositoryScope::class)->create(['box_type' => 'IN_SITU', 'box_number' => '7A', 'batch_id' => $this->batch->id, 'parent_box_id' => $ras->id, 'barcode_status' => 'IN', 'is_legacy' => true]);
 
     Livewire::test(ListBoxes::class)
-        ->assertTableColumnFormattedStateSet('parent_box_id', 'RAS 7 · AA00007', $child)
+        ->assertTableColumnFormattedStateSet('parent_box_id', 'RAS 7 (batch 19) · AA00007', $child)
         ->assertDontSee('Parent Box Id');
 });
 

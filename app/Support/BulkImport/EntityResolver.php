@@ -516,6 +516,23 @@ final class EntityResolver
                 ->where('box_type', $type)
                 ->where('box_number', $number)
                 ->first();
+
+            // The same box loaded from the box sheet WITH a batch carries its
+            // repository through the batch, not its own column, and was missed:
+            // the documents import then created a second "NRA 512". Taken when
+            // exactly one such box exists in the repository.
+            if ($box === null) {
+                $inBatches = Box::query()
+                    ->withoutGlobalScopes()
+                    ->whereNull('deleted_at')
+                    ->where('box_type', $type)
+                    ->where('box_number', $number)
+                    ->whereIn('batch_id', Batch::query()->withoutGlobalScopes()->whereNull('deleted_at')->where('repository_id', $repositoryId)->select('id'))
+                    ->limit(2)
+                    ->get(['id']);
+                $box = $inBatches->count() === 1 ? $inBatches->first() : null;
+            }
+
             self::$memo[$key] = $box !== null ? ['box_id' => (int) $box->id] : null;
         }
 
@@ -556,6 +573,32 @@ final class EntityResolver
      *                                                                  must fail the row with a clear message (barcode is required to disambiguate)
      *                                                                  - null: no RAS box with this number in the repository
      */
+    /**
+     * A RAS box named by batch and box number, "28/110", within a repository.
+     * The box number alone is ambiguous as soon as two batches have a box with
+     * that number; the pair is not.
+     *
+     * @return array{box_id: int, batch_id: int}|null
+     */
+    public static function resolveRasBoxInBatch(int $batchNumber, string $boxNumber, ?int $repositoryId): ?array
+    {
+        $boxNumber = self::normaliseString($boxNumber);
+        if ($boxNumber === null || $repositoryId === null) {
+            return null;
+        }
+
+        $batch = Batch::query()->withoutGlobalScopes()->whereNull('deleted_at')
+            ->where('repository_id', $repositoryId)->where('batch_number', (string) $batchNumber)->first(['id']);
+        if ($batch === null) {
+            return null;
+        }
+
+        $box = Box::query()->withoutGlobalScopes()->whereNull('deleted_at')
+            ->where('box_type', 'RAS')->where('box_number', $boxNumber)->where('batch_id', $batch->id)->first(['id']);
+
+        return $box === null ? null : ['box_id' => (int) $box->id, 'batch_id' => (int) $batch->id];
+    }
+
     public static function resolveRasParentByBoxNumber(?string $boxNumber, ?int $repositoryId): ?array
     {
         $boxNumber = self::normaliseString($boxNumber);
