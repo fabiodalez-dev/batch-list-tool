@@ -22,6 +22,10 @@ use Filament\Actions\BulkAction;
 use Filament\Actions\BulkActionGroup;
 use Filament\Actions\DeleteBulkAction;
 use Filament\Actions\EditAction;
+use Filament\Actions\ForceDeleteAction;
+use Filament\Actions\ForceDeleteBulkAction;
+use Filament\Actions\RestoreAction;
+use Filament\Actions\RestoreBulkAction;
 use Filament\Actions\ViewAction;
 use Filament\Forms;
 use Filament\Infolists\Components\IconEntry;
@@ -41,9 +45,11 @@ use Filament\Tables\Filters\QueryBuilder\Constraints\SelectConstraint;
 use Filament\Tables\Filters\QueryBuilder\Constraints\TextConstraint;
 use Filament\Tables\Filters\SelectFilter;
 use Filament\Tables\Filters\TernaryFilter;
+use Filament\Tables\Filters\TrashedFilter;
 use Filament\Tables\Table;
 use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Database\Eloquent\Collection;
+use Illuminate\Database\Eloquent\SoftDeletingScope;
 
 class BoxResource extends Resource
 {
@@ -933,6 +939,9 @@ class BoxResource extends Resource
                         false: fn ($query) => $query->whereNull('destroyed_at'),
                         blank: fn ($query) => $query,
                     ),
+                // Deleted (archived) boxes: hidden by default, shown here to be
+                // restored or deleted for good.
+                TrashedFilter::make()->label('Archived (deleted) boxes'),
             ])
             ->actions([
                 ViewAction::make(),
@@ -957,6 +966,10 @@ class BoxResource extends Resource
                 // action. The action's own visible() callback hides it on
                 // already-destroyed rows, so we always register it here.
                 DestroyBoxAction::make(),
+                RestoreAction::make(),
+                ForceDeleteAction::make()
+                    ->modalDescription('The box is deleted for good, with its barcode, seal and location history.')
+                    ->failureNotificationTitle('Not deleted: the box still contains documents. Move or delete them first.'),
             ])
             ->bulkActions([
                 BulkActionGroup::make([
@@ -1093,6 +1106,12 @@ class BoxResource extends Resource
                             . '. Marking them PERM OUT is a permanent custody change (RFQ A1.2).')
                         ->deselectRecordsAfterCompletion(),
                     DeleteBulkAction::make(),
+                    // Delete only archives a box: an import of the same box
+                    // brings it back, history and all. From the Archived filter
+                    // a box can be restored, or deleted for good.
+                    RestoreBulkAction::make(),
+                    ForceDeleteBulkAction::make()
+                        ->modalDescription('The selected boxes are deleted for good, with their barcode, seal and location history. A box that still contains documents is kept.'),
                 ]),
             ]);
     }
@@ -1187,6 +1206,16 @@ class BoxResource extends Resource
      * Eager-load customFieldValues.definition and audits to avoid N+1 in
      * table columns (custom fields + A9 CreatorColumn).
      */
+    /**
+     * An archived box must open from the Archived filter to be restored or
+     * deleted for good, as documents already do.
+     */
+    public static function getRecordRouteBindingEloquentQuery(): Builder
+    {
+        return parent::getRecordRouteBindingEloquentQuery()
+            ->withoutGlobalScopes([SoftDeletingScope::class]);
+    }
+
     public static function getEloquentQuery(): Builder
     {
         return parent::getEloquentQuery()->with([
