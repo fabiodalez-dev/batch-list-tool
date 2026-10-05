@@ -636,6 +636,17 @@ class Box extends Model implements AuditableContract, Sortable
         // disinfestation_date is still propagated to documents WHEN present (see
         // the syncBarcodeStatusToDocuments hook below).
 
+        // "Delete permanently" (the Archived filter of the box list) takes the
+        // box and, through the foreign keys, its barcode, seal and location
+        // history. Its documents would be left pointing at no box, so a box
+        // that still holds any — archived ones included — is refused, and the
+        // action reports it as not deleted.
+        static::forceDeleting(function (self $box): bool {
+            return ! Document::withTrashed()->withoutGlobalScope(RepositoryScope::class)
+                ->where('current_box_id', $box->getKey())
+                ->exists();
+        });
+
         // A box can never contain itself. Seen on 2026-10-02: a box sheet
         // carried each box's PREVIOUS barcode in "Parent box number", which
         // resolved to the box itself, and five RAS boxes became their own
