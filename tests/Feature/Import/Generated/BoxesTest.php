@@ -227,9 +227,11 @@ test('an AMBIGUOUS parent box number (same RAS number in two batches) fails with
         'name' => 'Room', 'code' => 'AR1', 'type' => 'room', 'is_active' => true, 'repository_id' => $repo->id, 'parent_id' => null,
     ]);
 
-    // An NRA child whose parent_box_number "1" now matches TWO RAS boxes.
+    // An NRA child whose parent_box_number "1" now matches TWO RAS boxes. The
+    // row names no batch: with a batch, the parent is looked up in that batch
+    // first and is no longer ambiguous (client 2026-10-05).
     $rows = [[
-        'box_type' => 'NRA', 'box_number' => 'NRA9', 'batch_number' => '46',
+        'box_type' => 'NRA', 'box_number' => 'NRA9', 'batch_number' => '',
         'barcode' => '', 'barcode_status' => '', 'parent_box_number' => '1', 'Location' => 'AR1',
     ]];
     $columnMap = [
@@ -242,7 +244,8 @@ test('an AMBIGUOUS parent box number (same RAS number in two batches) fails with
 
     $failures = bxt_failures($import);
     expect($failures)->toHaveCount(1)
-        ->and(strtolower($failures[0]))->toContain('ambiguous');
+        ->and(strtolower($failures[0]))->toContain('ambiguous')
+        ->and($failures[0])->toContain('"28/1"'); // says how to name it: batch/box
     expect(Box::withoutGlobalScope(ThroughBatchRepositoryScope::class)->where('box_number', 'NRA9')->exists())->toBeFalse();
 });
 

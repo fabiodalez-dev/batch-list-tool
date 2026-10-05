@@ -307,6 +307,19 @@ class Box extends Model implements AuditableContract, Sortable
     }
 
     /** RFQ rule #3: IN_SITU / NRA require parent RAS box */
+    /**
+     * How a person names the box: "RAS 110 (batch 28) · AA00110". Reads the
+     * batch relation, which callers eager-load.
+     */
+    public function label(): string
+    {
+        $batch = $this->batch_id !== null ? $this->getRelationValue('batch')?->getAttribute('batch_number') : null;
+
+        return trim($this->box_type . ' ' . $this->box_number)
+            . ($batch !== null ? ' (batch ' . $batch . ')' : '')
+            . ($this->barcode ? ' · ' . $this->barcode : '');
+    }
+
     public function requiresParent(): bool
     {
         return in_array($this->box_type, ['IN_SITU', 'NRA'], true);

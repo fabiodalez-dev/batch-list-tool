@@ -444,6 +444,40 @@ class BoxImporter extends Importer
                     // column holds "1", the RAS box's number). Scoped to RAS boxes
                     // in the repository and demanding EXACTLY ONE match so a wrong
                     // parent can never be linked (RFQ A1.3 provenance).
+                    // (2a) "28/110" — batch and box number of the RAS box. The
+                    // number alone is ambiguous once two batches have it.
+                    if (preg_match('#^\s*(\d+)\s*/\s*(\S+)\s*$#', $state, $pair) === 1) {
+                        $res = EntityResolver::resolveRasBoxInBatch((int) $pair[1], $pair[2], $rowRepoId);
+                        if ($res === null) {
+                            unset(
+                                self::$rowRepositoryStash[spl_object_id($record)],
+                                self::$rowCustomFieldStash[spl_object_id($record)],
+                            );
+
+                            throw ValidationException::withMessages([
+                                'parent_barcode' => __('No RAS box :box in batch :batch.', ['box' => $pair[2], 'batch' => $pair[1]]),
+                            ]);
+                        }
+                        self::rejectSelfParent($record, $res['box_id'], $state);
+                        $record->parent_box_id = $res['box_id'];
+
+                        return;
+                    }
+
+                    // (2b) The row's own batch, when it has one: a RAS box with
+                    // that number in the same batch.
+                    if ($record->batch_id !== null) {
+                        $sameBatch = Box::query()->withoutGlobalScopes()->whereNull('deleted_at')
+                            ->where('box_type', 'RAS')->where('box_number', $state)->where('batch_id', $record->batch_id)
+                            ->value('id');
+                        if ($sameBatch !== null) {
+                            self::rejectSelfParent($record, (int) $sameBatch, $state);
+                            $record->parent_box_id = (int) $sameBatch;
+
+                            return;
+                        }
+                    }
+
                     $byNumber = EntityResolver::resolveRasParentByBoxNumber($state, $rowRepoId);
 
                     if (is_array($byNumber) && isset($byNumber['ambiguous'])) {
@@ -454,7 +488,7 @@ class BoxImporter extends Importer
 
                         throw ValidationException::withMessages([
                             'parent_barcode' => __(
-                                'More than one RAS box has number :number in this repository, so the parent is ambiguous. Reference the parent by its unique barcode instead.',
+                                'More than one RAS box has number :number in this repository, so the parent is ambiguous. Reference the parent by its barcode, or by batch and box number, e.g. "28/:number".',
                                 ['number' => $state],
                             ),
                         ]);
@@ -725,6 +759,8 @@ class BoxImporter extends Importer
             ->orderByRaw('(deleted_at is null) desc')
             ->orderBy('id');
 
+        $boxType = strtoupper(trim((string) ($this->data['box_type'] ?? '')));
+
         $batchNumber = SpreadsheetParsers::parseInt($this->data['batch_number'] ?? null);
         if ($batchNumber !== null) {
             $res = EntityResolver::resolveBatch($batchNumber, $repoId);
@@ -732,13 +768,25 @@ class BoxImporter extends Importer
                 return null; // unknown/forbidden batch → let the row insert + fail as before
             }
 
-            return $base()->where('batch_id', $res['batch_id'])->first();
+            // The type is part of the identity: "NRA 4" in batch 19 is not "RAS
+            // 4" of batch 19. Without it an NRA row matched the RAS box and
+            // turned it into an NRA box.
+            $inBatch = $base()->where('batch_id', $res['batch_id'])
+                ->when($boxType !== '', fn (Builder $q) => $q->where('box_type', $boxType))
+                ->first();
+            if ($inBatch !== null || $boxType === '' || $boxType === 'RAS' || $repoId === null) {
+                return $inBatch;
+            }
+
+            // An In Situ / NRA / MAV / STVC box is created batch-less by the
+            // documents import ("NRA512" in an In Situ column). A box row that
+            // names a batch for it is the same box, not a second one.
+            return $base()->whereNull('batch_id')->where('repository_id', $repoId)->where('box_type', $boxType)->first();
         }
 
         // Batch-less: (repository_id, box_type, box_number). box_type is already
         // upper-cased by its castStateUsing(); a row with no type or no
         // repository cannot be matched, so it inserts a new box.
-        $boxType = strtoupper(trim((string) ($this->data['box_type'] ?? '')));
         if ($repoId === null || $boxType === '') {
             return null;
         }
