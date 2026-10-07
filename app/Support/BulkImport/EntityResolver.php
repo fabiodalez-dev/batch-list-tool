@@ -14,6 +14,7 @@ use App\Models\Practice;
 use App\Models\Repository;
 use App\Models\Scopes\RepositoryScope;
 use App\Models\Series;
+use Illuminate\Support\Facades\DB;
 
 /**
  * Centralised foreign-key resolver for the v2 Bulk Import (RFQ §3.1.3).
@@ -573,6 +574,44 @@ final class EntityResolver
      *                                                                  must fail the row with a clear message (barcode is required to disambiguate)
      *                                                                  - null: no RAS box with this number in the repository
      */
+    /**
+     * A RAS box named by a barcode it carried before its current one.
+     *
+     * Legacy box sheets name an In Situ box's parent by the barcode the RAS box
+     * had when the In Situ box was put in it, and that barcode has since been
+     * replaced — it is now only in box_barcode_history. Barcodes are unique, so
+     * a past barcode still names exactly one box; anything else (no match, more
+     * than one box, not a live RAS box, another repository) is null.
+     *
+     * @return array{box_id: int, batch_id: int|null}|null
+     */
+    public static function resolveRasBoxByPastBarcode(?string $barcode, ?int $repositoryId): ?array
+    {
+        $barcode = self::normaliseString($barcode);
+        if ($barcode === null) {
+            return null;
+        }
+
+        $boxIds = DB::table('box_barcode_history')
+            ->where(fn ($q) => $q->where('previous_barcode', $barcode)->orWhere('new_barcode', $barcode))
+            ->distinct()
+            ->limit(2)
+            ->pluck('box_id');
+        if ($boxIds->count() !== 1) {
+            return null;
+        }
+
+        $box = Box::query()->withoutGlobalScopes()->whereNull('deleted_at')->where('box_type', 'RAS')->find($boxIds->first());
+        if ($box === null) {
+            return null;
+        }
+        if ($repositoryId !== null && $box->effectiveRepositoryId() !== null && (int) $box->effectiveRepositoryId() !== $repositoryId) {
+            return null;
+        }
+
+        return ['box_id' => (int) $box->id, 'batch_id' => $box->batch_id !== null ? (int) $box->batch_id : null];
+    }
+
     /**
      * A RAS box named by batch and box number, "28/110", within a repository.
      * The box number alone is ambiguous as soon as two batches have a box with

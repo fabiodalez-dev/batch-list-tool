@@ -75,6 +75,14 @@ class BoxImporter extends Importer
     protected static array $rowRepositoryStash = [];
 
     /**
+     * Parent box number cells that named no RAS box, per row, so the error says
+     * which value was not found instead of only that a parent is missing.
+     *
+     * @var array<int, string>
+     */
+    private static array $rowUnresolvedParent = [];
+
+    /**
      * @return array<ImportColumn>
      */
     public static function getColumns(): array
@@ -150,9 +158,12 @@ class BoxImporter extends Importer
         // auth()->user() is null there and a batch-less box would be stamped
         // with a null repository_id and stay invisible (CodeRabbit, PR #195).
         $user = $this->import->user;
-        $repoId = $user instanceof User && $user->default_repository_id !== null
-            ? (int) $user->default_repository_id
-            : null;
+        // The repository active in the top bar when the import started wins;
+        // then the user's default.
+        $active = $this->options['repository_id'] ?? null;
+        $repoId = $active !== null
+            ? (int) $active
+            : ($user instanceof User && $user->default_repository_id !== null ? (int) $user->default_repository_id : null);
 
         // 1) barcode — the DB-unique key. Match first (existing behaviour).
         $barcode = $this->data['barcode'] ?? null;
@@ -239,7 +250,31 @@ class BoxImporter extends Importer
         // user's repository (the queue has no active-repository context, so the
         // model's creating() hook cannot resolve it here) so it stays visible.
         if ($record->batch_id === null && $record->repository_id === null) {
-            $record->repository_id = self::$rowRepositoryStash[spl_object_id($record)] ?? null;
+            $repositoryId = self::$rowRepositoryStash[spl_object_id($record)] ?? null;
+
+            // Client 2026-10-07: importing with "All repositories" (no default
+            // repository) left 634 In Situ boxes with neither batch nor
+            // repository, hidden from every list. Take the parent RAS box's
+            // repository, else the only repository that holds any batch; and
+            // when neither says which, refuse the row instead of hiding it.
+            if ($repositoryId === null && $record->parent_box_id !== null) {
+                $repositoryId = Box::withoutGlobalScopes()->find($record->parent_box_id)?->effectiveRepositoryId();
+            }
+            if ($repositoryId === null) {
+                $withBatches = Batch::query()->withoutGlobalScopes()->whereNull('deleted_at')->distinct()->limit(2)->pluck('repository_id');
+                $repositoryId = $withBatches->count() === 1 ? (int) $withBatches->first() : null;
+            }
+            if ($repositoryId === null) {
+                unset(
+                    self::$rowRepositoryStash[spl_object_id($record)],
+                    self::$rowCustomFieldStash[spl_object_id($record)],
+                );
+
+                throw ValidationException::withMessages([
+                    'batch_number' => __('This box has no batch, so it needs a repository: choose your repository in the top bar (not "All repositories") and import again.'),
+                ]);
+            }
+            $record->repository_id = $repositoryId;
         }
 
         // RFQ App.1 #5 PERM_OUT preconditions (disinfestation_date + Location)
@@ -264,10 +299,16 @@ class BoxImporter extends Importer
             // form offers (client 2026-08-10: importing In-Situ / NRA boxes
             // that genuinely have no RAS parent). Mirrors the model saving()
             // guard, which already allows a null parent when provenance_unknown.
+            $unresolved = self::$rowUnresolvedParent[spl_object_id($record)] ?? null;
+            unset(self::$rowUnresolvedParent[spl_object_id($record)]);
+
             throw ValidationException::withMessages([
-                'parent_box_id' => __('IN_SITU and NRA boxes must reference a parent RAS box (via its barcode or an unambiguous RAS box number), or set "Provenance unknown" to Yes when there is genuinely no RAS parent.'),
+                'parent_box_id' => $unresolved !== null
+                    ? __('Parent box number ":value" matches no RAS box: it is not the current or a past barcode of a RAS box, nor a RAS box number (write "batch/box", e.g. "3/121"). Check the value, or set "Provenance unknown" to Yes if the RAS box is genuinely unknown.', ['value' => $unresolved])
+                    : __('IN_SITU and NRA boxes must reference a parent RAS box (via its barcode or an unambiguous RAS box number), or set "Provenance unknown" to Yes when there is genuinely no RAS parent.'),
             ]);
         }
+        unset(self::$rowUnresolvedParent[spl_object_id($record)]);
     }
 
     public static function getCompletedNotificationBody(Import $import): string
@@ -444,6 +485,18 @@ class BoxImporter extends Importer
                     // column holds "1", the RAS box's number). Scoped to RAS boxes
                     // in the repository and demanding EXACTLY ONE match so a wrong
                     // parent can never be linked (RFQ A1.3 provenance).
+                    // (1b) A barcode the RAS box carried BEFORE its current one:
+                    // legacy sheets name the parent by the barcode it had when the
+                    // In Situ box was put in it (client 2026-10-07: 53 rows of an
+                    // In Situ sheet failed this way).
+                    $past = EntityResolver::resolveRasBoxByPastBarcode($state, $rowRepoId);
+                    if ($past !== null) {
+                        self::rejectSelfParent($record, $past['box_id'], $state);
+                        $record->parent_box_id = $past['box_id'];
+
+                        return;
+                    }
+
                     // (2a) "28/110" — batch and box number of the RAS box. The
                     // number alone is ambiguous once two batches have it.
                     if (preg_match('#^\s*(\d+)\s*/\s*(\S+)\s*$#', $state, $pair) === 1) {
@@ -503,6 +556,8 @@ class BoxImporter extends Importer
 
                         return;
                     }
+
+                    self::$rowUnresolvedParent[spl_object_id($record)] = $state;
 
                     // Neither a known barcode nor a resolvable RAS box number —
                     // leave parent_box_id null; afterFill() rejects IN_SITU/NRA
