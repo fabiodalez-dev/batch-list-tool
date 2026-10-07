@@ -16,6 +16,7 @@ use App\Filament\Imports\SeriesImporter;
 use App\Filament\Imports\VolumeImporter;
 use App\Models\ImportProfile;
 use App\Models\User;
+use App\Support\ActiveRepository;
 use App\Support\BulkImport\SpreadsheetHeaders;
 use App\Support\BulkImport\TemplateGenerator;
 use App\Support\ColumnLabels\ColumnLabels;
@@ -708,7 +709,14 @@ class ImportWizard extends Page
                 filePath: $csvPath,
                 rows: $rows,
                 columnMap: $columnMap,
-                options: ['skip_duplicates' => ! (bool) ($state['overwrite_existing'] ?? false)],
+                options: [
+                    'skip_duplicates' => ! (bool) ($state['overwrite_existing'] ?? false),
+                    // The repository selected in the top bar when the import was
+                    // started. The import runs in a queued job with no session,
+                    // so without it a box with no batch only had the user's
+                    // default repository to go by — none, for "All repositories".
+                    'repository_id' => app(ActiveRepository::class)->id(),
+                ],
             );
         } catch (\Throwable $throwable) {
             $this->notifyDanger('Import dispatch failed: ' . $throwable->getMessage());

@@ -1001,7 +1001,7 @@ test('a SOFT-DELETED RAS box is never linked as a parent by its box number', fun
 
     // No live RAS parent → the NRA child fails the "must have a parent" rule.
     expect(bxt_failures($import))->toHaveCount(1)
-        ->and(strtolower(bxt_failures($import)[0]))->toContain('parent ras box');
+        ->and(strtolower(bxt_failures($import)[0]))->toContain('matches no ras box');
     expect(Box::withoutGlobalScope(ThroughBatchRepositoryScope::class)->where('box_number', 'CHILD')->exists())->toBeFalse();
 });
 

@@ -166,3 +166,96 @@ it('records every RAS box an In Situ box was assembled from — the MAV1 case', 
     Livewire::test(ListBoxes::class)
         ->assertTableColumnFormattedStateSet('parent_box_id', 'Assembled from RAS 110 (batch 28) · AA00110, RAS 143 (batch 28) · AA00143', $mav->first());
 });
+
+it('finds the parent by a barcode the RAS box had before its current one — the In Situ sheet of 2026-10-07', function (): void {
+    // RAS 215 of batch 28 was AC12262, then got AA20580 (box sheet loaded per barcode generation).
+    $ras = isb_ras($this->b28->id, '215', 'AC12262');
+    $ras->update(['barcode' => 'AA20580']);
+
+    isb_run(BoxImporter::class, isb_boxRow(['Box number' => '100', 'Parent box number' => 'AC12262']), $this->user->id);
+
+    expect(isb_boxes('NRA', '100')->first()?->parent_box_id)->toBe($ras->id);
+});
+
+it('names the value when Parent box number matches no RAS box', function (): void {
+    $message = '';
+
+    try {
+        isb_run(BoxImporter::class, isb_boxRow(['Box number' => '101', 'Parent box number' => 'ZZ99999']), $this->user->id);
+    } catch (ValidationException $e) {
+        $message = implode(' ', $e->validator->errors()->all());
+    }
+
+    expect($message)->toContain('"ZZ99999" matches no RAS box')
+        ->and(isb_boxes('NRA', '101'))->toHaveCount(0);
+});
+
+/**
+ * Client 2026-10-07: "I don't think this import is showing in boxes." She
+ * imports with "All repositories" (no default repository): 634 In Situ boxes
+ * got neither batch nor repository and were hidden from every list.
+ */
+function isb_runAs(User $user, array $row, array $options = []): void
+{
+    // The import runs in a queued job: nobody is signed in there.
+    auth()->logout();
+    EntityResolver::flushMemo();
+    /** @var Import $import */
+    $import = Import::query()->create([
+        'completed_at' => null, 'file_name' => 'f.xlsx', 'file_path' => '/tmp/f.xlsx',
+        'importer' => BoxImporter::class, 'processed_rows' => 0, 'total_rows' => 1,
+        'successful_rows' => 0, 'user_id' => $user->id,
+    ]);
+    (new BoxImporter($import, ImportWizard::guessColumnMap(BoxImporter::class, array_keys($row)), $options))($row);
+}
+
+function isb_allRepositoriesUser(): User
+{
+    $u = User::factory()->create(['is_active' => true, 'default_repository_id' => null]);
+    $u->assignRole('super_admin');
+
+    return $u;
+}
+
+it('gives a batch-less box its parent\'s repository when the importer has no default repository', function (): void {
+    $other = Repository::factory()->create(['code' => 'EXT']);
+    Batch::withoutGlobalScope(RepositoryScope::class)->create(['batch_number' => '900', 'repository_id' => $other->id]);
+    $ras = isb_ras($this->b3->id, '121', 'AA00121');
+
+    isb_runAs(isb_allRepositoriesUser(), isb_boxRow(['Parent box number' => 'AA00121']));
+
+    expect(isb_boxes('NRA', '512')->first()?->repository_id)->toBe($this->repo->id);
+});
+
+it('uses the repository active in the top bar when the import was started', function (): void {
+    $other = Repository::factory()->create(['code' => 'EXT']);
+    Batch::withoutGlobalScope(RepositoryScope::class)->create(['batch_number' => '900', 'repository_id' => $other->id]);
+
+    isb_runAs(isb_allRepositoriesUser(), isb_boxRow(['Provenance Unknown' => 'Yes']), ['repository_id' => $other->id]);
+
+    expect(isb_boxes('NRA', '512')->first()?->repository_id)->toBe($other->id);
+});
+
+it('falls back to the only repository holding batches', function (): void {
+    Repository::factory()->create(['code' => 'EXT']); // exists, but empty
+
+    isb_runAs(isb_allRepositoriesUser(), isb_boxRow(['Provenance Unknown' => 'Yes']));
+
+    expect(isb_boxes('NRA', '512')->first()?->repository_id)->toBe($this->repo->id);
+});
+
+it('refuses a batch-less box whose repository cannot be told, instead of hiding it', function (): void {
+    $other = Repository::factory()->create(['code' => 'EXT']);
+    Batch::withoutGlobalScope(RepositoryScope::class)->create(['batch_number' => '900', 'repository_id' => $other->id]);
+
+    $message = '';
+
+    try {
+        isb_runAs(isb_allRepositoriesUser(), isb_boxRow(['Provenance Unknown' => 'Yes']));
+    } catch (ValidationException $e) {
+        $message = implode(' ', $e->validator->errors()->all());
+    }
+
+    expect($message)->toContain('needs a repository')
+        ->and(Box::withoutGlobalScopes()->whereNull('batch_id')->whereNull('repository_id')->count())->toBe(0);
+});
