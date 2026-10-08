@@ -42,4 +42,31 @@ class BoxType extends Model implements AuditableContract
     {
         return static::active()->pluck('label', 'code')->all();
     }
+
+    /**
+     * Options for FILTERING boxes, as opposed to assigning a type: every type
+     * in the lookup (inactive and legacy included, since boxes of those types
+     * still exist and must stay findable, e.g. to delete them) plus any type a
+     * box actually carries that the lookup no longer lists, archived boxes
+     * included. Falls back to {@see Box::TYPES} before the lookup is seeded.
+     *
+     * @return array<string,string> code => label
+     */
+    public static function filterOptions(): array
+    {
+        $options = static::query()->orderBy('sort_order')->orderBy('code')->pluck('label', 'code')->all();
+
+        if ($options === []) {
+            $options = array_combine(Box::TYPES, Box::TYPES);
+        }
+
+        $inUse = Box::withTrashed()->whereNotNull('box_type')->where('box_type', '!=', '')
+            ->distinct()->orderBy('box_type')->pluck('box_type');
+
+        foreach ($inUse as $code) {
+            $options[$code] ??= $code;
+        }
+
+        return $options;
+    }
 }

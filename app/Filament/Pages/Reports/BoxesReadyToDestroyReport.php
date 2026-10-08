@@ -10,6 +10,7 @@ use App\Filament\Pages\Reports\Concerns\ExportsWhatIsOnScreen;
 use App\Filament\Pages\Reports\Concerns\HasReportTemplates;
 use App\Models\Box;
 use App\Models\Document;
+use App\Models\Lookup\BoxType;
 use App\Models\ReportTemplate;
 use App\Models\Repository;
 use App\Support\Reports\ReportRenderer;
@@ -100,7 +101,7 @@ class BoxesReadyToDestroyReport extends Page implements HasTable
             ->filters([
                 Tables\Filters\SelectFilter::make('box_type')
                     ->label('Box type')
-                    ->options(array_combine(Box::TYPES, Box::TYPES))
+                    ->options(fn (): array => BoxType::filterOptions())
                     ->multiple()
                     ->query(fn (Builder $query, array $data): Builder => empty($data['values']) ? $query : $query->whereIn('boxes.box_type', $data['values'])),
                 Tables\Filters\SelectFilter::make('repository_id')

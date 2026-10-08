@@ -911,7 +911,7 @@ class BoxResource extends Resource
                             ),
                         SelectConstraint::make('box_type')
                             ->label(ColumnLabels::get('box', 'box_type'))
-                            ->options(array_combine(Box::TYPES, Box::TYPES))
+                            ->options(fn (): array => BoxType::filterOptions())
                             ->multiple(),
                         TextConstraint::make('box_number')
                             ->label(ColumnLabels::get('box', 'box_number')),
