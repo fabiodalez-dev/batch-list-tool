@@ -9,6 +9,7 @@ use App\Filament\Pages\Reports\Concerns\CapsExportRows;
 use App\Filament\Pages\Reports\Concerns\ExportsWhatIsOnScreen;
 use App\Filament\Pages\Reports\Concerns\HasReportTemplates;
 use App\Models\Box;
+use App\Models\Lookup\BoxType;
 use App\Models\ReportTemplate;
 use App\Support\Reports\DisinfestationCapacity;
 use App\Support\Reports\DisinfestationCycle;
@@ -157,7 +158,7 @@ class DisinfestationCycleReport extends Page implements HasTable
 
                 Tables\Filters\SelectFilter::make('box_type')
                     ->label('Box type')
-                    ->options(array_combine(Box::TYPES, Box::TYPES))
+                    ->options(fn (): array => BoxType::filterOptions())
                     ->multiple()
                     ->query(function (Builder $query, array $data): Builder {
                         $values = $data['values'] ?? [];
