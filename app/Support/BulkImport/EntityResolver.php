@@ -294,15 +294,23 @@ final class EntityResolver
      * @return array{batch_id:int,batch_number:int}|array{forbidden:int}|null
      */
     public static function resolveBatch(
-        ?int $batchNumber,
+        int|string|null $batchNumber,
         ?int $repositoryId = null,
         bool $create = false,
     ): ?array {
-        if ($batchNumber === null) {
+        if (is_string($batchNumber)) {
+            $batchNumber = trim($batchNumber);
+            // A canonical whole number keeps the integer path (reserved
+            // numbers, batch type); any other text is a catch-all label.
+            if (preg_match('/^\d+$/', $batchNumber) === 1 && (string) (int) $batchNumber === $batchNumber) {
+                $batchNumber = (int) $batchNumber;
+            }
+        }
+        if ($batchNumber === null || $batchNumber === '') {
             return null;
         }
 
-        if (in_array($batchNumber, Batch::FORBIDDEN_NUMBERS, true)) {
+        if (is_int($batchNumber) && in_array($batchNumber, Batch::FORBIDDEN_NUMBERS, true)) {
             // Signalled separately from "not found" so the importer can emit
             // a specific human-readable error: "Batch N is reserved". This is
             // evaluated BEFORE the create branch, so a forbidden batch is
@@ -312,8 +320,12 @@ final class EntityResolver
 
         $key = "batch:number:{$batchNumber}:" . ($repositoryId ?? '*');
         if (! array_key_exists($key, self::$memo)) {
+            // Bound as a STRING: batch_number is a string column, and MySQL
+            // compares a string column with an integer numerically, so
+            // `batch_number = 0` matched every non-numeric batch ("NULL",
+            // "Unknown") and the first one won.
             $baseQuery = fn () => Batch::query()->withoutGlobalScope(RepositoryScope::class)
-                ->where('batch_number', $batchNumber)
+                ->where('batch_number', (string) $batchNumber)
                 ->when($repositoryId !== null, fn ($q) => $q->where('repository_id', $repositoryId));
             // Prefer a LIVE batch; only fall back to — and restore — a
             // soft-deleted one when no live batch exists. Restoring blindly could
@@ -337,14 +349,14 @@ final class EntityResolver
             // at the same new batch. repository_id is left for the
             // BelongsToRepository creating-hook to default from the acting
             // user when not supplied.
-            $attrs = ['batch_number' => $batchNumber];
+            $attrs = ['batch_number' => (string) $batchNumber];
             if ($repositoryId !== null) {
                 $attrs['repository_id'] = $repositoryId;
             }
             $batch = Batch::query()->withoutGlobalScope(RepositoryScope::class)->firstOrCreate(
                 $attrs,
                 [
-                    'type' => $batchNumber >= 30 ? 'NOTARY_ACCESSION' : 'MAIN_COLLECTION',
+                    'type' => is_int($batchNumber) && $batchNumber >= 30 ? 'NOTARY_ACCESSION' : 'MAIN_COLLECTION',
                     'is_active' => true,
                 ],
             );

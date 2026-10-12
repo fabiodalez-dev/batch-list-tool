@@ -372,17 +372,18 @@ class BoxImporter extends Importer
             ImportColumn::make('batch_number')
                 ->label('Batch number')
                 ->requiredMappingForNewRecordsOnly()
-                ->integer()
+                // Not ->integer(): that cast "Unknown" to 0 before this closure
+                // ran (see SpreadsheetParsers::parseBatchNumber()).
                 ->guess(['Batch number', 'Batch', 'batch_number'])
                 ->fillRecordUsing(function (Box $record, mixed $state): void {
-                    $n = SpreadsheetParsers::parseInt($state);
+                    $n = SpreadsheetParsers::parseBatchNumber($state);
                     if ($n === null) {
                         return;
                     }
                     // F023: FORBIDDEN_NUMBERS short-circuit fires BEFORE tenant
                     // scoping — a forbidden batch is never a valid target regardless
                     // of which repository is importing.
-                    if (in_array($n, Batch::FORBIDDEN_NUMBERS, true)) {
+                    if (in_array($n, array_map('strval', Batch::FORBIDDEN_NUMBERS), true)) {
                         // Leave batch_id null — let the NOT NULL constraint surface
                         // as a failed-row error (same as the original path).
                         return;
@@ -816,7 +817,7 @@ class BoxImporter extends Importer
 
         $boxType = strtoupper(trim((string) ($this->data['box_type'] ?? '')));
 
-        $batchNumber = SpreadsheetParsers::parseInt($this->data['batch_number'] ?? null);
+        $batchNumber = SpreadsheetParsers::parseBatchNumber($this->data['batch_number'] ?? null);
         if ($batchNumber !== null) {
             $res = EntityResolver::resolveBatch($batchNumber, $repoId);
             if ($res === null || isset($res['forbidden'])) {

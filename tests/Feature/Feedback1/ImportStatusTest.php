@@ -225,3 +225,21 @@ it('flags a long-pending import as stalled but not a fresh one', function () {
         ->and($imports[$old->id]['is_stalled'])->toBeTrue()
         ->and($imports[$done->id]['is_stalled'])->toBeFalse();
 });
+
+it('scrolls the table sideways and puts the errors download next to the failures', function () {
+    // Client 2026-10-12: "can I ask you to have a horizontal scroll bar here?
+    // I can't see the csv file" — the wrapper clipped the Download column.
+    $admin = is_makeUser('admin');
+    $this->actingAs($admin);
+
+    $import = is_makeImport($admin, ['total_rows' => 2, 'processed_rows' => 2, 'successful_rows' => 1, 'completed_at' => now()->timestamp]);
+    DB::table('failed_import_rows')->insert([
+        'import_id' => $import->id, 'data' => json_encode(['box_number' => '5']),
+        'validation_error' => 'Boom.', 'created_at' => now(), 'updated_at' => now(),
+    ]);
+
+    $html = Livewire::test(ImportStatus::class)->html();
+
+    expect($html)->toMatch('/class="overflow-x-auto[^"]*"\s+data-import-status-scroll/')
+        ->and(substr_count($html, 'Errors CSV'))->toBe(2);
+});

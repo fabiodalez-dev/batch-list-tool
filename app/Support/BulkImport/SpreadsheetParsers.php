@@ -187,6 +187,27 @@ final class SpreadsheetParsers
     }
 
     /**
+     * A batch cell as the batch_number it names. Numbers keep the old
+     * parseInt() reading ("19", 19.0, "19.0" and "19A" are batch "19"); any
+     * other text is a catch-all batch label ("Unknown", "NULL") and is kept
+     * as text. Casting it to an integer gave 0, and MySQL matches 0 against
+     * every non-numeric batch_number, so "Unknown" landed in batch "NULL".
+     */
+    public static function parseBatchNumber(mixed $value): ?string
+    {
+        if ($value === null) {
+            return null;
+        }
+        $s = trim((string) $value);
+        if ($s === '') {
+            return null;
+        }
+        $n = self::parseInt($s);
+
+        return $n !== null ? (string) $n : $s;
+    }
+
+    /**
      * Loose boolean parser — accepts the locale-mixed truthy set we see in
      * the legacy "Torre" / "Digitised" columns (1, yes, y, true, t, si, sì).
      */
