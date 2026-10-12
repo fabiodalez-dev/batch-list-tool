@@ -684,14 +684,17 @@ class AccessionRowImporter extends Importer
         // ─── Batch ────────────────────────────────────────────────────────
         $batchId = null;
         if ($batchNumber !== null) {
-            $batchNumberInt = (int) $batchNumber;
+            // The batch as written ("19", or a label such as "Unknown"); the
+            // integer only for the numeric rules (wills batch, batch type).
+            $batchLabel = (string) $batchNumber;
+            $batchNumberInt = ctype_digit($batchLabel) ? (int) $batchLabel : null;
 
-            $res = EntityResolver::resolveBatch($batchNumberInt, $repoId, create: true);
+            $res = EntityResolver::resolveBatch($batchLabel, $repoId, create: true);
             if ($res === null) {
                 throw ValidationException::withMessages([
                     'batch_number' => __(
                         'Batch :n could not be resolved or created.',
-                        ['n' => $batchNumberInt]
+                        ['n' => $batchLabel]
                     ),
                 ]);
             }
@@ -763,7 +766,7 @@ class AccessionRowImporter extends Importer
                 $batch = Batch::withoutGlobalScope(RepositoryScope::class)->find($batchId);
                 if ($batch !== null && $batch->type !== $canonicalType) {
                     // Only overwrite if it still has the auto-derived type.
-                    $derivedType = $batchNumberInt >= 30 ? 'NOTARY_ACCESSION' : 'MAIN_COLLECTION';
+                    $derivedType = $batchNumberInt !== null && $batchNumberInt >= 30 ? 'NOTARY_ACCESSION' : 'MAIN_COLLECTION';
                     if ($batch->type === $derivedType) {
                         $batch->update(['type' => $canonicalType]);
                     }
@@ -771,7 +774,7 @@ class AccessionRowImporter extends Importer
             }
 
             $record->batch_id = $batchId;
-            $record->ras_batch_1 = (string) $batchNumberInt;
+            $record->ras_batch_1 = $batchLabel;
 
             // Attach the accession to this batch via the N:N pivot (DECISION 1 / Wave B).
             if ($accessionId !== null) {
@@ -1174,10 +1177,9 @@ class AccessionRowImporter extends Importer
             ImportColumn::make('batch_number')
                 ->label('Batch Number')
                 ->requiredMappingForNewRecordsOnly()
-                ->integer()
                 ->guess(['Batch Number', 'batch_number', 'Batch No', 'Batch'])
                 ->fillRecordUsing(function (Document $record, mixed $state): void {
-                    $n = SpreadsheetParsers::parseInt($state);
+                    $n = SpreadsheetParsers::parseBatchNumber($state);
                     if ($n !== null) {
                         $key = spl_object_id($record);
                         static::$rowAccessionStash[$key]['batch_number'] = $n;

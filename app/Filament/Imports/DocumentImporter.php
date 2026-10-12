@@ -1325,10 +1325,11 @@ class DocumentImporter extends Importer
             // ── Current location (legacy POC text + new FK) ────────────
             ImportColumn::make('batch_number')
                 ->label('Batch number (current — RAS Batch 1)')
-                ->integer()
+                // Not ->integer(): that cast "Unknown" to 0, which matched the
+                // batch "NULL" (see SpreadsheetParsers::parseBatchNumber()).
                 ->guess(['RAS Batch 1', 'Batch number', 'batch_number', 'Batch'])
                 ->fillRecordUsing(function (Document $record, mixed $state): void {
-                    $n = SpreadsheetParsers::parseInt($state);
+                    $n = SpreadsheetParsers::parseBatchNumber($state);
                     if ($n === null) {
                         return;
                     }
@@ -2043,10 +2044,7 @@ class DocumentImporter extends Importer
         $batchId = null;
         $rasBatch2 = trim((string) ($record->ras_batch_2 ?? ''));
         if ($rasBatch2 !== '') {
-            if (! is_numeric($rasBatch2)) {
-                return null; // a batch is named but is not a number → cannot resolve
-            }
-            $batch = EntityResolver::resolveBatch((int) $rasBatch2, $repoId, create: true);
+            $batch = EntityResolver::resolveBatch(SpreadsheetParsers::parseBatchNumber($rasBatch2), $repoId, create: true);
             if ($batch === null || isset($batch['forbidden'])) {
                 return null; // unresolvable or reserved batch → skip this step
             }
