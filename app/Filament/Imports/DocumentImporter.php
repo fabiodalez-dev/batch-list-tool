@@ -215,6 +215,14 @@ class DocumentImporter extends Importer
     protected static array $rowPrevVolumeStash = [];
 
     /**
+     * Rows whose Custody Status cell was filled: the operator's value stands.
+     * Rows not in here get their custody from whether they ended up in a box.
+     *
+     * @var array<int, true>
+     */
+    protected static array $rowCustodyExplicitStash = [];
+
+    /**
      * Per-row stash for custom-field key→value data extracted from columns
      * whose header matches a custom-field definition label or key. Persisted
      * in {@see persistRowSideEffects()} via $record->setCustomFieldData().
@@ -698,6 +706,7 @@ class DocumentImporter extends Importer
         self::$rowBoxStatusStash = [];
         self::$rowPrevIdentifierStash = [];
         self::$rowPrevVolumeStash = [];
+        self::$rowCustodyExplicitStash = [];
         self::$rowCustomFieldStash = [];
         self::$rowSealStash = [];
         self::$rowRepositoryStash = [];
@@ -719,6 +728,23 @@ class DocumentImporter extends Importer
         $body .= '. Rows with a blank identifier received an auto-generated code — review and replace as needed.';
 
         return $body;
+    }
+
+    /**
+     * Map a Custody Status cell to its stored code: the labels shown on the
+     * document form ("Not in box"), the codes themselves ("not_in_box") and
+     * the obvious short form "Mounted". Case and spacing do not matter.
+     */
+    public static function custodyCode(string $value): ?string
+    {
+        $norm = strtolower(trim((string) preg_replace('/[\s_;,\-]+/', ' ', $value)));
+
+        return match ($norm) {
+            'in box' => 'in_box',
+            'not in box', 'no box', 'not boxed' => 'not_in_box',
+            'mounted no box', 'mounted' => 'mounted_no_box',
+            default => null,
+        };
     }
 
     /**
@@ -1548,6 +1574,28 @@ class DocumentImporter extends Importer
                 })
                 ->rules(['nullable', 'string', 'max:100']),
 
+            // Client 2026-10-12: "Those documents which are not in a box, how
+            // should I handle them?" Optional: "In box", "Not in box" or
+            // "Mounted; no box". A blank cell lets the import decide from the
+            // box columns (see syncCustodyWithBox()).
+            ImportColumn::make('custody_status')
+                ->label('Custody Status (In box / Not in box / Mounted; no box)')
+                ->guess(['Custody Status', 'custody_status', 'Custody'])
+                ->fillRecordUsing(function (Document $record, ?string $state): void {
+                    $v = trim((string) ($state ?? ''));
+                    if ($v === '') {
+                        return;
+                    }
+                    $code = self::custodyCode($v);
+                    if ($code === null) {
+                        throw ValidationException::withMessages([
+                            'custody_status' => "Custody Status '{$v}' is not one of: In box, Not in box, Mounted; no box.",
+                        ]);
+                    }
+                    $record->custody_status = $code;
+                    self::$rowCustodyExplicitStash[spl_object_id($record)] = true;
+                }),
+
             ImportColumn::make('torre')
                 ->label('Torre (legacy flag)')
                 ->guess(['Torre', 'torre'])
@@ -1732,6 +1780,13 @@ class DocumentImporter extends Importer
 
         // A single current box is a location, not a move.
         if (count($boxIds) < 2) {
+            // ...but when that one box is not RAS Box 1 (a row naming only
+            // "In Situ Box 1 = NRA512"), the document is in it: point at it.
+            // Without this the box was created and the document left in none.
+            if ($boxIds !== [] && $record->current_box_id === null) {
+                $this->pointAtBox($record, (int) $boxIds[0]);
+            }
+
             return;
         }
 
@@ -1764,12 +1819,7 @@ class DocumentImporter extends Importer
         // early and correctly keeps current_box_id on RAS Box 1 (no repoint).
         $newest = (int) end($boxIds);
         if ($newest !== (int) $record->current_box_id) {
-            // saveQuietly() below bypasses the F1 destroyed-box guard, so re-check here.
-            $newestBox = Box::withoutGlobalScopes()->withTrashed()->find($newest);
-            if ($newestBox !== null && ! $newestBox->trashed() && ! $newestBox->isDestroyed()) {
-                $record->current_box_id = $newest;
-                $record->saveQuietly();
-            }
+            $this->pointAtBox($record, $newest);
         }
     }
 
@@ -2104,6 +2154,10 @@ class DocumentImporter extends Importer
             $record->setCustomFieldData($customData, false);  // false = merge/import semantics
         }
 
+        // Runs after buildLegacyMovementChain(), which may still move the
+        // document into an In Situ box.
+        $this->syncCustodyWithBox($record);
+
         // BUG-05: clean up the repository stash for this row.
         unset(self::$rowRepositoryStash[$key]);
         // Bug #22: drain the auto-identifier stash for this row.
@@ -2125,6 +2179,29 @@ class DocumentImporter extends Importer
             $pivot[$authorityId] = ['is_primary' => $i === 0];
         }
         $record->authorities()->syncWithoutDetaching($pivot);
+    }
+
+    /**
+     * A document the sheet puts in no box is "Not in box", one it puts in a
+     * box is "In box" — unless the row's Custody Status said otherwise, or the
+     * document is "Mounted; no box" (an operator's choice the import keeps).
+     * Without this every imported document read "In box", the column default.
+     */
+    protected function syncCustodyWithBox(Document $record): void
+    {
+        $key = spl_object_id($record);
+        $explicit = isset(self::$rowCustodyExplicitStash[$key]);
+        unset(self::$rowCustodyExplicitStash[$key]);
+
+        if ($explicit || $record->custody_status === 'mounted_no_box') {
+            return;
+        }
+
+        $custody = $record->current_box_id === null ? 'not_in_box' : 'in_box';
+        if ($record->custody_status !== $custody) {
+            $record->custody_status = $custody;
+            $record->saveQuietly();
+        }
     }
 
     protected function resolveCurrentBox(Document $record): void
@@ -2284,6 +2361,20 @@ class DocumentImporter extends Importer
         // rows may lack a location); the seal write itself is unrelated to it.
         $box->skipPermOutGuard = true;
         $box->save();
+    }
+
+    /**
+     * Make the box the document's current box, unless it is archived or
+     * destroyed. saveQuietly() bypasses the F1 destroyed-box guard (and the
+     * batch realignment, see above), so the check is done here.
+     */
+    private function pointAtBox(Document $record, int $boxId): void
+    {
+        $box = Box::withoutGlobalScopes()->withTrashed()->find($boxId);
+        if ($box !== null && ! $box->trashed() && ! $box->isDestroyed()) {
+            $record->current_box_id = $boxId;
+            $record->saveQuietly();
+        }
     }
 
     /**

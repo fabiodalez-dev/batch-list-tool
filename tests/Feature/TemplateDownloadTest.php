@@ -310,8 +310,9 @@ test('Document template preserves the duplicated provenance headers verbatim', f
     expect($generated)->toEqual(TemplateGenerator::DOCUMENT_HEADERS);
 
     // Column count: was 48; Client 2026-08-31 removed 'Current Box' and
-    // 'Location' (−2) and added 'Part Number' (+1) → 47.
-    expect(count($generated))->toBe(47);
+    // 'Location' (−2) and added 'Part Number' (+1) → 47; Client 2026-10-12
+    // added 'Custody Status' (+1) → 48.
+    expect(count($generated))->toBe(48);
 
     // The five Destroyed columns are gone from the document template.
     expect($generated)->not->toContain('RAS 1 Box Destroyed', 'In Situ Box 3 Destroyed');
@@ -326,6 +327,7 @@ test('Document template preserves the duplicated provenance headers verbatim', f
         'Subseries',
         'Part Number',
         'NRA Location',
+        'Custody Status',
     );
 
     // Client 2026-08-31: the removed / renamed columns are gone from the template.
