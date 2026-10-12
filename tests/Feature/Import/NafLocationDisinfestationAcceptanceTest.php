@@ -279,8 +279,9 @@ it('B4: the generator version was bumped for the template contract change', func
     // Document Types and Notary Accessions gained added columns of their own;
     // to 1.20.0 on 2026-09-28 when the batch, box, location and volume headers
     // stopped being raw field names and became the readable name the form and
-    // the table already used.
-    expect(TemplateGenerator::GENERATOR_VERSION)->toBe('1.20.0');
+    // the table already used; to 1.21.0 on 2026-10-12 when the document
+    // template gained Custody Status.
+    expect(TemplateGenerator::GENERATOR_VERSION)->toBe('1.21.0');
 });
 
 it('B5: every generated box header still maps to a BoxImporter column (round-trip)', function () {
