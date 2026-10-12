@@ -19,8 +19,11 @@
             its progress will appear here.
         </div>
     @else
-        <div class="overflow-hidden rounded-xl border border-gray-200 dark:border-gray-700">
-            <table class="w-full text-sm">
+        {{-- Client 2026-10-12: overflow-hidden cut off the last columns
+             (Download) on a narrow screen with no way to reach them. The
+             table now scrolls sideways instead. --}}
+        <div class="overflow-x-auto rounded-xl border border-gray-200 dark:border-gray-700" data-import-status-scroll>
+            <table class="w-full min-w-max text-sm">
                 <thead class="bg-gray-50 dark:bg-gray-800 text-left text-xs font-semibold uppercase tracking-wide text-gray-500 dark:text-gray-400">
                     <tr>
                         <th class="px-4 py-3">File</th>
@@ -64,6 +67,17 @@
                                     <span class="text-red-600 dark:text-red-400 font-medium">
                                         {{ number_format($row['failed_rows']) }}
                                     </span>
+                                    {{-- The download also sits here, next to the count, so
+                                         it is in view without scrolling. --}}
+                                    @if ($row['failed_download'])
+                                        <a href="{{ $row['failed_download'] }}"
+                                           class="mt-1 flex items-center justify-end gap-1 text-xs font-medium text-primary-600 dark:text-primary-400 hover:underline"
+                                           target="_blank"
+                                           rel="noopener">
+                                            <x-heroicon-o-arrow-down-tray class="h-3.5 w-3.5" />
+                                            Errors CSV
+                                        </a>
+                                    @endif
                                     @if (!empty($row['failure_reasons']))
                                         <ul class="mt-1 text-left text-[11px] font-normal leading-snug text-gray-500 dark:text-gray-400 space-y-0.5 max-w-xs ml-auto">
                                             @foreach ($row['failure_reasons'] as $fr)
