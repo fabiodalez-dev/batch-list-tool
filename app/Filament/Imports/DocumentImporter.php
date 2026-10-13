@@ -1147,13 +1147,15 @@ class DocumentImporter extends Importer
                     }
                     $missing = [];
                     foreach ($pieces as $piece) {
+                        $res = EntityResolver::resolveAuthority($piece);
                         // "Unknown" is how the sheets say the notary is not
-                        // known (2,310 rows of the client's documents sheet): no
-                        // link, and not an error.
-                        if (strcasecmp($piece, 'Unknown') === 0) {
+                        // known (2,310 rows of the client's documents sheet).
+                        // It links to an authority called "Unknown" when there
+                        // is one (the client made one, 2026-10-13); otherwise
+                        // it is no link, and not an error.
+                        if ($res === null && strcasecmp($piece, 'Unknown') === 0) {
                             continue;
                         }
-                        $res = EntityResolver::resolveAuthority($piece);
                         if ($res === null) {
                             // Client 2026-10-12: a code that names no authority
                             // used to be skipped in silence, so the row read as
@@ -1183,7 +1185,7 @@ class DocumentImporter extends Importer
                             'authority_identifier' => (count($missing) === 1
                                 ? "Authority Identifier '{$missing[0]}' matches no authority"
                                 : "Authority Identifiers '" . implode("', '", $missing) . "' match no authority")
-                                . ' (by R-code or alternate key). Add it on the Authorities page first, or correct the cell.',
+                                . ' (by NAM, citing or alternate reference code). Add it on the Authorities page first, or correct the cell.',
                         ]);
                     }
                 }),
