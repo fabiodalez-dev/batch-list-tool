@@ -123,6 +123,36 @@ final class EntityResolver
             }
         }
 
+        // Strategy 1c — the Authority's "Alternate Reference Code"
+        // (`alternative_identifier_warrant`, e.g. "1090" for R622). Client
+        // 2026-10-13: ten rows of her documents sheet name the notary by it,
+        // and it was never looked at, so they matched nothing. Same guard as
+        // 1b: one hit is final, several are ambiguous. Checked after 1 and 1b,
+        // so an R-code is never shadowed by a warrant number.
+        if ($identifier !== null) {
+            $key = "authority:alt_warrant:{$identifier}";
+            if (! array_key_exists($key, self::$memo)) {
+                $rows = Authority::query()
+                    ->where('alternative_identifier_warrant', $identifier)
+                    ->limit(20)
+                    ->pluck('id')
+                    ->all();
+                if (count($rows) === 1) {
+                    self::$memo[$key] = ['authority_id' => (int) $rows[0], 'method' => 'alternative_identifier_warrant'];
+                } elseif (count($rows) > 1) {
+                    self::$memo[$key] = [
+                        'ambiguous_count' => count($rows),
+                        'candidates' => array_map(intval(...), $rows),
+                    ];
+                } else {
+                    self::$memo[$key] = null;
+                }
+            }
+            if (self::$memo[$key] !== null) {
+                return self::$memo[$key];
+            }
+        }
+
         // The "Creator" column in Batch_List_Sample is free-text catalogator,
         // sometimes "Name Surname", sometimes "Surname, Name", sometimes just
         // "Surname". We split on whitespace and try the last word first

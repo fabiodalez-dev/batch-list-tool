@@ -86,3 +86,21 @@ it('treats "Unknown" as no notary, not as a missing code', function (): void {
     expect(uai_doc('UAI-5')->authorities()->count())->toBe(0)
         ->and(uai_doc('UAI-6')->authorities()->pluck('authorities.id')->all())->toBe([$this->authority->id]);
 });
+
+it('finds the authority by its Alternate Reference Code', function (): void {
+    // Client 2026-10-13: "1090" is the Alternate Reference Code of R622.
+    $r622 = Authority::create(['alternative_identifier' => 'R622', 'alternative_identifier_warrant' => '1090', 'surname' => 'Trionfi', 'entity_type' => 'PERSON']);
+
+    uai_import(['Document Identifier' => 'UAI-7', 'Subseries' => 'REG', 'Authority Identifier' => '1090'], $this->user->id);
+
+    expect(uai_doc('UAI-7')->authorities()->pluck('authorities.id')->all())->toBe([$r622->id]);
+});
+
+it('links "Unknown" to the authority called Unknown when there is one', function (): void {
+    // Client 2026-10-13: "For Unknown I created an Unknown Authority".
+    $unknown = Authority::create(['alternative_identifier' => 'Unknown', 'surname' => 'Unknown', 'entity_type' => 'PERSON']);
+
+    uai_import(['Document Identifier' => 'UAI-8', 'Subseries' => 'REG', 'Authority Identifier' => 'Unknown'], $this->user->id);
+
+    expect(uai_doc('UAI-8')->authorities()->pluck('authorities.id')->all())->toBe([$unknown->id]);
+});
