@@ -787,11 +787,14 @@ class Document extends Model implements AuditableContract, HasMedia, Sortable
             }
 
             if ($document->current_box_type !== null) {
-                $normalized = self::canonicalEnumValue($document->current_box_type, self::CURRENT_BOX_TYPES);
+                // The Physical Box Type page is the list (client 2026-10-13),
+                // not the three types the archive started with.
+                $allowedBoxTypes = CurrentBoxType::codes();
+                $normalized = self::canonicalEnumValue($document->current_box_type, $allowedBoxTypes);
                 if ($normalized === null) {
                     throw new \DomainException(
                         "Invalid current_box_type '{$document->current_box_type}'. Allowed: "
-                        . implode(', ', self::CURRENT_BOX_TYPES)
+                        . implode(', ', $allowedBoxTypes)
                     );
                 }
                 $document->current_box_type = $normalized;

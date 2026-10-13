@@ -16,6 +16,7 @@ use App\Models\BoxMovement;
 use App\Models\CustomFieldDefinition;
 use App\Models\Document;
 use App\Models\DocumentIdentifierHistory;
+use App\Models\Lookup\CurrentBoxType;
 use App\Models\Repository;
 use App\Models\Scopes\RepositoryScope;
 use App\Support\BulkImport\EntityResolver;
@@ -2526,10 +2527,17 @@ class DocumentImporter extends Importer
      */
     private static function normaliseCurrentBoxType(?string $state): ?string
     {
-        $v = strtolower(trim((string) ($state ?? '')));
-        if ($v === '') {
+        $raw = trim((string) ($state ?? ''));
+        if ($raw === '') {
             return null;
         }
+        // A type on the Physical Box Type page, as written ("Conservation
+        // Box"), before the legacy shorthand below ("RAS", "big").
+        $exact = Document::canonicalEnumValue($raw, CurrentBoxType::codes());
+        if ($exact !== null) {
+            return $exact;
+        }
+        $v = strtolower($raw);
 
         return match (true) {
             str_contains($v, 'ras') => 'RAS Box',
