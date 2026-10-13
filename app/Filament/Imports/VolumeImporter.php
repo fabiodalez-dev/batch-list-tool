@@ -108,7 +108,7 @@ class VolumeImporter extends Importer
             : null;
 
         if ($identifier !== null && $identifier !== '' && $volumeNumber !== null && $volumeNumber !== '') {
-            $repoId = CustomFieldResolver::activeRepositoryId();
+            $repoId = $this->options['repository_id'] ?? CustomFieldResolver::activeRepositoryId();
 
             // SECURITY (schema audit): with no active or default repository we
             // must NOT match the parent Document by identifier across EVERY
@@ -241,13 +241,15 @@ class VolumeImporter extends Importer
                 ->requiredMapping()
                 ->guess(['document_identifier', 'Document identifier', 'Document ID', 'Identifier'])
                 ->rules(['required', 'string', 'max:64'])
-                ->fillRecordUsing(static function (Volume $record, ?string $state): void {
+                ->fillRecordUsing(static function (Volume $record, ?string $state, array $options): void {
                     if ($state === null || trim($state) === '') {
                         // Will be caught in afterFill.
                         return;
                     }
                     $identifier = trim($state);
-                    $repoId = CustomFieldResolver::activeRepositoryId();
+                    // The top-bar repository passed by the wizard (the queued
+                    // job has no session), then the active/default one.
+                    $repoId = $options['repository_id'] ?? CustomFieldResolver::activeRepositoryId();
 
                     // SECURITY (schema audit): a null repository must never fall
                     // back to matching the parent Document across all tenants —
