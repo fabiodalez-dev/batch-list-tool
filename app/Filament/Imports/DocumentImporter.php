@@ -498,6 +498,12 @@ class DocumentImporter extends Importer
             }
         }
 
+        // Legacy disinfestation #1 is the sheet's first "Disinfestation Date"
+        // column, next to #2 and #3 (see the disinfestation_date_2 column).
+        if ($record->disinfestation_date_1 === null && $record->disinfestation_date !== null) {
+            $record->disinfestation_date_1 = $record->disinfestation_date;
+        }
+
         // Year range derived from free-text "Dates" column.
         if (! empty($record->dates) && $record->dates_year_start === null) {
             [$y0, $y1] = SpreadsheetParsers::parseYearRange((string) $record->dates);
@@ -1295,6 +1301,23 @@ class DocumentImporter extends Importer
             ImportColumn::make('disinfestation_date')
                 ->label('Disinfestation Date')
                 ->guess(['Disinfestation Date', 'disinfestation_date'])
+                ->castStateUsing(fn (mixed $state) => SpreadsheetParsers::parseDate($state))
+                ->rules(['nullable', 'date']),
+
+            // The template carries three "Disinfestation Date" columns; the
+            // reader names the repeats "(2)" and "(3)". Only the first was read,
+            // so the other two were dropped (client sheet 2026-10-13: 23 and 249
+            // dates). They are the document's legacy disinfestation #2 and #3;
+            // #1 mirrors the first column (afterFill()).
+            ImportColumn::make('disinfestation_date_2')
+                ->label('Disinfestation Date (2nd column)')
+                ->guess(['Disinfestation Date (2)', 'disinfestation_date_2'])
+                ->castStateUsing(fn (mixed $state) => SpreadsheetParsers::parseDate($state))
+                ->rules(['nullable', 'date']),
+
+            ImportColumn::make('disinfestation_date_3')
+                ->label('Disinfestation Date (3rd column)')
+                ->guess(['Disinfestation Date (3)', 'disinfestation_date_3'])
                 ->castStateUsing(fn (mixed $state) => SpreadsheetParsers::parseDate($state))
                 ->rules(['nullable', 'date']),
 

@@ -73,3 +73,18 @@ it('still refuses the row when neither says which repository', function (): void
     expect(fn () => itr_import(['Document Identifier' => 'ITR-3', 'Subseries' => 'REG'], $this->user->id, []))
         ->toThrow(ValidationException::class, 'Select a repository before importing documents');
 });
+
+it('keeps the dates of all three Disinfestation Date columns', function (): void {
+    // Client sheet 2026-10-13: the 2nd and 3rd columns (23 and 249 dates)
+    // were dropped. Headers as the reader names the repeats.
+    itr_import([
+        'Document Identifier' => 'ITR-4', 'Subseries' => 'REG',
+        'Disinfestation Date' => '05/08/2023', 'Disinfestation Date (2)' => '24/10/2024', 'Disinfestation Date (3)' => '27/07/2026',
+    ], $this->user->id, ['repository_id' => $this->repo->id]);
+
+    $doc = Document::withoutGlobalScope(RepositoryScope::class)->where('identifier', 'ITR-4')->firstOrFail();
+    expect($doc->disinfestation_date?->format('Y-m-d'))->toBe('2023-08-05')
+        ->and($doc->disinfestation_date_1?->format('Y-m-d'))->toBe('2023-08-05')
+        ->and($doc->disinfestation_date_2?->format('Y-m-d'))->toBe('2024-10-24')
+        ->and($doc->disinfestation_date_3?->format('Y-m-d'))->toBe('2026-07-27');
+});
