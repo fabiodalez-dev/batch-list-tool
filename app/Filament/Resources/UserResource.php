@@ -126,7 +126,12 @@ class UserResource extends Resource
                             ->label('Default repository')
                             ->relationship('defaultRepository', 'name')
                             ->searchable()
-                            ->preload(),
+                            ->preload()
+                            // Required for a new user (2026-10-13): a user with no
+                            // default repository is on "All repositories", and an
+                            // import started from there had every row refused.
+                            ->required(fn (string $operation): bool => $operation === 'create')
+                            ->helperText('The repository the user works in when signing in, and the one imports use unless another is selected in the top bar.'),
                         Forms\Components\Toggle::make('is_active')
                             ->default(true)
                             // Self-protection: cannot deactivate own account (prevents lock-out).

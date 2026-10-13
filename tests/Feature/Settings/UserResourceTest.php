@@ -148,3 +148,25 @@ it('exposes all role labels via roleOptions when acting as super_admin', functio
         'viewer' => 'General',
     ]);
 });
+
+it('requires a default repository for a new user', function () {
+    // 2026-10-13: a user created without one is on "All repositories", and an
+    // import started from there had every row refused.
+    $this->actingAs(actAsSuperAdmin_userres());
+    $repo = Repository::factory()->create();
+
+    Livewire\Livewire::test(CreateUser::class)
+        ->fillForm([
+            'name' => 'No Default',
+            'email' => 'nodefault@nra.test',
+            'password' => 'TempPass!234',
+            'password_confirmation' => 'TempPass!234',
+            'role' => 'editor',
+            'repositories' => [$repo->id],
+            'is_active' => true,
+        ])
+        ->call('create')
+        ->assertHasFormErrors(['default_repository_id' => 'required']);
+
+    expect(User::where('email', 'nodefault@nra.test')->exists())->toBeFalse();
+});

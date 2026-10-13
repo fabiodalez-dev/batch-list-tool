@@ -19,6 +19,7 @@ use App\Models\DocumentIdentifierHistory;
 use App\Models\Lookup\CurrentBoxType;
 use App\Models\Repository;
 use App\Models\Scopes\RepositoryScope;
+use App\Models\User;
 use App\Support\BulkImport\EntityResolver;
 use App\Support\BulkImport\SpreadsheetHeaders;
 use App\Support\BulkImport\SpreadsheetParsers;
@@ -357,8 +358,19 @@ class DocumentImporter extends Importer
 
         $identifier = $this->data['identifier'] ?? null;
 
-        $user = auth()->user();
-        $repoId = $user?->default_repository_id;
+        // The repository selected in the top bar when the import was started
+        // (the wizard passes it: the queued job has no session), then the
+        // user's default. Client 2026-10-13: with only the default, a user on
+        // "All repositories" by default had every row refused even with
+        // "Notarial Registers Archive" selected at the top.
+        // From the Import record, not auth(): the queued job has no session,
+        // so auth()->user() is null there (see BoxImporter::resolveRecord()).
+        $user = $this->import->user;
+        if (! $user instanceof User) {
+            $authUser = auth()->user();
+            $user = $authUser instanceof User ? $authUser : null;
+        }
+        $repoId = $this->options['repository_id'] ?? $user?->default_repository_id;
 
         // SECURITY (schema audit — High): with no determinable repository — the
         // profile of a privileged user (super_admin/admin) who has no
@@ -416,6 +428,12 @@ class DocumentImporter extends Importer
             ->where('repository_id', $repoId); // guaranteed non-null past the guard above
 
         $record = $q->first() ?? new Document;
+        // A new document gets the row's repository here: the model's creating
+        // hook takes it from the signed-in user, and the queued job has none,
+        // so it was left null (the same trap BoxImporter hit, PR #195).
+        if (! $record->exists) {
+            $record->repository_id = (int) $repoId;
+        }
         // BUG-05: stash repo id so the static batch_number closure can use it.
         self::$rowRepositoryStash[spl_object_id($record)] = (int) $repoId; // non-null past the guard above
         // Bug #22 — remember the computed auto id so afterFill() stamps the exact
@@ -478,6 +496,12 @@ class DocumentImporter extends Importer
                     "Temporary Identifier '{$tempId}' is already used by another document (it must be unique)."
                 );
             }
+        }
+
+        // Legacy disinfestation #1 is the sheet's first "Disinfestation Date"
+        // column, next to #2 and #3 (see the disinfestation_date_2 column).
+        if ($record->disinfestation_date_1 === null && $record->disinfestation_date !== null) {
+            $record->disinfestation_date_1 = $record->disinfestation_date;
         }
 
         // Year range derived from free-text "Dates" column.
@@ -1277,6 +1301,23 @@ class DocumentImporter extends Importer
             ImportColumn::make('disinfestation_date')
                 ->label('Disinfestation Date')
                 ->guess(['Disinfestation Date', 'disinfestation_date'])
+                ->castStateUsing(fn (mixed $state) => SpreadsheetParsers::parseDate($state))
+                ->rules(['nullable', 'date']),
+
+            // The template carries three "Disinfestation Date" columns; the
+            // reader names the repeats "(2)" and "(3)". Only the first was read,
+            // so the other two were dropped (client sheet 2026-10-13: 23 and 249
+            // dates). They are the document's legacy disinfestation #2 and #3;
+            // #1 mirrors the first column (afterFill()).
+            ImportColumn::make('disinfestation_date_2')
+                ->label('Disinfestation Date (2nd column)')
+                ->guess(['Disinfestation Date (2)', 'disinfestation_date_2'])
+                ->castStateUsing(fn (mixed $state) => SpreadsheetParsers::parseDate($state))
+                ->rules(['nullable', 'date']),
+
+            ImportColumn::make('disinfestation_date_3')
+                ->label('Disinfestation Date (3rd column)')
+                ->guess(['Disinfestation Date (3)', 'disinfestation_date_3'])
                 ->castStateUsing(fn (mixed $state) => SpreadsheetParsers::parseDate($state))
                 ->rules(['nullable', 'date']),
 

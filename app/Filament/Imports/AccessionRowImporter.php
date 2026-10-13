@@ -19,6 +19,7 @@ use App\Models\Lookup\CurrentBoxType;
 use App\Models\Scopes\RepositoryScope;
 use App\Models\Scopes\ThroughBatchRepositoryScope;
 use App\Models\Series;
+use App\Models\User;
 use App\Support\BulkImport\EntityResolver;
 use App\Support\BulkImport\SpreadsheetParsers;
 use App\Support\BulkImport\TemplateGenerator;
@@ -457,7 +458,14 @@ class AccessionRowImporter extends Importer
             }
         } else {
             $this->rowHasRepositoryColumn = false;
-            $this->rowResolvedRepositoryId = auth()->user()?->default_repository_id;
+            // The repository selected in the top bar (passed by the wizard),
+            // then the user's default (see DocumentImporter::resolveRecord()).
+            $user = $this->import->user;
+            if (! $user instanceof User) {
+                $authUser = auth()->user();
+                $user = $authUser instanceof User ? $authUser : null;
+            }
+            $this->rowResolvedRepositoryId = $this->options['repository_id'] ?? $user?->default_repository_id;
         }
 
         return $this->rowResolvedRepositoryId;

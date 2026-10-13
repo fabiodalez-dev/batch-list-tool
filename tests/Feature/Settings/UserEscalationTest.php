@@ -5,6 +5,7 @@ declare(strict_types=1);
 use App\Filament\Resources\UserResource;
 use App\Filament\Resources\UserResource\Pages\CreateUser;
 use App\Filament\Resources\UserResource\Pages\EditUser;
+use App\Models\Repository;
 use App\Models\User;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Spatie\Permission\Models\Role;
@@ -98,6 +99,7 @@ it('prevents admin from creating a user with role super_admin via CreateUser', f
 it('allows super_admin to create a user with role super_admin', function () {
     $sa = makeSuperAdmin_esc();
     $this->actingAs($sa);
+    $repo = Repository::factory()->create();
 
     Livewire\Livewire::test(CreateUser::class)
         ->fillForm([
@@ -106,6 +108,7 @@ it('allows super_admin to create a user with role super_admin', function () {
             'password' => 'TempPass!234',
             'password_confirmation' => 'TempPass!234',
             'role' => 'super_admin',
+            'default_repository_id' => $repo->id,
             'is_active' => true,
         ])
         ->call('create')
