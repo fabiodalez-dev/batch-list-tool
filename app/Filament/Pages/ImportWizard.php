@@ -14,11 +14,13 @@ use App\Filament\Imports\DocumentTypeImporter;
 use App\Filament\Imports\LocationImporter;
 use App\Filament\Imports\SeriesImporter;
 use App\Filament\Imports\VolumeImporter;
+use App\Jobs\ImportCsvSlice;
 use App\Models\ImportProfile;
 use App\Models\User;
 use App\Support\ActiveRepository;
 use App\Support\BulkImport\SpreadsheetHeaders;
 use App\Support\BulkImport\TemplateGenerator;
+use App\Support\BulkImport\XlsxStream;
 use App\Support\ColumnLabels\ColumnLabels;
 use App\Support\Reports\ReportRenderer;
 use Filament\Actions\Action as FilamentAction;
@@ -49,13 +51,13 @@ use Filament\Support\Exceptions\Halt;
 use Illuminate\Bus\PendingBatch;
 use Illuminate\Contracts\Validation\ValidationRule;
 use Illuminate\Support\Facades\Bus;
+use Illuminate\Support\Facades\Cache;
 use Illuminate\Support\Facades\Log;
 use Illuminate\Support\Facades\Storage;
 use Illuminate\Support\Facades\URL as UrlFacade;
 use Illuminate\Support\Facades\Validator;
 use Illuminate\Support\HtmlString;
 use Illuminate\Support\Number;
-use League\Csv\Reader;
 use Livewire\Attributes\Locked;
 use Livewire\Attributes\Url;
 use Livewire\Features\SupportFileUploads\TemporaryUploadedFile;
@@ -657,8 +659,19 @@ class ImportWizard extends Page
             return;
         }
 
+        /** @var class-string<Importer> $importerClass */
+        $importerClass = self::IMPORTERS[$type];
+
+        // Rows are read from the CSV a chunk at a time by the queued jobs
+        // (dispatchImportBatchFromCsv()); only Series, whose rows are reordered
+        // parents-first across the whole sheet, are read here in full. Their
+        // sheets are small.
+        $wholeSheet = $importerClass === SeriesImporter::class;
+
         try {
-            [$headers, $rows] = $this->readCsvForImport($csvPath);
+            $headers = self::csvHeaderKeys($csvPath);
+            $rows = $wholeSheet ? iterator_to_array(self::csvRows($csvPath, $headers), false) : [];
+            $hasRows = $wholeSheet ? $rows !== [] : self::csvRows($csvPath, $headers)->valid();
         } catch (\Throwable $throwable) {
             $this->notifyDanger('Could not parse the file rows: ' . $throwable->getMessage());
 
@@ -668,16 +681,13 @@ class ImportWizard extends Page
         // Guard against a header-only / fully-empty file. Dispatching with
         // zero rows wastes a queue batch and makes the finally() severity
         // chain mislabel the result (0 failed === 0 total → danger branch).
-        if ($rows === []) {
+        if (! $hasRows) {
             $this->notifyDanger(
                 'The file contains no data rows — check that it has at least one row beyond the header.'
             );
 
             return;
         }
-
-        /** @var class-string<Importer> $importerClass */
-        $importerClass = self::IMPORTERS[$type];
 
         // Prefer the operator's edited column_map from form state; fall
         // back to a fresh auto-guess if nothing was set (e.g. file was
@@ -702,22 +712,35 @@ class ImportWizard extends Page
         // dropping data. Does not block the import (extra columns are allowed).
         self::logUnrecognisedHeaders($importerClass, $headers, $columnMap, 'wizard');
 
+        $options = [
+            'skip_duplicates' => ! (bool) ($state['overwrite_existing'] ?? false),
+            // The repository selected in the top bar when the import was
+            // started. The import runs in a queued job with no session,
+            // so without it a box with no batch only had the user's
+            // default repository to go by — none, for "All repositories".
+            'repository_id' => app(ActiveRepository::class)->id(),
+        ];
+
         try {
-            $importId = $this->dispatchImportBatch(
-                importerClass: $importerClass,
-                fileName: $file->getClientOriginalName(),
-                filePath: $csvPath,
-                rows: $rows,
-                columnMap: $columnMap,
-                options: [
-                    'skip_duplicates' => ! (bool) ($state['overwrite_existing'] ?? false),
-                    // The repository selected in the top bar when the import was
-                    // started. The import runs in a queued job with no session,
-                    // so without it a box with no batch only had the user's
-                    // default repository to go by — none, for "All repositories".
-                    'repository_id' => app(ActiveRepository::class)->id(),
-                ],
-            );
+            if ($wholeSheet) {
+                $importId = $this->dispatchImportBatch(
+                    importerClass: $importerClass,
+                    fileName: $file->getClientOriginalName(),
+                    filePath: $csvPath,
+                    rows: $rows,
+                    columnMap: $columnMap,
+                    options: $options,
+                );
+                $rowCount = count($rows);
+            } else {
+                [$importId, $rowCount] = $this->dispatchImportBatchFromCsv(
+                    importerClass: $importerClass,
+                    fileName: $file->getClientOriginalName(),
+                    csvPath: $csvPath,
+                    columnMap: $columnMap,
+                    options: $options,
+                );
+            }
         } catch (\Throwable $throwable) {
             $this->notifyDanger('Import dispatch failed: ' . $throwable->getMessage());
 
@@ -732,7 +755,7 @@ class ImportWizard extends Page
 
         Notification::make()
             ->title('Import started')
-            ->body(sprintf('Queued %d rows of %s. Watch the notifications tray for progress.', count($rows), $type))
+            ->body(sprintf('Queued %d rows of %s. Watch the notifications tray for progress.', $rowCount, $type))
             ->success()
             ->send();
 
@@ -1125,7 +1148,7 @@ class ImportWizard extends Page
 
         try {
             $csvPath = $this->materialiseCsv($file, (int) ($state['sheet'] ?? 0));
-            [, $rows] = $this->readCsvForImport($csvPath);
+            $headers = self::csvHeaderKeys($csvPath);
         } catch (\Throwable $throwable) {
             $this->notifyDanger('Could not read the file: ' . $throwable->getMessage());
 
@@ -1137,10 +1160,12 @@ class ImportWizard extends Page
 
         $columnMap = $state['column_map'] ?? null;
         if (! is_array($columnMap) || $columnMap === []) {
-            $columnMap = self::guessColumnMap($importerClass, array_keys($rows[0] ?? []));
+            $columnMap = self::guessColumnMap($importerClass, $headers);
         }
         /** @var array<string, string|null> $columnMap */
-        $this->preflightResult = self::validateRows($importerClass, $rows, $columnMap);
+        // Rows streamed from the CSV: a big sheet held in memory in full is what
+        // made the wizard fail (client 2026-10-12).
+        $this->preflightResult = self::validateRows($importerClass, self::csvRows($csvPath, $headers), $columnMap);
 
         $r = $this->preflightResult;
 
@@ -1170,11 +1195,11 @@ class ImportWizard extends Page
      * Pure + static so it is trivially unit-testable without a Livewire mount.
      *
      * @param class-string<Importer> $importerClass
-     * @param array<int, array<string, string>> $rows CSV rows keyed by Excel header
+     * @param iterable<int, array<string, string>> $rows CSV rows keyed by Excel header (a generator for big sheets)
      * @param array<string, string|null> $columnMap importerField → Excel header
      * @return array{total:int, valid:int, invalid:int, errors:list<array{row:int, field:string, message:string}>, truncated:bool}
      */
-    public static function validateRows(string $importerClass, array $rows, array $columnMap): array
+    public static function validateRows(string $importerClass, iterable $rows, array $columnMap): array
     {
         // Collect the scalar / Rule-object data rules per importer field,
         // dropping Closure rules (relationship-existence checks) that need a
@@ -1210,12 +1235,13 @@ class ImportWizard extends Page
             }
         }
 
-        $total = count($rows);
+        $total = 0;
         $invalid = 0;
         $errors = [];
         $truncated = false;
 
         foreach ($rows as $index => $row) {
+            $total++;
             $mapped = [];
             foreach ($row as $header => $value) {
                 $field = $headerToField[(string) $header] ?? null;
@@ -1273,6 +1299,94 @@ class ImportWizard extends Page
             'errors' => $errors,
             'truncated' => $truncated,
         ];
+    }
+
+    /**
+     * The header row, de-duplicated (see readCsvForImport()).
+     *
+     * @return array<int, string>
+     */
+    public static function csvHeaderKeys(string $csvAbsPath): array
+    {
+        $h = self::openCsv($csvAbsPath);
+
+        try {
+            $first = self::nextCsvRecord($h) ?? [];
+        } finally {
+            fclose($h);
+        }
+
+        $rawHeaders = array_map(static fn ($v): string => (string) ($v ?? ''), $first);
+
+        return array_map(static fn ($k): string => (string) $k, SpreadsheetHeaders::dedupe($rawHeaders));
+    }
+
+    /**
+     * The data rows one at a time, keyed by $headers. With $byteOffset the
+     * read starts there (a chunk start from csvChunks()) instead of after the
+     * header row.
+     *
+     * @param array<int, string> $headers
+     * @return \Generator<int, array<string, string>>
+     */
+    public static function csvRows(string $csvAbsPath, array $headers, ?int $byteOffset = null): \Generator
+    {
+        $h = self::openCsv($csvAbsPath);
+
+        try {
+            if ($byteOffset !== null) {
+                fseek($h, $byteOffset);
+            } else {
+                self::nextCsvRecord($h); // header
+            }
+            while (($record = self::nextCsvRecord($h)) !== null) {
+                $row = [];
+                foreach ($headers as $i => $key) {
+                    // Undo the formula guard our own exports add, so an exported
+                    // sheet re-imports with its values unchanged.
+                    $row[$key] = ReportRenderer::restoreCsvCell((string) ($record[$i] ?? ''));
+                }
+                yield $row;
+            }
+        } finally {
+            fclose($h);
+        }
+    }
+
+    /**
+     * Count the data rows and note where every chunk of $size rows starts,
+     * without keeping any row in memory.
+     *
+     * @return array{0:int, 1:list<array{offset:int, first:int, length:int}>}
+     */
+    public static function csvChunks(string $csvAbsPath, int $size): array
+    {
+        $h = self::openCsv($csvAbsPath);
+        $chunks = [];
+        $count = 0;
+
+        try {
+            self::nextCsvRecord($h); // header
+            while (true) {
+                $offset = (int) ftell($h);
+                if (self::nextCsvRecord($h) === null) {
+                    break;
+                }
+                if ($count % $size === 0) {
+                    $chunks[] = ['offset' => $offset, 'first' => $count, 'length' => $size];
+                }
+                $count++;
+            }
+        } finally {
+            fclose($h);
+        }
+
+        if ($chunks !== []) {
+            $last = array_key_last($chunks);
+            $chunks[$last]['length'] = $count - $chunks[$last]['first'];
+        }
+
+        return [$count, $chunks];
     }
 
     /**
@@ -2066,45 +2180,71 @@ class ImportWizard extends Page
             return null;
         }
 
+        // Client 2026-10-12: loading the whole workbook for a 10-row preview
+        // took 648 MB on a 26,867-row sheet and killed the upload ("Error
+        // while loading page"). An .xlsx is now read as a stream; the result
+        // is cached per file and sheet because Livewire asks for it on every
+        // round trip, and counting the rows of a big sheet takes seconds.
+        $key = 'import-preview:' . md5($path . '|' . (int) @filesize($path) . '|' . (int) @filemtime($path) . '|' . $sheet);
+
         try {
-            $reader = IOFactory::createReaderForFile($path);
-            $reader->setReadDataOnly(true);
-            $spreadsheet = $reader->load($path);
-            $worksheet = $spreadsheet->getSheet($sheet);
-            $highestRow = $worksheet->getHighestDataRow();
-            $highestColumn = $worksheet->getHighestDataColumn();
-
-            $headers = [];
-            foreach ($worksheet->getRowIterator(1, 1) as $row) {
-                $iter = $row->getCellIterator('A', $highestColumn);
-                $iter->setIterateOnlyExistingCells(false);
-                foreach ($iter as $cell) {
-                    $headers[] = (string) ($cell->getValue() ?? '');
+            return Cache::remember($key, now()->addHour(), static function () use ($file, $path, $sheet): array {
+                $ext = strtolower((string) $file->getClientOriginalExtension());
+                if ($ext === 'xlsx') {
+                    return XlsxStream::preview($path, $sheet);
                 }
-            }
 
-            $rows = [];
-            $maxPreview = 10;
-            for ($r = 2; $r <= $highestRow && count($rows) < $maxPreview; $r++) {
-                $dataRow = [];
-                foreach ($worksheet->getRowIterator($r, $r) as $row) {
-                    $iter = $row->getCellIterator('A', $highestColumn);
-                    $iter->setIterateOnlyExistingCells(false);
-                    foreach ($iter as $cell) {
-                        $dataRow[] = $cell->getValue();
-                    }
-                }
-                $rows[] = $dataRow;
-            }
-
-            return [
-                'headers' => $headers,
-                'rows' => $rows,
-                'totalRows' => max(0, $highestRow - 1),
-            ];
+                return self::loadPreview($path, $sheet);
+            });
         } catch (\Throwable) {
             return null;
         }
+    }
+
+    /**
+     * Preview through PhpSpreadsheet, for what OpenSpout does not read (.xls,
+     * .csv). These files are small in practice; .xlsx goes through
+     * {@see XlsxStream}.
+     *
+     * @return array{headers:array<int, string>, rows:array<int, array<int, mixed>>, totalRows:int}
+     */
+    protected static function loadPreview(string $path, int $sheet): array
+    {
+        $reader = IOFactory::createReaderForFile($path);
+        $reader->setReadDataOnly(true);
+        $spreadsheet = $reader->load($path);
+        $worksheet = $spreadsheet->getSheet($sheet);
+        $highestRow = $worksheet->getHighestDataRow();
+        $highestColumn = $worksheet->getHighestDataColumn();
+
+        $headers = [];
+        foreach ($worksheet->getRowIterator(1, 1) as $row) {
+            $iter = $row->getCellIterator('A', $highestColumn);
+            $iter->setIterateOnlyExistingCells(false);
+            foreach ($iter as $cell) {
+                $headers[] = (string) ($cell->getValue() ?? '');
+            }
+        }
+
+        $rows = [];
+        $maxPreview = 10;
+        for ($r = 2; $r <= $highestRow && count($rows) < $maxPreview; $r++) {
+            $dataRow = [];
+            foreach ($worksheet->getRowIterator($r, $r) as $row) {
+                $iter = $row->getCellIterator('A', $highestColumn);
+                $iter->setIterateOnlyExistingCells(false);
+                foreach ($iter as $cell) {
+                    $dataRow[] = $cell->getValue();
+                }
+            }
+            $rows[] = $dataRow;
+        }
+
+        return [
+            'headers' => $headers,
+            'rows' => $rows,
+            'totalRows' => max(0, $highestRow - 1),
+        ];
     }
 
     /* ──── Step 5: confirm and import ────────────────────────────── */
@@ -2221,56 +2361,7 @@ class ImportWizard extends Page
      */
     protected function parseFilePreview(mixed $file, int $sheet = 0): ?array
     {
-        if (is_array($file)) {
-            $file = reset($file) ?: null;
-        }
-        if (! $file instanceof TemporaryUploadedFile) {
-            return null;
-        }
-        $path = $file->getRealPath();
-        if (! is_readable($path)) {
-            return null;
-        }
-
-        try {
-            $reader = IOFactory::createReaderForFile($path);
-            $reader->setReadDataOnly(true);
-            $spreadsheet = $reader->load($path);
-            $worksheet = $spreadsheet->getSheet($sheet);
-            $highestRow = $worksheet->getHighestDataRow();
-            $highestColumn = $worksheet->getHighestDataColumn();
-
-            $headers = [];
-            foreach ($worksheet->getRowIterator(1, 1) as $row) {
-                $iter = $row->getCellIterator('A', $highestColumn);
-                $iter->setIterateOnlyExistingCells(false);
-                foreach ($iter as $cell) {
-                    $headers[] = (string) ($cell->getValue() ?? '');
-                }
-            }
-
-            $rows = [];
-            $maxPreview = 10;
-            for ($r = 2; $r <= $highestRow && count($rows) < $maxPreview; $r++) {
-                $dataRow = [];
-                foreach ($worksheet->getRowIterator($r, $r) as $row) {
-                    $iter = $row->getCellIterator('A', $highestColumn);
-                    $iter->setIterateOnlyExistingCells(false);
-                    foreach ($iter as $cell) {
-                        $dataRow[] = $cell->getValue();
-                    }
-                }
-                $rows[] = $dataRow;
-            }
-
-            return [
-                'headers' => $headers,
-                'rows' => $rows,
-                'totalRows' => max(0, $highestRow - 1),
-            ];
-        } catch (\Throwable) {
-            return null;
-        }
+        return self::staticParseFilePreview($file, $sheet);
     }
 
     /**
@@ -2416,6 +2507,13 @@ class ImportWizard extends Page
         $ext = strtolower((string) $file->getClientOriginalExtension());
         if (in_array($ext, ['xlsx', 'xls'], true)) {
             $csvAbs = $disk->path($base . '.csv');
+            if ($ext === 'xlsx') {
+                // Streamed: the whole-workbook load below needs hundreds of MB
+                // on a large sheet (see staticParseFilePreview()).
+                XlsxStream::toCsv($file->getRealPath(), $sheet, $csvAbs);
+
+                return $csvAbs;
+            }
             $reader = IOFactory::createReaderForFile($file->getRealPath());
             $reader->setReadDataOnly(true);
             $spreadsheet = $reader->load($file->getRealPath());
@@ -2453,31 +2551,9 @@ class ImportWizard extends Page
      */
     protected function readCsvForImport(string $csvAbsPath): array
     {
-        $reader = Reader::createFromPath($csvAbsPath, 'r');
-        // No header offset — read every record positionally so repeated headers
-        // are preserved rather than collapsed.
-        $records = [];
-        foreach ($reader->getRecords() as $record) {
-            $records[] = array_values($record);
-        }
+        $headers = self::csvHeaderKeys($csvAbsPath);
 
-        $rawHeaders = array_map(static fn ($v): string => (string) ($v ?? ''), $records[0] ?? []);
-        $headerKeys = SpreadsheetHeaders::dedupe($rawHeaders);
-        /** @var array<int, string> $headers */
-        $headers = array_map(static fn ($k): string => (string) $k, $headerKeys);
-
-        $rows = [];
-        foreach (array_slice($records, 1) as $record) {
-            $row = [];
-            foreach ($headers as $i => $key) {
-                // Undo the formula guard our own exports add, so an exported
-                // sheet re-imports with its values unchanged.
-                $row[$key] = ReportRenderer::restoreCsvCell((string) ($record[$i] ?? ''));
-            }
-            $rows[] = $row;
-        }
-
-        return [$headers, $rows];
+        return [$headers, iterator_to_array(self::csvRows($csvAbsPath, $headers), false)];
     }
 
     /**
@@ -2552,73 +2628,56 @@ class ImportWizard extends Page
             'options' => $options,
         ]));
 
-        $import->unsetRelation('user');
+        return $this->dispatchJobs($import, $importer, $jobs->all(), $cleanColumnMap, $options);
+    }
 
-        event(new ImportStarted($import, $cleanColumnMap, $options));
+    /**
+     * Start a wizard import straight from the CSV on disk, in chunks the
+     * queued jobs read themselves ({@see ImportCsvSlice}): no row is held in
+     * memory here, so a sheet of any size can be started from the web.
+     *
+     * @param class-string<Importer> $importerClass
+     * @param array<string, string|null> $columnMap
+     * @param array<string, mixed> $options
+     * @return array{0:int, 1:int} import id, number of rows
+     */
+    protected function dispatchImportBatchFromCsv(
+        string $importerClass,
+        string $fileName,
+        string $csvPath,
+        array $columnMap,
+        array $options,
+    ): array {
+        [$totalRows, $chunks] = self::csvChunks($csvPath, 100);
 
-        Bus::batch($jobs->all())
-            ->allowFailures()
-            ->when(
-                filled($q = $importer->getJobQueue()),
-                fn (PendingBatch $b) => $b->onQueue($q),
-            )
-            ->when(
-                filled($c = $importer->getJobConnection()),
-                fn (PendingBatch $b) => $b->onConnection($c),
-            )
-            ->finally(function () use ($import, $cleanColumnMap, $options): void {
-                $fresh = Import::query()->find($import->getKey());
-                if ($fresh === null) {
-                    return;
-                }
-                $fresh->touch('completed_at');
-                event(new ImportCompleted($fresh, $cleanColumnMap, $options));
+        $user = auth()->user();
+        $import = app(Import::class);
+        if ($user !== null) {
+            $import->user()->associate($user);
+        }
+        $import->file_name = $fileName;
+        $import->file_path = $csvPath;
+        $import->importer = $importerClass;
+        $import->total_rows = $totalRows;
+        $import->save();
 
-                // BUG-03: mirror the Filament ImportAction finally() block —
-                // send a database notification so the operator gets a bell-icon
-                // signal when the import finishes, even if they navigated away
-                // from the wizard page after clicking Dispatch.
-                $importUser = $fresh->user;
-                if ($importUser !== null) {
-                    $fresh->columnMap($cleanColumnMap);
-                    $fresh->options($options);
-                    $failedRowsCount = $fresh->getFailedRowsCount();
+        $cleanColumnMap = array_filter(
+            $columnMap,
+            static fn ($v): bool => $v !== null && $v !== ''
+        );
+        $importer = $import->getImporter($cleanColumnMap, $options);
 
-                    $notification = Notification::make()
-                        ->title($fresh->importer::getCompletedNotificationTitle($fresh))
-                        ->body($fresh->importer::getCompletedNotificationBody($fresh))
-                        ->when(
-                            ! $failedRowsCount,
-                            fn (Notification $n) => $n->success(),
-                        )
-                        ->when(
-                            $failedRowsCount && ($failedRowsCount < $fresh->total_rows),
-                            fn (Notification $n) => $n->warning(),
-                        )
-                        ->when(
-                            $failedRowsCount === $fresh->total_rows,
-                            fn (Notification $n) => $n->danger(),
-                        )
-                        ->when(
-                            $failedRowsCount,
-                            fn (Notification $n) => $n->actions([
-                                FilamentAction::make('downloadFailedRowsCsv')
-                                    ->label(trans_choice('filament-actions::import.notifications.completed.actions.download_failed_rows_csv.label', $failedRowsCount, [
-                                        'count' => Number::format($failedRowsCount),
-                                    ]))
-                                    ->color('danger')
-                                    ->url(UrlFacade::signedRoute('filament.imports.failed-rows.download', ['authGuard' => Filament::getAuthGuard(), 'import' => $fresh], absolute: false), shouldOpenInNewTab: true)
-                                    ->markAsRead(),
-                            ]),
-                        );
+        $jobs = array_map(fn (array $c): ImportCsvSlice => new ImportCsvSlice(
+            $import,
+            $csvPath,
+            $c['offset'],
+            $c['first'],
+            $c['length'],
+            $cleanColumnMap,
+            $options,
+        ), $chunks);
 
-                    $notification = $fresh->importer::modifyCompletedNotification($notification, $fresh);
-                    $notification->sendToDatabase($importUser, isEventDispatched: true);
-                }
-            })
-            ->dispatch();
-
-        return (int) $import->getKey();
+        return [$this->dispatchJobs($import, $importer, $jobs, $cleanColumnMap, $options), $totalRows];
     }
 
     protected function notifyDanger(string $body): void
@@ -2725,5 +2784,117 @@ class ImportWizard extends Page
         }
 
         return $ordered;
+    }
+
+    /** @return resource */
+    private static function openCsv(string $path)
+    {
+        $h = fopen($path, 'rb');
+        if ($h === false) {
+            throw new \RuntimeException("Cannot read {$path}");
+        }
+        // A UTF-8 byte-order mark would otherwise stick to the first header.
+        if (fread($h, 3) !== "\xEF\xBB\xBF") {
+            rewind($h);
+        }
+
+        return $h;
+    }
+
+    /**
+     * The next record, skipping blank lines; null at the end of the file.
+     *
+     * @param resource $h
+     * @return array<int, string|null>|null
+     */
+    private static function nextCsvRecord($h): ?array
+    {
+        while (($record = fgetcsv($h, null, ',', '"', '\\')) !== false) {
+            if ($record === [null]) {
+                continue;
+            }
+
+            return $record;
+        }
+
+        return null;
+    }
+
+    /**
+     * Queue the jobs as one batch, with the completion notification.
+     *
+     * @param array<int, object> $jobs
+     * @param array<string, string> $cleanColumnMap
+     * @param array<string, mixed> $options
+     */
+    private function dispatchJobs(Import $import, Importer $importer, array $jobs, array $cleanColumnMap, array $options): int
+    {
+        $import->unsetRelation('user');
+
+        event(new ImportStarted($import, $cleanColumnMap, $options));
+
+        Bus::batch($jobs)
+            ->allowFailures()
+            ->when(
+                filled($q = $importer->getJobQueue()),
+                fn (PendingBatch $b) => $b->onQueue($q),
+            )
+            ->when(
+                filled($c = $importer->getJobConnection()),
+                fn (PendingBatch $b) => $b->onConnection($c),
+            )
+            ->finally(function () use ($import, $cleanColumnMap, $options): void {
+                $fresh = Import::query()->find($import->getKey());
+                if ($fresh === null) {
+                    return;
+                }
+                $fresh->touch('completed_at');
+                event(new ImportCompleted($fresh, $cleanColumnMap, $options));
+
+                // BUG-03: mirror the Filament ImportAction finally() block —
+                // send a database notification so the operator gets a bell-icon
+                // signal when the import finishes, even if they navigated away
+                // from the wizard page after clicking Dispatch.
+                $importUser = $fresh->user;
+                if ($importUser !== null) {
+                    $fresh->columnMap($cleanColumnMap);
+                    $fresh->options($options);
+                    $failedRowsCount = $fresh->getFailedRowsCount();
+
+                    $notification = Notification::make()
+                        ->title($fresh->importer::getCompletedNotificationTitle($fresh))
+                        ->body($fresh->importer::getCompletedNotificationBody($fresh))
+                        ->when(
+                            ! $failedRowsCount,
+                            fn (Notification $n) => $n->success(),
+                        )
+                        ->when(
+                            $failedRowsCount && ($failedRowsCount < $fresh->total_rows),
+                            fn (Notification $n) => $n->warning(),
+                        )
+                        ->when(
+                            $failedRowsCount === $fresh->total_rows,
+                            fn (Notification $n) => $n->danger(),
+                        )
+                        ->when(
+                            $failedRowsCount,
+                            fn (Notification $n) => $n->actions([
+                                FilamentAction::make('downloadFailedRowsCsv')
+                                    ->label(trans_choice('filament-actions::import.notifications.completed.actions.download_failed_rows_csv.label', $failedRowsCount, [
+                                        'count' => Number::format($failedRowsCount),
+                                    ]))
+                                    ->color('danger')
+                                    ->url(UrlFacade::signedRoute('filament.imports.failed-rows.download', ['authGuard' => Filament::getAuthGuard(), 'import' => $fresh], absolute: false), shouldOpenInNewTab: true)
+                                    ->markAsRead(),
+                            ]),
+                        );
+
+                    $notification = $fresh->importer::modifyCompletedNotification($notification, $fresh);
+                    $notification->sendToDatabase($importUser, isEventDispatched: true);
+                }
+            })
+            ->dispatch();
+
+        return (int) $import->getKey();
     }
 }
