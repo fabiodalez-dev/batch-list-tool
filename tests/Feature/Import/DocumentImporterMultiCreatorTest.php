@@ -13,6 +13,7 @@ use App\Support\BulkImport\EntityResolver;
 use Filament\Actions\Imports\Importer;
 use Filament\Actions\Imports\Models\Import;
 use Illuminate\Foundation\Testing\RefreshDatabase;
+use Illuminate\Validation\ValidationException;
 use Spatie\Permission\Models\Role;
 
 /**
@@ -186,32 +187,41 @@ test('multi-creator: empty middle piece "R520; ; R178" is skipped, both still at
         ->and((bool) $attached->get($a2->id)->pivot->is_primary)->toBeFalse();
 });
 
-test('multi-creator: unknown first piece "R999; R520" attaches only R520 as primary', function () {
+test('multi-creator: an unknown code "R999; R520" fails the row, naming R999', function () {
     $repo = mcr_repo();
     $u = mcr_makeAdmin($repo->id);
     $this->actingAs($u);
     mcr_series('REG');
-    // R999 is intentionally NOT created.
-    $a = Authority::create([
-        'identifier' => 'R520',
-        'surname' => 'Gatt',
-        'entity_type' => 'PERSON',
-    ]);
+    // R999 is intentionally NOT created. Client 2026-10-12: it used to be
+    // skipped in silence, so the document was saved without that notary and
+    // the row counted as imported.
+    Authority::create(['identifier' => 'R520', 'surname' => 'Gatt', 'entity_type' => 'PERSON']);
 
-    mcr_runImporter([
+    expect(fn () => mcr_runImporter([
         'identifier' => 'DOC-MCR-4',
         'series' => 'REG',
         'authority_identifier' => 'R999; R520',
+    ], $u->id))->toThrow(ValidationException::class, "Authority Identifier 'R999' matches no authority");
+});
+
+test('multi-creator: "Unknown; R520" attaches only R520, as primary', function () {
+    $repo = mcr_repo();
+    $u = mcr_makeAdmin($repo->id);
+    $this->actingAs($u);
+    mcr_series('REG');
+    $a = Authority::create(['identifier' => 'R520', 'surname' => 'Gatt', 'entity_type' => 'PERSON']);
+
+    mcr_runImporter([
+        'identifier' => 'DOC-MCR-4B',
+        'series' => 'REG',
+        'authority_identifier' => 'Unknown; R520',
     ], $u->id);
 
     $doc = Document::withoutGlobalScope(RepositoryScope::class)
-        ->where('identifier', 'DOC-MCR-4')
+        ->where('identifier', 'DOC-MCR-4B')
         ->firstOrFail();
 
-    // Only R520 was resolvable; it is the FIRST stashed entry, therefore
-    // primary. The miss on R999 must not prevent the row from being saved
-    // and must not promote a subsequent piece to a different is_primary
-    // semantic — primary is "the first SUCCESSFULLY resolved authority".
+    // Primary is the first authority that RESOLVED; "Unknown" is no notary.
     $attached = $doc->authorities()->get();
     expect($attached->count())->toBe(1)
         ->and($attached->first()->id)->toBe($a->id)

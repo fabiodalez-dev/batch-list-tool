@@ -1074,6 +1074,10 @@ test("Bug #22 (c): a real multi-row slice of the client's own ~5MB batch list re
     // Isolate from the separately-confirmed 'torre' NOT NULL bug (its own test)
     // so re-import idempotency is what THIS test measures.
     unset($columnMap['torre']);
+    // No authorities exist in this test database, and an Authority Identifier
+    // that matches none now fails the row (client 2026-10-12): leave the
+    // notary column out, it is not what this test measures.
+    unset($columnMap['authority_identifier']);
 
     $rows = dgt_realRows(DGT_BATCHLIST_XLSX, 2, 26);
     expect($rows)->toHaveCount(25);
@@ -1221,6 +1225,9 @@ test("streaming a real 25-row slice of the client's own ~5MB batch list end-to-e
     // over the real multi-dependency graph instead of failing every row on
     // an unrelated defect.
     unset($columnMap['torre']);
+    // Same for the notary column: no authorities exist here, and an unknown
+    // Authority Identifier now fails the row (client 2026-10-12).
+    unset($columnMap['authority_identifier']);
 
     $rows = dgt_realRows(DGT_BATCHLIST_XLSX, 2, 26);
     expect($rows)->toHaveCount(25);

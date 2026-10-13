@@ -1144,10 +1144,23 @@ class DocumentImporter extends Importer
                     if ($pieces === []) {
                         return;
                     }
+                    $missing = [];
                     foreach ($pieces as $piece) {
+                        // "Unknown" is how the sheets say the notary is not
+                        // known (2,310 rows of the client's documents sheet): no
+                        // link, and not an error.
+                        if (strcasecmp($piece, 'Unknown') === 0) {
+                            continue;
+                        }
                         $res = EntityResolver::resolveAuthority($piece);
                         if ($res === null) {
-                            continue; // soft miss — try fallback by surname
+                            // Client 2026-10-12: a code that names no authority
+                            // used to be skipped in silence, so the row read as
+                            // imported while the document had no notary. It now
+                            // fails the row, naming the code (see below).
+                            $missing[] = $piece;
+
+                            continue;
                         }
                         if (isset($res['ambiguous_count'])) {
                             // Defensive: identifier should be unique → no
@@ -1163,6 +1176,14 @@ class DocumentImporter extends Importer
                         // afterSave() assigns is_primary=true to the first
                         // stashed id and is_primary=false to all subsequent.
                         self::stashAuthority($record, (int) $res['authority_id']);
+                    }
+                    if ($missing !== []) {
+                        throw ValidationException::withMessages([
+                            'authority_identifier' => (count($missing) === 1
+                                ? "Authority Identifier '{$missing[0]}' matches no authority"
+                                : "Authority Identifiers '" . implode("', '", $missing) . "' match no authority")
+                                . ' (by R-code or alternate key). Add it on the Authorities page first, or correct the cell.',
+                        ]);
                     }
                 }),
 
