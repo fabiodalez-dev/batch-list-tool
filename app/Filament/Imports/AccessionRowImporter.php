@@ -1283,13 +1283,13 @@ class AccessionRowImporter extends Importer
                         return;
                     }
                     $value = trim($state);
-                    $normalized = Document::canonicalEnumValue($value, Document::CURRENT_BOX_TYPES);
+                    $normalized = Document::canonicalEnumValue($value, CurrentBoxType::codes());
                     // NAF's own sheets abbreviate the container type ("RAS",
                     // "Big Brown" — 200/200 rows of the Sam Abela sample say
                     // just "RAS"): retry with the " Box" suffix before failing
                     // the row, so the client's real files import as-is.
                     if ($normalized === null) {
-                        $normalized = Document::canonicalEnumValue($value . ' Box', Document::CURRENT_BOX_TYPES);
+                        $normalized = Document::canonicalEnumValue($value . ' Box', CurrentBoxType::codes());
                     }
                     $isActive = $normalized !== null && CurrentBoxType::query()
                         ->where('code', $normalized)

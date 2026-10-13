@@ -43,4 +43,23 @@ class CurrentBoxType extends Model implements AuditableContract
     {
         return static::active()->pluck('label', 'code')->all();
     }
+
+    /**
+     * Every code the lookup holds (active or not), plus the three seeded ones
+     * as a floor before it is seeded. A document's value must be one of these;
+     * whether it may be newly assigned is the separate active check.
+     *
+     * Client 2026-10-13: "Conservation Box" was added on the Physical Box Type
+     * page but a document could not carry it, because the document checked a
+     * fixed list of three types instead of this table.
+     *
+     * @return list<string>
+     */
+    public static function codes(): array
+    {
+        return array_values(array_unique([
+            ...Document::CURRENT_BOX_TYPES,
+            ...static::query()->orderBy('sort_order')->pluck('code')->all(),
+        ]));
+    }
 }
