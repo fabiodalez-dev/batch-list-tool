@@ -8,6 +8,7 @@ use App\Filament\Pages\ImportWizard;
 use App\Filament\Resources\BoxResource\Pages\ListBoxes;
 use App\Models\Batch;
 use App\Models\Box;
+use App\Models\Lookup\BoxType;
 use App\Models\Repository;
 use App\Models\Scopes\RepositoryScope;
 use App\Models\Scopes\ThroughBatchRepositoryScope;
@@ -258,4 +259,17 @@ it('refuses a batch-less box whose repository cannot be told, instead of hiding 
 
     expect($message)->toContain('needs a repository')
         ->and(Box::withoutGlobalScopes()->whereNull('batch_id')->whereNull('repository_id')->count())->toBe(0);
+});
+
+it('places a document in a box whose type was added on the Box Types page (MUS2 in an In Situ column)', function (): void {
+    // Client 2026-10-14: 44 rows with "MUS2", "MUS 7"… failed with "IN_SITU is
+    // not an active box_type option": MUS was not in the fixed list of types.
+    BoxType::query()->updateOrCreate(['code' => 'MUS'], ['label' => 'MUS', 'is_active' => true, 'is_legacy' => true, 'sort_order' => 0]);
+    BoxType::query()->where('code', 'IN_SITU')->update(['is_active' => false]);
+
+    $res = EntityResolver::resolveInSituBox('MUS', '2', $this->repo->id);
+    $box = Box::withoutGlobalScopes()->find($res['box_id']);
+
+    expect($box->box_type)->toBe('MUS')
+        ->and($box->box_number)->toBe('2');
 });

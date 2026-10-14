@@ -12,6 +12,8 @@ use App\Support\CustomFields\CustomFieldSchema;
 use Filament\Actions\BulkActionGroup;
 use Filament\Actions\DeleteBulkAction;
 use Filament\Actions\EditAction;
+use Filament\Actions\RestoreAction;
+use Filament\Actions\RestoreBulkAction;
 use Filament\Actions\ViewAction;
 use Filament\Forms;
 use Filament\Infolists\Components\IconEntry;
@@ -24,8 +26,10 @@ use Filament\Schemas\Schema;
 use Filament\Tables;
 use Filament\Tables\Filters\SelectFilter;
 use Filament\Tables\Filters\TernaryFilter;
+use Filament\Tables\Filters\TrashedFilter;
 use Filament\Tables\Table;
 use Illuminate\Database\Eloquent\Builder;
+use Illuminate\Database\Eloquent\SoftDeletingScope;
 
 class SeriesResource extends Resource
 {
@@ -77,7 +81,7 @@ class SeriesResource extends Resource
                             ->maxLength(16)
                             ->unique(ignoreRecord: true)
                             ->validationMessages([
-                                'unique' => 'This series identifier is already in use.',
+                                'unique' => 'This identifier is already in use, possibly by a deleted subseries: set the "Archived (deleted) subseries" filter on the list to find it and restore it.',
                             ])),
                         $g(Forms\Components\TextInput::make('title')
                             ->label(ColumnLabels::get('series', 'title'))
@@ -426,14 +430,21 @@ class SeriesResource extends Resource
                         ->mapWithKeys(fn (Series $s): array => [$s->getKey() => $s->qualifiedTitle()])
                         ->all())
                     ->searchable(),
+                // Client 2026-10-14: a deleted subseries (MDV) kept its
+                // identifier but was nowhere to be seen, so "This series
+                // identifier is already in use" had no visible cause. Deleted
+                // subseries are listed here and can be restored.
+                TrashedFilter::make()->label('Archived (deleted) subseries'),
             ])
             ->actions([
                 ViewAction::make(),
                 EditAction::make(),
+                RestoreAction::make(),
             ])
             ->bulkActions([
                 BulkActionGroup::make([
                     DeleteBulkAction::make(),
+                    RestoreBulkAction::make(),
                 ]),
             ]);
     }
@@ -455,6 +466,13 @@ class SeriesResource extends Resource
             // archive's tree is two deep. A deeper chain is loaded on demand.
             'parent.parent.parent',
         ]);
+    }
+
+    /** An archived subseries can still be opened, so it can be restored. */
+    public static function getRecordRouteBindingEloquentQuery(): Builder
+    {
+        return parent::getRecordRouteBindingEloquentQuery()
+            ->withoutGlobalScopes([SoftDeletingScope::class]);
     }
 
     public static function getRelations(): array
