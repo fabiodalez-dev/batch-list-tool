@@ -503,8 +503,8 @@ final class EntityResolver
      * batch-less path in BoxImporter.
      *
      * The `$rawType` is normalised (spaces → underscores, upper-cased) and
-     * validated against BOTH {@see Box::TYPES} and the ACTIVE `box_types`
-     * lookup. An unknown or inactive type falls back to `IN_SITU` and the raw
+     * validated against the ACTIVE `box_types` lookup (the Box Types page). An
+     * unknown or inactive type falls back to `IN_SITU` and the raw
      * label is stashed into the box's free-text `current_box_type` column so no
      * information is lost. Validating first is required because creating a box
      * with a dirty `box_type` triggers {@see Lookups::assertActive}, which would
@@ -540,11 +540,19 @@ final class EntityResolver
         // keeping the raw label for the box's free-text current_box_type column.
         $type = strtoupper(trim(str_replace(' ', '_', $rawType)));
         $rawLabel = null;
-        $isKnownActive = in_array($type, Box::TYPES, true)
-            && BoxType::query()->where('code', $type)->where('is_active', true)->exists();
-        if (! $isKnownActive) {
+        // An active type on the Box Types page is taken as written. It also had
+        // to be one of Box::TYPES, so a type added there later (MUS) fell back to
+        // IN_SITU: client 2026-10-14, 44 rows with "MUS2" in an In Situ column
+        // failed with "IN_SITU is not an active box_type option".
+        $activeCode = BoxType::query()->where('is_active', true)->whereRaw('UPPER(code) = ?', [$type])->value('code');
+        if ($activeCode !== null) {
+            $type = (string) $activeCode;
+        } else {
             $trimmed = trim($rawType);
             $rawLabel = $trimmed !== '' ? $trimmed : null;
+            if (! BoxType::query()->where('code', 'IN_SITU')->where('is_active', true)->exists()) {
+                throw new \DomainException("Box type '{$trimmed}' (from an In Situ column) is not an active type on the Box Types page.");
+            }
             $type = 'IN_SITU';
         }
 

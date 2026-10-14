@@ -9,6 +9,7 @@ use App\Models\Repository;
 use App\Models\Scopes\RepositoryScope;
 use App\Models\Series;
 use App\Models\User;
+use Filament\Tables\Filters\TrashedFilter;
 use Illuminate\Database\QueryException;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Livewire\Livewire;
@@ -128,4 +129,31 @@ test('Series cannot be hard-deleted while documents reference it', function () {
         $msg = strtolower($throwable->getMessage());
         expect($msg)->toMatch('/foreign key|parent row|constraint/');
     }
+});
+
+/* Client 2026-10-14: a deleted subseries (MDV) blocked its identifier but was nowhere to be seen. */
+test('a deleted subseries is listed under the Archived filter and can be restored', function () {
+    $this->actingAs(actAsAdmin_series());
+    $mdv = makeSeries_series('MDV');
+    $mdv->delete();
+
+    Livewire::test(ListSeries::class)
+        ->assertCanNotSeeTableRecords([$mdv])
+        ->filterTable(TrashedFilter::class, false)
+        ->assertCanSeeTableRecords([$mdv])
+        ->callTableAction('restore', $mdv);
+
+    expect(Series::find($mdv->id))->not->toBeNull();
+});
+
+test('reusing a deleted subseries identifier says where to find it', function () {
+    $this->actingAs(actAsAdmin_series());
+    $mdv = makeSeries_series('MDV');
+    $mdv->delete();
+
+    Livewire::test(CreateSeries::class)
+        ->fillForm(['code' => $mdv->code, 'title' => 'Medieval Collection', 'is_active' => true, 'is_wills_series' => false])
+        ->call('create')
+        ->assertHasFormErrors(['code'])
+        ->assertSee('Archived (deleted) subseries');
 });
