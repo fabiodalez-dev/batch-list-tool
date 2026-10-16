@@ -16,6 +16,7 @@ use App\Models\BoxMovement;
 use App\Models\CustomFieldDefinition;
 use App\Models\Document;
 use App\Models\DocumentIdentifierHistory;
+use App\Models\Lookup\BoxType;
 use App\Models\Lookup\CurrentBoxType;
 use App\Models\Repository;
 use App\Models\Scopes\RepositoryScope;
@@ -2072,7 +2073,13 @@ class DocumentImporter extends Importer
         }
 
         $type = 'IN_SITU';
-        if (preg_match('/^(.*\S)\s+(\S+)$/u', $raw, $m) === 1) {
+        $known = $this->splitByKnownBoxType($raw);
+        if ($known !== null) {
+            // A type on the Box Types page leads the cell; the rest, spaces
+            // included, is the number: "STVC 37 P1" is box "37 P1" of type STVC
+            // (client 2026-10-16), not a type "STVC 37".
+            [$type, $number] = $known;
+        } elseif (preg_match('/^(.*\S)\s+(\S+)$/u', $raw, $m) === 1) {
             // Trailing token is the number, everything before it the type.
             [$type, $number] = [$m[1], $m[2]];
         } elseif (preg_match('/^([A-Za-z]+)(\d+)$/', $raw, $m) === 1) {
@@ -2085,9 +2092,36 @@ class DocumentImporter extends Importer
             return null; // unparseable (no number) → skip, keep verbatim
         }
 
-        $resolved = EntityResolver::resolveInSituBox($type, $number, $repoId, create: true);
+        try {
+            $resolved = EntityResolver::resolveInSituBox($type, $number, $repoId, create: true);
+        } catch (\DomainException $e) {
+            // Shown on the row of the Errors CSV instead of "System error".
+            throw new RowImportFailedException($e->getMessage());
+        }
 
         return $resolved !== null ? (int) $resolved['box_id'] : null;
+    }
+
+    /**
+     * Split an In Situ cell on the longest Box Types code it starts with
+     * ("STVC 37 P1" → ['STVC', '37 P1'], "Small Box 12" → ['SMALL_BOX', '12']).
+     * Null when no code leads the cell or nothing number-like follows it.
+     *
+     * @return array{0:string,1:string}|null
+     */
+    protected function splitByKnownBoxType(string $raw): ?array
+    {
+        $codes = BoxType::query()->where('is_active', true)->pluck('code')
+            ->sortByDesc(fn (string $code): int => strlen($code));
+
+        foreach ($codes as $code) {
+            $pattern = str_replace('_', '[\\s_]+', preg_quote($code, '/'));
+            if (preg_match('/^' . $pattern . '[\\s_]*(\\d.*)$/iu', $raw, $m) === 1) {
+                return [$code, trim($m[1])];
+            }
+        }
+
+        return null;
     }
 
     /**

@@ -8,6 +8,7 @@ use App\Filament\Pages\ImportWizard;
 use App\Filament\Resources\BoxResource\Pages\ListBoxes;
 use App\Models\Batch;
 use App\Models\Box;
+use App\Models\Document;
 use App\Models\Lookup\BoxType;
 use App\Models\Repository;
 use App\Models\Scopes\RepositoryScope;
@@ -15,6 +16,7 @@ use App\Models\Scopes\ThroughBatchRepositoryScope;
 use App\Models\Series;
 use App\Models\User;
 use App\Support\BulkImport\EntityResolver;
+use Filament\Actions\Imports\Exceptions\RowImportFailedException;
 use Filament\Actions\Imports\Models\Import;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Validation\ValidationException;
@@ -272,4 +274,24 @@ it('places a document in a box whose type was added on the Box Types page (MUS2 
 
     expect($box->box_type)->toBe('MUS')
         ->and($box->box_number)->toBe('2');
+});
+
+it('reads "STVC 37 P1" as box STVC 37 P1, not as a type "STVC 37"', function (): void {
+    // Client 2026-10-16: 8 rows with "STVC 44 P1", "STVC 37 P2"… in an In Situ
+    // column failed: the last word was taken as the box number.
+    BoxType::query()->updateOrCreate(['code' => 'STVC'], ['label' => 'STVC', 'is_active' => true, 'is_legacy' => true, 'sort_order' => 0]);
+    BoxType::query()->where('code', 'IN_SITU')->update(['is_active' => false]);
+    $existing = Box::withoutGlobalScopes()->create(['box_type' => 'STVC', 'box_number' => '37 P1', 'batch_id' => null, 'repository_id' => $this->repo->id, 'is_legacy' => true, 'provenance_unknown' => true]);
+
+    isb_run(DocumentImporter::class, ['Document Identifier' => 'STVC-DOC-1', 'Series' => 'REG', 'In Situ Box 1' => 'STVC 37 P1'], $this->user->id);
+
+    expect(isb_boxes('STVC', '37 P1'))->toHaveCount(1)
+        ->and(Document::withoutGlobalScopes()->where('current_box_id', $existing->id)->exists())->toBeTrue();
+});
+
+it('fails the row with the reason, not "System error", when an In Situ box type is unknown', function (): void {
+    BoxType::query()->where('code', 'IN_SITU')->update(['is_active' => false]);
+
+    expect(fn () => isb_run(DocumentImporter::class, ['Document Identifier' => 'XYZ-DOC-1', 'Series' => 'REG', 'In Situ Box 1' => 'XYZ 5'], $this->user->id))
+        ->toThrow(RowImportFailedException::class, "Box type 'XYZ'");
 });
