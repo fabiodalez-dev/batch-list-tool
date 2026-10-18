@@ -22,8 +22,14 @@ function bl_seedDocument(Repository $repo, array $overrides = []): Document
 {
     $series = Series::factory()->create();
 
+    $identifier = $overrides['identifier'] ?? 'R-DOC-001';
+
+    // The identifier column is hidden on the list by default (client
+    // 2026-10-18); the note, shown by default, carries it so the list can
+    // be checked by it.
     return Document::factory()->create(array_merge([
-        'identifier' => 'R-DOC-001',
+        'identifier' => $identifier,
+        'notes' => $identifier,
         'series_id' => $series->id,
         'repository_id' => $repo->id,
     ], $overrides));

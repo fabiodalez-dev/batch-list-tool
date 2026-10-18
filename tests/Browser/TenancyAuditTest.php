@@ -24,8 +24,11 @@ function bl_docIn(Repository $repo, string $identifier): Document
 {
     $series = Series::factory()->create();
 
+    // The identifier column is hidden on the list by default (client
+    // 2026-10-18); the note, shown by default, carries it.
     return Document::factory()->create([
         'identifier' => $identifier,
+        'notes' => $identifier,
         'series_id' => $series->id,
         'repository_id' => $repo->id,
     ]);
