@@ -3,6 +3,7 @@
 declare(strict_types=1);
 
 use App\Filament\Resources\BoxResource\Pages\ListBoxes;
+use App\Filament\Resources\BoxResource\Pages\ViewBox;
 use App\Filament\Resources\DocumentResource\Pages\ListDocuments;
 use App\Models\Authority;
 use App\Models\Batch;
@@ -104,4 +105,16 @@ it('shows a box without a location where all its documents are, and no status fo
         ->assertTableColumnStateSet('notes', 'Steel cabinet', $nra)
         ->assertTableColumnStateSet('tracking_note', 'Taken to Comtec', $nra)
         ->assertTableColumnDoesNotExist('disinfestation_date');
+});
+
+it('says the same on the box page: no status without a barcode, the documents\' location', function (): void {
+    $nra = Box::withoutGlobalScopes()->create(['box_type' => 'NRA', 'box_number' => '202', 'batch_id' => null, 'repository_id' => $this->repo->id, 'is_legacy' => true, 'provenance_unknown' => true]);
+    lcf_document(['current_box_id' => $nra->id, 'location_id' => $this->archive15->id]);
+    // Destroyed afterwards, so the box keeps no location of its own.
+    Box::withoutGlobalScopes()->whereKey($nra->id)->update(['destroyed_at' => now(), 'location_id' => null]);
+
+    Livewire::test(ViewBox::class, ['record' => $nra->getKey()])
+        ->assertSchemaStateSet(['barcode_status' => null, 'location.full_path' => $this->archive15->fresh()->full_path])
+        ->assertSee('Archive 15')
+        ->assertSee('From its documents');
 });
