@@ -116,6 +116,9 @@ class Box extends Model implements AuditableContract, Sortable
      */
     private static array $pendingBarcodeTransitions = [];
 
+    /** @var Location|false|null memo for sharedDocumentLocation() */
+    private Location|false|null $sharedDocumentLocationMemo = null;
+
     /**
      * Scope sort_order computation to siblings inside the same batch.
      * Without this override the package would compute MAX(sort_order)+1 across
@@ -507,6 +510,28 @@ class Box extends Model implements AuditableContract, Sortable
             'notes' => $notes,
             'repository_id' => $this->effectiveRepositoryId(),
         ]);
+    }
+
+    /**
+     * The one location every located document of this box shares, or null
+     * when none have one or they disagree. Read-only; used to show where a
+     * box without a location of its own is (a destroyed RAS box keeps none).
+     */
+    public function sharedDocumentLocation(): ?Location
+    {
+        if ($this->sharedDocumentLocationMemo === null) {
+            $ids = Document::withoutGlobalScope(RepositoryScope::class)
+                ->where('current_box_id', $this->getKey())
+                ->whereNotNull('location_id')
+                ->distinct()
+                ->limit(2)
+                ->pluck('location_id');
+            $this->sharedDocumentLocationMemo = $ids->count() === 1
+                ? (Location::withoutGlobalScopes()->find($ids->first()) ?? false)
+                : false;
+        }
+
+        return $this->sharedDocumentLocationMemo ?: null;
     }
 
     /**

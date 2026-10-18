@@ -309,11 +309,8 @@ class BoxResource extends Resource
                             ->required()
                             ->live()
                             ->default('IN')),
-                        // PERM_OUT no longer requires a disinfestation_date
-                        // (client feedback 2026-08-01 supersedes RFQ App.1 #5 for
-                        // the legacy data) — the field is always optional now.
-                        $g(Forms\Components\DatePicker::make('disinfestation_date')
-                            ->columnSpanFull()),
+                        // Client 2026-10-18: disinfestation is recorded on the
+                        // documents (Documents page), no longer on the box.
                     ]),
 
                 Section::make('Location')
@@ -598,13 +595,6 @@ class BoxResource extends Resource
                                 default => 'gray',
                             })
                             ->placeholder('—'),
-                        TextEntry::make('disinfestation_date')
-                            ->label('Disinfestation date')
-                            ->date()
-                            ->badge()
-                            ->color(fn (?string $state): string => $state ? 'success' : 'warning')
-                            ->placeholder('Pending')
-                            ->columnSpanFull(),
                     ]),
 
                 Section::make('Location')
@@ -793,11 +783,10 @@ class BoxResource extends Resource
                     ->toggleable()),
                 $gc(Tables\Columns\TextColumn::make('barcode_status')
                     ->label(ColumnLabels::get('box', 'barcode_status'))
-                    ->sortable()
-                    ->toggleable()),
-                $gc(Tables\Columns\TextColumn::make('disinfestation_date')
-                    ->label('Disinfestation Date')
-                    ->date()
+                    // Client 2026-10-18: a box with no barcode (In Situ, NRA,
+                    // STVC…) has no barcode status; the column's database
+                    // default 'IN' is not shown for it.
+                    ->formatStateUsing(fn (?string $state, Box $record): ?string => filled($record->barcode) ? $state : '—')
                     ->sortable()
                     ->toggleable()),
                 $gc(Tables\Columns\TextColumn::make('box_type')
@@ -821,15 +810,35 @@ class BoxResource extends Resource
                     // Memoise the breadcrumb by location id instead of
                     // dot-accessing the accessor per row, which runs an
                     // ancestors() query each time (schema audit — N+1).
-                    ->state(fn (?Box $record): ?string => LocationBreadcrumbCache::for($record?->location))
+                    ->state(fn (?Box $record): ?string => LocationBreadcrumbCache::for($record?->location ?? $record?->sharedDocumentLocation()))
+                    // Client 2026-10-18: a box without a location of its own
+                    // (a destroyed RAS box, say) shows where all its documents are.
+                    ->description(fn (?Box $record): ?string => $record !== null && $record->location === null && $record->sharedDocumentLocation() !== null ? 'from documents' : null)
                     ->placeholder('—')
                     ->toggleable()
                     // Gate the link on the RESOLVED relation, not the raw FK: an
                     // orphaned location_id renders a blank cell, so it must not
                     // link to a location record that no longer exists.
-                    ->url(fn (?Box $record): ?string => $record?->location
-                        ? route('filament.admin.resources.locations.view', ['record' => $record->location->getKey()])
+                    ->url(fn (?Box $record): ?string => ($loc = $record?->location ?? $record?->sharedDocumentLocation())
+                        ? route('filament.admin.resources.locations.view', ['record' => $loc->getKey()])
                         : null), 'location_id'),
+                $gc(Tables\Columns\TextColumn::make('tracking_note')
+                    ->label(ColumnLabels::get('box', 'tracking_note'))
+                    ->limit(60)
+                    ->tooltip(fn (?string $state): ?string => $state)
+                    ->placeholder('—')
+                    ->toggleable()),
+                $gc(Tables\Columns\TextColumn::make('seal_number')
+                    ->label(ColumnLabels::get('box', 'seal_number'))
+                    ->searchable()
+                    ->placeholder('—')
+                    ->toggleable()),
+                $gc(Tables\Columns\TextColumn::make('notes')
+                    ->label(ColumnLabels::get('box', 'notes'))
+                    ->limit(60)
+                    ->tooltip(fn (?string $state): ?string => $state)
+                    ->placeholder('—')
+                    ->toggleable()),
                 // RFQ App.2 §vii — "destroyed" badge. Shown as a red
                 // chip on the row so operators can spot artefacts that
                 // physically no longer exist without opening the record.
@@ -1007,9 +1016,6 @@ class BoxResource extends Resource
                             // (client feedback 2026-08-01, later than the RFQ). Both
                             // fields stay available so an operator can still record
                             // them, but a perm-out/destroyed box no longer needs them.
-                            Forms\Components\DatePicker::make('disinfestation_date')
-                                ->label('Disinfestation date (optional)')
-                                ->visible(fn (Get $get): bool => (bool) $get('set_perm_out')),
                             Forms\Components\TextInput::make('tracking_note')
                                 ->label(ColumnLabels::get('box', 'tracking_note'))
                                 ->maxLength(255),
@@ -1061,9 +1067,6 @@ class BoxResource extends Resource
 
                                 if (! empty($data['set_perm_out'])) {
                                     $update['barcode_status'] = 'PERM_OUT';
-                                    if (filled($data['disinfestation_date'] ?? null)) {
-                                        $update['disinfestation_date'] = $data['disinfestation_date'];
-                                    }
                                 }
 
                                 if (filled($data['tracking_note'] ?? null)) {

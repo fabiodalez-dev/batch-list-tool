@@ -9,6 +9,7 @@ use App\Filament\Concerns\AppliesFieldPermissions;
 use App\Filament\Resources\DocumentResource\Pages;
 use App\Filament\Support\CreatorColumn;
 use App\Filament\Support\SearchableSelects;
+use App\Models\Authority;
 use App\Models\CustomFieldDefinition;
 use App\Models\Document;
 use App\Models\DocumentType;
@@ -16,6 +17,7 @@ use App\Models\Lookup\CurrentBoxType;
 use App\Models\Lookup\DigitisationStatus;
 use App\Models\Practice;
 use App\Models\Repository;
+use App\Support\ActiveRepository;
 use App\Support\ColumnLabels\ColumnLabels;
 use App\Support\CustomFields\CustomFieldSchema;
 use App\Support\LocationBreadcrumbCache;
@@ -378,6 +380,7 @@ class DocumentResource extends Resource
                             ->options(fn (): array => DigitisationStatus::options())
                             ->nullable()
                             ->helperText('Digitisation source per RFQ APP2-xiii.')),
+                        $g(Forms\Components\TextInput::make('digitised_url')->label('Digitised link')->url()->maxLength(500)),
                         $g(Forms\Components\Toggle::make('torre')->label(ColumnLabels::get('document', 'torre'))->columnSpanFull()),
                         $g(Forms\Components\TextInput::make('accession_code_legacy')->label(ColumnLabels::get('document', 'accession_code_legacy'))->maxLength(191)),
                         // Client feedback 2026-08-18 #27: relabel to the client's
@@ -929,6 +932,7 @@ class DocumentResource extends Resource
                     ->schema([
                         TextEntry::make('colour_code')->label('Colour code')->placeholder('—'),
                         TextEntry::make('digitised')->label(ColumnLabels::get('document', 'digitised'))->placeholder('—'),
+                        TextEntry::make('digitised_url')->label('Digitised link')->url(fn (?string $state): ?string => $state, shouldOpenInNewTab: true)->placeholder('—'),
                         IconEntry::make('torre')->label(ColumnLabels::get('document', 'torre'))->boolean(),
                         TextEntry::make('accession_code_legacy')->label(ColumnLabels::get('document', 'accession_code_legacy'))->placeholder('—'),
                         TextEntry::make('object_reference_number')->label(ColumnLabels::get('document', 'object_reference_number'))->placeholder('—'),
@@ -1060,18 +1064,55 @@ class DocumentResource extends Resource
                     // RFQ Appendix-2 §xv — fall back to object_reference_number
                     // (then to the legacy identifier) when catalogue_identifier
                     // is null. Sorting / search remain on the canonical column.
-                    ->state(fn (Document $record): ?string => $record->display_identifier)),
-                // NAF Feedback-1 (Documents page) — show the notary / creator.
-                // In the NAF batch list this is the "Creator" / "Notary" column;
-                // a document may have more than one authority (badge list).
-                $gc(Tables\Columns\TextColumn::make('authorities.surname')
-                    ->label('Notary')
-                    ->badge()
+                    ->state(fn (Document $record): ?string => $record->display_identifier)
+                    // Client 2026-10-18: a database identifier that means
+                    // nothing to the cataloguer — hidden unless asked for.
+                    ->toggleable(isToggledHiddenByDefault: true)),
+                // Client 2026-10-18: the authority as the cataloguer cites it —
+                // its Citing Reference Code, and the creator's full name. A
+                // document may have more than one authority (one line each).
+                $gc(Tables\Columns\TextColumn::make('authorities.alternative_identifier')
+                    ->label('Actual Authority Reference Code')
                     ->listWithLineBreaks()
                     ->limitList(2)
-                    ->toggleable()),
-                $gc(Tables\Columns\TextColumn::make('document_type')->label(ColumnLabels::get('document', 'document_type'))->sortable()->toggleable()),
-                $gc(Tables\Columns\TextColumn::make('series.code')->label('Series')->badge()->sortable()->toggleable(), 'series_id'),
+                    ->placeholder('—')
+                    ->toggleable(), 'authorities'),
+                $gc(Tables\Columns\TextColumn::make('creator_names')
+                    ->label('Creator')
+                    ->state(fn (Document $record): array => $record->authorities
+                        ->map(fn (Authority $a): string => trim(($a->given_names ?? '') . ' ' . ($a->surname ?? '')))
+                        ->filter()
+                        ->values()
+                        ->all())
+                    ->listWithLineBreaks()
+                    ->limitList(2)
+                    ->placeholder('—')
+                    ->toggleable(), 'authorities'),
+                // Pairs with "Prev Attributed Authority Identifier", which holds
+                // the same kind of number (the authority's Alternate Reference Code).
+                $gc(Tables\Columns\TextColumn::make('authorities.alternative_identifier_warrant')
+                    ->label('Actual Authority Identifier')
+                    ->listWithLineBreaks()
+                    ->limitList(2)
+                    ->placeholder('—')
+                    ->toggleable(isToggledHiddenByDefault: true), 'authorities'),
+                $gc(Tables\Columns\TextColumn::make('prev_attributed_identifier')
+                    ->label(ColumnLabels::get('document', 'prev_attributed_identifier'))
+                    ->state(fn (Document $record): ?string => $record->previousAttribution()?->previous_identifier !== $record->identifier ? $record->previousAttribution()?->previous_identifier : null)
+                    ->placeholder('—')
+                    ->toggleable(isToggledHiddenByDefault: true), 'authorities'),
+                $gc(Tables\Columns\TextColumn::make('prev_attributed_volume')
+                    ->label(ColumnLabels::get('document', 'prev_attributed_volume'))
+                    ->state(fn (Document $record): ?string => $record->previousAttribution()?->previous_volume)
+                    ->placeholder('—')
+                    ->toggleable(isToggledHiddenByDefault: true), 'volume_number'),
+                // Client 2026-10-18: the type's name, not its DT code.
+                $gc(Tables\Columns\TextColumn::make('document_type')->label(ColumnLabels::get('document', 'document_type'))
+                    ->formatStateUsing(fn (?string $state, Document $record): ?string => $record->documentTypeRef?->name ?? $state)
+                    ->sortable()->toggleable()),
+                $gc(Tables\Columns\TextColumn::make('series.code')->label('Series')
+                    ->formatStateUsing(fn (?string $state, Document $record): ?string => $record->series?->title ? $state . ': ' . $record->series->title : $state)
+                    ->sortable()->toggleable(), 'series_id'),
                 $gc(Tables\Columns\TextColumn::make('batch.batch_number')->label('Batch')->sortable()->alignCenter()->toggleable(), 'batch_id'),
                 $gc(Tables\Columns\TextColumn::make('currentBox.box_number')->label('Box')
                     // Bug #2 — combined "Batch then Box" sort on the Box column.
@@ -1100,11 +1141,10 @@ class DocumentResource extends Resource
                 $gc(Tables\Columns\TextColumn::make('volume_number')->label(ColumnLabels::get('document', 'volume_number'))->sortable()->toggleable()),
                 $gc(Tables\Columns\TextColumn::make('part_number')->label(ColumnLabels::get('document', 'part_number'))->sortable()->toggleable(isToggledHiddenByDefault: true)),
                 $gc(Tables\Columns\TextColumn::make('dates')->label(ColumnLabels::get('document', 'dates'))->sortable()->toggleable()->limit(30)),
-                $gc(Tables\Columns\TextColumn::make('dates_year_start')->label('From')->numeric(thousandsSeparator: '')->sortable()->alignEnd()->toggleable()),
-                $gc(Tables\Columns\TextColumn::make('dates_year_end')->label('To')->numeric(thousandsSeparator: '')->sortable()->alignEnd()->toggleable()),
+                $gc(Tables\Columns\TextColumn::make('dates_year_start')->label('From')->numeric(thousandsSeparator: '')->sortable()->alignEnd()->toggleable(isToggledHiddenByDefault: true)),
+                $gc(Tables\Columns\TextColumn::make('dates_year_end')->label('To')->numeric(thousandsSeparator: '')->sortable()->alignEnd()->toggleable(isToggledHiddenByDefault: true)),
                 $gc(Tables\Columns\TextColumn::make('number_of_acts')->label('No of Acts')->sortable()->toggleable(isToggledHiddenByDefault: true)),
                 $gc(Tables\Columns\TextColumn::make('pages_folios')->label('Pages/Folios')->sortable()->toggleable(isToggledHiddenByDefault: true)),
-                $gc(Tables\Columns\TextColumn::make('barcode_in')->label('Barcode (IN)')->sortable()->toggleable(isToggledHiddenByDefault: true)),
                 $gc(Tables\Columns\TextColumn::make('catalogue_identifier')->label(ColumnLabels::get('document', 'catalogue_identifier'))->sortable()->toggleable(isToggledHiddenByDefault: true)),
                 $gc(Tables\Columns\TextColumn::make('temporary_identifier')->label(ColumnLabels::get('document', 'temporary_identifier'))->searchable()->sortable()->toggleable(isToggledHiddenByDefault: true)),
                 // Bug #31 — Notes visible by default: some documents can only be
@@ -1115,12 +1155,21 @@ class DocumentResource extends Resource
                 // Two-level disinfestation: show the effective date — the
                 // document's own if set, otherwise inherited from its box
                 // ("from box"). Not sortable (resolved accessor, not a column).
-                $gc(Tables\Columns\TextColumn::make('disinfestation_date')->label('Disinfested')
+                $gc(Tables\Columns\TextColumn::make('disinfestation_date')->label('Disinfested Date')
                     ->state(fn (?Document $record): ?\Carbon\Carbon => $record?->effectiveDisinfestationDate())
-                    ->date()
+                    ->date('d/m/Y')
                     ->description(fn (?Document $record): ?string => $record?->disinfestationDateIsInherited() ? 'from box' : null)
                     ->toggleable(isToggledHiddenByDefault: true)),
                 $gc(Tables\Columns\IconColumn::make('torre')->label(ColumnLabels::get('document', 'torre'))->boolean()->sortable()->toggleable(isToggledHiddenByDefault: true)),
+                // Client 2026-10-18: every column of the documents sheet can be
+                // shown here (hidden until picked in the column list).
+                $gc(Tables\Columns\TextColumn::make('tracking')->label(ColumnLabels::get('document', 'tracking'))->limit(60)->tooltip(fn (?string $state): ?string => $state)->placeholder('—')->sortable()->toggleable(isToggledHiddenByDefault: true)),
+                $gc(Tables\Columns\TextColumn::make('museum_location')->label(ColumnLabels::get('document', 'museum_location'))->placeholder('—')->sortable()->toggleable(isToggledHiddenByDefault: true)),
+                $gc(Tables\Columns\TextColumn::make('digitised')->label(ColumnLabels::get('document', 'digitised'))->state(fn (Document $record): ?string => $record->digitised ?? $record->digitised_url)->url(fn (Document $record): ?string => $record->digitised_url, shouldOpenInNewTab: true)->tooltip(fn (Document $record): ?string => $record->digitised_url)->limit(40)->placeholder('—')->sortable()->toggleable(isToggledHiddenByDefault: true)),
+                $gc(Tables\Columns\TextColumn::make('accession_code_legacy')->label(ColumnLabels::get('document', 'accession_code_legacy'))->state(fn (Document $record): ?string => $record->accession_code_legacy ?? $record->accession?->code)->placeholder('—')->sortable()->toggleable(isToggledHiddenByDefault: true), 'accession_id'),
+                $gc(Tables\Columns\TextColumn::make('museum_reference')->label(ColumnLabels::get('document', 'museum_reference'))->placeholder('—')->sortable()->toggleable(isToggledHiddenByDefault: true)),
+                $gc(Tables\Columns\TextColumn::make('object_reference_number')->label(ColumnLabels::get('document', 'object_reference_number'))->placeholder('—')->sortable()->toggleable(isToggledHiddenByDefault: true)),
+                $gc(Tables\Columns\TextColumn::make('citation_reference')->label(ColumnLabels::get('document', 'citation_reference'))->limit(60)->tooltip(fn (?string $state): ?string => $state)->placeholder('—')->sortable()->toggleable(isToggledHiddenByDefault: true)),
                 $gc(Tables\Columns\TextColumn::make('updated_at')->dateTime()->sortable()->toggleable(isToggledHiddenByDefault: true)),
                 // A9 — inputter column (who created the record).
                 CreatorColumn::make(),
@@ -1475,6 +1524,8 @@ class DocumentResource extends Resource
                 // 3,113-row sample where most rows share ~10 accessions
                 // this avoids 25 round-trips per page render.
                 'accession',
+                'documentTypeRef',
+                'identifierHistory',
                 // Custom-field EAV: eager-load definition to avoid N+1 in
                 // table columns and infolist rendering.
                 'customFieldValues.definition',
@@ -1507,7 +1558,9 @@ class DocumentResource extends Resource
      */
     public static function customFieldTableColumns(string $entityType): array
     {
-        $repositoryId = auth()->user()?->default_repository_id;
+        // The repository chosen in the top bar first, then the user's default:
+        // a user with no default never saw Past Reference Code (2026-10-18).
+        $repositoryId = app(ActiveRepository::class)->id() ?? auth()->user()?->default_repository_id;
         if ($repositoryId === null) {
             return [];
         }
