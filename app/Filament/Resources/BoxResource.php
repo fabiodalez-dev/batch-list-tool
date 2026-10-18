@@ -588,7 +588,7 @@ class BoxResource extends Resource
                         TextEntry::make('barcode_status')
                             ->label(ColumnLabels::get('box', 'barcode_status'))
                             // No barcode, no status (same rule as the list).
-                            ->state(fn (Box $record): ?string => filled($record->barcode) ? $record->barcode_status : null)
+                            ->state(fn (?Box $record): ?string => filled($record?->barcode) ? $record->barcode_status : null)
                             ->badge()
                             ->color(fn (?string $state): string => match ($state) {
                                 'IN' => 'success',
@@ -606,8 +606,8 @@ class BoxResource extends Resource
                             ->label('Location')
                             // Same as the list: a box with no location of its own
                             // shows the one all its documents share.
-                            ->state(fn (Box $record): ?string => $record->location?->full_path ?? $record->sharedDocumentLocation()?->full_path)
-                            ->belowContent(fn (Box $record): ?string => $record->location === null && $record->sharedDocumentLocation() !== null ? 'From its documents' : null)
+                            ->state(fn (?Box $record): ?string => $record?->location?->full_path ?? $record?->sharedDocumentLocation()?->full_path)
+                            ->belowContent(fn (?Box $record): ?string => $record !== null && $record->location === null && $record->sharedDocumentLocation() !== null ? 'From its documents' : null)
                             // Gate the link on the resolved relation, not the raw
                             // FK — an orphaned location_id must not link to a
                             // record that no longer exists (matches the list column).
