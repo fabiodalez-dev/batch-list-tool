@@ -1623,23 +1623,34 @@ class DocumentImporter extends Importer
                 ->label('Digitised')
                 ->guess(['Digitised', 'digitised'])
                 // Normalise to the controlled vocabulary (case-insensitive):
-                // 'vhmml' → 'VHMML', 'None' → 'none'. An unrecognised value
-                // (real data: an accession name mis-filed in this column) is
-                // dropped to null rather than failing the whole document row.
-                ->castStateUsing(function (?string $state): ?string {
+                // 'vhmml' → 'VHMML', 'None' → 'none'. A link to the digitised
+                // copy is kept in digitised_url, and a vHMML link also means
+                // VHMML: client 2026-10-18, 167 reading-room links were
+                // dropped. Any other value (real data: an accession name
+                // mis-filed in this column) is dropped rather than failing
+                // the whole document row.
+                ->fillRecordUsing(function (Document $record, ?string $state): void {
                     $v = trim((string) ($state ?? ''));
+                    $record->digitised = null;
+                    $record->digitised_url = null;
                     if ($v === '') {
-                        return null;
+                        return;
+                    }
+                    if (preg_match('#^https?://\S+$#i', $v) === 1) {
+                        $record->digitised_url = mb_substr($v, 0, 500);
+                        $record->digitised = stripos($v, 'vhmml') !== false ? 'VHMML' : null;
+
+                        return;
                     }
                     foreach (Document::DIGITISED_VALUES as $allowed) {
                         if (strcasecmp($v, $allowed) === 0) {
-                            return $allowed;
+                            $record->digitised = $allowed;
+
+                            return;
                         }
                     }
-
-                    return null;
                 })
-                ->rules(['nullable', 'string', 'max:100']),
+                ->rules(['nullable', 'string', 'max:500']),
 
             // Client 2026-10-12: "Those documents which are not in a box, how
             // should I handle them?" Optional: "In box", "Not in box" or

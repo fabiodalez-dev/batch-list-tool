@@ -255,10 +255,14 @@ it('A6: column names appear in the requested order: Batch, Box, Barcode, Barcode
         'box_number',
         'barcode',
         'barcode_status',
-        'disinfestation_date',
+        // Client 2026-10-18: disinfestation is on the documents, not the box;
+        // Tracking, Seal Number and Box Note follow the location.
         'box_type',
         'current_box_type',
         'location.full_path',
+        'tracking_note',
+        'seal_number',
+        'notes',
         'destroyed_at',
         'parent_box_id',
         'is_legacy',
@@ -285,7 +289,7 @@ it('A6: every core column is toggleable', function (): void {
 
     $mustBeToggleable = [
         'batch.batch_number', 'box_number', 'barcode',
-        'barcode_status', 'disinfestation_date', 'box_type',
+        'barcode_status', 'box_type', 'tracking_note', 'seal_number', 'notes',
         'destroyed_at', 'parent_box_id', 'is_legacy',
     ];
 
@@ -340,7 +344,7 @@ it('A9: CreatorColumn (Inputter) is present in the box table columns', function 
 // Sorting — per-column sortable()
 // ---------------------------------------------------------------------------
 
-it('per-column sorting: batch.batch_number, barcode_status, disinfestation_date are sortable', function (): void {
+it('per-column sorting: batch.batch_number, barcode_status, box_type are sortable', function (): void {
     $user = ba_actor();
     $this->actingAs($user);
 
@@ -351,7 +355,7 @@ it('per-column sorting: batch.batch_number, barcode_status, disinfestation_date 
         Table::make($livewire)
     );
 
-    foreach (['batch.batch_number', 'barcode_status', 'disinfestation_date', 'box_type', 'destroyed_at', 'is_legacy'] as $colName) {
+    foreach (['batch.batch_number', 'barcode_status', 'box_type', 'destroyed_at', 'is_legacy'] as $colName) {
         $col = $table->getColumn($colName);
         expect($col)->not->toBeNull("Column '{$colName}' not found")
             ->and($col->isSortable())->toBeTrue("Column '{$colName}' must be sortable");

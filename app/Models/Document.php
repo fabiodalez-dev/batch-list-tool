@@ -149,7 +149,7 @@ class Document extends Model implements AuditableContract, HasMedia, Sortable
         'barcode_ras_2_alt2', 'status_2_alt',
         'disinfestation_date_1', 'disinfestation_date_2', 'disinfestation_date_3',
         'catalogue_identifier', 'nra_location', 'museum_location', 'practice',
-        'dates', 'deeds', 'number_of_acts', 'pages_folios', 'current_box_type', 'colour_code', 'digitised', 'torre',
+        'dates', 'deeds', 'number_of_acts', 'pages_folios', 'current_box_type', 'colour_code', 'digitised', 'digitised_url', 'torre',
         'accession_code_legacy', 'object_reference_number', 'tracking', 'museum_reference',
         // Client 2026-08-18: temporary_identifier (unique, free text) + citation_reference.
         'temporary_identifier', 'citation_reference',
@@ -352,6 +352,20 @@ class Document extends Model implements AuditableContract, HasMedia, Sortable
     public function identifierHistory(): HasMany
     {
         return $this->hasMany(DocumentIdentifierHistory::class)->latest('changed_at');
+    }
+
+    /**
+     * The attribution the document had before ("Prev Attributed Identifier /
+     * Volume" on the documents sheet), recorded on import as a history row.
+     */
+    public function previousAttribution(): ?DocumentIdentifierHistory
+    {
+        $row = $this->identifierHistory
+            ->where('reason', 'Imported — previously attributed')
+            ->sortByDesc('id')
+            ->first();
+
+        return $row instanceof DocumentIdentifierHistory ? $row : null;
     }
 
     /**

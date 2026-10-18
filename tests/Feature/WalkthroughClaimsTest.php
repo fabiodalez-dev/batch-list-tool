@@ -17,7 +17,7 @@ use Livewire\Livewire;
  * the reply that were not yet covered by a dedicated test: the delete
  * confirmation warning, the delete permission gate, the Trashed →
  * Restore/Force-delete flow, and the bulk "Relocate boxes" action
- * (location + PERM OUT + disinfestation date + tracking note in one go).
+ * (location + PERM OUT + tracking note in one go).
  */
 uses(RefreshDatabase::class);
 
@@ -88,7 +88,7 @@ it('claim 1c: a deleted document appears under Trashed, can be restored, and can
     expect(Document::withoutGlobalScopes()->withTrashed()->find($doc->id))->toBeNull();
 });
 
-it('claim 3b: bulk Relocate sets location, PERM OUT with disinfestation date and a tracking note in one go', function (): void {
+it('claim 3b: bulk Relocate sets location, PERM OUT and a tracking note in one go', function (): void {
     $this->actingAs(wc_user('super_admin'));
 
     $location = qf_location();
@@ -99,7 +99,6 @@ it('claim 3b: bulk Relocate sets location, PERM OUT with disinfestation date and
         ->callTableBulkAction('relocate', [$boxA, $boxB], data: [
             'location_id' => $location->id,
             'set_perm_out' => true,
-            'disinfestation_date' => now()->toDateString(),
             'tracking_note' => 'Moved to NRA — walkthrough claim',
         ]);
 
@@ -107,7 +106,7 @@ it('claim 3b: bulk Relocate sets location, PERM OUT with disinfestation date and
         $fresh = $box->fresh();
         expect($fresh->location_id)->toBe($location->id)
             ->and($fresh->barcode_status)->toBe('PERM_OUT')
-            ->and($fresh->disinfestation_date)->not->toBeNull()
+            // Client 2026-10-18: disinfestation is recorded on the documents.
             // Client feedback 2026-08-04: relocation note goes to tracking_note.
             ->and((string) $fresh->tracking_note)->toContain('Moved to NRA — walkthrough claim');
     }
