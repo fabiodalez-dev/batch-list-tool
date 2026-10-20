@@ -31,6 +31,7 @@ use Filament\Actions\Imports\Importer;
 use Filament\Actions\Imports\Models\Import;
 use Illuminate\Database\Eloquent\Collection as EloquentCollection;
 use Illuminate\Database\Eloquent\Model;
+use Illuminate\Support\Carbon;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Validation\Rule;
 use Illuminate\Validation\ValidationException;
@@ -505,6 +506,17 @@ class DocumentImporter extends Importer
             $record->disinfestation_date_1 = $record->disinfestation_date;
         }
 
+        // The document's disinfestation date is its latest one. Client
+        // 2026-10-19: documents disinfested in their RAS box (column 1) and
+        // again in NRA 202 (column 3) showed the first date.
+        $latest = collect([$record->disinfestation_date, $record->disinfestation_date_2, $record->disinfestation_date_3])
+            ->filter()
+            ->map(fn (mixed $d): Carbon => Carbon::parse($d))
+            ->max();
+        if ($latest instanceof Carbon) {
+            $record->disinfestation_date = $latest->startOfDay();
+        }
+
         // Year range derived from free-text "Dates" column.
         if (! empty($record->dates) && $record->dates_year_start === null) {
             [$y0, $y1] = SpreadsheetParsers::parseYearRange((string) $record->dates);
@@ -769,6 +781,7 @@ class DocumentImporter extends Importer
             'in box' => 'in_box',
             'not in box', 'no box', 'not boxed' => 'not_in_box',
             'mounted no box', 'mounted' => 'mounted_no_box',
+            'conservation box', 'in conservation box' => 'conservation_box',
             default => null,
         };
     }
@@ -1653,11 +1666,12 @@ class DocumentImporter extends Importer
                 ->rules(['nullable', 'string', 'max:500']),
 
             // Client 2026-10-12: "Those documents which are not in a box, how
-            // should I handle them?" Optional: "In box", "Not in box" or
-            // "Mounted; no box". A blank cell lets the import decide from the
+            // should I handle them?" Optional: "In box", "Not in box",
+            // "Mounted; no box" or "Conservation Box" (2026-10-19). A blank
+            // cell lets the import decide from the
             // box columns (see syncCustodyWithBox()).
             ImportColumn::make('custody_status')
-                ->label('Custody Status (In box / Not in box / Mounted; no box)')
+                ->label('Custody Status (In box / Not in box / Mounted; no box / Conservation Box)')
                 ->guess(['Custody Status', 'custody_status', 'Custody'])
                 ->fillRecordUsing(function (Document $record, ?string $state): void {
                     $v = trim((string) ($state ?? ''));
@@ -1667,7 +1681,7 @@ class DocumentImporter extends Importer
                     $code = self::custodyCode($v);
                     if ($code === null) {
                         throw ValidationException::withMessages([
-                            'custody_status' => "Custody Status '{$v}' is not one of: In box, Not in box, Mounted; no box.",
+                            'custody_status' => "Custody Status '{$v}' is not one of: In box, Not in box, Mounted; no box, Conservation Box.",
                         ]);
                     }
                     $record->custody_status = $code;

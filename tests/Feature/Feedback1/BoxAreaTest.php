@@ -304,7 +304,7 @@ it('A6: every core column is toggleable', function (): void {
 // A7 — Filters visible when result set is empty
 // ---------------------------------------------------------------------------
 
-it('A7: box table uses BeforeContentCollapsible filters layout so filters are always accessible', function (): void {
+it('A7: box table opens its filters in a side panel (client 2026-10-19)', function (): void {
     $user = ba_actor();
     $this->actingAs($user);
 
@@ -315,7 +315,7 @@ it('A7: box table uses BeforeContentCollapsible filters layout so filters are al
         Table::make($livewire)
     );
 
-    expect($table->getFiltersLayout())->toBe(FiltersLayout::BeforeContentCollapsible);
+    expect($table->getFiltersLayout())->toBe(FiltersLayout::Modal);
 });
 
 // ---------------------------------------------------------------------------

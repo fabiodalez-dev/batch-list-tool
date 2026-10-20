@@ -8,6 +8,7 @@ use App\Filament\Actions\Documents\MoveToBoxAction;
 use App\Filament\Concerns\AppliesFieldPermissions;
 use App\Filament\Resources\DocumentResource\Pages;
 use App\Filament\Support\CreatorColumn;
+use App\Filament\Support\EqualsFirst;
 use App\Filament\Support\SearchableSelects;
 use App\Models\Authority;
 use App\Models\CustomFieldDefinition;
@@ -22,6 +23,7 @@ use App\Support\ColumnLabels\ColumnLabels;
 use App\Support\CustomFields\CustomFieldSchema;
 use App\Support\LocationBreadcrumbCache;
 use Carbon\Carbon;
+use Filament\Actions\Action;
 use Filament\Actions\BulkActionGroup;
 use Filament\Actions\DeleteBulkAction;
 use Filament\Actions\EditAction;
@@ -44,12 +46,14 @@ use Filament\Schemas\Schema;
 use Filament\Support\Enums\FontWeight;
 use Filament\Support\Enums\TextSize;
 use Filament\Tables;
+use Filament\Tables\Enums\FiltersLayout;
 use Filament\Tables\Filters\Filter;
 use Filament\Tables\Filters\QueryBuilder;
-use Filament\Tables\Filters\QueryBuilder\Constraints\NumberConstraint;
+use Filament\Tables\Filters\QueryBuilder\Constraints\BooleanConstraint;
+use Filament\Tables\Filters\QueryBuilder\Constraints\DateConstraint;
 use Filament\Tables\Filters\QueryBuilder\Constraints\RelationshipConstraint;
 use Filament\Tables\Filters\QueryBuilder\Constraints\RelationshipConstraint\Operators\IsRelatedToOperator;
-use Filament\Tables\Filters\QueryBuilder\Constraints\TextConstraint;
+use Filament\Tables\Filters\QueryBuilder\Constraints\SelectConstraint;
 use Filament\Tables\Filters\SelectFilter;
 use Filament\Tables\Filters\TernaryFilter;
 use Filament\Tables\Filters\TrashedFilter;
@@ -311,11 +315,7 @@ class DocumentResource extends Resource
                             // Options are derived from the const so they stay in
                             // sync with the model; the label map keeps them readable.
                             ->options(collect(Document::CUSTODY_STATUSES)
-                                ->mapWithKeys(fn (string $v): array => [$v => [
-                                    'in_box' => 'In box',
-                                    'not_in_box' => 'Not in box',
-                                    'mounted_no_box' => 'Mounted; no box',
-                                ][$v] ?? Str::headline($v)])
+                                ->mapWithKeys(fn (string $v): array => [$v => Document::custodyLabels()[$v] ?? Str::headline($v)])
                                 ->all())
                             ->default('in_box')
                             ->native(false)),
@@ -1091,7 +1091,7 @@ class DocumentResource extends Resource
                 // Pairs with "Prev Attributed Authority Identifier", which holds
                 // the same kind of number (the authority's Alternate Reference Code).
                 $gc(Tables\Columns\TextColumn::make('authorities.alternative_identifier_warrant')
-                    ->label('Actual Authority Identifier')
+                    ->label('Alternate Reference Code (MS)')
                     ->listWithLineBreaks()
                     ->limitList(2)
                     ->placeholder('—')
@@ -1143,7 +1143,10 @@ class DocumentResource extends Resource
                 $gc(Tables\Columns\TextColumn::make('dates')->label(ColumnLabels::get('document', 'dates'))->sortable()->toggleable()->limit(30)),
                 $gc(Tables\Columns\TextColumn::make('dates_year_start')->label('From')->numeric(thousandsSeparator: '')->sortable()->alignEnd()->toggleable(isToggledHiddenByDefault: true)),
                 $gc(Tables\Columns\TextColumn::make('dates_year_end')->label('To')->numeric(thousandsSeparator: '')->sortable()->alignEnd()->toggleable(isToggledHiddenByDefault: true)),
-                $gc(Tables\Columns\TextColumn::make('number_of_acts')->label('No of Acts')->sortable()->toggleable(isToggledHiddenByDefault: true)),
+                // Client 2026-10-19: Deeds was missing; No of Acts is not in her
+                // sheet and holds nothing, so it is no longer offered here.
+                $gc(Tables\Columns\TextColumn::make('deeds')->label(ColumnLabels::get('document', 'deeds'))->limit(40)->tooltip(fn (?string $state): ?string => $state)->placeholder('—')->sortable()->toggleable()),
+                $gc(Tables\Columns\TextColumn::make('custody_status')->label('Custody Status')->formatStateUsing(fn (?string $state): ?string => $state === null ? null : (Document::custodyLabels()[$state] ?? $state))->sortable()->toggleable(isToggledHiddenByDefault: true)),
                 $gc(Tables\Columns\TextColumn::make('pages_folios')->label('Pages/Folios')->sortable()->toggleable(isToggledHiddenByDefault: true)),
                 $gc(Tables\Columns\TextColumn::make('catalogue_identifier')->label(ColumnLabels::get('document', 'catalogue_identifier'))->sortable()->toggleable(isToggledHiddenByDefault: true)),
                 $gc(Tables\Columns\TextColumn::make('temporary_identifier')->label(ColumnLabels::get('document', 'temporary_identifier'))->searchable()->sortable()->toggleable(isToggledHiddenByDefault: true)),
@@ -1159,6 +1162,12 @@ class DocumentResource extends Resource
                     ->state(fn (?Document $record): ?\Carbon\Carbon => $record?->effectiveDisinfestationDate())
                     ->date('d/m/Y')
                     ->description(fn (?Document $record): ?string => $record?->disinfestationDateIsInherited() ? 'from box' : null)
+                    // The latest date is shown; the earlier ones on hover.
+                    ->tooltip(fn (?Document $record): ?string => $record === null ? null : (collect([$record->disinfestation_date_1, $record->disinfestation_date_2, $record->disinfestation_date_3])
+                        ->filter()
+                        ->map(fn (mixed $d): string => Carbon::parse($d)->format('d/m/Y'))
+                        ->unique()
+                        ->implode(', ') ?: null))
                     ->toggleable(isToggledHiddenByDefault: true)),
                 $gc(Tables\Columns\IconColumn::make('torre')->label(ColumnLabels::get('document', 'torre'))->boolean()->sortable()->toggleable(isToggledHiddenByDefault: true)),
                 // Client 2026-10-18: every column of the documents sheet can be
@@ -1180,13 +1189,17 @@ class DocumentResource extends Resource
                 // (see getEloquentQuery() for the base eager-load chain).
                 ...self::customFieldTableColumns('document'),
             ])
-            ->filtersFormColumns(3)
+            ->filtersFormColumns(2)
+            // Client 2026-10-19: the filters open in a side panel.
+            ->filtersLayout(FiltersLayout::Modal)
+            ->filtersTriggerAction(fn (Action $action): Action => $action->slideOver())
             ->filters([
-                // Feedback1 Wave B (B1) — rich filter mechanism (#1) with
-                // AND/OR/NOT nested groups and per-field dropdown constraints,
-                // complementing the omni free-text search bar (#2). Covers the
-                // key Document fields: series, batch, current box (relationship
-                // dropdowns), document_type (text) and the precise year range.
+                // Client 2026-10-19: "Document Filter — cannot see all — I think
+                // it needs to change to add what fields I want similar to
+                // Boxes". Every field is a rule of "Add rule"; only the filters
+                // other pages link to (Subseries, Batch, Current box, the
+                // disinfestation / flags / catalogue states) and Custody Status
+                // stay on the panel. Text and number rules start on Equals.
                 QueryBuilder::make()
                     ->constraints([
                         RelationshipConstraint::make('series')
@@ -1207,141 +1220,75 @@ class DocumentResource extends Resource
                             ),
                         RelationshipConstraint::make('currentBox')
                             ->label('Current box')
+                            ->emptyable()
                             ->selectable(
                                 IsRelatedToOperator::make()
                                     ->titleAttribute('box_number')
                                     ->searchable()
                                     ->multiple(),
                             ),
-                        TextConstraint::make('document_type')
-                            ->label(ColumnLabels::get('document', 'document_type')),
-                        TextConstraint::make('dates')
-                            ->label(ColumnLabels::get('document', 'dates')),
-                        NumberConstraint::make('dates_year_start')
-                            ->label('Year start')
-                            ->integer(),
-                        NumberConstraint::make('dates_year_end')
-                            ->label('Year end')
-                            ->integer(),
+                        RelationshipConstraint::make('documentTypeRef')
+                            ->label(ColumnLabels::get('document', 'document_type'))
+                            ->selectable(
+                                IsRelatedToOperator::make()
+                                    ->titleAttribute('name')
+                                    ->searchable()
+                                    ->multiple(),
+                            ),
+                        RelationshipConstraint::make('accession')
+                            ->label(ColumnLabels::get('document', 'accession_code_legacy'))
+                            ->selectable(
+                                IsRelatedToOperator::make()
+                                    ->titleAttribute('code')
+                                    ->searchable()
+                                    ->multiple(),
+                            ),
+                        EqualsFirst::text('creator_surname', 'Creator (surname)')->relationship('authorities', 'surname'),
+                        EqualsFirst::text('creator_name', 'Creator (name)')->relationship('authorities', 'given_names'),
+                        EqualsFirst::text('authority_citing_code', 'Actual Authority Reference Code')->relationship('authorities', 'alternative_identifier'),
+                        EqualsFirst::text('authority_alternate_code', 'Alternate Reference Code (MS)')->relationship('authorities', 'alternative_identifier_warrant'),
+                        EqualsFirst::text('practice', ColumnLabels::get('document', 'practice'), nullable: true),
+                        EqualsFirst::text('volume_number', ColumnLabels::get('document', 'volume_number'), nullable: true),
+                        EqualsFirst::text('part_number', ColumnLabels::get('document', 'part_number'), nullable: true),
+                        EqualsFirst::text('dates', ColumnLabels::get('document', 'dates'), nullable: true),
+                        EqualsFirst::number('dates_year_start', 'From (year)'),
+                        EqualsFirst::number('dates_year_end', 'To (year)'),
+                        EqualsFirst::text('deeds', ColumnLabels::get('document', 'deeds'), nullable: true),
+                        EqualsFirst::text('notes', ColumnLabels::get('document', 'notes'), nullable: true),
+                        EqualsFirst::text('tracking', ColumnLabels::get('document', 'tracking'), nullable: true),
+                        EqualsFirst::text('museum_location', ColumnLabels::get('document', 'museum_location'), nullable: true),
+                        EqualsFirst::text('museum_reference', ColumnLabels::get('document', 'museum_reference'), nullable: true),
+                        EqualsFirst::text('object_reference_number', ColumnLabels::get('document', 'object_reference_number'), nullable: true),
+                        EqualsFirst::text('citation_reference', ColumnLabels::get('document', 'citation_reference'), nullable: true),
+                        EqualsFirst::text('catalogue_identifier', ColumnLabels::get('document', 'catalogue_identifier'), nullable: true),
+                        EqualsFirst::text('temporary_identifier', ColumnLabels::get('document', 'temporary_identifier'), nullable: true),
+                        SelectConstraint::make('digitised')
+                            ->label(ColumnLabels::get('document', 'digitised'))
+                            ->options(array_combine(Document::DIGITISED_VALUES, Document::DIGITISED_VALUES))
+                            ->multiple()
+                            ->nullable(),
+                        DateConstraint::make('disinfestation_date')
+                            ->label('Disinfested Date')
+                            ->nullable(),
+                        BooleanConstraint::make('torre')
+                            ->label(ColumnLabels::get('document', 'torre')),
                     ]),
 
-                // Relationship multi-selects (parity with POC creators/series/batch filters)
+                // Other pages link here with these four in the URL (Batch,
+                // Box and the dashboard), so their names must not change.
                 SelectFilter::make('series')->label(ColumnLabels::get('document', 'series'))
                     ->relationship('series', 'code')->searchable()->preload()->multiple(),
-
-                // Heavy relations (669 boxes, 669 batches, 808 authorities):
-                // server-side searchable() WITHOUT preload() to avoid
-                // dumping the entire option list into the filter dropdown.
-                // Same pattern as the form-side fix in SearchableSelects
-                // (PR feat/ux-searchable-selects).
                 SelectFilter::make('batch')
                     ->relationship('batch', 'batch_number')->searchable()->multiple(),
-
-                SelectFilter::make('repository')
-                    ->relationship('repository', 'code')->searchable()->preload(),
-
                 SelectFilter::make('current_box_id')
                     ->label('Current box')
                     ->relationship('currentBox', 'box_number')->searchable()->multiple(),
-
-                SelectFilter::make('accession_id')
-                    ->label('Accession')
-                    ->relationship('accession', 'code')->searchable()->preload(),
-
-                SelectFilter::make('authorities')
-                    ->label('Creators')
-                    ->relationship('authorities', 'surname')->searchable()->multiple(),
-
-                // NAF Feedback-1 (Documents page) — filter by notary IDENTIFIER
-                // (the R-code), complementing the surname-based "Creators" filter.
-                SelectFilter::make('authorities_identifier')
-                    ->label('Notary identifier')
-                    ->relationship('authorities', 'identifier')->searchable()->multiple(),
-
-                // Free-text search per field (POC-style filtri puntuali).
-                // For columns covered by a single-column FULLTEXT index
-                // (notes, deeds, museum_reference) we use the model scope:
-                // on MySQL it expands to MATCH(...) AGAINST(... IN NATURAL
-                // LANGUAGE MODE) and uses the FT index added by migration
-                // 2026_05_18_100000; on other drivers it transparently falls
-                // back to the same LIKE chain.
-                // Short-string indexed columns (barcode_in, catalogue_identifier,
-                // practice) keep the LIKE filter because they're already covered
-                // by B-tree indexes and a FULLTEXT index on a VARCHAR(50) gives
-                // no measurable gain.
-                self::likeFilter('barcode_in', 'Search in Barcode (IN)'),
-                self::likeFilter('catalogue_identifier', 'Search in Catalogue ID'),
-                self::likeFilter('practice', 'Search in Practice'),
-                self::fullTextFilter('notes', 'Search in Notes'),
-                self::fullTextFilter('deeds', 'Search in Deeds'),
-                self::fullTextFilter('museum_reference', 'Search in Museum Reference'),
-
-                // volume_number is special — also searches the JSON path extra->volume; kept inline.
-                Filter::make('volume_number')->label(ColumnLabels::get('document', 'volume_number'))
-                    ->form([
-                        Forms\Components\TextInput::make('value')->label('Search in Volume No'),
-                    ])
-                    ->query(
-                        fn (Builder $q, array $data) => $q->when(
-                            $data['value'] ?? null,
-                            fn ($q, $v) => $q->where(function ($q) use ($v) {
-                                $needle = '%' . trim((string) $v) . '%';
-                                $q->where('volume_number', 'like', $needle)
-                                    ->orWhere('extra->volume', 'like', $needle);
-                            })
-                        )
-                    ),
-
-                // Year range filter
-                Filter::make('year_range')
-                    ->form([
-                        Forms\Components\TextInput::make('year_from')->label('Year from')->numeric(),
-                        Forms\Components\TextInput::make('year_to')->label('Year to')->numeric(),
-                    ])
-                    ->query(fn (Builder $query, array $data) => $query
-                        ->when($data['year_from'] ?? null, fn ($query, $v) => $query->where(fn ($query) => $query->whereNull('dates_year_end')
-                            ->orWhere('dates_year_end', '>=', (int) $v)))
-                        ->when($data['year_to'] ?? null, fn ($query, $v) => $query->where(fn ($query) => $query->whereNull('dates_year_start')
-                            ->orWhere('dates_year_start', '<=', (int) $v))))
-                    ->indicateUsing(function (array $data): array {
-                        $i = [];
-                        if (! empty($data['year_from'])) {
-                            $i[] = "Year ≥ {$data['year_from']}";
-                        }
-                        if (! empty($data['year_to'])) {
-                            $i[] = "Year ≤ {$data['year_to']}";
-                        }
-
-                        return $i;
-                    }),
-
-                // Disinfestation date range
-                // Two-level: filter on the EFFECTIVE date — the document's own,
-                // else its box's (matching Document::effectiveDisinfestationDate()
-                // and the list column). A document shown a "from box" date must
-                // still fall inside the range / count as disinfested.
-                Filter::make('disinfestation_range')
-                    ->form([
-                        Forms\Components\DatePicker::make('disinfested_from')->label('Disinfested from'),
-                        Forms\Components\DatePicker::make('disinfested_to')->label('Disinfested to'),
-                    ])
-                    // Compare against the EFFECTIVE date via a single COALESCE
-                    // expression — the document's own date, else its (non-deleted)
-                    // box's. One whereRaw per bound keeps the two bounds ANDed and
-                    // avoids the nested-closure builder pitfalls.
-                    ->query(fn (Builder $query, array $data): Builder => $query
-                        ->when(
-                            $data['disinfested_from'] ?? null,
-                            fn (Builder $query, $v): Builder => $query->whereRaw(self::EFFECTIVE_DISINFESTATION_SQL . ' >= ?', [$v])
-                        )
-                        ->when(
-                            $data['disinfested_to'] ?? null,
-                            fn (Builder $query, $v): Builder => $query->whereRaw(self::EFFECTIVE_DISINFESTATION_SQL . ' <= ?', [$v])
-                        )),
-
-                // Ternary filters
-                TernaryFilter::make('torre')->label(ColumnLabels::get('document', 'torre'))
-                    ->placeholder('Any')->trueLabel('Torre = yes')->falseLabel('Torre = no'),
+                // Client 2026-10-19: "How to search for not in box documents,
+                // Mounted; no Box, Conservation Box?"
+                SelectFilter::make('custody_status')
+                    ->label('Custody Status')
+                    ->options(Document::custodyLabels())
+                    ->multiple(),
 
                 TernaryFilter::make('disinfestation_date')
                     ->label('Disinfested?')->nullable()
@@ -1364,35 +1311,6 @@ class DocumentResource extends Resource
                     ->placeholder('Any')
                     ->trueLabel('Currently out for disinfestation')
                     ->falseLabel('Not currently out'),
-
-                TernaryFilter::make('has_barcode')
-                    ->label('Has barcode?')
-                    ->placeholder('Any')->trueLabel('Yes')->falseLabel('No')
-                    ->queries(
-                        true: fn ($q) => $q->whereRaw("TRIM(COALESCE(barcode_in, '')) <> ''"),
-                        false: fn ($q) => $q->whereRaw("TRIM(COALESCE(barcode_in, '')) = ''"),
-                    ),
-
-                TernaryFilter::make('has_box')
-                    ->label('Assigned to box?')
-                    ->placeholder('Any')->trueLabel('Yes')->falseLabel('No')
-                    ->queries(
-                        true: fn ($q) => $q->whereNotNull('current_box_id'),
-                        false: fn ($q) => $q->whereNull('current_box_id'),
-                    ),
-
-                TernaryFilter::make('has_notes')
-                    ->label('Has notes?')
-                    ->placeholder('Any')->trueLabel('Yes')->falseLabel('No')
-                    ->queries(
-                        true: fn ($q) => $q->whereRaw("TRIM(COALESCE(notes, '')) <> ''"),
-                        false: fn ($q) => $q->whereRaw("TRIM(COALESCE(notes, '')) = ''"),
-                    ),
-
-                // RFQ APP2-xviii — narrow the list to docs carrying at least one
-                // unresolved flag (status IN open|acknowledged). The false branch
-                // surfaces docs that are either flag-free or whose flags have all
-                // been resolved/dismissed.
                 TernaryFilter::make('has_open_flags')
                     ->label('Open flags')
                     ->placeholder('All documents')
@@ -1842,41 +1760,6 @@ class DocumentResource extends Resource
         // pagination-friendly (no count() rewrite quirks) and lets MySQL
         // reuse the existing index on `documents.identifier` for the
         // outer ORDER BY.
-    }
-
-    /**
-     * Build a leading-/trailing-wildcard LIKE filter on a single column.
-     * Centralises the form + query shape shared by all "Search in X" filters.
-     */
-    private static function likeFilter(string $name, string $label, ?string $column = null): Filter
-    {
-        $col = $column ?? $name;
-
-        return Filter::make($name)
-            ->form([Forms\Components\TextInput::make('value')->label($label)])
-            ->query(fn (Builder $query, array $data) => $query->when($data['value'] ?? null, fn ($query, $v) => $query->where($col, 'like', '%' . trim((string) $v) . '%')));
-    }
-
-    /**
-     * Build a FULLTEXT-backed filter on a single column. Delegates to
-     * Document::scopeSearchFullText() which handles the MySQL/non-MySQL
-     * driver split (MATCH...AGAINST vs LIKE) and the empty-term no-op.
-     *
-     * One column per filter is intentional: MySQL only uses a FULLTEXT
-     * index when the MATCH() column list exactly matches the index's
-     * column list, and the migration creates one single-column index
-     * per searchable column.
-     */
-    private static function fullTextFilter(string $name, string $label, ?string $column = null): Filter
-    {
-        $col = $column ?? $name;
-
-        return Filter::make($name)
-            ->form([Forms\Components\TextInput::make('value')->label($label)])
-            ->query(fn (Builder $query, array $data) => $query->when(
-                $data['value'] ?? null,
-                fn (Builder $query, string $v) => $query->searchFullText($v, [$col]),
-            ));
     }
 
     /**

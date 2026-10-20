@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace App\Support\BulkImport;
 
+use OpenSpout\Reader\XLSX\Options as XlsxOptions;
 use OpenSpout\Reader\XLSX\Reader as XlsxReader;
 use PhpOffice\PhpSpreadsheet\Shared\Date as ExcelDate;
 
@@ -20,6 +21,14 @@ use PhpOffice\PhpSpreadsheet\Shared\Date as ExcelDate;
  * them, so what reaches the importers does not change: a date cell is its
  * Excel serial number ("45143"), a boolean is "1" or "", numbers keep their
  * digits.
+ *
+ * Except a date cell that does not show a whole date. Excel turns what is
+ * typed as "1-6" (volumes 1 to 6) or "Sep 2000" into a date, and shows it
+ * the way it was typed; the serial number was imported instead (client
+ * 2026-10-19: 44 volumes, 13 part numbers and 699 Dates read "45663").
+ * Such a cell now comes out as the text Excel shows. A cell showing a whole
+ * date (day, month and year) keeps its serial number: how Excel displays
+ * those depends on the computer's settings, the stored date does not.
  */
 final class XlsxStream
 {
@@ -86,7 +95,29 @@ final class XlsxStream
      */
     private static function rows(string $path, int $sheetIndex): \Generator
     {
-        $reader = new XlsxReader;
+        // The same sheet read twice side by side: once for the values, once
+        // for the text Excel shows (OpenSpout gives one or the other).
+        $shown = self::sheetRows($path, $sheetIndex, formatDates: true);
+
+        foreach (self::sheetRows($path, $sheetIndex, formatDates: false) as $i => $values) {
+            $texts = $shown->current();
+            $shown->next();
+            $cells = [];
+            foreach ($values as $k => $value) {
+                $cells[$k] = self::cell($value, is_array($texts) ? ($texts[$k] ?? null) : null);
+            }
+            yield $i => $cells;
+        }
+    }
+
+    /**
+     * @return \Generator<int, array<int, mixed>>
+     */
+    private static function sheetRows(string $path, int $sheetIndex, bool $formatDates): \Generator
+    {
+        $options = new XlsxOptions;
+        $options->SHOULD_FORMAT_DATES = $formatDates;
+        $reader = new XlsxReader($options);
         $reader->open($path);
 
         try {
@@ -97,7 +128,7 @@ final class XlsxStream
                 }
                 $i = 0;
                 foreach ($sheet->getRowIterator() as $row) {
-                    yield $i++ => array_map(self::cell(...), $row->toArray());
+                    yield $i++ => $row->toArray();
                 }
 
                 return;
@@ -107,8 +138,32 @@ final class XlsxStream
         }
     }
 
-    private static function cell(mixed $value): mixed
+    /**
+     * True when the text Excel shows for a date names its day, month and
+     * year ("08/05/2023", "5 Aug 2023"); false for "Sep 2000", "1-6", "16 Jan".
+     */
+    private static function showsWholeDate(\DateTimeInterface $date, string $shown): bool
     {
+        $tokens = preg_split('/[^0-9A-Za-z]+/', strtolower($shown), -1, PREG_SPLIT_NO_EMPTY) ?: [];
+        $numbers = array_map('intval', array_filter($tokens, 'ctype_digit'));
+        $hasYear = in_array((int) $date->format('Y'), $numbers, true) || in_array((int) $date->format('y'), $numbers, true) && count($numbers) >= 3;
+        $hasDay = in_array((int) $date->format('j'), $numbers, true);
+        $monthName = strtolower($date->format('M'));
+        $hasMonth = in_array((int) $date->format('n'), $numbers, true)
+            || array_filter($tokens, static fn (string $t): bool => str_starts_with($t, $monthName)) !== [];
+
+        return $hasYear && $hasDay && $hasMonth;
+    }
+
+    private static function cell(mixed $value, mixed $shown = null): mixed
+    {
+        // A date in January or February 1900 is a small number typed into a
+        // column formatted as a date ("2" shown as "Jan 1900"): the number
+        // is what was meant, so it keeps coming out as one.
+        $typedNumber = $value instanceof \DateTimeInterface && $value->format('Y-m') <= '1900-02';
+        if ($value instanceof \DateTimeInterface && ! $typedNumber && is_string($shown) && trim($shown) !== '' && ! self::showsWholeDate($value, $shown)) {
+            return trim($shown);
+        }
         if ($value instanceof \DateTimeInterface) {
             $serial = ExcelDate::PHPToExcel($value);
             // Excel counts a 29 February 1900 that never existed; OpenSpout

@@ -2188,7 +2188,7 @@ class ImportWizard extends Page
         $key = 'import-preview:' . md5($path . '|' . (int) @filesize($path) . '|' . (int) @filemtime($path) . '|' . $sheet);
 
         try {
-            return Cache::remember($key, now()->addHour(), static function () use ($file, $path, $sheet): array {
+            $info = Cache::remember($key, now()->addHour(), static function () use ($file, $path, $sheet): array {
                 $ext = strtolower((string) $file->getClientOriginalExtension());
                 if ($ext === 'xlsx') {
                     return XlsxStream::preview($path, $sheet);
@@ -2196,6 +2196,14 @@ class ImportWizard extends Page
 
                 return self::loadPreview($path, $sheet);
             });
+            // The headers the import reads the rows by: a repeated header gets
+            // " (2)", " (3)" there (csvHeaderKeys()). The column map was
+            // guessed from the raw row, where the three "Disinfestation Date"
+            // columns are one name, so the 2nd and 3rd were never mapped and
+            // never imported (client 2026-10-19, NRA 202).
+            $info['headers'] = array_map(static fn ($k): string => (string) $k, SpreadsheetHeaders::dedupe($info['headers']));
+
+            return $info;
         } catch (\Throwable) {
             return null;
         }

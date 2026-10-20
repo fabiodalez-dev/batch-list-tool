@@ -97,10 +97,11 @@ class Document extends Model implements AuditableContract, HasMedia, Sortable
      * - `in_box`        — document is physically inside a box
      * - `not_in_box`    — in situ at NRA, not yet boxed
      * - `mounted_no_box`— framed / mounted; no box applicable
+     * - `conservation_box` — in a conservation box (client 2026-10-19)
      *
      * @var array<int,string>
      */
-    public const CUSTODY_STATUSES = ['in_box', 'not_in_box', 'mounted_no_box'];
+    public const CUSTODY_STATUSES = ['in_box', 'not_in_box', 'mounted_no_box', 'conservation_box'];
 
     /**
      * Import-context bypass for the "cannot place a document in a DESTROYED box"
@@ -172,6 +173,21 @@ class Document extends Model implements AuditableContract, HasMedia, Sortable
 
     /** @internal DocumentBuilder bulk-update guard bypass flag */
     private static bool $bypassAuditGuard = false;
+
+    /**
+     * How each custody status reads on screen and in the sheet.
+     *
+     * @return array<string, string>
+     */
+    public static function custodyLabels(): array
+    {
+        return [
+            'in_box' => 'In box',
+            'not_in_box' => 'Not in box',
+            'mounted_no_box' => 'Mounted; no box',
+            'conservation_box' => 'Conservation Box',
+        ];
+    }
 
     /**
      * Sort within the current_box. Documents in box A and documents in box B
