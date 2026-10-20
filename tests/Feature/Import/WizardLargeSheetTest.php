@@ -18,6 +18,7 @@ use Illuminate\Support\Facades\Bus;
 use Livewire\Livewire;
 use PhpOffice\PhpSpreadsheet\Shared\Date as ExcelDate;
 use PhpOffice\PhpSpreadsheet\Spreadsheet;
+use PhpOffice\PhpSpreadsheet\Style\NumberFormat;
 use PhpOffice\PhpSpreadsheet\Writer\Xlsx;
 use Spatie\Permission\Models\Role;
 
@@ -112,4 +113,36 @@ it('previews a sheet from the stream: headers, first rows and the row count', fu
         ->and($preview['totalRows'])->toBe(250)
         // A date cell comes out as the Excel serial number, as before.
         ->and($preview['rows'][0][3])->toBe(45143);
+});
+
+it('imports a cell Excel turned into a date as the text it shows, and keeps whole dates as dates', function (): void {
+    // Client 2026-10-19: "1-6" in Volume, "Sep 2000" in Dates and "1-2" in
+    // Part Number had become dates in Excel and were imported as "45663".
+    $book = new Spreadsheet;
+    $ws = $book->getActiveSheet();
+    $ws->fromArray(['Subseries', 'Volume', 'Dates', 'Part Number', 'Disinfestation Date', 'Disinfestation Date'], null, 'A1');
+    $ws->fromArray(['REG', ExcelDate::PHPToExcel(new DateTime('2025-01-06')), ExcelDate::PHPToExcel(new DateTime('2000-09-01')), ExcelDate::PHPToExcel(new DateTime('2025-01-02')), ExcelDate::PHPToExcel(new DateTime('2023-08-05')), ExcelDate::PHPToExcel(new DateTime('2023-05-08'))], null, 'A2');
+    $ws->getStyle('B2')->getNumberFormat()->setFormatCode('m\-d');
+    $ws->getStyle('C2')->getNumberFormat()->setFormatCode('mmm\ yyyy');
+    $ws->getStyle('D2')->getNumberFormat()->setFormatCode('m\-d');
+    $ws->getStyle('E2')->getNumberFormat()->setFormatCode('dd/mm/yyyy');
+    // Excel's own short date (format 14) is shown in the computer's order;
+    // the stored date is what counts.
+    $ws->getStyle('F2')->getNumberFormat()->setFormatCode(NumberFormat::FORMAT_DATE_XLSX14);
+    $path = tempnam(sys_get_temp_dir(), 'wls') . '.xlsx';
+    (new Xlsx($book))->save($path);
+
+    Livewire::test(ImportWizard::class)
+        ->set('data.import_type', 'documents')
+        ->set('data.file', UploadedFile::fake()->createWithContent('documents.xlsx', file_get_contents($path)))
+        ->set('data.confirm', true)
+        ->call('startImport')
+        ->assertNotified('Import started');
+
+    $doc = Document::withoutGlobalScope(RepositoryScope::class)->firstOrFail();
+    expect($doc->volume_number)->toBe('1-6')
+        ->and($doc->dates)->toBe('Sep 2000')
+        ->and($doc->part_number)->toBe('1-2')
+        ->and($doc->disinfestation_date_1?->format('Y-m-d'))->toBe('2023-08-05')
+        ->and($doc->disinfestation_date_2?->format('Y-m-d'))->toBe('2023-05-08');
 });

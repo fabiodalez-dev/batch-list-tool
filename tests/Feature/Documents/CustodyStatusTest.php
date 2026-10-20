@@ -7,7 +7,7 @@ use Illuminate\Validation\ValidationException;
 uses(RefreshDatabase::class);
 
 it('exposes the contract custody states', function () {
-    expect(Document::CUSTODY_STATUSES)->toBe(['in_box', 'not_in_box', 'mounted_no_box']);
+    expect(Document::CUSTODY_STATUSES)->toBe(['in_box', 'not_in_box', 'mounted_no_box', 'conservation_box']);
 });
 
 it('persists a custody status', function () {

@@ -63,7 +63,8 @@ function fcq_document(): Document
     ]);
 }
 
-it('narrows the documents list by a "Search in" filter, row for row', function (): void {
+it('narrows the documents list by an "Add rule" rule, row for row', function (): void {
+    // Client 2026-10-19: the "Search in …" filters became rules of "Add rule".
     $repo = Repository::factory()->create(['code' => 'FCQD']);
     $series = Series::firstOrCreate(['code' => 'FCQD'], ['title' => 'F', 'is_active' => true]);
     foreach (['CAT-KEEP-1', 'CAT-DROP-2'] as $i => $cat) {
@@ -74,25 +75,29 @@ it('narrows the documents list by a "Search in" filter, row for row', function (
     }
 
     $filtered = Livewire::test(ListDocuments::class)
-        ->filterTable('catalogue_identifier', ['value' => 'KEEP'])
+        ->filterTable('queryBuilder', ['rules' => [
+            'r1' => ['type' => 'catalogue_identifier', 'data' => ['operator' => 'contains', 'settings' => ['text' => 'KEEP']]],
+        ]])
         ->instance()->getFilteredTableQuery()->pluck('catalogue_identifier')->all();
 
     expect($filtered)->toBe(['CAT-KEEP-1']);
 });
 
-it('applies every repaired documents-list filter to the query', function (string $filter, array $value, string $expect): void {
-    $sql = fcq_sql(Livewire::test(ListDocuments::class)->filterTable($filter, $value));
+it('applies every documents-list rule to the query', function (string $type, string $operator, array $settings, string $expect): void {
+    $sql = fcq_sql(Livewire::test(ListDocuments::class)->filterTable('queryBuilder', ['rules' => [
+        'r1' => ['type' => $type, 'data' => ['operator' => $operator, 'settings' => $settings]],
+    ]]));
 
     expect($sql)->toContain($expect);
 })->with([
-    'search in catalogue identifier' => ['catalogue_identifier', ['value' => 'ZQX91'], 'ZQX91'],
-    'search in practice' => ['practice', ['value' => 'ZQX92'], 'ZQX92'],
-    'search in barcode in' => ['barcode_in', ['value' => 'ZQX93'], 'ZQX93'],
-    'search in notes' => ['notes', ['value' => 'ZQX94'], 'ZQX94'],
-    'search in museum reference' => ['museum_reference', ['value' => 'ZQX95'], 'ZQX95'],
-    'search in deeds' => ['deeds', ['value' => 'ZQX96'], 'ZQX96'],
-    'year range' => ['year_range', ['year_from' => 1789], 'dates_year_end'],
-    'disinfestation range' => ['disinfestation_range', ['disinfested_from' => '2026-01-01'], '2026-01-01'],
+    'catalogue identifier' => ['catalogue_identifier', 'equals', ['text' => 'ZQX91'], 'ZQX91'],
+    'practice' => ['practice', 'equals', ['text' => 'ZQX92'], 'ZQX92'],
+    'notes' => ['notes', 'contains', ['text' => 'ZQX94'], 'ZQX94'],
+    'museum reference' => ['museum_reference', 'equals', ['text' => 'ZQX95'], 'ZQX95'],
+    'deeds' => ['deeds', 'equals', ['text' => 'ZQX96'], 'ZQX96'],
+    'tracking' => ['tracking', 'contains', ['text' => 'ZQX97'], 'ZQX97'],
+    'year from' => ['dates_year_start', 'equals', ['number' => 1789], '1789'],
+    'disinfested date' => ['disinfestation_date', 'isAfter', ['date' => '2026-01-01'], '2026-01-01'],
 ]);
 
 it('applies the flags-list date range to the query', function (): void {

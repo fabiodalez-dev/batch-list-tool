@@ -83,7 +83,8 @@ it('keeps the dates of all three Disinfestation Date columns', function (): void
     ], $this->user->id, ['repository_id' => $this->repo->id]);
 
     $doc = Document::withoutGlobalScope(RepositoryScope::class)->where('identifier', 'ITR-4')->firstOrFail();
-    expect($doc->disinfestation_date?->format('Y-m-d'))->toBe('2023-08-05')
+    // The document's own date is the latest of the three (client 2026-10-19).
+    expect($doc->disinfestation_date?->format('Y-m-d'))->toBe('2026-07-27')
         ->and($doc->disinfestation_date_1?->format('Y-m-d'))->toBe('2023-08-05')
         ->and($doc->disinfestation_date_2?->format('Y-m-d'))->toBe('2024-10-24')
         ->and($doc->disinfestation_date_3?->format('Y-m-d'))->toBe('2026-07-27');

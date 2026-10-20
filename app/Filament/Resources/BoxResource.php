@@ -7,6 +7,7 @@ use App\Filament\Actions\Boxes\MoveBoxToLocationAction;
 use App\Filament\Concerns\AppliesFieldPermissions;
 use App\Filament\Resources\BoxResource\Pages;
 use App\Filament\Support\CreatorColumn;
+use App\Filament\Support\EqualsFirst;
 use App\Filament\Support\SearchableSelects;
 use App\Models\Batch;
 use App\Models\Box;
@@ -42,7 +43,6 @@ use Filament\Tables\Filters\QueryBuilder;
 use Filament\Tables\Filters\QueryBuilder\Constraints\RelationshipConstraint;
 use Filament\Tables\Filters\QueryBuilder\Constraints\RelationshipConstraint\Operators\IsRelatedToOperator;
 use Filament\Tables\Filters\QueryBuilder\Constraints\SelectConstraint;
-use Filament\Tables\Filters\QueryBuilder\Constraints\TextConstraint;
 use Filament\Tables\Filters\SelectFilter;
 use Filament\Tables\Filters\TernaryFilter;
 use Filament\Tables\Filters\TrashedFilter;
@@ -745,7 +745,9 @@ class BoxResource extends Resource
             ->persistFiltersInSession()
             // A7 — keep the filter panel visible even when the result set is
             // empty, so the operator can still adjust/clear their criteria.
-            ->filtersLayout(FiltersLayout::BeforeContentCollapsible)
+            // Client 2026-10-19: the filters open in a side panel.
+            ->filtersLayout(FiltersLayout::Modal)
+            ->filtersTriggerAction(fn (Action $action): Action => $action->slideOver())
             // Feedback1 Wave B (B4) — clicking a box row navigates to the
             // Documents dashboard showing that box's contents. Documents'
             // `current_box_id` SelectFilter is `->multiple()`, so the URL shape
@@ -928,10 +930,8 @@ class BoxResource extends Resource
                             ->label(ColumnLabels::get('box', 'box_type'))
                             ->options(fn (): array => BoxType::filterOptions())
                             ->multiple(),
-                        TextConstraint::make('box_number')
-                            ->label(ColumnLabels::get('box', 'box_number')),
-                        TextConstraint::make('barcode')
-                            ->label(ColumnLabels::get('box', 'barcode')),
+                        EqualsFirst::text('box_number', ColumnLabels::get('box', 'box_number')),
+                        EqualsFirst::text('barcode', ColumnLabels::get('box', 'barcode')),
                         SelectConstraint::make('barcode_status')
                             ->label(ColumnLabels::get('box', 'barcode_status'))
                             ->options(array_combine(Box::BARCODE_STATUSES, Box::BARCODE_STATUSES))
