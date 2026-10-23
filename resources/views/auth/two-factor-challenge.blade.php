@@ -25,10 +25,11 @@
         input[type="text"] { width: 100%; padding: .5rem .75rem; font-size: 1rem;
                              border: 1px solid #d1d5db; border-radius: .375rem; box-sizing: border-box;
                              font-family: ui-monospace, SFMono-Regular, Menlo, monospace; letter-spacing: .15em; }
-        button { background: #2563eb; color: #fff; border: 0; border-radius: .375rem;
+        /* NAf slate green: the panel's primary 600 / 700 (AdminPanelProvider::colors) */
+        button { background: #3E5D64; color: #fff; border: 0; border-radius: .375rem;
                  padding: .5rem 1rem; font-weight: 500; cursor: pointer; }
-        button:hover { background: #1d4ed8; }
-        .toggle { display: block; margin-top: 1rem; text-align: center; font-size: .8125rem; color: #2563eb;
+        button:hover { background: #334A50; }
+        .toggle { display: block; margin-top: 1rem; text-align: center; font-size: .8125rem; color: #3E5D64;
                   text-decoration: none; cursor: pointer; background: none; border: 0; padding: 0; }
         .toggle:hover { text-decoration: underline; }
         .error  { color: #b91c1c; font-size: .8125rem; margin-top: .5rem; }

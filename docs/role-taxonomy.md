@@ -9,7 +9,7 @@ suite. The RFQ display names are surfaced in the UI via
 
 | RFQ / submission name | Internal slug | Capabilities |
 |---|---|---|
-| **Administrator** | `super_admin` | Full access incl. role/permission management, Shield, every gate bypass. The emergency escape-hatch account (`admin@batchlist.local`) holds this. |
+| **Super administrator** (RFQ: Administrator) | `super_admin` | Full access incl. role/permission management, Shield, every gate bypass. The emergency escape-hatch account (`admin@batchlist.local`) holds this. |
 | **Administrator** | `admin` | Full operational access (CRUD on all entities, import, reports) but no Shield/role management. The NAF committee accounts (Charlene, Maria Pia, Massimo) currently hold `super_admin` at the client's explicit request. |
 | **ReadingRoom** | `editor` | Create + update documents; cannot delete; no user management. |
 | **General** | `viewer` | Read-only: consultation, search, export. No mutations. |
