@@ -45,7 +45,7 @@ class EditProfile extends \Filament\Auth\Pages\EditProfile
                 ->options($options)
                 ->nullable()
                 ->searchable()
-                ->helperText('The repository that will be pre-selected when you open the panel.'),
+                ->helperText('Used for new records and imports when "All repositories" is selected in the top bar. It does not change the repository selected at sign-in: the top bar keeps your last choice.'),
         ]);
     }
 
