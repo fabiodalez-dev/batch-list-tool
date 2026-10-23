@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 use App\Filament\Concerns\ExplainsPage;
 use App\Filament\Pages\TwoFactorProfile;
+use App\Filament\Resources\BoxResource\Pages\ListBoxes;
 use App\Support\PagePurposes;
 
 it('registry keys are all real page classes', function () {
@@ -36,7 +37,7 @@ it('every page with a registry entry uses the ExplainsPage trait (except documen
 it('the Boxes page no longer says a box needs a disinfestation date to go PERM OUT', function () {
     // The rule was dropped on the client's 2026-08-01 feedback (Box model,
     // BoxImporter); only the Documents "Mark PERM_OUT" action still asks.
-    $body = PagePurposes::for(App\Filament\Resources\BoxResource\Pages\ListBoxes::class)['body'];
+    $body = PagePurposes::for(ListBoxes::class)['body'];
 
     expect($body)->not->toContain('cannot be set PERM OUT without a disinfestation date')
         ->and($body)->toContain('a box can be set PERM OUT without a disinfestation date');
