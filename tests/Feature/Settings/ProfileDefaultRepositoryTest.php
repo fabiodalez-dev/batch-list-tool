@@ -82,11 +82,12 @@ it('profile page returns 200 for an authenticated user', function () {
 
 it('explains the default repository as the fallback for new records and imports, not the sign-in choice', function () {
     // ActiveRepository restores the last top-bar choice at sign-in; the
-    // default repository is what new records and imports fall back to.
+    // default repository pre-fills new records and is the fallback of
+    // document and box imports under "All repositories".
     $u = makeProfileUser();
     $this->actingAs($u);
 
     Livewire\Livewire::test(EditProfile::class)
-        ->assertSee('Used for new records and imports when')
+        ->assertSee('Pre-selected as the repository of new records')
         ->assertDontSee('pre-selected when you open the panel');
 });
