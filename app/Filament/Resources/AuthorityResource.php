@@ -127,6 +127,12 @@ class AuthorityResource extends Resource
                             ->label(ColumnLabels::get('authority', 'given_names'))
                             ->required()
                             ->maxLength(255)),
+                        $g(Forms\Components\TextInput::make('name_suffix')
+                            ->label(ColumnLabels::get('authority', 'name_suffix'))
+                            ->maxLength(64)),
+                        $g(Forms\Components\TextInput::make('maiden_surname')
+                            ->label(ColumnLabels::get('authority', 'maiden_surname'))
+                            ->maxLength(255)),
                         // Feedback1 — replace free-text "Person" with a
                         // constrained Notary / Interventor vocabulary. Existing
                         // values (e.g. legacy 'PERSON') are merged into the
@@ -282,6 +288,12 @@ class AuthorityResource extends Resource
                             ->placeholder('—'),
                         TextEntry::make('given_names')
                             ->label(ColumnLabels::get('authority', 'given_names'))
+                            ->placeholder('—'),
+                        TextEntry::make('name_suffix')
+                            ->label(ColumnLabels::get('authority', 'name_suffix'))
+                            ->placeholder('—'),
+                        TextEntry::make('maiden_surname')
+                            ->label(ColumnLabels::get('authority', 'maiden_surname'))
                             ->placeholder('—'),
                         TextEntry::make('entity_type')
                             ->label(ColumnLabels::get('authority', 'entity_type'))
@@ -480,6 +492,17 @@ class AuthorityResource extends Resource
                     ->toggleable()),
                 $gc(Tables\Columns\TextColumn::make('given_names')
                     ->label(ColumnLabels::get('authority', 'given_names'))
+                    ->sortable()
+                    ->searchable()
+                    ->toggleable()),
+                $gc(Tables\Columns\TextColumn::make('name_suffix')
+                    ->label(ColumnLabels::get('authority', 'name_suffix'))
+                    ->placeholder('—')
+                    ->sortable()
+                    ->toggleable()),
+                $gc(Tables\Columns\TextColumn::make('maiden_surname')
+                    ->label(ColumnLabels::get('authority', 'maiden_surname'))
+                    ->placeholder('—')
                     ->sortable()
                     ->searchable()
                     ->toggleable()),

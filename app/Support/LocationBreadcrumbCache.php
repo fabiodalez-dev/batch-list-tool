@@ -29,6 +29,9 @@ final class LocationBreadcrumbCache
     /** @var array<int, string> */
     private static array $memo = [];
 
+    /** @var array<string, ?Location> */
+    private static array $byCode = [];
+
     public static function for(?Location $location): ?string
     {
         if ($location === null) {
@@ -38,8 +41,27 @@ final class LocationBreadcrumbCache
         return self::$memo[(int) $location->getKey()] ??= $location->full_path;
     }
 
+    /**
+     * The breadcrumb of the location a code names ("MUSE-1-33" → "Showcase
+     * 6"), or the code itself when no location has it. Client 2026-10-27:
+     * Museum Location showed the code.
+     */
+    public static function forCode(?string $code): ?string
+    {
+        $code = trim((string) $code);
+        if ($code === '') {
+            return null;
+        }
+        if (! array_key_exists($code, self::$byCode)) {
+            self::$byCode[$code] = Location::withoutGlobalScopes()->whereNull('deleted_at')->where('code', $code)->first();
+        }
+
+        return self::for(self::$byCode[$code]) ?? $code;
+    }
+
     public static function flush(): void
     {
         self::$memo = [];
+        self::$byCode = [];
     }
 }

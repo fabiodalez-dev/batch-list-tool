@@ -370,7 +370,7 @@ class ImportWizard extends Page
             'entity_type' => 'Person or Institution (e.g. "Notary" counts as Institution).',
             'practice_dates_active' => 'A year range, e.g. "1607-1629".',
             'ntg_dates_active' => 'A year range for Notary-to-Government service, e.g. "1882-1893".',
-            'name_suffix' => 'e.g. "Jr." — appended to the given name.',
+            'name_suffix' => 'e.g. "Senior", "Junior". Kept apart from the given name.',
             'maiden_surname' => "The creator's maiden surname, if any.",
             'surname' => "The creator's surname.",
             'given_names' => "The creator's given name(s).",

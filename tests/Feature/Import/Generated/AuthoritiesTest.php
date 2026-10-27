@@ -545,7 +545,7 @@ test('NTG Dates Active (real NAF example row 2) splits into ntg_dates_start/end 
         ->and($a->ntg_dates_end)->toBe(1890);
 })->skip(fn () => ! is_file(AT_NAF_EXAMPLE_XLSX), 'NAF example file not present');
 
-test('Maiden Surname (real NAF example row 2) is appended into notes', function () {
+test('Maiden Surname (real NAF example row 2) is imported into its own column', function () {
     $u = at_admin();
     $this->actingAs($u);
 
@@ -553,17 +553,18 @@ test('Maiden Surname (real NAF example row 2) is appended into notes', function 
     $rows = at_loadXlsx(AT_NAF_EXAMPLE_XLSX);
     at_run([$rows[1]], at_mapFromHeaders($rows), $u->id);
 
-    expect(Authority::where('alternative_identifier', 'R647')->value('notes'))->toContain('Maiden surname: Zammit');
+    expect(Authority::where('alternative_identifier', 'R647')->value('maiden_surname'))->toBe('Zammit');
 })->skip(fn () => ! is_file(AT_NAF_EXAMPLE_XLSX), 'NAF example file not present');
 
-test('Name Suffix is appended onto given_names', function () {
+test('Name Suffix is imported into its own column, not onto given_names (client 2026-10-27)', function () {
     $u = at_admin();
     $this->actingAs($u);
 
     // Real row R83 (Borg, Salvatore) carries Name Suffix "Senior".
     at_run([at_realRow('R83')], AT_COLUMN_MAP, $u->id);
 
-    expect(Authority::where('alternative_identifier', 'R83')->value('given_names'))->toBe('Salvatore Senior');
+    expect(Authority::where('alternative_identifier', 'R83')->value('given_names'))->toBe('Salvatore')
+        ->and(Authority::where('alternative_identifier', 'R83')->value('name_suffix'))->toBe('Senior');
 });
 
 // ─── Whitespace ─────────────────────────────────────────────────────────────
@@ -605,5 +606,5 @@ test('the real NAF example_authority_import.xlsx (2 rows) imports cleanly end-to
     expect(at_failures($import))->toBe([])
         ->and(Authority::count())->toBe(2)
         ->and(Authority::where('alternative_identifier', 'R646')->value('surname'))->toBe('Farrugia')
-        ->and(Authority::where('alternative_identifier', 'R647')->value('notes'))->toContain('Maiden surname: Zammit');
+        ->and(Authority::where('alternative_identifier', 'R647')->value('maiden_surname'))->toBe('Zammit');
 })->skip(fn () => ! is_file(AT_NAF_EXAMPLE_XLSX), 'NAF example file not present');

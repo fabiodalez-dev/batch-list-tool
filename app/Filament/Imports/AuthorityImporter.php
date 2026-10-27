@@ -278,31 +278,18 @@ class AuthorityImporter extends Importer
                 ->guess(['Notes', 'Note', 'Remarks'])
                 ->rules(['nullable', 'string', 'max:65535']),
 
+            // Client 2026-10-27: both have their own column now. The suffix was
+            // appended to the given names ("Cristoforo Senior") and the maiden
+            // surname written into the notes, so neither showed as such.
             ImportColumn::make('name_suffix')
                 ->label('Name Suffix')
                 ->guess(['Name Suffix', 'Suffix'])
-                ->fillRecordUsing(function (Authority $record, ?string $state): void {
-                    if ($state === null || trim($state) === '') {
-                        return;
-                    }
-                    // Append to given_names: "Antonio" + "Jr." → "Antonio Jr."
-                    $given = trim((string) $record->given_names);
-                    $record->given_names = $given === ''
-                        ? trim($state)
-                        : ($given . ' ' . trim($state));
-                }),
+                ->rules(['nullable', 'string', 'max:64']),
 
             ImportColumn::make('maiden_surname')
                 ->label('Maiden Surname')
                 ->guess(['Maiden Surname', 'Maiden Name'])
-                ->fillRecordUsing(function (Authority $record, ?string $state): void {
-                    if ($state === null || trim($state) === '') {
-                        return;
-                    }
-                    $prev = trim((string) $record->notes);
-                    $line = 'Maiden surname: ' . trim($state);
-                    $record->notes = $prev === '' ? $line : ($prev . "\n" . $line);
-                }),
+                ->rules(['nullable', 'string', 'max:255']),
         ]);
     }
 

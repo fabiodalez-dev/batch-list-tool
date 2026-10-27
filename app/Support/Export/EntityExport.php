@@ -330,7 +330,7 @@ final class EntityExport
     private static function storageColumn(): array
     {
         return [
-            'authority' => ['practice_dates_active' => 'practice_dates_start', 'ntg_dates_active' => 'ntg_dates_start', 'name_suffix' => 'given_names', 'maiden_surname' => 'notes'],
+            'authority' => ['practice_dates_active' => 'practice_dates_start', 'ntg_dates_active' => 'ntg_dates_start'],
             'series' => ['parent_code' => 'parent_id', 'repository_code' => 'repository_id'],
             'batch' => ['repository_code' => 'repository_id'],
             'location' => ['parent_name' => 'parent_id', 'repository_code' => 'repository_id'],
@@ -371,11 +371,6 @@ final class EntityExport
             'authority' => [
                 'practice_dates_active' => static fn (Model $r): ?string => $yearRange($r->getAttribute('practice_dates_start'), $r->getAttribute('practice_dates_end')),
                 'ntg_dates_active' => static fn (Model $r): ?string => $yearRange($r->getAttribute('ntg_dates_start'), $r->getAttribute('ntg_dates_end')),
-                // The importer APPENDS these to given_names and notes. Their
-                // values are already in those exported columns; writing them
-                // here too would append them a second time on every re-import.
-                'name_suffix' => static fn (): ?string => null,
-                'maiden_surname' => static fn (): ?string => null,
             ],
             'series' => [
                 'parent_code' => static fn (Model $r): mixed => $r->getRelationValue('parent')?->getAttribute('code'),

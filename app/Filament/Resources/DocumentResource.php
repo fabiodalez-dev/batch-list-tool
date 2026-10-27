@@ -11,9 +11,11 @@ use App\Filament\Support\CreatorColumn;
 use App\Filament\Support\EqualsFirst;
 use App\Filament\Support\SearchableSelects;
 use App\Models\Authority;
+use App\Models\Box;
 use App\Models\CustomFieldDefinition;
 use App\Models\Document;
 use App\Models\DocumentType;
+use App\Models\Lookup\BoxType;
 use App\Models\Lookup\CurrentBoxType;
 use App\Models\Lookup\DigitisationStatus;
 use App\Models\Practice;
@@ -54,6 +56,7 @@ use Filament\Tables\Filters\QueryBuilder\Constraints\DateConstraint;
 use Filament\Tables\Filters\QueryBuilder\Constraints\RelationshipConstraint;
 use Filament\Tables\Filters\QueryBuilder\Constraints\RelationshipConstraint\Operators\IsRelatedToOperator;
 use Filament\Tables\Filters\QueryBuilder\Constraints\SelectConstraint;
+use Filament\Tables\Filters\QueryBuilder\Constraints\TextConstraint;
 use Filament\Tables\Filters\SelectFilter;
 use Filament\Tables\Filters\TernaryFilter;
 use Filament\Tables\Filters\TrashedFilter;
@@ -806,6 +809,7 @@ class DocumentResource extends Resource
                             ->visible(fn (?Document $record): bool => filled($record?->nra_location)),
                         TextEntry::make('museum_location')
                             ->label(ColumnLabels::get('document', 'museum_location'))
+                            ->formatStateUsing(fn (?string $state): ?string => LocationBreadcrumbCache::forCode($state))
                             ->placeholder('—')
                             ->columnSpanFull()
                             ->visible(fn (?Document $record): bool => filled($record?->museum_location)),
@@ -935,7 +939,7 @@ class DocumentResource extends Resource
                         TextEntry::make('digitised_url')->label('Digitised link')->url(fn (?string $state): ?string => $state, shouldOpenInNewTab: true)->placeholder('—'),
                         IconEntry::make('torre')->label(ColumnLabels::get('document', 'torre'))->boolean(),
                         TextEntry::make('accession_code_legacy')->label(ColumnLabels::get('document', 'accession_code_legacy'))->placeholder('—'),
-                        TextEntry::make('object_reference_number')->label(ColumnLabels::get('document', 'object_reference_number'))->placeholder('—'),
+                        TextEntry::make('object_reference_number')->label(ColumnLabels::get('document', 'object_reference_number'))->url(fn (?string $state): ?string => Document::driveSearchUrl($state), shouldOpenInNewTab: true)->placeholder('—'),
                         TextEntry::make('temporary_identifier')->label(ColumnLabels::get('document', 'temporary_identifier'))->copyable()->placeholder('—'),
                         TextEntry::make('citation_reference')->label(ColumnLabels::get('document', 'citation_reference'))->placeholder('—')->columnSpanFull(),
                         TextEntry::make('tracking')->label(ColumnLabels::get('document', 'tracking'))->placeholder('—')->columnSpanFull(),
@@ -1074,18 +1078,16 @@ class DocumentResource extends Resource
                 $gc(Tables\Columns\TextColumn::make('authorities.alternative_identifier')
                     ->label('Actual Authority Reference Code')
                     ->listWithLineBreaks()
-                    ->limitList(2)
                     ->placeholder('—')
                     ->toggleable(), 'authorities'),
                 $gc(Tables\Columns\TextColumn::make('creator_names')
                     ->label('Creator')
                     ->state(fn (Document $record): array => $record->authorities
-                        ->map(fn (Authority $a): string => trim(($a->given_names ?? '') . ' ' . ($a->surname ?? '')))
+                        ->map(fn (Authority $a): string => trim(implode(' ', array_filter([$a->given_names, $a->surname, $a->name_suffix]))))
                         ->filter()
                         ->values()
                         ->all())
                     ->listWithLineBreaks()
-                    ->limitList(2)
                     ->placeholder('—')
                     ->toggleable(), 'authorities'),
                 // Pairs with "Prev Attributed Authority Identifier", which holds
@@ -1093,7 +1095,6 @@ class DocumentResource extends Resource
                 $gc(Tables\Columns\TextColumn::make('authorities.alternative_identifier_warrant')
                     ->label('Alternate Reference Code (MS)')
                     ->listWithLineBreaks()
-                    ->limitList(2)
                     ->placeholder('—')
                     ->toggleable(isToggledHiddenByDefault: true), 'authorities'),
                 $gc(Tables\Columns\TextColumn::make('prev_attributed_identifier')
@@ -1113,12 +1114,18 @@ class DocumentResource extends Resource
                 $gc(Tables\Columns\TextColumn::make('series.code')->label('Series')
                     ->formatStateUsing(fn (?string $state, Document $record): ?string => $record->series?->title ? $state . ': ' . $record->series->title : $state)
                     ->sortable()->toggleable(), 'series_id'),
-                $gc(Tables\Columns\TextColumn::make('batch.batch_number')->label('Batch')->sortable()->alignCenter()->toggleable(), 'batch_id'),
+                // Client 2026-10-27: Batch then Box, in number order (1, 2, 3…
+                // rather than 1, 10, 100), for both columns.
+                $gc(Tables\Columns\TextColumn::make('batch.batch_number')->label('Batch')
+                    ->sortable(query: fn (Builder $query, string $direction): Builder => self::orderByBatchAndBox($query, $direction))
+                    ->alignCenter()->toggleable(), 'batch_id'),
                 $gc(Tables\Columns\TextColumn::make('currentBox.box_number')->label('Box')
-                    // Bug #2 — combined "Batch then Box" sort on the Box column.
-                    ->sortable(query: fn (Builder $query, string $direction): Builder => $query
-                        ->orderByLeftPowerJoins('batch.batch_number', $direction)
-                        ->orderByLeftPowerJoins('currentBox.box_number', $direction))
+                    // A box that is not a RAS box is named by its type: "MAV 1",
+                    // "NRA 202" (client 2026-10-27: MAV 1 showed as Box 1).
+                    ->formatStateUsing(fn (?string $state, Document $record): ?string => $record->currentBox !== null && ($record->currentBox->box_type ?? 'RAS') !== 'RAS'
+                        ? $record->currentBox->shortLabel()
+                        : $state)
+                    ->sortable(query: fn (Builder $query, string $direction): Builder => self::orderByBatchAndBox($query, $direction))
                     ->toggleable(), 'current_box_id'),
                 // NAF (2026-07-30) two-level location: a document shows its OWN
                 // location if set, otherwise it inherits its box's ("from box").
@@ -1173,11 +1180,11 @@ class DocumentResource extends Resource
                 // Client 2026-10-18: every column of the documents sheet can be
                 // shown here (hidden until picked in the column list).
                 $gc(Tables\Columns\TextColumn::make('tracking')->label(ColumnLabels::get('document', 'tracking'))->limit(60)->tooltip(fn (?string $state): ?string => $state)->placeholder('—')->sortable()->toggleable(isToggledHiddenByDefault: true)),
-                $gc(Tables\Columns\TextColumn::make('museum_location')->label(ColumnLabels::get('document', 'museum_location'))->placeholder('—')->sortable()->toggleable(isToggledHiddenByDefault: true)),
-                $gc(Tables\Columns\TextColumn::make('digitised')->label(ColumnLabels::get('document', 'digitised'))->state(fn (Document $record): ?string => $record->digitised ?? $record->digitised_url)->url(fn (Document $record): ?string => $record->digitised_url, shouldOpenInNewTab: true)->tooltip(fn (Document $record): ?string => $record->digitised_url)->limit(40)->placeholder('—')->sortable()->toggleable(isToggledHiddenByDefault: true)),
+                $gc(Tables\Columns\TextColumn::make('museum_location')->label(ColumnLabels::get('document', 'museum_location'))->formatStateUsing(fn (?string $state): ?string => LocationBreadcrumbCache::forCode($state))->placeholder('—')->sortable()->toggleable(isToggledHiddenByDefault: true)),
+                $gc(Tables\Columns\TextColumn::make('digitised')->label(ColumnLabels::get('document', 'digitised'))->state(fn (Document $record): ?string => $record->digitised_url ?? $record->digitised)->url(fn (Document $record): ?string => $record->digitised_url, shouldOpenInNewTab: true)->tooltip(fn (Document $record): ?string => $record->digitised_url ? ($record->digitised ?? 'Digitised') : null)->limit(50)->placeholder('—')->sortable()->toggleable(isToggledHiddenByDefault: true)),
                 $gc(Tables\Columns\TextColumn::make('accession_code_legacy')->label(ColumnLabels::get('document', 'accession_code_legacy'))->state(fn (Document $record): ?string => $record->accession_code_legacy ?? $record->accession?->code)->placeholder('—')->sortable()->toggleable(isToggledHiddenByDefault: true), 'accession_id'),
                 $gc(Tables\Columns\TextColumn::make('museum_reference')->label(ColumnLabels::get('document', 'museum_reference'))->placeholder('—')->sortable()->toggleable(isToggledHiddenByDefault: true)),
-                $gc(Tables\Columns\TextColumn::make('object_reference_number')->label(ColumnLabels::get('document', 'object_reference_number'))->placeholder('—')->sortable()->toggleable(isToggledHiddenByDefault: true)),
+                $gc(Tables\Columns\TextColumn::make('object_reference_number')->label(ColumnLabels::get('document', 'object_reference_number'))->url(fn (?string $state): ?string => Document::driveSearchUrl($state), shouldOpenInNewTab: true)->placeholder('—')->sortable()->toggleable(isToggledHiddenByDefault: true)),
                 $gc(Tables\Columns\TextColumn::make('citation_reference')->label(ColumnLabels::get('document', 'citation_reference'))->limit(60)->tooltip(fn (?string $state): ?string => $state)->placeholder('—')->sortable()->toggleable(isToggledHiddenByDefault: true)),
                 $gc(Tables\Columns\TextColumn::make('updated_at')->dateTime()->sortable()->toggleable(isToggledHiddenByDefault: true)),
                 // A9 — inputter column (who created the record).
@@ -1224,9 +1231,18 @@ class DocumentResource extends Resource
                             ->selectable(
                                 IsRelatedToOperator::make()
                                     ->titleAttribute('box_number')
+                                    ->getOptionLabelFromRecordUsing(fn (Box $record): string => $record->shortLabel())
+                                    ->modifyRelationshipQueryUsing(fn (Builder $query): Builder => $query->with('batch'))
                                     ->searchable()
                                     ->multiple(),
                             ),
+                        // Client 2026-10-27: "From Documents I cannot search for
+                        // NRA, MAV etc… Boxes (Filter by Box type)".
+                        SelectConstraint::make('box_type')
+                            ->label('Box type')
+                            ->relationship('currentBox', 'box_type')
+                            ->options(fn (): array => BoxType::filterOptions())
+                            ->multiple(),
                         RelationshipConstraint::make('documentTypeRef')
                             ->label(ColumnLabels::get('document', 'document_type'))
                             ->selectable(
@@ -1272,6 +1288,9 @@ class DocumentResource extends Resource
                             ->nullable(),
                         BooleanConstraint::make('torre')
                             ->label(ColumnLabels::get('document', 'torre')),
+                        // Client 2026-10-27: "Cannot filter by Past Reference
+                        // Code" — a custom field. One rule per custom field.
+                        ...self::customFieldConstraints('document'),
                     ]),
 
                 // Other pages link here with these four in the URL (Batch,
@@ -1282,7 +1301,11 @@ class DocumentResource extends Resource
                     ->relationship('batch', 'batch_number')->searchable()->multiple(),
                 SelectFilter::make('current_box_id')
                     ->label('Current box')
-                    ->relationship('currentBox', 'box_number')->searchable()->multiple(),
+                    // "Batch 30 / Box 8", "MAV 1": the bare number is shared by
+                    // a box in every batch (client 2026-10-27).
+                    ->relationship('currentBox', 'box_number', fn (Builder $query): Builder => $query->with('batch'))
+                    ->getOptionLabelFromRecordUsing(fn (Box $record): string => $record->shortLabel())
+                    ->searchable()->multiple(),
                 // Client 2026-10-19: "How to search for not in box documents,
                 // Mounted; no Box, Conservation Box?"
                 SelectFilter::make('custody_status')
@@ -1414,6 +1437,51 @@ class DocumentResource extends Resource
      * which means the conditional was effectively always-true anyway;
      * removing it just kills the overhead without changing the behaviour.
      */
+    /**
+     * One "Add rule" text rule per active custom field of the entity, for the
+     * repository chosen in the top bar (or the user's default).
+     *
+     * @return list<TextConstraint>
+     */
+    public static function customFieldConstraints(string $entityType): array
+    {
+        $repositoryId = app(ActiveRepository::class)->id() ?? auth()->user()?->default_repository_id;
+        if ($repositoryId === null) {
+            return [];
+        }
+
+        return CustomFieldDefinition::query()
+            ->where('repository_id', $repositoryId)
+            ->where('entity_type', $entityType)
+            ->where('is_active', true)
+            ->orderBy('sort_order')
+            ->get()
+            ->map(static fn (CustomFieldDefinition $def): TextConstraint => EqualsFirst::text('cf_' . $def->key, (string) $def->label, nullable: true)
+                ->relationship('customFieldValues', 'value', static fn (Builder $query): Builder => $query->where('custom_field_definition_id', $def->getKey())))
+            ->values()
+            ->all();
+    }
+
+    /**
+     * Batch, then box, both in number order: "Batch 1 Box 2" before
+     * "Batch 1 Box 10", text numbers ("Unknown", "NULL") after the numbers.
+     */
+    public static function orderByBatchAndBox(Builder $query, string $direction): Builder
+    {
+        $dir = strtolower($direction) === 'desc' ? 'desc' : 'asc';
+
+        // Sub-selects, not joins: a join would make repository_id and
+        // batch_id ambiguous for the scopes and filters on the query.
+        $batch = '(select sort_batch.batch_number from batches sort_batch where sort_batch.id = documents.batch_id)';
+        $box = '(select sort_box.box_number from boxes sort_box where sort_box.id = documents.current_box_id)';
+
+        return $query
+            ->orderByRaw("CAST({$batch} AS UNSIGNED) {$dir}")
+            ->orderByRaw("{$batch} {$dir}")
+            ->orderByRaw("CAST({$box} AS UNSIGNED) {$dir}")
+            ->orderByRaw("{$box} {$dir}");
+    }
+
     public static function getEloquentQuery(): Builder
     {
         return parent::getEloquentQuery()
