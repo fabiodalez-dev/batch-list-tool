@@ -52,6 +52,11 @@
                             {{-- Processed / Total --}}
                             <td class="px-4 py-3 text-right tabular-nums text-gray-700 dark:text-gray-300">
                                 {{ number_format($row['processed_rows']) }}&nbsp;/&nbsp;{{ number_format($row['total_rows']) }}
+                                @if (($row['unprocessed_rows'] ?? 0) > 0)
+                                    <p class="mt-1 text-left text-[11px] font-medium leading-snug text-red-600 dark:text-red-400 max-w-xs ml-auto" data-import-unprocessed>
+                                        {{ number_format($row['unprocessed_rows']) }} rows were never imported. Import those rows again.
+                                    </p>
+                                @endif
                             </td>
 
                             {{-- Successful --}}

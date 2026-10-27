@@ -337,21 +337,22 @@ it('does not read a hand-typed number as an Excel serial', function (): void {
     expect(Authority::where('identifier', 'NAM-D5')->value('date_of_creation'))->toBe('2026-07-29');
 });
 
-it('imports Notes without the maiden-surname line overwriting it', function (): void {
+it('imports the maiden surname and the name suffix in their own columns, leaving notes and given names alone', function (): void {
+    // Client 2026-10-27: the suffix was appended to the given names and the
+    // maiden surname written into the notes; neither showed as such.
     $u = isaar_admin();
     $this->actingAs($u);
 
-    // maiden_surname APPENDS a line to notes. Filament fills columns in the
-    // order they are declared, so declaring notes after it would have the
-    // imported note replace the appended line and lose it silently.
     isaar_import([
         'identifier' => 'NAM-6', 'surname' => 'Camilleri', 'given_names' => 'Rita', 'entity_type' => 'Notary',
         'notes' => 'Transferred from the Gozo section.',
-        'maiden_surname' => 'Zammit',
+        'maiden_surname' => 'Zammit', 'name_suffix' => 'Senior',
     ], $u->id);
 
-    $notes = (string) Authority::where('identifier', 'NAM-6')->value('notes');
+    $a = Authority::where('identifier', 'NAM-6')->firstOrFail();
 
-    expect($notes)->toContain('Transferred from the Gozo section.');
-    expect($notes)->toContain('Maiden surname: Zammit');
+    expect($a->notes)->toBe('Transferred from the Gozo section.')
+        ->and($a->maiden_surname)->toBe('Zammit')
+        ->and($a->given_names)->toBe('Rita')
+        ->and($a->name_suffix)->toBe('Senior');
 });

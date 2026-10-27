@@ -175,6 +175,9 @@ class ImportStatus extends Page
                     'file_name' => $import->file_name,
                     'importer' => $importerShort,
                     'processed_rows' => $import->processed_rows,
+                    // Rows a finished import never reached (its jobs failed
+                    // before reading them): 767 on 2026-10-14, not shown anywhere.
+                    'unprocessed_rows' => $import->completed_at !== null ? max(0, (int) $import->total_rows - (int) $import->processed_rows) : 0,
                     'total_rows' => $import->total_rows,
                     'successful_rows' => $import->successful_rows,
                     'failed_rows' => $failedCount,

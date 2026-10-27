@@ -323,6 +323,21 @@ class Box extends Model implements AuditableContract, Sortable
             . ($this->barcode ? ' · ' . $this->barcode : '');
     }
 
+    /**
+     * How the box reads in a list of boxes to pick from: "Batch 30 / Box 8"
+     * for a RAS box, "MAV 1" or "NRA 202" for the others, which are named by
+     * type and number (client 2026-10-27: "108" listed once per batch).
+     */
+    public function shortLabel(): string
+    {
+        if (($this->box_type ?? 'RAS') !== 'RAS') {
+            return trim($this->box_type . ' ' . $this->box_number);
+        }
+        $batch = $this->batch_id !== null ? $this->getRelationValue('batch')?->getAttribute('batch_number') : null;
+
+        return ($batch !== null ? 'Batch ' . $batch . ' / ' : '') . 'Box ' . $this->box_number;
+    }
+
     public function requiresParent(): bool
     {
         return in_array($this->box_type, ['IN_SITU', 'NRA'], true);

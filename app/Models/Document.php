@@ -175,6 +175,18 @@ class Document extends Model implements AuditableContract, HasMedia, Sortable
     private static bool $bypassAuditGuard = false;
 
     /**
+     * A Google Drive search for a Conservation Object Reference Number: the
+     * number opens the matching file in the archive's Drive (client
+     * 2026-10-27). Drive shows only what the signed-in user may open.
+     */
+    public static function driveSearchUrl(?string $number): ?string
+    {
+        $number = trim((string) $number);
+
+        return $number === '' ? null : 'https://drive.google.com/drive/search?q=' . rawurlencode('"' . $number . '"');
+    }
+
+    /**
      * How each custody status reads on screen and in the sheet.
      *
      * @return array<string, string>
