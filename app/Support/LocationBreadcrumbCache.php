@@ -46,17 +46,24 @@ final class LocationBreadcrumbCache
      * 6"), or the code itself when no location has it. Client 2026-10-27:
      * Museum Location showed the code.
      */
-    public static function forCode(?string $code): ?string
+    public static function forCode(?string $code, ?int $repositoryId): ?string
     {
         $code = trim((string) $code);
         if ($code === '') {
             return null;
         }
-        if (! array_key_exists($code, self::$byCode)) {
-            self::$byCode[$code] = Location::withoutGlobalScopes()->whereNull('deleted_at')->where('code', $code)->first();
+        // Codes are only unique within a repository: look in the
+        // document's own repository, never another one.
+        $key = $repositoryId . '|' . $code;
+        if (! array_key_exists($key, self::$byCode)) {
+            self::$byCode[$key] = $repositoryId === null ? null : Location::withoutGlobalScopes()
+                ->whereNull('deleted_at')
+                ->where('repository_id', $repositoryId)
+                ->where('code', $code)
+                ->first();
         }
 
-        return self::for(self::$byCode[$code]) ?? $code;
+        return self::for(self::$byCode[$key]) ?? $code;
     }
 
     public static function flush(): void

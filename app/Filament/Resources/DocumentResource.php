@@ -809,7 +809,7 @@ class DocumentResource extends Resource
                             ->visible(fn (?Document $record): bool => filled($record?->nra_location)),
                         TextEntry::make('museum_location')
                             ->label(ColumnLabels::get('document', 'museum_location'))
-                            ->formatStateUsing(fn (?string $state): ?string => LocationBreadcrumbCache::forCode($state))
+                            ->formatStateUsing(fn (?string $state, Document $record): ?string => LocationBreadcrumbCache::forCode($state, $record->repository_id))
                             ->placeholder('—')
                             ->columnSpanFull()
                             ->visible(fn (?Document $record): bool => filled($record?->museum_location)),
@@ -1180,7 +1180,7 @@ class DocumentResource extends Resource
                 // Client 2026-10-18: every column of the documents sheet can be
                 // shown here (hidden until picked in the column list).
                 $gc(Tables\Columns\TextColumn::make('tracking')->label(ColumnLabels::get('document', 'tracking'))->limit(60)->tooltip(fn (?string $state): ?string => $state)->placeholder('—')->sortable()->toggleable(isToggledHiddenByDefault: true)),
-                $gc(Tables\Columns\TextColumn::make('museum_location')->label(ColumnLabels::get('document', 'museum_location'))->formatStateUsing(fn (?string $state): ?string => LocationBreadcrumbCache::forCode($state))->placeholder('—')->sortable()->toggleable(isToggledHiddenByDefault: true)),
+                $gc(Tables\Columns\TextColumn::make('museum_location')->label(ColumnLabels::get('document', 'museum_location'))->formatStateUsing(fn (?string $state, Document $record): ?string => LocationBreadcrumbCache::forCode($state, $record->repository_id))->placeholder('—')->sortable()->toggleable(isToggledHiddenByDefault: true)),
                 $gc(Tables\Columns\TextColumn::make('digitised')->label(ColumnLabels::get('document', 'digitised'))->state(fn (Document $record): ?string => $record->digitised_url ?? $record->digitised)->url(fn (Document $record): ?string => $record->digitised_url, shouldOpenInNewTab: true)->tooltip(fn (Document $record): ?string => $record->digitised_url ? ($record->digitised ?? 'Digitised') : null)->limit(50)->placeholder('—')->sortable()->toggleable(isToggledHiddenByDefault: true)),
                 $gc(Tables\Columns\TextColumn::make('accession_code_legacy')->label(ColumnLabels::get('document', 'accession_code_legacy'))->state(fn (Document $record): ?string => $record->accession_code_legacy ?? $record->accession?->code)->placeholder('—')->sortable()->toggleable(isToggledHiddenByDefault: true), 'accession_id'),
                 $gc(Tables\Columns\TextColumn::make('museum_reference')->label(ColumnLabels::get('document', 'museum_reference'))->placeholder('—')->sortable()->toggleable(isToggledHiddenByDefault: true)),

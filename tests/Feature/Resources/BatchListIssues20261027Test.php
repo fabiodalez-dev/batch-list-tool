@@ -17,6 +17,7 @@ use App\Models\Lookup\BoxType;
 use App\Models\Repository;
 use App\Models\Series;
 use App\Models\User;
+use App\Support\LocationBreadcrumbCache;
 use Filament\Actions\Imports\Models\Import;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Queue\Middleware\WithoutOverlapping;
@@ -126,6 +127,14 @@ it('shows every creator with the suffix after the surname, the museum location b
         ->assertTableColumnStateSet('digitised', 'https://w3id.org/vhmml/readingRoom/view/126946', $doc);
 
     expect(Document::driveSearchUrl('96/0116/GDG/AAV'))->toBe('https://drive.google.com/drive/search?q=%2296%2F0116%2FGDG%2FAAV%22');
+});
+
+it('never names a museum location from another repository that uses the same code', function (): void {
+    $other = Repository::create(['name' => 'Other archive', 'code' => 'OTH']);
+    Location::withoutGlobalScopes()->create(['name' => 'Other vault', 'code' => 'MUSE-9-99', 'type' => 'showcase', 'repository_id' => $other->id, 'depth' => 0, 'is_active' => true]);
+
+    expect(LocationBreadcrumbCache::forCode('MUSE-9-99', $this->repo->id))->toBe('MUSE-9-99')
+        ->and(LocationBreadcrumbCache::forCode('MUSE-9-99', $other->id))->toBe('Other vault');
 });
 
 it('filters documents by a custom field such as Past Reference Code', function (): void {
