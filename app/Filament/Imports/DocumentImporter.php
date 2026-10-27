@@ -612,6 +612,27 @@ class DocumentImporter extends Importer
     }
 
     /**
+     * A save that throws (e.g. a blank Subseries hitting the NOT NULL on
+     * series_id) comes after the savepoint opened in {@see beforeSave()}, and
+     * afterSave() never runs. Close the savepoint here: left open on the last
+     * row of a chunk, it kept Filament's chunk transaction from ever
+     * committing, and the whole chunk was lost (client 2026-10-27).
+     */
+    public function saveRecord(): void
+    {
+        try {
+            parent::saveRecord();
+        } catch (\Throwable $throwable) {
+            if ($this->rowSavepointOpen) {
+                DB::rollBack();
+                $this->rowSavepointOpen = false;
+            }
+
+            throw $throwable;
+        }
+    }
+
+    /**
      * Attach resolved authorities AFTER the Document row has its id, then
      * commit (or roll back) the per-row savepoint opened in {@see beforeSave()}.
      * The pivot + box-status writes live in {@see persistRowSideEffects()} so
