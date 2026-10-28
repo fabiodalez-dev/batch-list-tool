@@ -9,6 +9,7 @@ use App\Models\Authority;
 use App\Models\Box;
 use App\Models\CustomFieldDefinition;
 use App\Models\Document;
+use App\Models\DocumentFlag;
 use App\Models\DocumentIdentifierHistory;
 use App\Models\Repository;
 use App\Support\BulkImport\SpreadsheetHeaders;
@@ -58,6 +59,9 @@ final class EntityExport
 
     /** @var array<int, string|null> repository id => code, read once per request */
     private static array $repositoryCodes = [];
+
+    /** @var array<string, string>|null flag type code => label, per export */
+    private static ?array $flagLabels = null;
 
     /**
      * Template entity (TemplateGenerator key) => importer class.
@@ -150,6 +154,7 @@ final class EntityExport
         $definitions = self::definitionsByKey($entity);
         // A code renamed since the last export must not come back stale.
         self::$repositoryCodes = [];
+        self::$flagLabels = null;
 
         $with = array_merge(self::relationsFor($entity), $definitions === [] ? [] : ['customFieldValues.definition']);
         $query->with($with);
@@ -412,6 +417,13 @@ final class EntityExport
                 // The sheet's "RAS 1/2 Box Destroyed" cells, as the document keeps them.
                 'ras_box_1_destroyed' => static fn (Model $r): mixed => $r->getAttribute('ras_1_box_destroyed'),
                 'ras_box_2_destroyed' => static fn (Model $r): mixed => $r->getAttribute('ras_2_box_destroyed'),
+                // The document's open flags, by name, as the Flags column reads them.
+                'flags' => static function (Model $r): ?string {
+                    self::$flagLabels ??= DocumentFlag::typeOptions();
+
+                    return self::joinList($r->getRelationValue('openFlags')
+                        ?->map(fn (DocumentFlag $f): string => self::$flagLabels[$f->type] ?? $f->type)->unique()->values()->all() ?? []);
+                },
             ],
             // The accession sheet is one row per DOCUMENT: the record here is a
             // Document, and the accession, batch and box columns are read from
@@ -450,7 +462,7 @@ final class EntityExport
             'location' => ['parent', 'repository'],
             'box' => ['batch', 'parent', 'location'],
             'volume' => ['document'],
-            'document' => ['batch', 'currentBox', 'location', 'series', 'authorities', 'identifierHistory'],
+            'document' => ['batch', 'currentBox', 'location', 'series', 'authorities', 'identifierHistory', 'openFlags'],
             'accession' => ['accession', 'batch', 'currentBox', 'series', 'authorities'],
             default => [],
         };

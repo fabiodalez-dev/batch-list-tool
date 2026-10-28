@@ -32,7 +32,6 @@ use Filament\Schemas\Components\Utilities\Get;
 use Filament\Schemas\Components\Utilities\Set;
 use Filament\Schemas\Schema;
 use Filament\Tables;
-use Filament\Tables\Enums\FiltersLayout;
 use Filament\Tables\Filters\SelectFilter;
 use Filament\Tables\Filters\TernaryFilter;
 use Filament\Tables\Filters\TrashedFilter;
@@ -505,10 +504,6 @@ class BatchResource extends Resource
                     ->falseLabel('Inactive only'),
                 TrashedFilter::make(),
             ])
-            // Feedback1 gaps — keep filters visible above the table content so
-            // an empty (null) result set never hides the active filters
-            // (mirrors BoxResource).
-            ->filtersLayout(FiltersLayout::BeforeContentCollapsible)
             ->actions([
                 ViewAction::make(),
                 EditAction::make(),

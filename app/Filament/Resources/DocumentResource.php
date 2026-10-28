@@ -213,7 +213,6 @@ class DocumentResource extends Resource
                             ->columnSpanFull()),
                         $g(Forms\Components\TextInput::make('deeds')->label(ColumnLabels::get('document', 'deeds'))->maxLength(2000)->columnSpanFull()),
                         $g(Forms\Components\TextInput::make('number_of_acts')->label('No of Acts')->maxLength(64)),
-                        $g(Forms\Components\TextInput::make('pages_folios')->label('Pages/Folios')->maxLength(128)),
                     ]),
 
                 // Feedback1 Wave C2.5 — editable history of PREVIOUS document
@@ -660,7 +659,6 @@ class DocumentResource extends Resource
                         TextEntry::make('practice')->label(ColumnLabels::get('document', 'practice'))->placeholder('—'),
                         TextEntry::make('volume_number')->label(ColumnLabels::get('document', 'volume_number'))->placeholder('—'),
                         TextEntry::make('number_of_acts')->label('No of Acts')->placeholder('—'),
-                        TextEntry::make('pages_folios')->label('Pages/Folios')->placeholder('—'),
                         TextEntry::make('dates')->label(ColumnLabels::get('document', 'dates'))->placeholder('—'),
                         TextEntry::make('year_range_display')
                             ->label('Year range')
@@ -1154,7 +1152,6 @@ class DocumentResource extends Resource
                 // sheet and holds nothing, so it is no longer offered here.
                 $gc(Tables\Columns\TextColumn::make('deeds')->label(ColumnLabels::get('document', 'deeds'))->limit(40)->tooltip(fn (?string $state): ?string => $state)->placeholder('—')->sortable()->toggleable()),
                 $gc(Tables\Columns\TextColumn::make('custody_status')->label('Custody Status')->formatStateUsing(fn (?string $state): ?string => $state === null ? null : (Document::custodyLabels()[$state] ?? $state))->sortable()->toggleable(isToggledHiddenByDefault: true)),
-                $gc(Tables\Columns\TextColumn::make('pages_folios')->label('Pages/Folios')->sortable()->toggleable(isToggledHiddenByDefault: true)),
                 $gc(Tables\Columns\TextColumn::make('catalogue_identifier')->label(ColumnLabels::get('document', 'catalogue_identifier'))->sortable()->toggleable(isToggledHiddenByDefault: true)),
                 $gc(Tables\Columns\TextColumn::make('temporary_identifier')->label(ColumnLabels::get('document', 'temporary_identifier'))->searchable()->sortable()->toggleable(isToggledHiddenByDefault: true)),
                 // Bug #31 — Notes visible by default: some documents can only be
@@ -1233,9 +1230,13 @@ class DocumentResource extends Resource
                                     ->titleAttribute('box_number')
                                     ->getOptionLabelFromRecordUsing(fn (Box $record): string => $record->shortLabel())
                                     ->modifyRelationshipQueryUsing(fn (Builder $query): Builder => $query->with('batch'))
+                                    ->getSearchResultsUsing(fn (string $search): array => Box::searchOptions($search))
                                     ->searchable()
                                     ->multiple(),
                             ),
+                        // Client 2026-10-28: "shows me 'contains' 8 instead of
+                        // 'equal' 8" — with Batch, this finds Batch 30 / Box 8.
+                        EqualsFirst::text('current_box_number', 'Box number')->relationship('currentBox', 'box_number'),
                         // Client 2026-10-27: "From Documents I cannot search for
                         // NRA, MAV etc… Boxes (Filter by Box type)".
                         SelectConstraint::make('box_type')
@@ -1305,7 +1306,13 @@ class DocumentResource extends Resource
                     // a box in every batch (client 2026-10-27).
                     ->relationship('currentBox', 'box_number', fn (Builder $query): Builder => $query->with('batch'))
                     ->getOptionLabelFromRecordUsing(fn (Box $record): string => $record->shortLabel())
+                    ->getSearchResultsUsing(fn (string $search): array => Box::searchOptions($search))
                     ->searchable()->multiple(),
+                // Client 2026-10-28: a box's documents include the ones the
+                // sheet put in it and that have since gone into an In Situ box
+                // (NULL/NULL listed 1 of its 33 rows, Unknown/Unknown 6 of 9).
+                // The box pages link here; "Current box" stays as it was.
+                self::inBoxFilter(),
                 // Client 2026-10-19: "How to search for not in box documents,
                 // Mounted; no Box, Conservation Box?"
                 SelectFilter::make('custody_status')
@@ -1437,6 +1444,27 @@ class DocumentResource extends Resource
      * which means the conditional was effectively always-true anyway;
      * removing it just kills the overhead without changing the behaviour.
      */
+    /**
+     * "Box (now or earlier)": the documents of a box, including those that
+     * have gone on from it into an In Situ box. The box pages link here.
+     */
+    public static function inBoxFilter(): SelectFilter
+    {
+        return SelectFilter::make('in_box')
+            ->label('Box (now or earlier)')
+            ->multiple()
+            ->searchable()
+            ->options([])
+            ->getSearchResultsUsing(fn (string $search): array => Box::searchOptions($search))
+            ->getOptionLabelsUsing(fn (array $values): array => Box::shortLabelsFor($values))
+            ->indicateUsing(function (array $state): array {
+                $labels = Box::shortLabelsFor((array) ($state['values'] ?? []));
+
+                return $labels === [] ? [] : ['Box (now or earlier): ' . implode(', ', $labels)];
+            })
+            ->query(fn (Builder $query, array $data): Builder => $query->inBox((array) ($data['values'] ?? [])));
+    }
+
     /**
      * One "Add rule" text rule per active custom field of the entity, for the
      * repository chosen in the top bar (or the user's default).

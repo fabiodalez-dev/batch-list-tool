@@ -338,6 +338,85 @@ class Box extends Model implements AuditableContract, Sortable
         return ($batch !== null ? 'Batch ' . $batch . ' / ' : '') . 'Box ' . $this->box_number;
     }
 
+    /**
+     * Options for a box picker, searched the way the boxes read: "MAV 1",
+     * "MAV1", "Batch 30 / Box 8", "30/8", "30 8" or a bare "8". Exact numbers
+     * come first, so "8" lists every Box 8 before Box 18 and Box 81 (client
+     * 2026-10-28: a contains-search on the number filled the list with Batch
+     * 19 and never reached Batch 30 / Box 8, and "MAV 1" found nothing).
+     *
+     * @return array<int, string> id => shortLabel()
+     */
+    public static function searchOptions(string $search, int $limit = 50): array
+    {
+        $search = trim((string) preg_replace('/\s+/u', ' ', $search));
+        if ($search === '') {
+            return [];
+        }
+
+        // The searches to run, best match first; each narrows the query it is given.
+        $steps = [];
+        $type = self::splitTypeAndNumber($search);
+        if ($type !== null) {
+            [$code, $number] = $type;
+            $byType = fn (Builder $q): Builder => $q->where('box_type', $code);
+            $steps[] = $number === ''
+                ? $byType
+                : fn (Builder $q): Builder => $byType($q)->where('box_number', $number);
+            if ($number !== '') {
+                $steps[] = fn (Builder $q): Builder => $byType($q)->where('box_number', 'like', $number . '%');
+            }
+        } elseif (preg_match('~^batch\s*(\S+)$~iu', $search, $m) === 1) {
+            $steps[] = fn (Builder $q): Builder => $q->whereHas('batch', fn (Builder $b): Builder => $b->where('batch_number', $m[1]));
+        } elseif (preg_match('~^(?!box\b)(?:batch\s*)?([^\s/]+)\s*(?:/|\s)\s*(?:box\s*)?([^\s/]+)$~iu', $search, $m) === 1) {
+            [, $batch, $number] = $m;
+            $inBatch = fn (Builder $q): Builder => $q->whereHas('batch', fn (Builder $b): Builder => $b->where('batch_number', $batch));
+            $steps[] = fn (Builder $q): Builder => $inBatch($q)->where('box_number', $number);
+            $steps[] = fn (Builder $q): Builder => $inBatch($q)->where('box_number', 'like', $number . '%');
+        } else {
+            $number = (string) preg_replace('~^box\s*~iu', '', $search);
+            $steps[] = fn (Builder $q): Builder => $q->where('box_number', $number);
+            $steps[] = fn (Builder $q): Builder => $q->where('box_number', 'like', $number . '%');
+            $steps[] = fn (Builder $q): Builder => $q->where('box_number', 'like', '%' . $number . '%');
+        }
+
+        $batchNumber = '(select search_batch.batch_number from batches search_batch where search_batch.id = boxes.batch_id)';
+        $options = [];
+        foreach ($steps as $step) {
+            $left = $limit - count($options);
+            if ($left <= 0) {
+                break;
+            }
+            $query = self::query()->with('batch');
+            $step($query);
+            $query->whereNotIn('id', array_keys($options))
+                ->orderByRaw("CAST({$batchNumber} AS UNSIGNED)")
+                ->orderByRaw($batchNumber)
+                ->orderByRaw('CAST(box_number AS UNSIGNED)')
+                ->orderBy('box_number')
+                ->limit($left)
+                ->get()
+                ->each(function (self $box) use (&$options): void {
+                    $options[$box->getKey()] = $box->shortLabel();
+                });
+        }
+
+        return $options;
+    }
+
+    /**
+     * Label each selected box id the way {@see searchOptions()} lists it.
+     *
+     * @param array<int|string> $ids
+     * @return array<int, string>
+     */
+    public static function shortLabelsFor(array $ids): array
+    {
+        return static::query()->with('batch')->whereKey($ids)->get()
+            ->mapWithKeys(fn (self $box): array => [$box->getKey() => $box->shortLabel()])
+            ->all();
+    }
+
     public function requiresParent(): bool
     {
         return in_array($this->box_type, ['IN_SITU', 'NRA'], true);
@@ -1066,6 +1145,32 @@ class Box extends Model implements AuditableContract, Sortable
             previousStatus: $transition['previous_status'],
             newStatus: $transition['new_status'],
         );
+    }
+
+    /**
+     * "MAV 1" / "mav1" / "STVC 37 P1" → [type code, number]; null when the text
+     * does not start with a box type. Longest code first, so "SMALL_BOX" wins
+     * over a shorter code it starts with.
+     *
+     * @return array{0: string, 1: string}|null
+     */
+    private static function splitTypeAndNumber(string $search): ?array
+    {
+        $codes = array_map('strval', array_keys(BoxType::filterOptions()));
+        usort($codes, fn (string $a, string $b): int => strlen($b) <=> strlen($a));
+
+        foreach ($codes as $code) {
+            if ($code === '' || strncasecmp($search, $code, strlen($code)) !== 0) {
+                continue;
+            }
+            $rest = substr($search, strlen($code));
+            // "MAV 1" and "MAV1", not "NRAxyz" read as type NRA.
+            if ($rest === '' || $rest[0] === ' ' || ctype_digit($rest[0])) {
+                return [$code, trim($rest)];
+            }
+        }
+
+        return null;
     }
 
     private function recordLocationChange(?int $from, ?int $to, string $source, ?string $notes = null): void

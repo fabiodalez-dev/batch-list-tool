@@ -606,6 +606,30 @@ class Document extends Model implements AuditableContract, HasMedia, Sortable
     }
 
     /**
+     * Documents in any of these boxes now, or before a move: the RAS box the
+     * sheet names stays a box of the document after it goes on into an In
+     * Situ box (client 2026-10-28: box NULL/NULL listed 1 of its 33 rows).
+     * Every box a document was in is a `to_box_id` of its box movements.
+     *
+     * @param array<int|string> $boxIds
+     */
+    public function scopeInBox(Builder $query, array $boxIds): Builder
+    {
+        $boxIds = array_values(array_filter(array_map('intval', $boxIds)));
+        if ($boxIds === []) {
+            return $query;
+        }
+
+        return $query->where(fn (Builder $q): Builder => $q
+            ->whereIn($q->qualifyColumn('current_box_id'), $boxIds)
+            ->orWhereExists(fn (\Illuminate\Database\Query\Builder $moves) => $moves
+                ->selectRaw('1')
+                ->from('box_movements')
+                ->whereColumn('box_movements.document_id', $q->qualifyColumn('id'))
+                ->whereIn('box_movements.to_box_id', $boxIds)));
+    }
+
+    /**
      * Full-text search across one or more text columns.
      *
      * On MySQL this expands to `MATCH (col1, col2) AGAINST (? IN NATURAL

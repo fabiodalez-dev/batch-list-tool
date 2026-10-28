@@ -162,6 +162,9 @@ final class TemplateGenerator
         // Client 2026-10-12: documents that are not in a box. Optional — a
         // blank cell lets the import decide from the box columns.
         'Custody Status',
+        // Client 2026-10-28: flags given to the document on import, by flag
+        // type or colour, ";" between several.
+        'Flags',
     ];
 
     /**
@@ -173,7 +176,7 @@ final class TemplateGenerator
      * version tells you whether the operator is working from a stale
      * download. Bump on any change to the header contract.
      */
-    public const string GENERATOR_VERSION = '1.21.0';
+    public const string GENERATOR_VERSION = '1.22.0';
 
     /**
      * Supported template entities. Headers come from the in-repo constants

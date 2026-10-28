@@ -11,6 +11,7 @@ use App\Filament\Support\EqualsFirst;
 use App\Filament\Support\SearchableSelects;
 use App\Models\Batch;
 use App\Models\Box;
+use App\Models\Document;
 use App\Models\Location;
 use App\Models\Lookup\BarcodeStatus;
 use App\Models\Lookup\BoxType;
@@ -627,6 +628,14 @@ class BoxResource extends Resource
                             ->state(fn (?Box $record): int => $record?->documents()->count() ?? 0)
                             ->badge()
                             ->color('gray'),
+                        // The sheet's rows for this box that have since gone
+                        // into an In Situ box are counted here too; "View
+                        // documents" lists these.
+                        TextEntry::make('documents_now_or_earlier_count')
+                            ->label('Documents, including those moved on')
+                            ->state(fn (?Box $record): int => $record !== null ? Document::query()->inBox([$record->getKey()])->count() : 0)
+                            ->badge()
+                            ->color('gray'),
                         TextEntry::make('children_count')
                             ->label('Child IN_SITU boxes')
                             ->state(fn (?Box $record): int => $record?->children()->count() ?? 0)
@@ -749,13 +758,12 @@ class BoxResource extends Resource
             ->filtersLayout(FiltersLayout::Modal)
             ->filtersTriggerAction(fn (Action $action): Action => $action->slideOver())
             // Feedback1 Wave B (B4) — clicking a box row navigates to the
-            // Documents dashboard showing that box's contents. Documents'
-            // `current_box_id` SelectFilter is `->multiple()`, so the URL shape
+            // Documents dashboard showing that box's contents: the `in_box`
+            // filter, so documents that went on into an In Situ box are listed
+            // too (client 2026-10-28). It is `->multiple()`, so the URL shape
             // uses `values` (an array). View / Edit / Move / Destroy stay
             // reachable via the row actions column below.
-            ->recordUrl(fn (Box $record): string => DocumentResource::getUrl('index', [
-                'filters' => ['current_box_id' => ['values' => [$record->getKey()]]],
-            ]))
+            ->recordUrl(fn (Box $record): string => self::documentsUrl($record))
             ->columns([
                 // A6 — Column order per spec: Batch / Box / Barcode / Barcode Status /
                 // Disinfestation Date / Box Type / Destroyed / Parent Box Id / Is Legacy.
@@ -972,9 +980,7 @@ class BoxResource extends Resource
                     ->label('View documents')
                     ->icon('heroicon-o-rectangle-stack')
                     ->color('gray')
-                    ->url(fn (Box $record): string => DocumentResource::getUrl('index', [
-                        'filters' => ['current_box_id' => ['values' => [$record->getKey()]]],
-                    ])),
+                    ->url(fn (Box $record): string => self::documentsUrl($record)),
                 // Feedback1 Wave B (B6) — "Add document to this box": jump to
                 // the Document create form with current_box_id pre-filled.
                 // Gated on the document create permission; hidden on destroyed
@@ -1128,6 +1134,17 @@ class BoxResource extends Resource
                         ->modalDescription('The selected boxes are deleted for good, with their barcode, seal and location history. A box that still contains documents is kept.'),
                 ]),
             ]);
+    }
+
+    /**
+     * The Documents list showing this box's documents, the ones that have
+     * gone on from it into an In Situ box included.
+     */
+    public static function documentsUrl(Box $box): string
+    {
+        return DocumentResource::getUrl('index', [
+            'filters' => ['in_box' => ['values' => [$box->getKey()]]],
+        ]);
     }
 
     /**

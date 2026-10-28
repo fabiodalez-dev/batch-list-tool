@@ -304,7 +304,10 @@ it('infolist has an attachments_list entry', function () {
  * 2.1 — The table uses FiltersLayout::BeforeContentCollapsible, mirroring
  * BoxResource, so the filter panel is always visible above the content.
  */
-it('table uses the BeforeContentCollapsible filters layout', function () {
+// Client 2026-10-28: every list opens its filters in the side panel, like
+// Documents ("if all filters are like the documents one I think it's less
+// clunky").
+it('table opens its filters in the side panel', function () {
     $this->actingAs(fga_superAdmin());
 
     $table = AccessionResource::table(
@@ -313,5 +316,5 @@ it('table uses the BeforeContentCollapsible filters layout', function () {
         )
     );
 
-    expect($table->getFiltersLayout())->toBe(FiltersLayout::BeforeContentCollapsible);
+    expect($table->getFiltersLayout())->toBe(FiltersLayout::Modal);
 });
