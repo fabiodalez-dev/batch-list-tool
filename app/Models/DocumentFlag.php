@@ -184,6 +184,53 @@ class DocumentFlag extends Model implements AuditableContract
     }
 
     /* ---------------------------------------------------------------------
+     |  Flag types
+     |---------------------------------------------------------------------*/
+
+    /**
+     * The flag types a document can be given: the active rows of the Flag
+     * Types page, or {@see TYPES} before that page is seeded.
+     *
+     * @return array<string, string> code => label
+     */
+    public static function typeOptions(): array
+    {
+        $options = FlagType::active()->pluck('label', 'code')->all();
+        if ($options === []) {
+            foreach (self::TYPES as $code) {
+                $options[$code] = ucwords(str_replace('_', ' ', $code));
+            }
+        }
+
+        return $options;
+    }
+
+    /**
+     * The flag type a person wrote: its code ("mould_treatment"), its label
+     * ("Mould Treatment") or its colour ("Red"), in any case. Null when no
+     * active flag type answers to it.
+     */
+    public static function resolveType(string $text): ?string
+    {
+        $wanted = self::normaliseTypeName($text);
+        if ($wanted === '') {
+            return null;
+        }
+
+        $colours = FlagType::active()->whereNotNull('colour')->pluck('colour', 'code')->all() ?: array_flip(self::COLOUR_TYPES);
+        foreach (self::typeOptions() as $code => $label) {
+            $names = [$code, $label, (string) ($colours[$code] ?? '')];
+            foreach ($names as $name) {
+                if ($name !== '' && self::normaliseTypeName($name) === $wanted) {
+                    return (string) $code;
+                }
+            }
+        }
+
+        return null;
+    }
+
+    /* ---------------------------------------------------------------------
      |  Workflow helpers
      |---------------------------------------------------------------------*/
 
@@ -288,5 +335,10 @@ class DocumentFlag extends Model implements AuditableContract
                 Lookups::assertActive(FlagType::class, 'type', $flag->type);
             }
         });
+    }
+
+    private static function normaliseTypeName(string $name): string
+    {
+        return trim((string) preg_replace('/[\s_-]+/u', ' ', mb_strtolower($name)));
     }
 }

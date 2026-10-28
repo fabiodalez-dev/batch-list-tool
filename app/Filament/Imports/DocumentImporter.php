@@ -15,6 +15,7 @@ use App\Models\BoxBarcodeHistory;
 use App\Models\BoxMovement;
 use App\Models\CustomFieldDefinition;
 use App\Models\Document;
+use App\Models\DocumentFlag;
 use App\Models\DocumentIdentifierHistory;
 use App\Models\Lookup\BoxType;
 use App\Models\Lookup\CurrentBoxType;
@@ -253,6 +254,14 @@ class DocumentImporter extends Importer
      * @var array<int, array<string, string>>
      */
     protected static array $rowDestroyedStash = [];
+
+    /**
+     * Client 2026-10-28 — the flag types named in the row's Flags cell, given
+     * to the document in {@see persistRowSideEffects()} once it is saved.
+     *
+     * @var array<int, list<string>>
+     */
+    protected static array $rowFlagStash = [];
 
     /**
      * Per-row transactional safety (review I2 / Fix 5).
@@ -768,6 +777,7 @@ class DocumentImporter extends Importer
         self::$rowCustodyExplicitStash = [];
         self::$rowCustomFieldStash = [];
         self::$rowSealStash = [];
+        self::$rowFlagStash = [];
         self::$rowRepositoryStash = [];
         self::$rowAutoIdentifierStash = [];
     }
@@ -1709,6 +1719,34 @@ class DocumentImporter extends Importer
                     self::$rowCustodyExplicitStash[spl_object_id($record)] = true;
                 }),
 
+            // Client 2026-10-28: "We had a number of flags — how can we apply
+            // them to documents? During importation or after". One open flag
+            // per type the cell names, by code, name or colour ("Mould
+            // Treatment; Pink"); a name the Flag Types page does not know fails
+            // the row rather than being dropped.
+            ImportColumn::make('flags')
+                ->label('Flags (flag types or colours, ";"-separated)')
+                ->guess(['Flags', 'Flag', 'flags'])
+                ->fillRecordUsing(function (Document $record, ?string $state): void {
+                    if ($state === null || trim($state) === '') {
+                        return;
+                    }
+                    $types = [];
+                    foreach (explode(';', $state) as $piece) {
+                        if (trim($piece) === '') {
+                            continue;
+                        }
+                        $type = DocumentFlag::resolveType($piece);
+                        if ($type === null) {
+                            throw ValidationException::withMessages([
+                                'flags' => __("Flag ':flag' is not a flag type on the Flag Types page", ['flag' => trim($piece)]),
+                            ]);
+                        }
+                        $types[] = $type;
+                    }
+                    self::$rowFlagStash[spl_object_id($record)] = array_values(array_unique($types));
+                }),
+
             ImportColumn::make('torre')
                 ->label('Torre (legacy flag)')
                 ->guess(['Torre', 'torre'])
@@ -2295,6 +2333,30 @@ class DocumentImporter extends Importer
             // the failed-rows report. (Per-cell "lenient" handling is moot: a
             // bad value is stored verbatim and cast on read, never on write.)
             $record->setCustomFieldData($customData, false);  // false = merge/import semantics
+        }
+
+        // Flags column: a type the document already has open is left as it
+        // is, so importing the same sheet twice does not flag it twice.
+        $flagTypes = self::$rowFlagStash[$key] ?? [];
+        unset(self::$rowFlagStash[$key]);
+        $labels = $flagTypes !== [] ? DocumentFlag::typeOptions() : [];
+        foreach ($flagTypes as $type) {
+            $open = DocumentFlag::withoutGlobalScopes()
+                ->where('document_id', $record->getKey())
+                ->where('type', $type)
+                ->whereIn('status', DocumentFlag::OPEN_STATUSES)
+                ->exists();
+            if (! $open) {
+                DocumentFlag::create([
+                    'document_id' => $record->getKey(),
+                    'repository_id' => $record->repository_id,
+                    'type' => $type,
+                    'title' => $labels[$type] ?? $type,
+                    'description' => 'Imported from the Flags column.',
+                    'flagged_by_user_id' => $this->import->user->getKey(),
+                    'flagged_at' => now(),
+                ]);
+            }
         }
 
         // Runs after buildLegacyMovementChain(), which may still move the

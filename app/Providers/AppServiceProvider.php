@@ -16,6 +16,7 @@ use Filament\Actions\DeleteBulkAction;
 use Filament\Actions\DetachBulkAction;
 use Filament\Actions\ForceDeleteBulkAction;
 use Filament\Actions\RestoreBulkAction;
+use Filament\Tables\Enums\FiltersLayout;
 use Filament\Tables\Table;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Events\MigrationsStarted;
@@ -132,6 +133,14 @@ class AppServiceProvider extends ServiceProvider
             // form to 2 columns; resources that set their own filtersFormColumns()
             // (e.g. DocumentResource → 3) still win, since table() runs after this.
             $table->filtersFormColumns(2);
+
+            // Client 2026-10-28: "Authorities Filter hidden when few entries
+            // shown — if all filters are like the documents one I think it's
+            // less clunky." Filament's dropdown hangs off the table and was
+            // cut off under a short list; every table now opens its filters
+            // in the side panel the Documents and Boxes lists use.
+            $table->filtersLayout(FiltersLayout::Modal)
+                ->filtersTriggerAction(fn (Action $action): Action => $action->slideOver());
         });
 
         // The audit listeners for login, logout, failed logins, lockouts and

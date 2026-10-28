@@ -22,7 +22,6 @@ use Filament\Schemas\Components\Section;
 use Filament\Schemas\Components\Utilities\Get;
 use Filament\Schemas\Schema;
 use Filament\Tables;
-use Filament\Tables\Enums\FiltersLayout;
 use Filament\Tables\Filters\SelectFilter;
 use Filament\Tables\Filters\TernaryFilter;
 use Filament\Tables\Table;
@@ -317,9 +316,6 @@ class AccessionResource extends Resource
             // default: the panel is not hidden when results are empty).
             ->deferFilters()
             ->persistFiltersInSession()
-            // Feedback1 — filters always visible above the table content
-            // (collapsible), mirroring BoxResource.
-            ->filtersLayout(FiltersLayout::BeforeContentCollapsible)
             // Feedback1 Wave A (A6) — drag-and-drop column reordering, mirroring
             // DocumentResource and BoxResource (spec: all main resource lists).
             ->reorderableColumns()

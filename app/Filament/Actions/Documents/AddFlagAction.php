@@ -6,7 +6,6 @@ namespace App\Filament\Actions\Documents;
 
 use App\Models\Document;
 use App\Models\DocumentFlag;
-use App\Models\Lookup\FlagType;
 use Filament\Actions\Action;
 use Filament\Actions\BulkAction;
 use Filament\Forms\Components\Select;
@@ -66,14 +65,7 @@ final class AddFlagAction
     {
         // RFQ §3.1.11 — source flag-type options from the editable flag_types
         // lookup (active rows); fall back to the frozen consts if unavailable.
-        $typeCodes = FlagType::active()->pluck('code')->all();
-        if ($typeCodes === []) {
-            $typeCodes = DocumentFlag::TYPES;
-        }
-        $typeOptions = [];
-        foreach ($typeCodes as $t) {
-            $typeOptions[$t] = ucwords(str_replace('_', ' ', $t));
-        }
+        $typeOptions = DocumentFlag::typeOptions();
 
         $sevOptions = [];
         foreach (DocumentFlag::SEVERITIES as $s) {
@@ -115,7 +107,9 @@ final class AddFlagAction
         $title = $data['title'] ?? null;
         $description = $data['description'] ?? null;
 
-        if (! in_array($type, DocumentFlag::TYPES, true)) {
+        // A type added on the Flag Types page is offered above, so it must
+        // pass here too (it used to be refused as "Invalid flag type").
+        if (! array_key_exists($type, DocumentFlag::typeOptions())) {
             Notification::make()
                 ->title('Invalid flag type')
                 ->danger()->send();

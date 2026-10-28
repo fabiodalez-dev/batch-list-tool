@@ -70,7 +70,8 @@ it('TemplateGenerator: headersFor("document") preserves the duplicated provenanc
         // Client 2026-08-31: was 48; removed 'Current Box' + 'Location' (−2),
         // added 'Part Number' (+1) → 47. ('Series' → 'Subseries' is a rename.)
         // Client 2026-10-12: added 'Custody Status' (+1) → 48.
-        ->and($headers)->toHaveCount(48)
+        // Client 2026-10-28: added 'Flags' (+1) → 49.
+        ->and($headers)->toHaveCount(49)
         // The multi-step provenance duplicate is preserved (position-independent).
         ->and(array_count_values($headers)['Barcode (IN)'] ?? 0)->toBe(2)
         ->and($headers)->not->toContain('RAS 1 Box Destroyed');

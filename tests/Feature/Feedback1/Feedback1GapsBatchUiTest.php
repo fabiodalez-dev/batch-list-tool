@@ -112,8 +112,9 @@ it('makes all other main columns toggleable', function (): void {
 // 3 — filters always visible (BeforeContentCollapsible)
 // ============================================================================
 
-it('uses the BeforeContentCollapsible filters layout (mirrors BoxResource)', function (): void {
+// Client 2026-10-28: every list opens its filters in the side panel.
+it('opens its filters in the side panel, like Documents and Boxes', function (): void {
     $this->actingAs(f1gb_superAdmin());
 
-    expect(f1gb_table()->getFiltersLayout())->toBe(FiltersLayout::BeforeContentCollapsible);
+    expect(f1gb_table()->getFiltersLayout())->toBe(FiltersLayout::Modal);
 });
