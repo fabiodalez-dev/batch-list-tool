@@ -150,7 +150,7 @@ test('DocumentResource filter by series narrows results to the chosen series', f
     $docY = makeDoc_doc($repo->id, $sY->id);
 
     Livewire::test(ListDocuments::class)
-        ->set('tableFilters.series.values', [$sX->id])
+        ->filterTable('queryBuilder', doc_rule('series', 'isRelatedTo', ['value' => [$sX->id]]))
         ->assertCanSeeTableRecords([$docX])
         ->assertCanNotSeeTableRecords([$docY]);
 });
@@ -167,7 +167,7 @@ test('DocumentResource filter by batch narrows results to the chosen batch', fun
     $docB = makeDoc_doc($repo->id, $series->id, ['batch_id' => $bB->id]);
 
     Livewire::test(ListDocuments::class)
-        ->set('tableFilters.batch.values', [$bA->id])
+        ->filterTable('queryBuilder', doc_rule('batch', 'isRelatedTo', ['value' => [$bA->id]]))
         ->assertCanSeeTableRecords([$docA])
         ->assertCanNotSeeTableRecords([$docB]);
 });

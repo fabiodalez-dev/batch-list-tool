@@ -7,6 +7,7 @@ use App\Filament\Pages\ImportWizard;
 use App\Filament\Resources\AuthorityResource\Pages\ListAuthorities;
 use App\Filament\Resources\BoxResource;
 use App\Filament\Resources\DocumentResource\Pages\ListDocuments;
+use App\Filament\Support\DocumentRules;
 use App\Jobs\ImportCsvSlice;
 use App\Models\Batch;
 use App\Models\Box;
@@ -125,9 +126,8 @@ it('searches the Current box rule and filter by label', function (): void {
     $inBox8 = Document::withoutGlobalScopes()->create(['identifier' => 'B28-1', 'repository_id' => $this->repo->id, 'series_id' => $this->series->id, 'current_box_id' => $b30box8->id]);
     $inMav = Document::withoutGlobalScopes()->create(['identifier' => 'B28-2', 'repository_id' => $this->repo->id, 'series_id' => $this->series->id, 'current_box_id' => $mav1->id]);
 
-    $filter = Livewire::test(ListDocuments::class)->instance()->getTable()->getFilter('current_box_id');
-    expect($filter->getSearchResultsUsingCallback())->not->toBeNull()
-        ->and(($filter->getSearchResultsUsingCallback())('MAV 1'))->toBe([$mav1->id => 'MAV 1']);
+    // The "Current box" and "Box (now or earlier)" rules search the same way.
+    expect((DocumentRules::inBox()->getSearchResultsUsingCallback())('MAV 1'))->toBe([$mav1->id => 'MAV 1']);
 
     // The "Box number" rule: equals, so Box 8 is not Box 18.
     b28_box('RAS', '18', b28_batch('30'));
@@ -156,14 +156,15 @@ it('lists under box NULL/NULL the imported rows that went on into an In Situ box
         ->and(Document::query()->inBox([$null->id])->count())->toBe(3);
 
     // The Boxes list opens the box's documents with the new filter...
-    expect(urldecode(BoxResource::documentsUrl($null)))->toContain('filters[in_box][values][0]=' . $null->id);
+    parse_str((string) parse_url(BoxResource::documentsUrl($null), PHP_URL_QUERY), $query);
+    expect($query['filters']['queryBuilder']['rules']['box']['type'])->toBe('in_box');
 
     // ...which lists all three; "Current box" still lists the one.
-    $page = Livewire::withQueryParams(['filters' => ['in_box' => ['values' => [(string) $null->id]]]])
-        ->test(ListDocuments::class);
-    $page->assertCanSeeTableRecords($docs)
-        ->assertSee('Box (now or earlier): ' . $null->load('batch')->shortLabel());
-    Livewire::withQueryParams(['filters' => ['current_box_id' => ['values' => [(string) $null->id]]]])
+    Livewire::withQueryParams($query)
+        ->test(ListDocuments::class)
+        ->assertCanSeeTableRecords($docs)
+        ->assertSee('Box (now or earlier) is ' . $null->load('batch')->shortLabel());
+    Livewire::withQueryParams(['filters' => ['queryBuilder' => doc_rule('currentBox', 'isRelatedTo', ['value' => [(string) $null->id]])]])
         ->test(ListDocuments::class)
         ->assertCanSeeTableRecords($docs->where('current_box_id', $null->id))
         ->assertCanNotSeeTableRecords($docs->where('current_box_id', '!=', $null->id));

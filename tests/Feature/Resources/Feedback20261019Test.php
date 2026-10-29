@@ -75,7 +75,7 @@ it('imports Conservation Box as a custody status and filters the list by it', fu
     expect($doc->custody_status)->toBe('conservation_box');
 
     Livewire::test(ListDocuments::class)
-        ->filterTable('custody_status', ['conservation_box'])
+        ->filterTable('queryBuilder', doc_rule('custody_status', 'is', ['values' => ['conservation_box']]))
         ->assertCanSeeTableRecords([$doc])
         ->assertCanNotSeeTableRecords([$other])
         ->assertTableColumnFormattedStateSet('custody_status', 'Conservation Box', $doc);

@@ -107,8 +107,10 @@ it('labels the Current box filter by batch, and filters to that box only', funct
     expect($box12->fresh()->shortLabel())->toBe('Batch 12 / Box 109');
 
     Livewire::test(ListDocuments::class)
-        ->filterTable('batch', [$b12->id])
-        ->filterTable('current_box_id', [$box12->id])
+        ->filterTable('queryBuilder', ['match' => 'all', 'rules' => [
+            'b' => ['type' => 'batch', 'data' => ['operator' => 'isRelatedTo', 'settings' => ['value' => [$b12->id]]]],
+            'x' => ['type' => 'currentBox', 'data' => ['operator' => 'isRelatedTo', 'settings' => ['value' => [$box12->id]]]],
+        ]])
         ->assertCanSeeTableRecords([$in12])
         ->assertCanNotSeeTableRecords([$in13]);
 });

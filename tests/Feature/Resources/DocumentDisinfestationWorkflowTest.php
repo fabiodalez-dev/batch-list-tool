@@ -225,13 +225,13 @@ test('the is_in_disinfestation ternary filter narrows ListDocuments correctly', 
 
     // true → only in-flight rows visible
     Livewire::test(ListDocuments::class)
-        ->set('tableFilters.is_in_disinfestation.value', true)
+        ->filterTable('queryBuilder', doc_rule('is_in_disinfestation', 'isTrue'))
         ->assertCanSeeTableRecords([$inFlight])
         ->assertCanNotSeeTableRecords([$atRest]);
 
     // false → only at-rest rows visible
     Livewire::test(ListDocuments::class)
-        ->set('tableFilters.is_in_disinfestation.value', false)
+        ->filterTable('queryBuilder', doc_rule('is_in_disinfestation', 'isTrue.inverse'))
         ->assertCanSeeTableRecords([$atRest])
         ->assertCanNotSeeTableRecords([$inFlight]);
 });

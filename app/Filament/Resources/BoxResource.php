@@ -1142,8 +1142,13 @@ class BoxResource extends Resource
      */
     public static function documentsUrl(Box $box): string
     {
+        // A "Box (now or earlier) is" rule of Add rule (client 2026-10-29:
+        // the Documents filters are rules only).
         return DocumentResource::getUrl('index', [
-            'filters' => ['in_box' => ['values' => [$box->getKey()]]],
+            'filters' => ['queryBuilder' => ['match' => 'all', 'rules' => ['box' => [
+                'type' => 'in_box',
+                'data' => ['operator' => 'is', 'settings' => ['values' => [$box->getKey()]]],
+            ]]]],
         ]);
     }
 
