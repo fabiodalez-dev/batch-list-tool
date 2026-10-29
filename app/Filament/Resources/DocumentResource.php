@@ -376,7 +376,13 @@ class DocumentResource extends Resource
                                 $record?->exists ? $record->openFlags()->pluck('type')->unique()->values()->all() : [],
                             ))
                             ->dehydrated(false)
-                            ->saveRelationshipsUsing(fn (Document $record, ?array $state) => $record->syncOpenFlagTypes($state ?? [], auth()->id()))
+                            // Checked here too: a disabled field is only greyed out
+                            // in the browser.
+                            ->saveRelationshipsUsing(function (Document $record, ?array $state): void {
+                                if (auth()->user()?->can('create_document_flag') ?? false) {
+                                    $record->syncOpenFlagTypes($state ?? [], auth()->id());
+                                }
+                            })
                             ->disabled(fn (): bool => ! (auth()->user()?->can('create_document_flag') ?? false))
                             ->helperText('A flag removed here is marked resolved on the Document Flags page.')
                             ->columnSpanFull(),

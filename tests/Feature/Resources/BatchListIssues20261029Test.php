@@ -139,6 +139,25 @@ it('sets the flags by name on the document form, resolving the ones removed', fu
         ->and($flags['entry_issue']->status)->toBe('resolved');
 });
 
+it('leaves the flags alone when the user may not flag documents', function (): void {
+    $doc = b29_doc();
+    DocumentFlag::create(['document_id' => $doc->id, 'type' => 'entry_issue', 'title' => 'Entry Issue']);
+    $editor = User::factory()->create(['is_active' => true, 'default_repository_id' => $this->repo->id]);
+    $editor->assignRole('viewer');
+    $editor->givePermissionTo(collect(['view_any_document', 'view_document', 'update_document'])
+        ->map(fn (string $p) => Permission::firstOrCreate(['name' => $p, 'guard_name' => 'web'])));
+    expect($editor->can('create_document_flag'))->toBeFalse();
+    $this->actingAs($editor);
+
+    // Even with the field's state forced, saving does not touch the flags.
+    Livewire::test(EditDocument::class, ['record' => $doc->getRouteKey()])
+        ->set('data.open_flag_types', ['mould_treatment'])
+        ->call('save');
+
+    expect(DocumentFlag::withoutGlobalScopes()->where('document_id', $doc->id)->pluck('status', 'type')->all())
+        ->toBe(['entry_issue' => 'open']);
+});
+
 it('holds only "Add rule" on the filter panel, with AND / OR above the rules and NOT on each', function (): void {
     $table = Livewire::test(ListDocuments::class)->instance()->getTable();
     expect(collect($table->getFilters())->map(fn ($f) => $f::class)->values()->all())
