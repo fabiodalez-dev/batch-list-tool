@@ -918,6 +918,19 @@ input.fi-input {
     border: 0;
 }
 
+/* A badge with its own palette (Color::hex, e.g. the Flag Types colours)
+   keeps it: the cream reset above would otherwise turn every flag grey. */
+.fi-badge[style*="--color-50"],
+.dark .fi-badge[style*="--color-50"] {
+    background-color: var(--color-100);
+    color: var(--color-800);
+}
+
+.dark .fi-badge[style*="--color-50"] {
+    background-color: oklch(from var(--color-500) l c h / 0.2);
+    color: var(--color-300);
+}
+
 .fi-badge[data-color="primary"] {
     background-color: var(--brand-100);
     color: var(--brand-800);

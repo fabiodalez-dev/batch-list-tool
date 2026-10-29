@@ -5,6 +5,8 @@ declare(strict_types=1);
 use App\Models\Batch;
 use App\Models\Box;
 use App\Models\Document;
+use App\Models\DocumentFlag;
+use App\Models\Lookup\FlagType;
 use App\Models\Repository;
 use App\Models\Series;
 
@@ -154,4 +156,26 @@ it('shows a distinctive document_type on the view page', function () {
 
 it('renders the documents list heading', function () {
     bl_login(bl_actor('admin'))->navigate('/admin/documents')->assertSee('Documents');
+});
+
+it('paints an open flag badge in its Flag Types colour, not the theme cream (client 2026-10-29)', function () {
+    $admin = bl_actor('super_admin');
+    $doc = bl_seedDocument($admin->repositories()->first());
+    FlagType::query()->updateOrCreate(['code' => 'mould_treatment'], ['label' => 'Mould Treatment', 'colour' => 'red', 'is_active' => true, 'sort_order' => 1]);
+    DocumentFlag::create(['document_id' => $doc->id, 'type' => 'mould_treatment', 'title' => 'Mould Treatment']);
+
+    // The theme resets every badge to cream; a badge with its own palette
+    // must keep it. Red's hue is about 27 in oklch.
+    $background = bl_login($admin)->navigate("/admin/documents/{$doc->id}")
+        ->assertSee('Mould Treatment')
+        ->script(<<<'JS'
+            [...document.querySelectorAll('.fi-badge')].find(b => b.textContent.includes('Mould Treatment'))
+                ? getComputedStyle([...document.querySelectorAll('.fi-badge')].find(b => b.textContent.includes('Mould Treatment'))).backgroundColor
+                : null
+        JS);
+
+    preg_match('/^oklch\(([\d.]+) ([\d.]+) ([\d.]+)/', (string) $background, $m);
+    expect($m)->not->toBeEmpty()
+        ->and((float) $m[2])->toBeGreaterThan(0.02)
+        ->and((float) $m[3])->toBeGreaterThan(15.0)->toBeLessThan(40.0);
 });
