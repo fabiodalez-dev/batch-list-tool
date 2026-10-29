@@ -694,7 +694,7 @@ class ImportWizard extends Page
         // uploaded after Step 4 was last rendered).
         $columnMap = $state['column_map'] ?? null;
         if (! is_array($columnMap) || $columnMap === []) {
-            $columnMap = self::guessColumnMap($importerClass, $headers);
+            $columnMap = self::wizardColumnMap($importerClass, $headers);
         }
         /** @var array<string, string|null> $columnMap */
         $missing = self::findMissingRequiredColumns($importerClass, $columnMap);
@@ -776,6 +776,34 @@ class ImportWizard extends Page
     /* ──────────────────────────────────────────────────────────────── */
     /* RFQ §3.1.3 — "downloadable CSV error report" header action */
     /* ──────────────────────────────────────────────────────────────── */
+
+    /**
+     * The importer's columns this wizard does not offer (see
+     * {@see DocumentImporter::WIZARD_HIDDEN_COLUMNS}).
+     *
+     * @param class-string<Importer> $importerClass
+     * @return list<string>
+     */
+    public static function wizardHiddenColumns(string $importerClass): array
+    {
+        return defined($importerClass . '::WIZARD_HIDDEN_COLUMNS') ? constant($importerClass . '::WIZARD_HIDDEN_COLUMNS') : [];
+    }
+
+    /**
+     * {@see guessColumnMap()} without the columns the wizard does not offer, so
+     * a sheet that still has, say, a "Seal Number" column does not import it.
+     *
+     * @param class-string<Importer> $importerClass
+     * @param array<int, string> $excelHeaders
+     * @return array<string, string|null>
+     */
+    public static function wizardColumnMap(string $importerClass, array $excelHeaders): array
+    {
+        return array_diff_key(
+            self::guessColumnMap($importerClass, $excelHeaders),
+            array_flip(self::wizardHiddenColumns($importerClass)),
+        );
+    }
 
     /**
      * Stream `failed_import_rows` for the wizard's most recent batch as a
@@ -1160,7 +1188,7 @@ class ImportWizard extends Page
 
         $columnMap = $state['column_map'] ?? null;
         if (! is_array($columnMap) || $columnMap === []) {
-            $columnMap = self::guessColumnMap($importerClass, $headers);
+            $columnMap = self::wizardColumnMap($importerClass, $headers);
         }
         /** @var array<string, string|null> $columnMap */
         // Rows streamed from the CSV: a big sheet held in memory in full is what
@@ -1732,7 +1760,7 @@ class ImportWizard extends Page
                         if ($info === null) {
                             return;
                         }
-                        $set('column_map', self::guessColumnMap(self::IMPORTERS[$type], $info['headers']));
+                        $set('column_map', self::wizardColumnMap(self::IMPORTERS[$type], $info['headers']));
                     }),
 
                 Select::make('sheet')
@@ -1767,7 +1795,7 @@ class ImportWizard extends Page
                         if ($info === null) {
                             return;
                         }
-                        $set('column_map', self::guessColumnMap(self::IMPORTERS[$type], $info['headers']));
+                        $set('column_map', self::wizardColumnMap(self::IMPORTERS[$type], $info['headers']));
                     }),
             ]);
     }
@@ -2140,6 +2168,9 @@ class ImportWizard extends Page
         $rows = [];
         foreach ($importerClass::getColumns() as $column) {
             $fieldName = $column->getName();
+            if (in_array($fieldName, self::wizardHiddenColumns($importerClass), true)) {
+                continue;
+            }
             $required = $column->isMappingRequired();
             $label = (string) ($column->getLabel() ?? $fieldName);
 

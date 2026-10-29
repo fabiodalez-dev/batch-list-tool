@@ -8,16 +8,20 @@ use App\Filament\Actions\Documents\MoveToBoxAction;
 use App\Filament\Concerns\AppliesFieldPermissions;
 use App\Filament\Resources\DocumentResource\Pages;
 use App\Filament\Support\CreatorColumn;
+use App\Filament\Support\DocumentRules;
 use App\Filament\Support\EqualsFirst;
+use App\Filament\Support\MatchQueryBuilder;
 use App\Filament\Support\SearchableSelects;
 use App\Models\Authority;
 use App\Models\Box;
 use App\Models\CustomFieldDefinition;
 use App\Models\Document;
+use App\Models\DocumentFlag;
 use App\Models\DocumentType;
 use App\Models\Lookup\BoxType;
 use App\Models\Lookup\CurrentBoxType;
 use App\Models\Lookup\DigitisationStatus;
+use App\Models\Lookup\FlagType;
 use App\Models\Practice;
 use App\Models\Repository;
 use App\Support\ActiveRepository;
@@ -45,20 +49,18 @@ use Filament\Schemas\Components\Grid;
 use Filament\Schemas\Components\Section;
 use Filament\Schemas\Components\Utilities\Get;
 use Filament\Schemas\Schema;
+use Filament\Support\Colors\Color;
 use Filament\Support\Enums\FontWeight;
 use Filament\Support\Enums\TextSize;
 use Filament\Tables;
 use Filament\Tables\Enums\FiltersLayout;
 use Filament\Tables\Filters\Filter;
-use Filament\Tables\Filters\QueryBuilder;
 use Filament\Tables\Filters\QueryBuilder\Constraints\BooleanConstraint;
 use Filament\Tables\Filters\QueryBuilder\Constraints\DateConstraint;
 use Filament\Tables\Filters\QueryBuilder\Constraints\RelationshipConstraint;
 use Filament\Tables\Filters\QueryBuilder\Constraints\RelationshipConstraint\Operators\IsRelatedToOperator;
 use Filament\Tables\Filters\QueryBuilder\Constraints\SelectConstraint;
 use Filament\Tables\Filters\QueryBuilder\Constraints\TextConstraint;
-use Filament\Tables\Filters\SelectFilter;
-use Filament\Tables\Filters\TernaryFilter;
 use Filament\Tables\Filters\TrashedFilter;
 use Filament\Tables\Table;
 use Illuminate\Database\Eloquent\Builder;
@@ -363,21 +365,27 @@ class DocumentResource extends Resource
                     ->collapsed()
                     ->columns(2)
                     ->schema([
-                        $g(Forms\Components\Select::make('colour_code')
-                            // Six preset colours (bug #27). colour_code is a legacy free-text
-                            // field, so surface any already-saved out-of-list value too, or
-                            // the form would drop it on edit.
-                            ->options(function (?Document $record): array {
-                                $base = ['pink' => 'Pink', 'brown' => 'Brown', 'orange' => 'Orange', 'grey' => 'Grey', 'red' => 'Red', 'yellow' => 'Yellow'];
-                                $current = $record?->colour_code;
-                                if (is_string($current) && $current !== '' && ! array_key_exists($current, $base)) {
-                                    $base[$current] = ucfirst($current) . ' (legacy)';
+                        // Client 2026-10-29: "Add flag label rather than colour code".
+                        // The flags themselves, chosen by name; the legacy Colour code
+                        // (never filled in) is no longer offered.
+                        Forms\Components\Select::make('open_flag_types')
+                            ->label('Flags')
+                            ->multiple()
+                            ->options(fn (): array => DocumentFlag::typeOptions())
+                            ->afterStateHydrated(fn (Forms\Components\Select $component, ?Document $record) => $component->state(
+                                $record?->exists ? $record->openFlags()->pluck('type')->unique()->values()->all() : [],
+                            ))
+                            ->dehydrated(false)
+                            // Checked here too: a disabled field is only greyed out
+                            // in the browser.
+                            ->saveRelationshipsUsing(function (Document $record, ?array $state): void {
+                                if (auth()->user()?->can('create_document_flag') ?? false) {
+                                    $record->syncOpenFlagTypes($state ?? [], auth()->id());
                                 }
-
-                                return $base;
                             })
-                            ->native(false)
-                            ->nullable()),
+                            ->disabled(fn (): bool => ! (auth()->user()?->can('create_document_flag') ?? false))
+                            ->helperText('A flag removed here is marked resolved on the Document Flags page.')
+                            ->columnSpanFull(),
                         $g(Forms\Components\Select::make('digitised')->label(ColumnLabels::get('document', 'digitised'))
                             ->options(fn (): array => DigitisationStatus::options())
                             ->nullable()
@@ -557,6 +565,7 @@ class DocumentResource extends Resource
                             // identifier column.
                             ->state(fn (?Document $record): ?string => $record?->display_identifier)
                             ->placeholder('—'),
+                        self::flagsEntry('flags_summary'),
 
                         TextEntry::make('primary_author_display')
                             ->label('Primary author')
@@ -932,7 +941,7 @@ class DocumentResource extends Resource
                     ->columns($twoCols)
                     ->collapsed()
                     ->schema([
-                        TextEntry::make('colour_code')->label('Colour code')->placeholder('—'),
+                        self::flagsEntry('flags_extras'),
                         TextEntry::make('digitised')->label(ColumnLabels::get('document', 'digitised'))->placeholder('—'),
                         TextEntry::make('digitised_url')->label('Digitised link')->url(fn (?string $state): ?string => $state, shouldOpenInNewTab: true)->placeholder('—'),
                         IconEntry::make('torre')->label(ColumnLabels::get('document', 'torre'))->boolean(),
@@ -1088,6 +1097,16 @@ class DocumentResource extends Resource
                     ->listWithLineBreaks()
                     ->placeholder('—')
                     ->toggleable(), 'authorities'),
+                // Client 2026-10-29: "another column in the Documents to show the
+                // Flag along with the document — highlighting it with the chosen
+                // colour". The open flags by name, in their Flag Types colour.
+                Tables\Columns\TextColumn::make('open_flags_list')
+                    ->label('Flags')
+                    ->state(fn (Document $record): array => self::openFlagLabels($record))
+                    ->badge()
+                    ->color(fn (string $state): array|string => self::flagBadgeColour($state))
+                    ->placeholder('—')
+                    ->toggleable(),
                 // Pairs with "Prev Attributed Authority Identifier", which holds
                 // the same kind of number (the authority's Alternate Reference Code).
                 $gc(Tables\Columns\TextColumn::make('authorities.alternative_identifier_warrant')
@@ -1200,12 +1219,13 @@ class DocumentResource extends Resource
             ->filters([
                 // Client 2026-10-19: "Document Filter — cannot see all — I think
                 // it needs to change to add what fields I want similar to
-                // Boxes". Every field is a rule of "Add rule"; only the filters
-                // other pages link to (Subseries, Batch, Current box, the
-                // disinfestation / flags / catalogue states) and Custody Status
-                // stay on the panel. Text and number rules start on Equals.
-                QueryBuilder::make()
+                // Boxes". Every field is a rule of "Add rule". Client
+                // 2026-10-29: nothing else on the panel — "each user builds
+                // his own" — and AND / OR chosen above the rules. Text and
+                // number rules start on Equals.
+                MatchQueryBuilder::make()
                     ->constraints([
+                        EqualsFirst::text('identifier', 'Document identifier'),
                         RelationshipConstraint::make('series')
                             ->label(ColumnLabels::get('document', 'series'))
                             ->selectable(
@@ -1244,6 +1264,15 @@ class DocumentResource extends Resource
                             ->relationship('currentBox', 'box_type')
                             ->options(fn (): array => BoxType::filterOptions())
                             ->multiple(),
+                        DocumentRules::inBox(),
+                        // Client 2026-10-29: Location, Flag and the panel's old
+                        // ready-made filters, as rules.
+                        DocumentRules::location(),
+                        DocumentRules::custodyStatus(),
+                        DocumentRules::flag(),
+                        DocumentRules::disinfested(),
+                        BooleanConstraint::make('is_in_disinfestation')
+                            ->label('Currently in disinfestation'),
                         RelationshipConstraint::make('documentTypeRef')
                             ->label(ColumnLabels::get('document', 'document_type'))
                             ->selectable(
@@ -1279,6 +1308,8 @@ class DocumentResource extends Resource
                         EqualsFirst::text('citation_reference', ColumnLabels::get('document', 'citation_reference'), nullable: true),
                         EqualsFirst::text('catalogue_identifier', ColumnLabels::get('document', 'catalogue_identifier'), nullable: true),
                         EqualsFirst::text('temporary_identifier', ColumnLabels::get('document', 'temporary_identifier'), nullable: true),
+                        EqualsFirst::text('prev_attributed_identifier', ColumnLabels::get('document', 'prev_attributed_identifier'))->relationship('identifierHistory', 'previous_identifier'),
+                        EqualsFirst::text('prev_attributed_volume', ColumnLabels::get('document', 'prev_attributed_volume'))->relationship('identifierHistory', 'previous_volume'),
                         SelectConstraint::make('digitised')
                             ->label(ColumnLabels::get('document', 'digitised'))
                             ->options(array_combine(Document::DIGITISED_VALUES, Document::DIGITISED_VALUES))
@@ -1293,76 +1324,6 @@ class DocumentResource extends Resource
                         // Code" — a custom field. One rule per custom field.
                         ...self::customFieldConstraints('document'),
                     ]),
-
-                // Other pages link here with these four in the URL (Batch,
-                // Box and the dashboard), so their names must not change.
-                SelectFilter::make('series')->label(ColumnLabels::get('document', 'series'))
-                    ->relationship('series', 'code')->searchable()->preload()->multiple(),
-                SelectFilter::make('batch')
-                    ->relationship('batch', 'batch_number')->searchable()->multiple(),
-                SelectFilter::make('current_box_id')
-                    ->label('Current box')
-                    // "Batch 30 / Box 8", "MAV 1": the bare number is shared by
-                    // a box in every batch (client 2026-10-27).
-                    ->relationship('currentBox', 'box_number', fn (Builder $query): Builder => $query->with('batch'))
-                    ->getOptionLabelFromRecordUsing(fn (Box $record): string => $record->shortLabel())
-                    ->getSearchResultsUsing(fn (string $search): array => Box::searchOptions($search))
-                    ->searchable()->multiple(),
-                // Client 2026-10-28: a box's documents include the ones the
-                // sheet put in it and that have since gone into an In Situ box
-                // (NULL/NULL listed 1 of its 33 rows, Unknown/Unknown 6 of 9).
-                // The box pages link here; "Current box" stays as it was.
-                self::inBoxFilter(),
-                // Client 2026-10-19: "How to search for not in box documents,
-                // Mounted; no Box, Conservation Box?"
-                SelectFilter::make('custody_status')
-                    ->label('Custody Status')
-                    ->options(Document::custodyLabels())
-                    ->multiple(),
-
-                TernaryFilter::make('disinfestation_date')
-                    ->label('Disinfested?')->nullable()
-                    ->trueLabel('Yes')->falseLabel('No')
-                    // Effective precedence: a document counts as disinfested when
-                    // it has its own date OR inherits one from its box.
-                    ->queries(
-                        true: fn (Builder $q) => $q->where(fn (Builder $q) => $q
-                            ->whereNotNull('disinfestation_date')
-                            ->orWhereHas('currentBox', fn (Builder $b) => $b->whereNotNull('disinfestation_date'))),
-                        false: fn (Builder $q) => $q->whereNull('disinfestation_date')
-                            ->whereDoesntHave('currentBox', fn (Builder $b) => $b->whereNotNull('disinfestation_date')),
-                    ),
-
-                // Workflow filter (RFQ App.1 #5 — disinfestation lifecycle).
-                // Narrows to documents physically out for fumigation, so the
-                // operator can bulk-close the cycle via "Mark disinfested".
-                TernaryFilter::make('is_in_disinfestation')
-                    ->label('Currently in disinfestation')
-                    ->placeholder('Any')
-                    ->trueLabel('Currently out for disinfestation')
-                    ->falseLabel('Not currently out'),
-                TernaryFilter::make('has_open_flags')
-                    ->label('Open flags')
-                    ->placeholder('All documents')
-                    ->trueLabel('Has open flags')
-                    ->falseLabel('No open flags')
-                    ->queries(
-                        true: fn ($q) => $q->whereHas('flags', fn ($f) => $f->whereIn('status', ['open', 'acknowledged'])),
-                        false: fn ($q) => $q->whereDoesntHave('flags', fn ($f) => $f->whereIn('status', ['open', 'acknowledged'])),
-                    ),
-
-                // RFQ APP2-viii / REQ-3.2.2 — catalogue progress filter. The
-                // operator needs to triage docs that still need a catalogue
-                // identifier assigned. NULL is the "not yet catalogued" state.
-                TernaryFilter::make('uncatalogued')
-                    ->label('Catalogued?')
-                    ->placeholder('All documents')
-                    ->trueLabel('Catalogued (has catalogue_identifier)')
-                    ->falseLabel('Uncatalogued (no catalogue_identifier yet)')
-                    ->queries(
-                        true: fn ($q) => $q->whereNotNull('catalogue_identifier'),
-                        false: fn ($q) => $q->whereNull('catalogue_identifier'),
-                    ),
 
                 // Soft-deleted records filter
                 TrashedFilter::make(),
@@ -1445,24 +1406,54 @@ class DocumentResource extends Resource
      * removing it just kills the overhead without changing the behaviour.
      */
     /**
-     * "Box (now or earlier)": the documents of a box, including those that
-     * have gone on from it into an In Situ box. The box pages link here.
+     * The document's open flags by name ("Mould Treatment"), each once.
+     *
+     * @return list<string>
      */
-    public static function inBoxFilter(): SelectFilter
+    public static function openFlagLabels(Document $record): array
     {
-        return SelectFilter::make('in_box')
-            ->label('Box (now or earlier)')
-            ->multiple()
-            ->searchable()
-            ->options([])
-            ->getSearchResultsUsing(fn (string $search): array => Box::searchOptions($search))
-            ->getOptionLabelsUsing(fn (array $values): array => Box::shortLabelsFor($values))
-            ->indicateUsing(function (array $state): array {
-                $labels = Box::shortLabelsFor((array) ($state['values'] ?? []));
+        $labels = once(fn (): array => DocumentFlag::typeOptions());
 
-                return $labels === [] ? [] : ['Box (now or earlier): ' . implode(', ', $labels)];
-            })
-            ->query(fn (Builder $query, array $data): Builder => $query->inBox((array) ($data['values'] ?? [])));
+        return $record->openFlags
+            ->map(fn (DocumentFlag $flag): string => $labels[$flag->type] ?? ucwords(str_replace('_', ' ', $flag->type)))
+            ->unique()
+            ->values()
+            ->all();
+    }
+
+    /**
+     * A flag name's badge colour: its Flag Types colour, or grey.
+     *
+     * @return array<int|string, string>|string
+     */
+    public static function flagBadgeColour(string $label): array|string
+    {
+        $byLabel = once(function (): array {
+            $colours = FlagType::cssColours();
+            $out = [];
+            foreach (DocumentFlag::typeOptions() as $code => $name) {
+                if (isset($colours[$code])) {
+                    $out[$name] = $colours[$code];
+                }
+            }
+
+            return $out;
+        });
+
+        return isset($byLabel[$label]) ? Color::hex($byLabel[$label]) : 'gray';
+    }
+
+    /**
+     * The open flags on the document page, by name and in colour.
+     */
+    public static function flagsEntry(string $name): TextEntry
+    {
+        return TextEntry::make($name)
+            ->label('Flags')
+            ->state(fn (?Document $record): array => $record === null ? [] : self::openFlagLabels($record))
+            ->badge()
+            ->color(fn (string $state): array|string => self::flagBadgeColour($state))
+            ->placeholder('No open flags');
     }
 
     /**
@@ -1519,6 +1510,8 @@ class DocumentResource extends Resource
                 // `currentBox.batch` lets the "Box" column render
                 // "Batch X / Box Y" without firing a second query per row.
                 'currentBox.batch',
+                // The Flags column (open flags by name and colour).
+                'openFlags',
                 // The Location column shows the EFFECTIVE location: the
                 // document's own if set, else the box's (Document::
                 // effectiveLocation()). Inherited rows walk `currentBox.location`,

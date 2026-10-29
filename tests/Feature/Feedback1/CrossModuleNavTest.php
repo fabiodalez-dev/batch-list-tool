@@ -125,12 +125,12 @@ it('arriving at the Boxes list via the navigation filter query-string applies th
 
 it('the DocumentResource index URL carries the current_box_id filter param shape (B4)', function (): void {
     $url = DocumentResource::getUrl('index', [
-        'filters' => ['current_box_id' => ['values' => [7]]],
+        'filters' => ['queryBuilder' => doc_rule('currentBox', 'isRelatedTo', ['value' => [7]])],
     ]);
 
     expect(urldecode($url))->toContain('filters')
         ->and(urldecode($url))->not->toContain('tableFilters')
-        ->and(urldecode($url))->toContain('current_box_id')
+        ->and(urldecode($url))->toContain('currentBox')
         ->and(urldecode($url))->toContain('7');
 });
 
@@ -146,7 +146,7 @@ it('Documents list given the box filter param shows only that box documents (B4)
     $docB = cmn_doc($repo->id, $series->id, ['current_box_id' => $boxB->id]);
 
     Livewire::test(ListDocuments::class)
-        ->filterTable('current_box_id', [$boxA->id])
+        ->filterTable('queryBuilder', doc_rule('currentBox', 'isRelatedTo', ['value' => [$boxA->id]]))
         ->assertCanSeeTableRecords([$docA])
         ->assertCanNotSeeTableRecords([$docB]);
 });
@@ -162,7 +162,7 @@ it('arriving at the Documents list via the navigation filter query-string applie
     $docA = cmn_doc($repo->id, $series->id, ['current_box_id' => $boxA->id]);
     $docB = cmn_doc($repo->id, $series->id, ['current_box_id' => $boxB->id]);
 
-    Livewire::withQueryParams(['filters' => ['current_box_id' => ['values' => [(string) $boxA->id]]]])
+    Livewire::withQueryParams(['filters' => ['queryBuilder' => doc_rule('currentBox', 'isRelatedTo', ['value' => [(string) $boxA->id]])]])
         ->test(ListDocuments::class)
         ->assertCanSeeTableRecords([$docA])
         ->assertCanNotSeeTableRecords([$docB]);

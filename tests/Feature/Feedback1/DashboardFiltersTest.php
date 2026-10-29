@@ -166,7 +166,7 @@ it('Document batch SelectFilter narrows to the chosen batch', function (): void 
     $docB = df_doc($repo->id, $series->id, ['batch_id' => $batchB->id]);
 
     Livewire::test(ListDocuments::class)
-        ->filterTable('batch', [$batchA->id])
+        ->filterTable('queryBuilder', doc_rule('batch', 'isRelatedTo', ['value' => [$batchA->id]]))
         ->assertCanSeeTableRecords([$docA])
         ->assertCanNotSeeTableRecords([$docB]);
 });
@@ -183,7 +183,7 @@ it('Document current_box_id SelectFilter narrows to the chosen box', function ()
     $docB = df_doc($repo->id, $series->id, ['current_box_id' => $boxB->id]);
 
     Livewire::test(ListDocuments::class)
-        ->filterTable('current_box_id', [$boxA->id])
+        ->filterTable('queryBuilder', doc_rule('currentBox', 'isRelatedTo', ['value' => [$boxA->id]]))
         ->assertCanSeeTableRecords([$docA])
         ->assertCanNotSeeTableRecords([$docB]);
 });

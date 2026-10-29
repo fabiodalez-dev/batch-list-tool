@@ -497,6 +497,49 @@ class Document extends Model implements AuditableContract, HasMedia, Sortable
     }
 
     /**
+     * Client 2026-10-29: flags are chosen by name on the document form. Each
+     * type given that the document has no open flag of gets one; each open
+     * flag whose type is no longer given is resolved, not deleted, so the
+     * Document Flags page keeps its history.
+     *
+     * @param list<string> $types
+     */
+    public function syncOpenFlagTypes(array $types, ?int $userId = null): void
+    {
+        $types = array_values(array_unique(array_filter($types, 'is_string')));
+        $labels = DocumentFlag::typeOptions();
+        $open = $this->openFlags()->get();
+
+        foreach ($open as $flag) {
+            if (! in_array($flag->getAttribute('type'), $types, true)) {
+                $flag->forceFill([
+                    'status' => 'resolved',
+                    'resolved_by_user_id' => $userId,
+                    'resolved_at' => now(),
+                    'resolution_notes' => $flag->resolution_notes ?? 'Removed on the document form.',
+                ])->save();
+            }
+        }
+
+        $have = $open->pluck('type')->all();
+        foreach ($types as $type) {
+            if (! in_array($type, $have, true) && array_key_exists($type, $labels)) {
+                DocumentFlag::create([
+                    'document_id' => $this->getKey(),
+                    'repository_id' => $this->repository_id,
+                    'type' => $type,
+                    'title' => $labels[$type],
+                    'flagged_by_user_id' => $userId,
+                    'flagged_at' => now(),
+                ]);
+            }
+        }
+
+        $this->unsetRelation('openFlags');
+        $this->unsetRelation('flags');
+    }
+
+    /**
      * F-011 alignment: this MUST mirror the attributes exposed in
      * DocumentResource::getGloballySearchableAttributes() so that swapping
      * Scout drivers (database / Meilisearch / Algolia) does not change
@@ -614,6 +657,16 @@ class Document extends Model implements AuditableContract, HasMedia, Sortable
      * @param array<int|string> $boxIds
      */
     public function scopeInBox(Builder $query, array $boxIds): Builder
+    {
+        return self::whereInBox($query, $boxIds);
+    }
+
+    /**
+     * {@see scopeInBox()} on any documents query.
+     *
+     * @param array<int|string> $boxIds
+     */
+    public static function whereInBox(Builder $query, array $boxIds): Builder
     {
         $boxIds = array_values(array_filter(array_map('intval', $boxIds)));
         if ($boxIds === []) {

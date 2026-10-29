@@ -10,6 +10,7 @@ use App\Filament\Imports\Concerns\SkipsExistingRows;
 use App\Filament\Pages\ImportWizard;
 use App\Models\Accession;
 use App\Models\Authority;
+use App\Models\Batch;
 use App\Models\Box;
 use App\Models\BoxBarcodeHistory;
 use App\Models\BoxMovement;
@@ -113,6 +114,20 @@ class DocumentImporter extends Importer
      * in {@see buildAutoIdentifier()}.
      */
     public const SOURCE_ROW_KEY = SpreadsheetHeaders::SOURCE_ROW_KEY;
+
+    /**
+     * Client 2026-10-29: "To remove from mass upload of documents". Box
+     * properties (seal, Destroyed, container type, box barcode) are imported
+     * with the box, and No of Acts / Pages/Folios hold nothing, so the import
+     * wizard neither offers nor maps these. The console batch-list import
+     * still reads them from the legacy sheet.
+     *
+     * @var list<string>
+     */
+    public const WIZARD_HIDDEN_COLUMNS = [
+        'number_of_acts', 'pages_folios', 'current_box_barcode', 'seal_number', 'current_box_type',
+        'ras_box_1_destroyed', 'ras_box_2_destroyed', 'in_situ_box_1_destroyed', 'in_situ_box_2_destroyed', 'in_situ_box_3_destroyed',
+    ];
 
     /**
      * Post-save side effects (box-status reconciliation + authority pivot
@@ -438,7 +453,18 @@ class DocumentImporter extends Importer
             ->where('identifier', trim((string) $identifier))
             ->where('repository_id', $repoId); // guaranteed non-null past the guard above
 
-        $record = $q->first() ?? new Document;
+        $record = $q->first();
+
+        // Client 2026-10-29: a row typed again from the template, with a flag
+        // added and "Overwrite" ticked, made a second copy of the document: the
+        // template has no identifier column and the auto identifier changes with
+        // the row's content. Such a row is the document already filed at the
+        // same place in the sheet (see matchBySheetPosition()).
+        if ($record === null && $autoIdentifier !== null) {
+            $record = $this->matchBySheetPosition((int) $repoId);
+        }
+
+        $record ??= new Document;
         // A new document gets the row's repository here: the model's creating
         // hook takes it from the signed-in user, and the queued job has none,
         // so it was left null (the same trap BoxImporter hit, PR #195).
@@ -551,7 +577,9 @@ class DocumentImporter extends Importer
         // only if the stash is somehow missing keeps a single source of truth so
         // the stamped value can never drift from the value used to find the record.
         if (empty($record->identifier) || $record->identifier === 'AUTO-') {
-            $record->identifier = self::$rowAutoIdentifierStash[spl_object_id($record)]
+            // A document matched by its place in the sheet keeps its identifier.
+            $record->identifier = ($record->exists ? $record->getOriginal('identifier') : null)
+                ?: self::$rowAutoIdentifierStash[spl_object_id($record)]
                 ?? $this->generateDocumentIdentifier($record);
         }
 
@@ -835,6 +863,60 @@ class DocumentImporter extends Importer
             $repoId !== null ? (int) $repoId : null,
             $this->currentRowSequence(),
         );
+    }
+
+    /**
+     * The document already in the archive that a row without an identifier
+     * describes: same RAS Batch 1 and Box 1, In Situ Box 1, Volume, Part
+     * Number, Subseries and authorities. Only documents that existed before
+     * this import started are considered, so two rows of one sheet never
+     * merge. Several matches fail the row: the sheet must then name the one
+     * to update in a Document Identifier column.
+     */
+    protected function matchBySheetPosition(int $repoId): ?Document
+    {
+        $batchNumber = self::sheetValue($this->data['batch_number'] ?? null);
+        $boxNumber = self::sheetValue($this->data['current_box_number'] ?? null);
+        if ($batchNumber === null || $boxNumber === null) {
+            return null;
+        }
+
+        $batchIds = Batch::withoutGlobalScopes()->where('repository_id', $repoId)->where('batch_number', $batchNumber)->pluck('id');
+        if ($batchIds->isEmpty()) {
+            return null;
+        }
+
+        $series = self::sheetValue($this->data['series'] ?? null);
+        $seriesCode = $series === null ? null : strtoupper(trim(explode(':', $series, 2)[0]));
+        $authorityCodes = collect(explode(';', (string) ($this->data['authority_identifier'] ?? '')))
+            ->map(fn (string $code): ?string => self::sheetValue($code))
+            ->filter()
+            ->map(fn (string $code): string => mb_strtolower($code))
+            ->unique()
+            ->values();
+
+        $candidates = Document::withoutGlobalScopes()
+            ->where('repository_id', $repoId)
+            ->whereIn('batch_id', $batchIds)
+            // Narrowed in SQL to the box, so a big sheet re-imported over a
+            // full archive compares a handful of documents per row, not a batch.
+            ->whereIn('ras_box_1', array_unique([trim((string) $this->data['current_box_number']), $boxNumber]))
+            ->where('created_at', '<', $this->import->created_at ?? now())
+            ->with(['series', 'authorities'])
+            ->get()
+            ->filter(fn (Model $doc): bool => $doc instanceof Document && $this->describesDocument($doc, $boxNumber, $seriesCode, $authorityCodes->all()));
+
+        if ($candidates->count() > 1) {
+            throw new RowImportFailedException(sprintf(
+                'This row matches %d documents already in the archive (%s). Add a Document Identifier column with the identifier of the one to update.',
+                $candidates->count(),
+                $candidates->take(5)->pluck('identifier')->implode(', '),
+            ));
+        }
+
+        $match = $candidates->first();
+
+        return $match instanceof Document ? $match : null;
     }
 
     /**
@@ -2566,6 +2648,54 @@ class DocumentImporter extends Importer
         // rows may lack a location); the seal write itself is unrelated to it.
         $box->skipPermOutGuard = true;
         $box->save();
+    }
+
+    /**
+     * Whether a document sits where the row puts it, with the row's volume,
+     * part, subseries and authorities.
+     *
+     * @param list<string> $authorityCodes lower-cased
+     */
+    private function describesDocument(Document $doc, string $boxNumber, ?string $seriesCode, array $authorityCodes): bool
+    {
+        $authorities = $doc->getRelationValue('authorities');
+        if (self::sheetValue($doc->ras_box_1) !== $boxNumber
+            || self::sheetValue($doc->in_situ_box_1) !== self::sheetValue($this->data['in_situ_box_1'] ?? null)
+            || self::sheetValue($doc->volume_number) !== self::sheetValue($this->data['volume_number'] ?? null)
+            || self::sheetValue($doc->part_number) !== self::sheetValue($this->data['part_number'] ?? null)
+            || ($seriesCode !== null && strtoupper((string) $doc->getRelationValue('series')?->getAttribute('code')) !== $seriesCode)
+            || $authorities->count() !== count($authorityCodes)) {
+            return false;
+        }
+
+        // Every authority of the row is one of the document's, by any of the
+        // codes the Authority Identifier column accepts.
+        foreach ($authorityCodes as $code) {
+            $found = $authorities->contains(fn (Model $a): bool => in_array($code, array_map(
+                fn (mixed $v): string => mb_strtolower(trim((string) $v)),
+                [$a->getAttribute('identifier'), $a->getAttribute('alternative_identifier'), $a->getAttribute('alternative_identifier_warrant')],
+            ), true));
+            if (! $found) {
+                return false;
+            }
+        }
+
+        return true;
+    }
+
+    /**
+     * A sheet cell as compared between rows: trimmed, case and spacing ignored,
+     * "52.0" read as "52", blank as null.
+     */
+    private static function sheetValue(mixed $value): ?string
+    {
+        if ($value === null || ! is_scalar($value)) {
+            return null;
+        }
+        $value = mb_strtolower(trim((string) preg_replace('/\s+/u', '', (string) $value)));
+        $value = (string) preg_replace('/^(\d+)\.0+$/', '$1', $value);
+
+        return $value === '' ? null : $value;
     }
 
     /**

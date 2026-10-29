@@ -116,7 +116,7 @@ test('filter has_open_flags=true returns only docs with open or acknowledged fla
     ]);
 
     Livewire::test(ListDocuments::class)
-        ->filterTable('has_open_flags', true)
+        ->filterTable('queryBuilder', doc_rule('flag', 'any'))
         ->assertCanSeeTableRecords([$withOpen, $withAck])
         ->assertCanNotSeeTableRecords([$withResolved, $withDismissed, $flagless]);
 });
@@ -159,7 +159,7 @@ test('filter has_open_flags=false returns only docs with no open or acknowledged
     ]);
 
     Livewire::test(ListDocuments::class)
-        ->filterTable('has_open_flags', false)
+        ->filterTable('queryBuilder', doc_rule('flag', 'any.inverse'))
         ->assertCanSeeTableRecords([$withResolved, $withDismissed, $flagless])
         ->assertCanNotSeeTableRecords([$withOpen, $withAck]);
 });
@@ -193,7 +193,7 @@ test('filter uncatalogued=true returns only docs with a catalogue_identifier', f
     ]);
 
     Livewire::test(ListDocuments::class)
-        ->filterTable('uncatalogued', true)
+        ->filterTable('queryBuilder', doc_rule('catalogue_identifier', 'isFilled'))
         ->assertCanSeeTableRecords([$catalogued, $cataloguedB])
         ->assertCanNotSeeTableRecords([$uncatalogued]);
 });
@@ -224,7 +224,7 @@ test('filter uncatalogued=false returns only docs without a catalogue_identifier
     ]);
 
     Livewire::test(ListDocuments::class)
-        ->filterTable('uncatalogued', false)
+        ->filterTable('queryBuilder', doc_rule('catalogue_identifier', 'isFilled.inverse'))
         ->assertCanSeeTableRecords([$uncatalogued, $uncataloguedB])
         ->assertCanNotSeeTableRecords([$catalogued]);
 });
@@ -250,7 +250,7 @@ test('Disinfested?=yes includes a document that inherits its box disinfestation 
     $noBox = filt_makeDoc($repo->id, $series->id, ['disinfestation_date' => null]);
 
     Livewire::test(ListDocuments::class)
-        ->filterTable('disinfestation_date', true)
+        ->filterTable('queryBuilder', doc_rule('disinfested', 'yes'))
         ->assertCanSeeTableRecords([$ownDate, $inherited])
         ->assertCanNotSeeTableRecords([$neither, $noBox]);
 });
@@ -267,7 +267,7 @@ test('Disinfested?=no excludes a document that inherits a box date, keeps the tr
     $noBox = filt_makeDoc($repo->id, $series->id, ['disinfestation_date' => null]);
 
     Livewire::test(ListDocuments::class)
-        ->filterTable('disinfestation_date', false)
+        ->filterTable('queryBuilder', doc_rule('disinfested', 'yes.inverse'))
         ->assertCanSeeTableRecords([$noBox])
         ->assertCanNotSeeTableRecords([$inherited]); // inherits a date → counts as disinfested
 });
