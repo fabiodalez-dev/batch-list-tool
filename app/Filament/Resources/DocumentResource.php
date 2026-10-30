@@ -321,10 +321,12 @@ class DocumentResource extends Resource
                             ->nullable()
                             ->helperText('Repository / room / shelf / showcase / temp-holding hierarchy.')),
                         $g(Forms\Components\Select::make('current_box_type')
+                            ->searchable()
                             ->options(fn (): array => CurrentBoxType::options())
                             ->nullable()
                             ->helperText('Used for disinfestation planning: Big Brown Box counts as 2 boxes in the 250-box cycle limit.')),
                         $g(Forms\Components\Select::make('custody_status')
+                            ->searchable()
                             ->label('Custody status')
                             // Options are derived from the const so they stay in
                             // sync with the model; the label map keeps them readable.
@@ -379,6 +381,7 @@ class DocumentResource extends Resource
                         // The flags themselves, chosen by name; the legacy Colour code
                         // (never filled in) is no longer offered.
                         Forms\Components\Select::make('open_flag_types')
+                            ->searchable()
                             ->label('Flags')
                             ->multiple()
                             ->options(fn (): array => DocumentFlag::typeOptions())
@@ -397,6 +400,7 @@ class DocumentResource extends Resource
                             ->helperText('A flag removed here is marked resolved on the Document Flags page.')
                             ->columnSpanFull(),
                         $g(Forms\Components\Select::make('digitised')->label(ColumnLabels::get('document', 'digitised'))
+                            ->searchable()
                             ->options(fn (): array => DigitisationStatus::options())
                             ->nullable()
                             ->helperText('Digitisation source per RFQ APP2-xiii.')),

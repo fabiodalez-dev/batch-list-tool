@@ -138,6 +138,7 @@ class AuthorityResource extends Resource
                         // values (e.g. legacy 'PERSON') are merged into the
                         // options so the record stays editable/saveable.
                         $g(Forms\Components\Select::make('entity_type')
+                            ->searchable()
                             ->label(ColumnLabels::get('authority', 'entity_type'))
                             ->required()
                             ->native(false)
@@ -216,10 +217,12 @@ class AuthorityResource extends Resource
                             ->rows(3)
                             ->columnSpanFull()),
                         $g(Forms\Components\Select::make('level_of_detail')
+                            ->searchable()
                             ->label(ColumnLabels::get('authority', 'level_of_detail'))
                             ->native(false)
                             ->options(array_combine(Authority::LEVELS_OF_DETAIL, Authority::LEVELS_OF_DETAIL))),
                         $g(Forms\Components\Select::make('status')
+                            ->searchable()
                             ->label(ColumnLabels::get('authority', 'status'))
                             ->native(false)
                             ->options(array_combine(Authority::RECORD_STATUSES, Authority::RECORD_STATUSES))),

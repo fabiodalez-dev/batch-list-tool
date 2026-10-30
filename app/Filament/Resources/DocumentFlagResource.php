@@ -75,6 +75,7 @@ class DocumentFlagResource extends Resource
                             ->searchable(),
 
                         Forms\Components\Select::make('severity')
+                            ->searchable()
                             ->options(FlagsRelationManager::severityOptions())
                             ->default('warning')
                             ->required()
@@ -95,6 +96,7 @@ class DocumentFlagResource extends Resource
                     ->columns($twoCols)
                     ->schema([
                         Forms\Components\Select::make('status')
+                            ->searchable()
                             ->options(FlagsRelationManager::statusOptions())
                             ->default('open')
                             ->required()

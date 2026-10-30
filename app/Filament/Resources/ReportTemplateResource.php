@@ -64,6 +64,7 @@ class ReportTemplateResource extends Resource
                             ->maxLength(191),
 
                         Forms\Components\Select::make('source')
+                            ->searchable()
                             ->required()
                             ->options(self::sourceOptions())
                             ->disabledOn('edit')

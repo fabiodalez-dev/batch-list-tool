@@ -77,6 +77,7 @@ class BackupDestinationResource extends Resource
                             ->helperText('A friendly name shown in the list, e.g. "Off-site FTP (Aruba)".'),
 
                         Select::make('driver')
+                            ->searchable()
                             ->label('Storage type')
                             ->required()
                             ->live()

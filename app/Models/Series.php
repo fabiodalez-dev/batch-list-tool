@@ -169,6 +169,18 @@ class Series extends Model implements AuditableContract, Sortable
     }
 
     /**
+     * Documents filed under this series or any subseries below it. Client
+     * 2026-10-30: "R" counted 1 document while many sit in its subseries,
+     * because only its own series_id was counted.
+     */
+    public function documentsIncludingDescendantsCount(): int
+    {
+        $ids = [(int) $this->getKey(), ...$this->descendants()->pluck('id')->map(static fn ($id): int => (int) $id)->all()];
+
+        return Document::query()->whereIn('series_id', $ids)->count();
+    }
+
+    /**
      * Ids this series may NOT pick as its parent (itself + all descendants),
      * preventing a cycle. Used by the SeriesResource form Select options and
      * the server-side validation rule.

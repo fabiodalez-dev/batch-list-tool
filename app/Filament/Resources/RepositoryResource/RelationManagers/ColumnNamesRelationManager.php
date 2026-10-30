@@ -55,6 +55,7 @@ class ColumnNamesRelationManager extends RelationManager
     {
         return $schema->components([
             Forms\Components\Select::make('entity_type')
+                ->searchable()
                 ->label('Record type')
                 ->options(fn (): array => ColumnLabels::renameableEntityOptions())
                 ->required()

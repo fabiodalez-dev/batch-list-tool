@@ -68,6 +68,7 @@ class ImportProfileResource extends Resource
                             ->maxLength(191),
 
                         Forms\Components\Select::make('import_type')
+                            ->searchable()
                             ->required()
                             ->options(self::importTypeOptions())
                             ->disabledOn('edit')

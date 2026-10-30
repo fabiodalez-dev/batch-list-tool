@@ -29,7 +29,10 @@ use Illuminate\Database\Eloquent\Model;
  * is unusable.
  *
  * The new pattern is:
- *   - `preload(false)` — no upfront fetch.
+ *   - `preload()` + `options(...)` — the list opens on the first 50 rows the
+ *     empty search would return, so the operator can pick without knowing
+ *     what to type (client 2026-10-30: "check that dropdowns show all the
+ *     options instead of trying to type them in"). Never the whole table.
  *   - `getSearchResultsUsing(...)` — server-side autocomplete capped at 50.
  *   - `getOptionLabelUsing(...)` — single-record label for the already-selected
  *     value, with a "(deleted)" suffix when the relation is soft-deleted.
@@ -63,8 +66,9 @@ final class SearchableSelects
         return Select::make($name)
             ->relationship('document', 'identifier')
             ->searchable(['identifier', 'catalogue_identifier', 'barcode_in'])
-            ->preload(false)
+            ->preload()
             ->getOptionLabelFromRecordUsing(fn (Document $r): string => self::documentLabel($r))
+            ->options(fn (): array => self::documentSearchResults(''))
             ->getSearchResultsUsing(fn (string $search): array => self::documentSearchResults($search))
             ->getOptionLabelUsing(fn ($value): ?string => self::documentOptionLabel($value));
     }
@@ -78,8 +82,9 @@ final class SearchableSelects
         return Select::make($fieldName)
             ->relationship($relationshipName, 'identifier')
             ->searchable(['identifier', 'catalogue_identifier', 'barcode_in'])
-            ->preload(false)
+            ->preload()
             ->getOptionLabelFromRecordUsing(fn (Document $r): string => self::documentLabel($r))
+            ->options(fn (): array => self::documentSearchResults(''))
             ->getSearchResultsUsing(fn (string $search): array => self::documentSearchResults($search))
             ->getOptionLabelUsing(fn ($value): ?string => self::documentOptionLabel($value));
     }
@@ -147,8 +152,9 @@ final class SearchableSelects
         return Select::make($name)
             ->relationship($relationship, 'box_number')
             ->searchable(['box_number', 'barcode'])
-            ->preload(false)
+            ->preload()
             ->getOptionLabelFromRecordUsing(fn (Box $r): string => self::boxLabel($r))
+            ->options(fn (): array => self::boxSearchResults(''))
             ->getSearchResultsUsing(fn (string $search): array => self::boxSearchResults($search))
             ->getOptionLabelUsing(fn ($value): ?string => self::boxOptionLabel($value));
     }
@@ -166,8 +172,9 @@ final class SearchableSelects
         return Select::make($name)
             ->relationship($relationship, 'box_number', $queryModifier)
             ->searchable(['box_number', 'barcode'])
-            ->preload(false)
+            ->preload()
             ->getOptionLabelFromRecordUsing(fn (Box $r): string => self::boxLabel($r))
+            ->options(fn (): array => self::boxSearchResults('', $queryModifier))
             ->getSearchResultsUsing(fn (string $search): array => self::boxSearchResults($search, $queryModifier))
             ->getOptionLabelUsing(fn ($value): ?string => self::boxOptionLabel($value));
     }
@@ -251,8 +258,9 @@ final class SearchableSelects
         return Select::make($name)
             ->relationship($relationship, 'surname')
             ->searchable(['identifier', 'surname', 'given_names', 'alternative_identifier'])
-            ->preload(false)
+            ->preload()
             ->getOptionLabelFromRecordUsing(fn (Authority $r): string => self::authorityLabel($r))
+            ->options(fn (): array => self::authoritySearchResults(''))
             ->getSearchResultsUsing(fn (string $search): array => self::authoritySearchResults($search))
             ->getOptionLabelUsing(fn ($value): ?string => self::authorityOptionLabel($value));
     }
@@ -267,8 +275,9 @@ final class SearchableSelects
             ->multiple()
             ->relationship('authorities', 'surname')
             ->searchable(['identifier', 'surname', 'given_names', 'alternative_identifier'])
-            ->preload(false)
+            ->preload()
             ->getOptionLabelFromRecordUsing(fn (Authority $r): string => self::authorityLabel($r))
+            ->options(fn (): array => self::authoritySearchResults(''))
             ->getSearchResultsUsing(fn (string $search): array => self::authoritySearchResults($search))
             ->getOptionLabelsUsing(fn (array $values): array => self::authorityOptionLabels($values));
     }
@@ -345,12 +354,13 @@ final class SearchableSelects
         return Select::make($name)
             ->relationship($relationship, 'batch_number')
             ->searchable(['batch_number'])
-            ->preload(false)
+            ->preload()
             ->getOptionLabelFromRecordUsing(fn (Batch $r): string => self::batchLabel($r))
             // NAF Feedback-1 comment #9 — only ACTIVE batches are offered as a
             // selectable parent here (Box / Document forms). An already-selected
             // batch that later went inactive still renders via the label
             // resolver below, so editing an existing record is unaffected.
+            ->options(fn (): array => self::batchSearchResults('', activeOnly: true))
             ->getSearchResultsUsing(fn (string $search): array => self::batchSearchResults($search, activeOnly: true))
             ->getOptionLabelUsing(fn ($value): ?string => self::batchOptionLabel($value));
     }
@@ -419,8 +429,9 @@ final class SearchableSelects
         return Select::make($name)
             ->relationship('series', 'code')
             ->searchable(['code', 'title'])
-            ->preload(false)
+            ->preload()
             ->getOptionLabelFromRecordUsing(fn (Series $r): string => self::seriesLabel($r))
+            ->options(fn (): array => self::seriesSearchResults(''))
             ->getSearchResultsUsing(fn (string $search): array => self::seriesSearchResults($search))
             ->getOptionLabelUsing(fn ($value): ?string => self::seriesOptionLabel($value));
     }
@@ -483,8 +494,9 @@ final class SearchableSelects
         return Select::make($name)
             ->relationship('repository', 'name', $relationshipQuery)
             ->searchable(['code', 'name'])
-            ->preload(false)
+            ->preload()
             ->getOptionLabelFromRecordUsing(fn (Repository $r): string => self::repositoryLabel($r))
+            ->options(fn (): array => self::repositorySearchResults('', $queryModifier))
             ->getSearchResultsUsing(fn (string $search): array => self::repositorySearchResults($search, $queryModifier))
             ->getOptionLabelUsing(fn ($value): ?string => self::repositoryOptionLabel($value));
     }
@@ -543,8 +555,9 @@ final class SearchableSelects
         return Select::make($name)
             ->relationship('accession', 'code')
             ->searchable(['code'])
-            ->preload(false)
+            ->preload()
             ->getOptionLabelFromRecordUsing(fn (Accession $r): string => self::accessionLabel($r))
+            ->options(fn (): array => self::accessionSearchResults(''))
             ->getSearchResultsUsing(fn (string $search): array => self::accessionSearchResults($search))
             ->getOptionLabelUsing(fn ($value): ?string => self::accessionOptionLabel($value));
     }
@@ -559,12 +572,13 @@ final class SearchableSelects
             ->multiple()
             ->relationship('accessions', 'code')
             ->searchable(['code'])
-            ->preload(false)
+            ->preload()
             ->getOptionLabelFromRecordUsing(fn (Accession $r): string => self::accessionLabel($r))
             // F041 — scope the autocomplete to the editing record's repository
             // (on edit) or the form's currently-selected repository_id (on
             // create) so admins never see foreign-repo accessions to attach.
             // null (no record, no selection) → unscoped, mirroring prior behaviour.
+            ->options(fn (Get $get, ?Model $record): array => self::accessionSearchResults('', self::resolveRepositoryId($get, $record)))
             ->getSearchResultsUsing(fn (string $search, Get $get, ?Model $record): array => self::accessionSearchResults($search, self::resolveRepositoryId($get, $record)))
             ->getOptionLabelsUsing(fn (array $values): array => self::accessionOptionLabels($values));
     }
@@ -579,12 +593,13 @@ final class SearchableSelects
             ->multiple()
             ->relationship('batches', 'batch_number')
             ->searchable(['batch_number', 'description'])
-            ->preload(false)
+            ->preload()
             ->getOptionLabelFromRecordUsing(fn (Batch $r): string => self::batchLabel($r))
             // F041 — scope the autocomplete to the editing record's repository
             // (on edit) or the form's currently-selected repository_id (on
             // create) so admins never see foreign-repo batches to attach.
             // null (no record, no selection) → unscoped, mirroring prior behaviour.
+            ->options(fn (Get $get, ?Model $record): array => self::batchSearchResults('', self::resolveRepositoryId($get, $record)))
             ->getSearchResultsUsing(fn (string $search, Get $get, ?Model $record): array => self::batchSearchResults($search, self::resolveRepositoryId($get, $record)))
             ->getOptionLabelsUsing(fn (array $values): array => self::batchOptionLabels($values));
     }
@@ -664,8 +679,9 @@ final class SearchableSelects
         return Select::make($name)
             ->relationship($relationship, 'name', $relationshipQuery)
             ->searchable(['name', 'code'])
-            ->preload(false)
+            ->preload()
             ->getOptionLabelFromRecordUsing(fn (Location $r): string => $r->breadcrumb())
+            ->options(fn (): array => self::locationSearchResults('', $queryModifier))
             ->getSearchResultsUsing(fn (string $search): array => self::locationSearchResults($search, $queryModifier))
             ->getOptionLabelUsing(fn ($value): ?string => self::locationOptionLabel($value));
     }
@@ -731,8 +747,9 @@ final class SearchableSelects
         return Select::make($name)
             ->relationship($relationship, 'name')
             ->searchable(['name', 'email'])
-            ->preload(false)
+            ->preload()
             ->getOptionLabelFromRecordUsing(fn (User $r): string => self::userLabel($r))
+            ->options(fn (): array => self::userSearchResults(''))
             ->getSearchResultsUsing(fn (string $search): array => self::userSearchResults($search))
             ->getOptionLabelUsing(fn ($value): ?string => self::userOptionLabel($value));
     }
@@ -773,6 +790,27 @@ final class SearchableSelects
         return "{$r->name}{$email}";
     }
 
+    public static function boxOptionLabel(mixed $value): ?string
+    {
+        if ($value === null || $value === '') {
+            return null;
+        }
+
+        $record = Box::withTrashed()->with('batch')->find($value);
+
+        if ($record === null) {
+            return null;
+        }
+
+        $label = self::boxLabel($record);
+
+        if ($record->trashed()) {
+            $label .= ' (deleted)';
+        }
+
+        return $label;
+    }
+
     /**
      * F041 — resolve the repository_id to scope the multi-select autocomplete:
      * prefer the form's current `repository_id` value (covers create, where the
@@ -810,27 +848,6 @@ final class SearchableSelects
         }
 
         $label = self::documentLabel($record);
-
-        if ($record->trashed()) {
-            $label .= ' (deleted)';
-        }
-
-        return $label;
-    }
-
-    private static function boxOptionLabel(mixed $value): ?string
-    {
-        if ($value === null || $value === '') {
-            return null;
-        }
-
-        $record = Box::withTrashed()->with('batch')->find($value);
-
-        if ($record === null) {
-            return null;
-        }
-
-        $label = self::boxLabel($record);
 
         if ($record->trashed()) {
             $label .= ' (deleted)';

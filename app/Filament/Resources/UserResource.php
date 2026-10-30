@@ -108,6 +108,7 @@ class UserResource extends Resource
                     ->columns($twoCols)
                     ->schema([
                         Forms\Components\Select::make('role')
+                            ->searchable()
                             ->options(static::roleOptions())
                             ->required()
                             ->native(false)
