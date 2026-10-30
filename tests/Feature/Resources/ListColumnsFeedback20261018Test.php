@@ -67,7 +67,7 @@ it('shows the authority as Citing Reference Code and Creator, the type by name, 
         ->assertTableColumnStateSet('creator_names', ['Giuseppe Abela'], $doc)
         ->assertTableColumnStateSet('authorities.alternative_identifier', ['R358/A'], $doc)
         ->assertTableColumnStateSet('authorities.alternative_identifier_warrant', ['631'], $doc)
-        ->assertTableColumnFormattedStateSet('disinfestation_date', '05/08/2023', $doc)
+        ->assertTableColumnFormattedStateSet('disinfestation_date', '05-08-2023', $doc) // dd-mm-yyyy everywhere (client 2026-10-30)
         ->assertTableColumnExists('disinfestation_date', fn ($column): bool => $column->getLabel() === 'Disinfested Date')
         ->assertTableColumnDoesNotExist('barcode_in')
         ->assertTableColumnDoesNotExist('authorities.surname');

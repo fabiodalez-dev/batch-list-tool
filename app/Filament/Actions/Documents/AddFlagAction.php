@@ -80,6 +80,7 @@ final class AddFlagAction
                 ->native(false)
                 ->searchable(),
             Select::make('severity')
+                ->searchable()
                 ->label('Severity')
                 ->options($sevOptions)
                 ->default('warning')

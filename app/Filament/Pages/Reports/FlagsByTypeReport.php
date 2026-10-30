@@ -11,6 +11,7 @@ use App\Filament\Resources\DocumentResource\RelationManagers\FlagsRelationManage
 use App\Models\DocumentFlag;
 use App\Models\ReportTemplate;
 use App\Models\Repository;
+use App\Support\DisplayDate;
 use App\Support\Reports\ReportRenderer;
 use Filament\Actions\Action;
 use Filament\Forms;
@@ -112,7 +113,7 @@ class FlagsByTypeReport extends Page implements HasTable
 
                 Tables\Columns\TextColumn::make('last_flagged_at')
                     ->label('Last flagged')
-                    ->dateTime('Y-m-d H:i')
+                    ->dateTime()
                     ->placeholder('—')
                     ->sortable(),
             ])
@@ -254,14 +255,8 @@ class FlagsByTypeReport extends Page implements HasTable
             $attrs = $r->getAttributes();
             $type = isset($attrs['type']) ? (string) $attrs['type'] : null;
 
-            $lastFlagged = $attrs['last_flagged_at'] ?? null;
-            if ($lastFlagged instanceof \DateTimeInterface) {
-                $lastFlaggedStr = $lastFlagged->format('Y-m-d H:i');
-            } elseif (is_string($lastFlagged) && $lastFlagged !== '') {
-                $lastFlaggedStr = $lastFlagged;
-            } else {
-                $lastFlaggedStr = null;
-            }
+            // MAX() comes back as a plain "Y-m-d H:i:s" string, not a Carbon.
+            $lastFlaggedStr = DisplayDate::dateTime($attrs['last_flagged_at'] ?? null);
 
             $rows[] = [
                 $type !== null ? FlagsRelationManager::typeLabel($type) : null,

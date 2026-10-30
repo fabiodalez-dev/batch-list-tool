@@ -6,6 +6,8 @@ namespace App\Filament\Resources\Lookups;
 
 use App\Filament\Resources\Lookups\BoxTypeResource\Pages;
 use App\Filament\Support\CreatorColumn;
+use App\Filament\Support\ListRules;
+use App\Filament\Support\MatchQueryBuilder;
 use App\Models\Lookup\BoxType;
 use Filament\Actions\Action;
 use Filament\Actions\BulkActionGroup;
@@ -16,6 +18,7 @@ use Filament\Resources\Resource;
 use Filament\Schemas\Components\Section;
 use Filament\Schemas\Schema;
 use Filament\Tables;
+use Filament\Tables\Filters\QueryBuilder\Constraints\BooleanConstraint;
 use Filament\Tables\Table;
 use Illuminate\Database\Eloquent\Builder;
 
@@ -138,8 +141,11 @@ class BoxTypeResource extends Resource
             ->defaultSort('sort_order')
             ->reorderable('sort_order')
             ->filters([
-                Tables\Filters\TernaryFilter::make('is_active'),
-                Tables\Filters\TernaryFilter::make('is_legacy'),
+                // Client 2026-10-30: one rule per column, as on Documents.
+                MatchQueryBuilder::make()
+                    ->constraints(ListRules::lookup(extra: [
+                        BooleanConstraint::make('is_legacy')->label('Legacy'),
+                    ])),
             ])
             ->actions([
                 Action::make('toggle_active')

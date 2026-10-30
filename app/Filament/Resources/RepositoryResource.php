@@ -4,7 +4,11 @@ namespace App\Filament\Resources;
 
 use App\Filament\Resources\RepositoryResource\Pages;
 use App\Filament\Resources\RepositoryResource\RelationManagers;
+use App\Filament\Support\CompactLayout;
 use App\Filament\Support\CreatorColumn;
+use App\Filament\Support\EqualsFirst;
+use App\Filament\Support\ListRules;
+use App\Filament\Support\MatchQueryBuilder;
 use App\Models\Repository;
 use Filament\Actions\BulkActionGroup;
 use Filament\Actions\DeleteBulkAction;
@@ -17,6 +21,7 @@ use Filament\Resources\Resource;
 use Filament\Schemas\Components\Section;
 use Filament\Schemas\Schema;
 use Filament\Tables;
+use Filament\Tables\Filters\QueryBuilder\Constraints\BooleanConstraint;
 use Filament\Tables\Table;
 use Illuminate\Database\Eloquent\Builder;
 
@@ -34,31 +39,24 @@ class RepositoryResource extends Resource
 
     public static function form(Schema $schema): Schema
     {
-        // Layout rule (user mandate): root columns(1) → full-width Sections;
-        // atomic-field Sections use ['default' => 1, 'md' => 2]; non-atomic
-        // children (Textarea) → columnSpanFull.
-        $twoCols = ['default' => 1, 'md' => 2];
-
+        // Client 2026-10-30: one compact section, laid out like the view so a
+        // field is found in the same place on both.
         return $schema
             ->columns(1)
             ->schema([
-                Section::make('Identification')
-                    ->columns($twoCols)
+                Section::make(CompactLayout::DETAILS)
+                    ->columns(CompactLayout::GRID)
                     ->schema([
                         Forms\Components\TextInput::make('code')
                             ->required()
                             ->maxLength(32),
                         Forms\Components\TextInput::make('name')
                             ->required()
-                            ->maxLength(255),
+                            ->maxLength(255)
+                            ->columnSpan(CompactLayout::HALF),
                         Forms\Components\Toggle::make('is_active')
+                            ->label('Active')
                             ->required(),
-                    ]),
-
-                Section::make('Description')
-                    ->columns(1)
-                    ->collapsed()
-                    ->schema([
                         Forms\Components\Textarea::make('description')
                             ->rows(3)
                             ->columnSpanFull(),
@@ -68,17 +66,14 @@ class RepositoryResource extends Resource
 
     public static function infolist(Schema $schema): Schema
     {
-        // Layout rule (user mandate): root columns(1) → full-width Sections;
-        // atomic entries on ['default' => 1, 'md' => 2]; non-atomic content
-        // (prose Description) → columnSpanFull. Repository has no FK-typed
-        // relationships, so no clickable links here — counts only.
-        $twoCols = ['default' => 1, 'md' => 2];
-
+        // Client 2026-10-30: Identification, Description and Counts held very
+        // few fields each; they are one compact section now, with Audit info
+        // apart and closed.
         return $schema
             ->columns(1)
             ->components([
-                Section::make('Identification')
-                    ->columns($twoCols)
+                Section::make(CompactLayout::DETAILS)
+                    ->columns(CompactLayout::GRID)
                     ->schema([
                         TextEntry::make('code')
                             ->label('Code')
@@ -88,26 +83,11 @@ class RepositoryResource extends Resource
                             ->placeholder('—'),
                         TextEntry::make('name')
                             ->label('Name')
-                            ->placeholder('—'),
+                            ->placeholder('—')
+                            ->columnSpan(CompactLayout::HALF),
                         IconEntry::make('is_active')
                             ->label('Active')
                             ->boolean(),
-                    ]),
-
-                Section::make('Description')
-                    ->columns(1)
-                    ->collapsed()
-                    ->schema([
-                        TextEntry::make('description')
-                            ->hiddenLabel()
-                            ->prose()
-                            ->placeholder('No description.')
-                            ->columnSpanFull(),
-                    ]),
-
-                Section::make('Counts')
-                    ->columns($twoCols)
-                    ->schema([
                         TextEntry::make('batches_count')
                             ->label('Batches')
                             ->state(fn (?Repository $record): int => $record?->batches()->count() ?? 0)
@@ -128,17 +108,14 @@ class RepositoryResource extends Resource
                             ->state(fn (?Repository $record): int => $record?->users()->count() ?? 0)
                             ->badge()
                             ->color('gray'),
+                        TextEntry::make('description')
+                            ->label('Description')
+                            ->prose()
+                            ->placeholder('No description.')
+                            ->columnSpanFull(),
                     ]),
 
-                Section::make('Audit info')
-                    ->columns($twoCols)
-                    ->collapsed()
-                    ->schema([
-                        TextEntry::make('created_at')->dateTime()->label('Created'),
-                        TextEntry::make('updated_at')->dateTime()->label('Updated'),
-                        TextEntry::make('deleted_at')->dateTime()->label('Trashed')->placeholder('—')->columnSpanFull(),
-                    ])
-                    ->visible(fn (): bool => (bool) auth()->user()?->hasRole('super_admin')),
+                CompactLayout::auditInfolist(),
             ]);
     }
 
@@ -172,7 +149,17 @@ class RepositoryResource extends Resource
                 CreatorColumn::make(),
             ])
             ->filters([
-                //
+                // Client 2026-10-30: one rule per column, as on Documents.
+                MatchQueryBuilder::make()
+                    ->constraints([
+                        EqualsFirst::text('code', 'Code'),
+                        EqualsFirst::text('name', 'Name'),
+                        BooleanConstraint::make('is_active'),
+                        ListRules::date('created_at'),
+                        ListRules::date('updated_at'),
+                        ListRules::date('deleted_at'),
+                        ListRules::inputter(),
+                    ]),
             ])
             ->actions([
                 ViewAction::make(),

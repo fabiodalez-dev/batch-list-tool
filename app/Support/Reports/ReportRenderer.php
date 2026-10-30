@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace App\Support\Reports;
 
 use App\Exports\GenericReportExport;
+use App\Support\DisplayDate;
 use Barryvdh\DomPDF\Facade\Pdf;
 use Closure;
 use Illuminate\Database\Eloquent\Builder;
@@ -157,7 +158,7 @@ final class ReportRenderer
             'subtitle' => $subtitle,
             'headers' => $headers,
             'rows' => $rowsArray,
-            'generated_at' => now()->format('Y-m-d H:i'),
+            'generated_at' => now()->format(DisplayDate::DATE_TIME),
             'generated_by' => $generatedBy,
             'total_rows' => count($rowsArray),
         ])->setPaper('a4', 'portrait');

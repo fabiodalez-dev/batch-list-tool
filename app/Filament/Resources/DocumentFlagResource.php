@@ -5,6 +5,9 @@ namespace App\Filament\Resources;
 use App\Filament\Resources\DocumentFlagResource\Pages;
 use App\Filament\Resources\DocumentResource\RelationManagers\FlagsRelationManager;
 use App\Filament\Support\CreatorColumn;
+use App\Filament\Support\EqualsFirst;
+use App\Filament\Support\ListRules;
+use App\Filament\Support\MatchQueryBuilder;
 use App\Filament\Support\SearchableSelects;
 use App\Models\DocumentFlag;
 use Filament\Actions\BulkAction;
@@ -19,8 +22,7 @@ use Filament\Schemas\Components\Section;
 use Filament\Schemas\Components\Utilities\Get;
 use Filament\Schemas\Schema;
 use Filament\Tables;
-use Filament\Tables\Filters\Filter;
-use Filament\Tables\Filters\SelectFilter;
+use Filament\Tables\Filters\QueryBuilder\Constraints\SelectConstraint;
 use Filament\Tables\Table;
 use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Database\Eloquent\Collection;
@@ -75,6 +77,7 @@ class DocumentFlagResource extends Resource
                             ->searchable(),
 
                         Forms\Components\Select::make('severity')
+                            ->searchable()
                             ->options(FlagsRelationManager::severityOptions())
                             ->default('warning')
                             ->required()
@@ -95,6 +98,7 @@ class DocumentFlagResource extends Resource
                     ->columns($twoCols)
                     ->schema([
                         Forms\Components\Select::make('status')
+                            ->searchable()
                             ->options(FlagsRelationManager::statusOptions())
                             ->default('open')
                             ->required()
@@ -307,47 +311,32 @@ class DocumentFlagResource extends Resource
                 CreatorColumn::make(),
             ])
             ->filters([
-                SelectFilter::make('status')
-                    // Default = open. Operators almost always want the inbox
-                    // view, not the archive.
-                    ->options(FlagsRelationManager::statusOptions() + ['all' => 'All'])
-                    ->default('open')
-                    ->query(function (Builder $query, array $data): Builder {
-                        $value = $data['value'] ?? 'open';
-
-                        return match ($value) {
-                            'open' => $query->open(),
-                            'all', null, '' => $query,
-                            default => $query->where('status', $value),
-                        };
-                    }),
-
-                SelectFilter::make('severity')
-                    ->options(FlagsRelationManager::severityOptions())
-                    ->multiple(),
-
-                SelectFilter::make('type')
-                    ->options(FlagsRelationManager::typeOptions())
-                    ->multiple(),
-
-                SelectFilter::make('repository_id')
-                    ->label('Repository')
-                    ->relationship('repository', 'code'),
-
-                Filter::make('flagged_at_range')
-                    ->form([
-                        Forms\Components\DatePicker::make('from')->label('From'),
-                        Forms\Components\DatePicker::make('to')->label('To'),
+                // Client 2026-10-30: one rule per column, AND / OR above them,
+                // as on Documents. The list still opens on the inbox: a
+                // "Status is Open, Acknowledged" rule, removable like any other.
+                MatchQueryBuilder::make()
+                    ->constraints([
+                        SelectConstraint::make('severity')
+                            ->options(FlagsRelationManager::severityOptions())
+                            ->multiple(),
+                        SelectConstraint::make('type')
+                            ->options(fn (): array => FlagsRelationManager::typeOptions())
+                            ->multiple(),
+                        ListRules::relation('document', 'Document', 'identifier', preload: false),
+                        EqualsFirst::text('title', 'Title', nullable: true),
+                        SelectConstraint::make('status')
+                            ->options(FlagsRelationManager::statusOptions())
+                            ->multiple(),
+                        ListRules::relation('repository', 'Repo', 'code'),
+                        ListRules::relation('flaggedBy', 'Flagged by', 'name', emptyable: true),
+                        ListRules::date('flagged_at', 'Flagged'),
+                        ListRules::date('resolved_at', 'Resolved'),
+                        ListRules::inputter(),
                     ])
-                    ->query(fn (Builder $query, array $data): Builder => $query
-                        ->when(
-                            $data['from'] ?? null,
-                            fn ($query, $v) => $query->whereDate('flagged_at', '>=', $v),
-                        )
-                        ->when(
-                            $data['to'] ?? null,
-                            fn ($query, $v) => $query->whereDate('flagged_at', '<=', $v),
-                        )),
+                    ->default(['match' => MatchQueryBuilder::MATCH_ALL, 'rules' => ['open' => [
+                        'type' => 'status',
+                        'data' => ['operator' => 'is', 'settings' => ['values' => DocumentFlag::OPEN_STATUSES]],
+                    ]]]),
             ])
             ->actions([
                 ViewAction::make(),

@@ -89,14 +89,13 @@ final class DocumentRules
             ->icon('heroicon-o-map-pin')
             ->multiple()
             ->searchable()
-            ->options(fn (): array => Location::query()->orderBy('name')->get()
-                ->mapWithKeys(fn (Location $l): array => [$l->getKey() => LocationBreadcrumbCache::for($l) ?? (string) $l->name])
-                ->sort()
-                ->all())
+            ->options(fn (): array => self::locationOptions())
             ->operators([
                 IsOperator::make()->modifyBaseQueryUsing(function (Builder $query, ?array $settings, ?bool $isInverse): Builder {
                     $ids = self::withSublocations(self::values($settings));
-                    $in = fn (Builder $q): Builder => $q->whereIn($q->qualifyColumn('location_id'), $ids)
+                    // whereNotNull keeps "Is not" from dropping the documents
+                    // without a location (NOT (NULL IN …) is not true in SQL).
+                    $in = fn (Builder $q): Builder => $q->where(fn (Builder $q): Builder => $q->whereNotNull($q->qualifyColumn('location_id'))->whereIn($q->qualifyColumn('location_id'), $ids))
                         ->orWhere(fn (Builder $q): Builder => $q
                             ->whereNull($q->qualifyColumn('location_id'))
                             ->whereHas('currentBox', fn (Builder $b): Builder => $b->whereIn('location_id', $ids)));
@@ -136,9 +135,24 @@ final class DocumentRules
     }
 
     /**
+     * Every location by its breadcrumb ("Archive › Mould Room › Shelf 2").
+     *
+     * @return array<int|string, string>
+     */
+    public static function locationOptions(): array
+    {
+        return Location::query()->orderBy('name')->get()
+            ->mapWithKeys(fn (Location $l): array => [$l->getKey() => LocationBreadcrumbCache::for($l) ?? (string) $l->name])
+            ->sort()
+            ->all();
+    }
+
+    /**
+     * The scalar values a select rule stores in `settings.values`.
+     *
      * @return list<int|string>
      */
-    private static function values(?array $settings): array
+    public static function values(?array $settings): array
     {
         return array_values(array_filter((array) ($settings['values'] ?? []), 'is_scalar'));
     }
@@ -147,7 +161,7 @@ final class DocumentRules
      * @param list<int|string> $ids
      * @return list<int>
      */
-    private static function withSublocations(array $ids): array
+    public static function withSublocations(array $ids): array
     {
         $all = [];
         foreach (Location::query()->whereKey($ids)->get() as $location) {

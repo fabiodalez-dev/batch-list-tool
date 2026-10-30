@@ -112,13 +112,13 @@ it('Authority "has MS number" ternary narrows both ways', function (): void {
 
     // true → only creators carrying an MS number
     Livewire::test(ListAuthorities::class)
-        ->filterTable('has_ms_number', true)
+        ->filterTable('queryBuilder', doc_rule('has_ms_number', 'yes'))
         ->assertCanSeeTableRecords([$withMs])
         ->assertCanNotSeeTableRecords([$withoutMs]);
 
     // false → only creators with no MS number
     Livewire::test(ListAuthorities::class)
-        ->filterTable('has_ms_number', false)
+        ->filterTable('queryBuilder', doc_rule('has_ms_number', 'yes.inverse'))
         ->assertCanSeeTableRecords([$withoutMs])
         ->assertCanNotSeeTableRecords([$withMs]);
 });
@@ -136,7 +136,7 @@ it('Authority practice-period filter narrows by a year window (worked between X 
     $beforeWindow = df_authority(['identifier' => 'R30003', 'practice_dates_start' => 1500, 'practice_dates_end' => 1550]);
 
     Livewire::test(ListAuthorities::class)
-        ->filterTable('practice_period', ['from' => 1620, 'to' => 1640])
+        ->filterTable('queryBuilder', doc_rule('practice_period', 'workedBetween', ['from' => 1620, 'to' => 1640]))
         ->assertCanSeeTableRecords([$inWindow])
         ->assertCanNotSeeTableRecords([$afterWindow, $beforeWindow]);
 });
@@ -148,7 +148,7 @@ it('Authority practice-period filter with only "from" keeps notaries who worked 
     $worksEarlier = df_authority(['identifier' => 'R31002', 'practice_dates_start' => 1500, 'practice_dates_end' => 1550]);
 
     Livewire::test(ListAuthorities::class)
-        ->filterTable('practice_period', ['from' => 1680])
+        ->filterTable('queryBuilder', doc_rule('practice_period', 'workedBetween', ['from' => 1680]))
         ->assertCanSeeTableRecords([$worksLater])
         ->assertCanNotSeeTableRecords([$worksEarlier]);
 });
@@ -197,7 +197,7 @@ it('Series code SelectFilter narrows to the chosen series', function (): void {
     $sY = Series::create(['code' => 'DFY' . substr(uniqid(), -4), 'title' => 'Y', 'is_active' => true]);
 
     Livewire::test(ListSeries::class)
-        ->filterTable('code', [$sX->code])
+        ->filterTable('queryBuilder', doc_rule('code', 'equals', ['text' => $sX->code]))
         ->assertCanSeeTableRecords([$sX])
         ->assertCanNotSeeTableRecords([$sY]);
 });
@@ -210,7 +210,7 @@ it('Batch type SelectFilter narrows to the chosen type', function (): void {
     $notary = Batch::factory()->create(['batch_number' => 202, 'type' => 'NOTARY_ACCESSION', 'repository_id' => $repo->id]);
 
     Livewire::test(ListBatches::class)
-        ->filterTable('type', ['NOTARY_ACCESSION'])
+        ->filterTable('queryBuilder', doc_rule('type', 'is', ['values' => ['NOTARY_ACCESSION']]))
         ->assertCanSeeTableRecords([$notary])
         ->assertCanNotSeeTableRecords([$main]);
 });
@@ -223,12 +223,12 @@ it('has_ms_number partitions creators exactly, treating whitespace-only as no MS
     $blankMs = df_authority(['identifier' => 'R20003', 'alternative_identifier' => '   ']);
 
     Livewire::test(ListAuthorities::class)
-        ->filterTable('has_ms_number', true)
+        ->filterTable('queryBuilder', doc_rule('has_ms_number', 'yes'))
         ->assertCanSeeTableRecords([$withMs])
         ->assertCanNotSeeTableRecords([$noMs, $blankMs]);
 
     Livewire::test(ListAuthorities::class)
-        ->filterTable('has_ms_number', false)
+        ->filterTable('queryBuilder', doc_rule('has_ms_number', 'yes.inverse'))
         ->assertCanSeeTableRecords([$noMs, $blankMs])
         ->assertCanNotSeeTableRecords([$withMs]);
 });

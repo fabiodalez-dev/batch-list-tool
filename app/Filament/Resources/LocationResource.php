@@ -5,7 +5,11 @@ declare(strict_types=1);
 namespace App\Filament\Resources;
 
 use App\Filament\Resources\LocationResource\Pages;
+use App\Filament\Support\CompactLayout;
 use App\Filament\Support\CreatorColumn;
+use App\Filament\Support\EqualsFirst;
+use App\Filament\Support\ListRules;
+use App\Filament\Support\MatchQueryBuilder;
 use App\Models\Location;
 use App\Models\LocationType;
 use App\Models\Repository;
@@ -25,8 +29,8 @@ use Filament\Schemas\Components\Section;
 use Filament\Schemas\Components\Utilities\Get;
 use Filament\Schemas\Schema;
 use Filament\Tables;
-use Filament\Tables\Filters\SelectFilter;
-use Filament\Tables\Filters\TernaryFilter;
+use Filament\Tables\Filters\QueryBuilder\Constraints\BooleanConstraint;
+use Filament\Tables\Filters\QueryBuilder\Constraints\SelectConstraint;
 use Filament\Tables\Filters\TrashedFilter;
 use Filament\Tables\Table;
 use Illuminate\Database\Eloquent\Builder;
@@ -73,22 +77,18 @@ class LocationResource extends Resource
 
     public static function form(Schema $schema): Schema
     {
-        // Layout rule (user mandate): root columns(1) → full-width Sections;
-        // atomic-field Sections use ['default' => 1, 'md' => 2]; non-atomic
-        // children (helperText-heavy inputs, Textarea) → columnSpanFull.
-        //
         // Wave D3 — Simplified form:
         //   • parent_id removed (new locations always root-level, parent_id=null)
         //   • type limited to the 3 canonical values (room/museum/repository)
         //   • repository_id placed first, required
         //   • code is auto-generated when blank; shown read-only with helper text
-        $twoCols = ['default' => 1, 'md' => 2];
 
         return $schema
             ->columns(1)
             ->schema([
-                Section::make('Identification')
-                    ->columns($twoCols)
+                // Client 2026-10-30: one compact section, in the order of the view.
+                Section::make(CompactLayout::DETAILS)
+                    ->columns(CompactLayout::GRID)
                     ->schema([
                         // Repository comes first — it determines the code auto-gen scope.
                         Forms\Components\Select::make('repository_id')
@@ -113,6 +113,7 @@ class LocationResource extends Resource
                             ->helperText('Select the repository this location belongs to.')
                             ->default(fn () => auth()->user()?->default_repository_id),
                         Forms\Components\Select::make('type')
+                            ->searchable()
                             ->label(ColumnLabels::get('location', 'type'))
                             // Feedback1 gaps — options come from the editable
                             // location_types lookup (active rows, ordered by
@@ -151,7 +152,6 @@ class LocationResource extends Resource
                             ->label(ColumnLabels::get('location', 'code'))
                             ->maxLength(32)
                             ->helperText('Auto-generated if left blank. Must be unique within the repository.')
-                            ->columnSpanFull()
                             ->rule(fn (?Location $record) => function (string $attribute, $value, \Closure $fail) use ($record) {
                                 if ($value === null || $value === '') {
                                     return; // Will be auto-generated on save.
@@ -170,11 +170,6 @@ class LocationResource extends Resource
                                     $fail("The identifier '{$value}' is already used in this repository.");
                                 }
                             }),
-                    ]),
-
-                Section::make('Status')
-                    ->columns($twoCols)
-                    ->schema([
                         Forms\Components\Toggle::make('is_active')
                             ->label(ColumnLabels::get('location', 'is_active'))
                             ->default(true)
@@ -183,12 +178,6 @@ class LocationResource extends Resource
                         // simple UI per decision D8: "sort_order kept internally
                         // but hidden from the simple UI." DB column and model
                         // field remain intact for programmatic use.
-                    ]),
-
-                Section::make('Notes')
-                    ->columns(1)
-                    ->collapsed()
-                    ->schema([
                         Forms\Components\Textarea::make('notes')
                             ->label(ColumnLabels::get('location', 'notes'))
                             ->rows(3)
@@ -211,41 +200,15 @@ class LocationResource extends Resource
 
     public static function infolist(Schema $schema): Schema
     {
-        // Layout rule (user mandate): root columns(1) → full-width Sections;
-        // atomic entries on ['default' => 1, 'md' => 2]; non-atomic content
-        // → columnSpanFull. Every FK gets a ->url() to its Resource view.
-        $twoCols = ['default' => 1, 'md' => 2];
+        // Every FK gets a ->url() to its Resource view.
 
         return $schema
             ->columns(1)
             ->components([
-                Section::make('Identification')
-                    ->columns($twoCols)
-                    ->schema([
-                        TextEntry::make('name')
-                            ->label(ColumnLabels::get('location', 'name'))
-                            ->placeholder('—'),
-                        TextEntry::make('type')
-                            ->label(ColumnLabels::get('location', 'type'))
-                            ->badge()
-                            ->color(fn (?string $state): string => $state ? self::typeColor($state) : 'gray')
-                            ->formatStateUsing(fn (?string $state): string => $state
-                                ? self::typeLabel($state)
-                                : '—')
-                            ->placeholder('—'),
-                        // D3/D8 — relabel 'Code' → 'Identifier' in the infolist
-                        // to match the form input and table column labels.
-                        TextEntry::make('code')
-                            ->label(ColumnLabels::get('location', 'code'))
-                            ->copyable()
-                            ->placeholder('—'),
-                        // F04/F07 (review findings) — breadcrumb (Path) and
-                        // parent entries removed per decision D8: "remove
-                        // breadcrumb/parent/depth from UI".
-                    ]),
-
-                Section::make('Scope & status')
-                    ->columns($twoCols)
+                // Client 2026-10-30: Identification, Scope & status and Counts
+                // condensed into one section; Audit info apart and closed.
+                Section::make(CompactLayout::DETAILS)
+                    ->columns(CompactLayout::GRID)
                     ->schema([
                         TextEntry::make('repository.code')
                             ->label('Repository')
@@ -256,17 +219,28 @@ class LocationResource extends Resource
                                 : null)
                             ->openUrlInNewTab(false)
                             ->placeholder('GLOBAL'),
-                        // F4/F08 (review findings) — depth and sort_order
-                        // removed from infolist per decision D8: "Remove depth;
-                        // sort_order kept internally but hidden from the simple UI."
+                        TextEntry::make('type')
+                            ->label(ColumnLabels::get('location', 'type'))
+                            ->badge()
+                            ->color(fn (?string $state): string => $state ? self::typeColor($state) : 'gray')
+                            ->formatStateUsing(fn (?string $state): string => $state
+                                ? self::typeLabel($state)
+                                : '—')
+                            ->placeholder('—'),
+                        TextEntry::make('name')
+                            ->label(ColumnLabels::get('location', 'name'))
+                            ->placeholder('—'),
+                        // D3/D8 — relabel 'Code' → 'Identifier' in the infolist
+                        // to match the form input and table column labels.
+                        TextEntry::make('code')
+                            ->label(ColumnLabels::get('location', 'code'))
+                            ->copyable()
+                            ->placeholder('—'),
+                        // Breadcrumb, parent, depth and sort_order stay out of
+                        // the UI (decision D8).
                         IconEntry::make('is_active')
                             ->label(ColumnLabels::get('location', 'is_active'))
                             ->boolean(),
-                    ]),
-
-                Section::make('Counts')
-                    ->columns($twoCols)
-                    ->schema([
                         TextEntry::make('boxes_count')
                             ->label('Boxes')
                             ->state(fn (?Location $record): int => $record?->boxes()->count() ?? 0)
@@ -277,29 +251,14 @@ class LocationResource extends Resource
                             ->state(fn (?Location $record): int => $record?->documents()->count() ?? 0)
                             ->badge()
                             ->color('gray'),
-                    ]),
-
-                Section::make('Notes')
-                    ->columns(1)
-                    ->collapsed()
-                    ->schema([
                         TextEntry::make('notes')
                             ->label(ColumnLabels::get('location', 'notes'))
-                            ->hiddenLabel()
                             ->prose()
                             ->placeholder('No notes.')
                             ->columnSpanFull(),
                     ]),
 
-                Section::make('Audit info')
-                    ->columns($twoCols)
-                    ->collapsed()
-                    ->schema([
-                        TextEntry::make('created_at')->dateTime()->label('Created'),
-                        TextEntry::make('updated_at')->dateTime()->label('Updated'),
-                        TextEntry::make('deleted_at')->dateTime()->label('Trashed')->placeholder('—')->columnSpanFull(),
-                    ])
-                    ->visible(fn (): bool => (bool) auth()->user()?->hasRole('super_admin')),
+                CompactLayout::auditInfolist(),
             ]);
     }
 
@@ -362,23 +321,28 @@ class LocationResource extends Resource
                     ->toggleable(isToggledHiddenByDefault: true),
             ])
             ->filters([
-                SelectFilter::make('type')
-                    // Feedback1 gaps (F006) — options come from the editable
-                    // location_types lookup (same source as the form Select)
-                    // so operator-added types are filterable. Closure keeps it
-                    // lazy (no DB query at class-resolution time).
-                    ->options(fn (): array => self::typeOptions())
-                    ->multiple(),
-                SelectFilter::make('repository_id')
-                    ->label('Repository')
-                    ->relationship('repository', 'code')
-                    ->searchable()
-                    ->preload(),
-                TernaryFilter::make('is_active')
-                    ->label(ColumnLabels::get('location', 'is_active'))
-                    ->placeholder('Any')
-                    ->trueLabel('Active')
-                    ->falseLabel('Inactive'),
+                // Client 2026-10-30: "Locations Page has all these fields
+                // available [...] but only some of them can be filtered" — one
+                // rule per column, AND / OR above them, as on Documents.
+                MatchQueryBuilder::make()
+                    ->constraints([
+                        EqualsFirst::text('name', ColumnLabels::get('location', 'name')),
+                        // Feedback1 gaps (F006) — the editable location_types
+                        // lookup, the form's source.
+                        SelectConstraint::make('type')
+                            ->label(ColumnLabels::get('location', 'type'))
+                            ->options(fn (): array => self::typeOptions())
+                            ->multiple(),
+                        // No repository = a GLOBAL location.
+                        ListRules::relation('repository', 'Repo', 'code', emptyable: true),
+                        EqualsFirst::text('code', ColumnLabels::get('location', 'code'), nullable: true),
+                        ListRules::count('boxes_count', 'Boxes', 'boxes'),
+                        ListRules::count('documents_count', 'Documents', 'documents'),
+                        BooleanConstraint::make('is_active')
+                            ->label(ColumnLabels::get('location', 'is_active')),
+                        ListRules::inputter(),
+                        ListRules::date('updated_at'),
+                    ]),
                 TrashedFilter::make(),
             ])
             ->actions([

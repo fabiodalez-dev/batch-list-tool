@@ -13,6 +13,7 @@ use App\Models\Box;
 use App\Models\BoxMovement;
 use App\Models\ReportTemplate;
 use App\Models\Scopes\RepositoryScope;
+use App\Support\DisplayDate;
 use App\Support\Reports\ReportRenderer;
 use Filament\Actions\Action;
 use Filament\Forms;
@@ -74,7 +75,7 @@ class BoxMovementHistoryReport extends Page implements HasTable
             ->columns([
                 Tables\Columns\TextColumn::make('movement_date')
                     ->label('Date')
-                    ->dateTime('Y-m-d H:i')
+                    ->dateTime()
                     ->sortable(),
 
                 Tables\Columns\TextColumn::make('document.identifier')
@@ -276,7 +277,7 @@ class BoxMovementHistoryReport extends Page implements HasTable
     {
         return [
             'Date' => fn (BoxMovement $r) => $r->movement_date instanceof \DateTimeInterface
-                ? $r->movement_date->format('Y-m-d H:i')
+                ? $r->movement_date->format(DisplayDate::DATE_TIME)
                 : null,
             'Document' => fn (BoxMovement $r) => $r->document?->getAttribute('identifier'),
             'From box' => fn (BoxMovement $r) => $r->fromBox?->getAttribute('box_number'),
@@ -336,7 +337,7 @@ class BoxMovementHistoryReport extends Page implements HasTable
 
         return [
             $r->movement_date instanceof \DateTimeInterface
-                ? $r->movement_date->format('Y-m-d H:i')
+                ? $r->movement_date->format(DisplayDate::DATE_TIME)
                 : null,
             $r->document?->getAttribute('identifier'),
             $r->fromBox?->getAttribute('box_number'),

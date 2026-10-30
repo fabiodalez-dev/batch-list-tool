@@ -10,6 +10,7 @@ use App\Filament\Resources\DocumentResource\Pages;
 use App\Filament\Support\CreatorColumn;
 use App\Filament\Support\DocumentRules;
 use App\Filament\Support\EqualsFirst;
+use App\Filament\Support\ListRules;
 use App\Filament\Support\MatchQueryBuilder;
 use App\Filament\Support\SearchableSelects;
 use App\Models\Authority;
@@ -27,6 +28,7 @@ use App\Models\Repository;
 use App\Support\ActiveRepository;
 use App\Support\ColumnLabels\ColumnLabels;
 use App\Support\CustomFields\CustomFieldSchema;
+use App\Support\DisplayDate;
 use App\Support\LocationBreadcrumbCache;
 use Carbon\Carbon;
 use Filament\Actions\Action;
@@ -321,10 +323,12 @@ class DocumentResource extends Resource
                             ->nullable()
                             ->helperText('Repository / room / shelf / showcase / temp-holding hierarchy.')),
                         $g(Forms\Components\Select::make('current_box_type')
+                            ->searchable()
                             ->options(fn (): array => CurrentBoxType::options())
                             ->nullable()
                             ->helperText('Used for disinfestation planning: Big Brown Box counts as 2 boxes in the 250-box cycle limit.')),
                         $g(Forms\Components\Select::make('custody_status')
+                            ->searchable()
                             ->label('Custody status')
                             // Options are derived from the const so they stay in
                             // sync with the model; the label map keeps them readable.
@@ -379,6 +383,7 @@ class DocumentResource extends Resource
                         // The flags themselves, chosen by name; the legacy Colour code
                         // (never filled in) is no longer offered.
                         Forms\Components\Select::make('open_flag_types')
+                            ->searchable()
                             ->label('Flags')
                             ->multiple()
                             ->options(fn (): array => DocumentFlag::typeOptions())
@@ -397,6 +402,7 @@ class DocumentResource extends Resource
                             ->helperText('A flag removed here is marked resolved on the Document Flags page.')
                             ->columnSpanFull(),
                         $g(Forms\Components\Select::make('digitised')->label(ColumnLabels::get('document', 'digitised'))
+                            ->searchable()
                             ->options(fn (): array => DigitisationStatus::options())
                             ->nullable()
                             ->helperText('Digitisation source per RFQ APP2-xiii.')),
@@ -849,7 +855,7 @@ class DocumentResource extends Resource
                             ->columns(4)
                             ->columnSpanFull()
                             ->schema([
-                                TextEntry::make('changed_at')->label('When')->dateTime('Y-m-d H:i')->badge()->color('gray'),
+                                TextEntry::make('changed_at')->label('When')->dateTime()->badge()->color('gray'),
                                 TextEntry::make('from_location_label')->label('From')->placeholder('—'),
                                 TextEntry::make('to_location_label')->label('To')->placeholder('—'),
                                 TextEntry::make('changedBy.name')->label('By')->placeholder('—'),
@@ -880,7 +886,7 @@ class DocumentResource extends Resource
                             ->state(fn (?Document $record): array => $record instanceof Document
                                 ? $record->disinfestationTimeline()
                                     ->map(fn (array $row) => [
-                                        'date' => optional($row['date'])->format('Y-m-d'),
+                                        'date' => DisplayDate::date($row['date']),
                                         'label' => $row['label'],
                                     ])
                                     ->all()
@@ -997,8 +1003,8 @@ class DocumentResource extends Resource
                             }
                             $displayValue = match ($def->type) {
                                 'boolean' => $value ? 'Yes' : 'No',
-                                'date' => $value instanceof Carbon ? $value->toDateString() : (string) $value,
-                                'datetime' => $value instanceof Carbon ? $value->toDateTimeString() : (string) $value,
+                                'date' => DisplayDate::date($value) ?? (string) $value,
+                                'datetime' => DisplayDate::dateTime($value) ?? (string) $value,
                                 default => (string) $value,
                             };
                             $entries[] = TextEntry::make('cf_' . $def->key)
@@ -1194,12 +1200,12 @@ class DocumentResource extends Resource
                 // ("from box"). Not sortable (resolved accessor, not a column).
                 $gc(Tables\Columns\TextColumn::make('disinfestation_date')->label('Disinfested Date')
                     ->state(fn (?Document $record): ?\Carbon\Carbon => $record?->effectiveDisinfestationDate())
-                    ->date('d/m/Y')
+                    ->date()
                     ->description(fn (?Document $record): ?string => $record?->disinfestationDateIsInherited() ? 'from box' : null)
                     // The latest date is shown; the earlier ones on hover.
                     ->tooltip(fn (?Document $record): ?string => $record === null ? null : (collect([$record->disinfestation_date_1, $record->disinfestation_date_2, $record->disinfestation_date_3])
                         ->filter()
-                        ->map(fn (mixed $d): string => Carbon::parse($d)->format('d/m/Y'))
+                        ->map(fn (mixed $d): string => Carbon::parse($d)->format(DisplayDate::DATE))
                         ->unique()
                         ->implode(', ') ?: null))
                     ->toggleable(isToggledHiddenByDefault: true)),
@@ -1331,6 +1337,10 @@ class DocumentResource extends Resource
                             ->nullable(),
                         BooleanConstraint::make('torre')
                             ->label(ColumnLabels::get('document', 'torre')),
+                        // Client 2026-10-30: every column has a rule.
+                        ListRules::relation('repository', 'Repo', 'code'),
+                        ListRules::inputter(),
+                        ListRules::date('updated_at'),
                         // Client 2026-10-27: "Cannot filter by Past Reference
                         // Code" — a custom field. One rule per custom field.
                         ...self::customFieldConstraints('document'),
@@ -1612,8 +1622,8 @@ class DocumentResource extends Resource
 
                     return match ($def->type) {
                         'boolean' => $typed ? 'Yes' : 'No',
-                        'date' => $typed instanceof Carbon ? $typed->toDateString() : (string) ($typed ?? ''),
-                        'datetime' => $typed instanceof Carbon ? $typed->toDateTimeString() : (string) ($typed ?? ''),
+                        'date' => DisplayDate::date($typed) ?? (string) ($typed ?? ''),
+                        'datetime' => DisplayDate::dateTime($typed) ?? (string) ($typed ?? ''),
                         default => $typed !== null ? (string) $typed : null,
                     };
                 }))

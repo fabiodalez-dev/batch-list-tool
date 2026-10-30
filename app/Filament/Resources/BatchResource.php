@@ -4,7 +4,11 @@ namespace App\Filament\Resources;
 
 use App\Filament\Concerns\AppliesFieldPermissions;
 use App\Filament\Resources\BatchResource\Pages;
+use App\Filament\Support\CompactLayout;
 use App\Filament\Support\CreatorColumn;
+use App\Filament\Support\EqualsFirst;
+use App\Filament\Support\ListRules;
+use App\Filament\Support\MatchQueryBuilder;
 use App\Filament\Support\SearchableSelects;
 use App\Models\Accession;
 use App\Models\Batch;
@@ -12,7 +16,7 @@ use App\Models\Lookup\BatchType;
 use App\Models\Repository;
 use App\Support\ColumnLabels\ColumnLabels;
 use App\Support\CustomFields\CustomFieldSchema;
-use Carbon\Carbon;
+use App\Support\DisplayDate;
 use Filament\Actions\Action;
 use Filament\Actions\BulkActionGroup;
 use Filament\Actions\DeleteBulkAction;
@@ -32,8 +36,8 @@ use Filament\Schemas\Components\Utilities\Get;
 use Filament\Schemas\Components\Utilities\Set;
 use Filament\Schemas\Schema;
 use Filament\Tables;
-use Filament\Tables\Filters\SelectFilter;
-use Filament\Tables\Filters\TernaryFilter;
+use Filament\Tables\Filters\QueryBuilder\Constraints\BooleanConstraint;
+use Filament\Tables\Filters\QueryBuilder\Constraints\SelectConstraint;
 use Filament\Tables\Filters\TrashedFilter;
 use Filament\Tables\Table;
 use Illuminate\Database\Eloquent\Builder;
@@ -63,15 +67,13 @@ class BatchResource extends Resource
     {
         $g = fn (Schemas\Components\Component $c): Schemas\Components\Component => self::gateField($c, self::FIELD_PERMISSIONS_KEY);
 
-        // Layout rule (user mandate): root columns(1), atomic Sections use
-        // ['default' => 1, 'md' => 2]; non-atomic content uses columnSpanFull.
-        $twoCols = ['default' => 1, 'md' => 2];
-
+        // Client 2026-10-30: Identification, Accessions and Scope & status are
+        // one compact section, in the order of the view.
         return $schema
             ->columns(1)
             ->schema([
-                Section::make('Identification')
-                    ->columns($twoCols)
+                Section::make(CompactLayout::DETAILS)
+                    ->columns(CompactLayout::GRID)
                     ->schema([
                         $g(Forms\Components\TextInput::make('batch_number')
                             ->label(ColumnLabels::get('batch', 'batch_number'))
@@ -166,29 +168,43 @@ class BatchResource extends Resource
                             // has since been deactivated, so editing other fields
                             // never drops/blanks a stored-but-inactive type.
                             ->options(fn (?Batch $record): array => BatchType::optionsWith($record?->type))
-                            ->required()),
-                        // Wave B (B4) — description can be auto-derived by concatenating
-                        // the linked accession titles (the accession `code` column) with
-                        // ", ". It remains fully editable so operators can override the
-                        // derived text. The placeholder shows the formula so the field
-                        // is self-documenting; afterStateUpdated re-derives only when the
-                        // operator has not manually typed anything (the field is "dirty"
-                        // relative to the auto-derived value only when they have typed).
-                        $g(Forms\Components\TextInput::make('description')
-                            ->label(ColumnLabels::get('batch', 'description'))
-                            ->maxLength(255)
-                            ->placeholder('Auto-derived from linked accession titles')
-                            ->columnSpanFull()),
-                    ]),
-
-                // Wave B (B4) — multi-select for the N:N Accession relation.
-                // A batch can group accessions from many notaries; Batch 50 collects
-                // wills from several accessions. The "different accessions on same batch"
-                // restriction is REMOVED per spec B4 — no guard here or in the model.
-                Section::make('Accessions')
-                    ->columns(1)
-                    ->collapsed()
-                    ->schema([
+                            ->required()
+                            ->searchable()),
+                        // NOTE: tenant-scoping `disabled()` closure stays on the
+                        // Select; the field-level gate adds a second layer. Both
+                        // must allow for the input to be writable.
+                        //
+                        // Server-side search over the first 50 rows — see SearchableSelects.
+                        $g(SearchableSelects::repository(
+                            'repository_id',
+                            fn ($query) => $query->whereIn(
+                                'id',
+                                auth()->user()?->hasAnyRole(['super_admin', 'admin'])
+                                    ? Repository::query()->pluck('id')->all()
+                                    : (auth()->user()?->repositories()->pluck('repositories.id')->all() ?? [])
+                            ),
+                        )
+                            ->label('Repository')
+                            ->required()
+                            // live() so the Custom fields Section re-renders when
+                            // the operator picks a different repository (GROUP A fix).
+                            ->live()
+                            ->default(fn () => auth()->user()?->default_repository_id)),
+                        // A10 (spec) — is_active is non-mandatory (default true);
+                        // removing ->required() so the asterisk is gone.
+                        // NAF Feedback-1 comment #9 — explain what the flag does:
+                        // an inactive batch stays here (editable, reactivatable)
+                        // but is no longer offered when assigning a parent batch
+                        // to new Boxes or Documents.
+                        $g(Forms\Components\Toggle::make('is_active')
+                            ->label(ColumnLabels::get('batch', 'is_active'))
+                            ->default(true)
+                            ->helperText('Inactive batches stay listed and editable here, '
+                                . 'but are hidden from the batch picker when creating new Boxes or Documents.')),
+                        // Wave B (B4) — multi-select for the N:N Accession relation.
+                        // A batch can group accessions from many notaries; Batch 50
+                        // collects wills from several accessions. No "different
+                        // accessions on same batch" guard (spec B4).
                         SearchableSelects::accessionsMulti('accessions')
                             ->label('Linked Accessions')
                             ->helperText('Link one or more accessions to this batch. Description is auto-derived from accession titles when left blank.')
@@ -236,43 +252,19 @@ class BatchResource extends Resource
                                     $set('description', (string) $first->getAttribute('code'));
                                 }
                             })
-                            ->columnSpanFull(),
-                    ]),
-
-                Section::make('Scope & status')
-                    ->columns($twoCols)
-                    ->schema([
-                        // NOTE: tenant-scoping `disabled()` closure stays on the
-                        // Select; the field-level gate adds a second layer. Both
-                        // must allow for the input to be writable.
-                        //
-                        // Server-side search (no preload) — see SearchableSelects.
-                        $g(SearchableSelects::repository(
-                            'repository_id',
-                            fn ($query) => $query->whereIn(
-                                'id',
-                                auth()->user()?->hasAnyRole(['super_admin', 'admin'])
-                                    ? Repository::query()->pluck('id')->all()
-                                    : (auth()->user()?->repositories()->pluck('repositories.id')->all() ?? [])
-                            ),
-                        )
-                            ->label('Repository')
-                            ->required()
-                            // live() so the Custom fields Section re-renders when
-                            // the operator picks a different repository (GROUP A fix).
-                            ->live()
-                            ->default(fn () => auth()->user()?->default_repository_id)),
-                        // A10 (spec) — is_active is non-mandatory (default true);
-                        // removing ->required() so the asterisk is gone.
-                        // NAF Feedback-1 comment #9 — explain what the flag does:
-                        // an inactive batch stays here (editable, reactivatable)
-                        // but is no longer offered when assigning a parent batch
-                        // to new Boxes or Documents.
-                        $g(Forms\Components\Toggle::make('is_active')
-                            ->label(ColumnLabels::get('batch', 'is_active'))
-                            ->default(true)
-                            ->helperText('Inactive batches stay listed and editable here, '
-                                . 'but are hidden from the batch picker when creating new Boxes or Documents.')),
+                            ->columnSpan(CompactLayout::HALF),
+                        // Wave B (B4) — description can be auto-derived by concatenating
+                        // the linked accession titles (the accession `code` column) with
+                        // ", ". It remains fully editable so operators can override the
+                        // derived text. The placeholder shows the formula so the field
+                        // is self-documenting; afterStateUpdated re-derives only when the
+                        // operator has not manually typed anything (the field is "dirty"
+                        // relative to the auto-derived value only when they have typed).
+                        $g(Forms\Components\TextInput::make('description')
+                            ->label(ColumnLabels::get('batch', 'description'))
+                            ->maxLength(255)
+                            ->placeholder('Auto-derived from linked accession titles')
+                            ->columnSpanFull()),
                     ]),
 
                 // Custom fields (EAV, per-repository).
@@ -305,16 +297,14 @@ class BatchResource extends Resource
 
     public static function infolist(Schema $schema): Schema
     {
-        // Layout rule (user mandate): root columns(1), atomic Sections on
-        // ['default' => 1, 'md' => 2]; non-atomic content uses columnSpanFull.
+        // Client 2026-10-30: Identification and Scope & status condensed into
+        // one section (Repository among them); Audit info apart and closed.
         // Every FK gets a clickable URL to its Resource view.
-        $twoCols = ['default' => 1, 'md' => 2];
-
         return $schema
             ->columns(1)
             ->components([
-                Section::make('Identification')
-                    ->columns($twoCols)
+                Section::make(CompactLayout::DETAILS)
+                    ->columns(CompactLayout::GRID)
                     ->schema([
                         TextEntry::make('batch_number')
                             ->label(ColumnLabels::get('batch', 'batch_number'))
@@ -327,15 +317,6 @@ class BatchResource extends Resource
                             ->badge()
                             ->color('gray')
                             ->placeholder('—'),
-                        TextEntry::make('description')
-                            ->label(ColumnLabels::get('batch', 'description'))
-                            ->placeholder('—')
-                            ->columnSpanFull(),
-                    ]),
-
-                Section::make('Scope & status')
-                    ->columns($twoCols)
-                    ->schema([
                         TextEntry::make('repository.code')
                             ->label('Repository')
                             ->badge()
@@ -358,13 +339,23 @@ class BatchResource extends Resource
                             ->state(fn (?Batch $record): int => $record?->documents()->count() ?? 0)
                             ->badge()
                             ->color('gray'),
+                        TextEntry::make('accessions.code')
+                            ->label('Linked Accessions')
+                            ->badge()
+                            ->color('gray')
+                            ->placeholder('—')
+                            ->columnSpan(CompactLayout::HALF),
+                        TextEntry::make('description')
+                            ->label(ColumnLabels::get('batch', 'description'))
+                            ->placeholder('—')
+                            ->columnSpanFull(),
                     ]),
 
                 // Custom fields (EAV, per-repository) — view/infolist section.
                 // Shows label → formatted value for every active definition that
                 // has a stored value on this record.
                 Section::make('Custom fields')
-                    ->columns($twoCols)
+                    ->columns(CompactLayout::GRID)
                     ->schema(static function (?Batch $record): array {
                         if (! $record instanceof Batch) {
                             return [];
@@ -381,8 +372,8 @@ class BatchResource extends Resource
                             }
                             $displayValue = match ($def->type) {
                                 'boolean' => $value ? 'Yes' : 'No',
-                                'date' => $value instanceof Carbon ? $value->toDateString() : (string) $value,
-                                'datetime' => $value instanceof Carbon ? $value->toDateTimeString() : (string) $value,
+                                'date' => DisplayDate::date($value) ?? (string) $value,
+                                'datetime' => DisplayDate::dateTime($value) ?? (string) $value,
                                 default => (string) $value,
                             };
                             $entries[] = TextEntry::make('cf_' . $def->key)
@@ -402,15 +393,7 @@ class BatchResource extends Resource
                         return ! empty(array_filter($data, fn ($v) => $v !== null));
                     }),
 
-                Section::make('Audit info')
-                    ->columns($twoCols)
-                    ->collapsed()
-                    ->schema([
-                        TextEntry::make('created_at')->dateTime()->label('Created'),
-                        TextEntry::make('updated_at')->dateTime()->label('Updated'),
-                        TextEntry::make('deleted_at')->dateTime()->label('Trashed')->placeholder('—')->columnSpanFull(),
-                    ])
-                    ->visible(fn (): bool => (bool) auth()->user()?->hasRole('super_admin')),
+                CompactLayout::auditInfolist(),
             ]);
     }
 
@@ -482,26 +465,25 @@ class BatchResource extends Resource
                 ...DocumentResource::customFieldTableColumns('batch'),
             ])
             ->filters([
-                // Feedback1 Wave B (B1) — dropdown-driven filters alongside the
-                // free-text search on `description`. BatchResource is light
-                // enough that plain SelectFilters cover it (no QueryBuilder).
-                SelectFilter::make('batch_number')
-                    ->label(ColumnLabels::get('batch', 'batch_number'))
-                    ->options(fn (): array => Batch::query()
-                        ->orderByRaw('batch_number + 0')
-                        ->pluck('batch_number', 'batch_number')
-                        ->all())
-                    ->searchable()
-                    ->multiple(),
-                SelectFilter::make('type')
-                    ->label(ColumnLabels::get('batch', 'type'))
-                    ->options(fn (): array => BatchType::optionsWith(null))
-                    ->multiple(),
-                TernaryFilter::make('is_active')
-                    ->label(ColumnLabels::get('batch', 'is_active'))
-                    ->placeholder('All')
-                    ->trueLabel('Active only')
-                    ->falseLabel('Inactive only'),
+                // Client 2026-10-30: the filters are rules, as on Documents —
+                // one per column.
+                MatchQueryBuilder::make()
+                    ->constraints([
+                        EqualsFirst::text('batch_number', ColumnLabels::get('batch', 'batch_number')),
+                        EqualsFirst::text('description', ColumnLabels::get('batch', 'description'), nullable: true),
+                        SelectConstraint::make('type')
+                            ->label(ColumnLabels::get('batch', 'type'))
+                            ->options(fn (): array => BatchType::optionsWith(null))
+                            ->multiple(),
+                        ListRules::relation('repository', 'Repository', 'name'),
+                        BooleanConstraint::make('is_active')
+                            ->label(ColumnLabels::get('batch', 'is_active')),
+                        ListRules::inputter(),
+                        ListRules::date('created_at'),
+                        ListRules::date('updated_at'),
+                        ListRules::date('deleted_at'),
+                        ...DocumentResource::customFieldConstraints('batch'),
+                    ]),
                 TrashedFilter::make(),
             ])
             ->actions([
@@ -515,9 +497,7 @@ class BatchResource extends Resource
                     ->label('View boxes')
                     ->icon('heroicon-o-archive-box')
                     ->color('gray')
-                    ->url(fn (Batch $record): string => BoxResource::getUrl('index', [
-                        'filters' => ['batch' => ['values' => [$record->getKey()]]],
-                    ])),
+                    ->url(fn (Batch $record): string => self::boxesUrl($record)),
             ])
             ->bulkActions([
                 BulkActionGroup::make([
@@ -526,6 +506,17 @@ class BatchResource extends Resource
                     ForceDeleteBulkAction::make(),
                 ]),
             ]);
+    }
+
+    /**
+     * The Boxes list showing this batch's boxes: a "Batch is" rule, since the
+     * Boxes filters are rules only (client 2026-10-30).
+     */
+    public static function boxesUrl(Batch $batch): string
+    {
+        return BoxResource::getUrl('index', [
+            'filters' => MatchQueryBuilder::urlFilters('batch', 'isRelatedTo', ['value' => [$batch->getKey()]]),
+        ]);
     }
 
     public static function getRelations(): array

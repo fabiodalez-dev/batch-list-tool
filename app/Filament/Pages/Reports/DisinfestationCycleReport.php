@@ -11,6 +11,7 @@ use App\Filament\Pages\Reports\Concerns\HasReportTemplates;
 use App\Models\Box;
 use App\Models\Lookup\BoxType;
 use App\Models\ReportTemplate;
+use App\Support\DisplayDate;
 use App\Support\Reports\DisinfestationCapacity;
 use App\Support\Reports\DisinfestationCycle;
 use App\Support\Reports\ReportRenderer;
@@ -125,7 +126,7 @@ class DisinfestationCycleReport extends Page implements HasTable
 
                 Tables\Columns\TextColumn::make('next_due')
                     ->label('Next due')
-                    ->state(fn (Box $r): ?string => DisinfestationCycle::dueDate($r->disinfestation_date)?->toDateString())
+                    ->state(fn (Box $r): ?string => DisinfestationCycle::dueDate($r->disinfestation_date)?->format(DisplayDate::DATE))
                     ->placeholder('Now'),
             ])
             ->filtersFormColumns(2)
@@ -235,9 +236,9 @@ class DisinfestationCycleReport extends Page implements HasTable
             'Batch' => fn (Box $r) => $r->batch?->getAttribute('batch_number'),
             'Location' => fn (Box $r) => $r->location?->getAttribute('name'),
             'Slots' => DisinfestationCapacity::weightForBox(...),
-            'Last disinfestation' => fn (Box $r) => $r->disinfestation_date instanceof \DateTimeInterface ? $r->disinfestation_date->format('Y-m-d') : 'Never',
+            'Last disinfestation' => fn (Box $r) => $r->disinfestation_date instanceof \DateTimeInterface ? $r->disinfestation_date->format(DisplayDate::DATE) : 'Never',
             'Cycle status' => fn (Box $r): string => ucfirst(DisinfestationCycle::status($r->disinfestation_date)),
-            'Next due' => fn (Box $r): string => DisinfestationCycle::dueDate($r->disinfestation_date)?->toDateString() ?? 'Now',
+            'Next due' => fn (Box $r): string => DisinfestationCycle::dueDate($r->disinfestation_date)?->format(DisplayDate::DATE) ?? 'Now',
         ];
     }
 
@@ -280,9 +281,9 @@ class DisinfestationCycleReport extends Page implements HasTable
             $r->batch?->getAttribute('batch_number'),
             $r->location?->getAttribute('name'),
             DisinfestationCapacity::weightForBox($r),
-            $r->disinfestation_date instanceof \DateTimeInterface ? $r->disinfestation_date->format('Y-m-d') : 'Never',
+            $r->disinfestation_date instanceof \DateTimeInterface ? $r->disinfestation_date->format(DisplayDate::DATE) : 'Never',
             ucfirst(DisinfestationCycle::status($r->disinfestation_date)),
-            DisinfestationCycle::dueDate($r->disinfestation_date)?->toDateString() ?? 'Now',
+            DisinfestationCycle::dueDate($r->disinfestation_date)?->format(DisplayDate::DATE) ?? 'Now',
         ];
     }
 

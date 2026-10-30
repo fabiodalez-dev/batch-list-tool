@@ -55,6 +55,7 @@ class ColumnNamesRelationManager extends RelationManager
     {
         return $schema->components([
             Forms\Components\Select::make('entity_type')
+                ->searchable()
                 ->label('Record type')
                 ->options(fn (): array => ColumnLabels::renameableEntityOptions())
                 ->required()
@@ -142,7 +143,7 @@ class ColumnNamesRelationManager extends RelationManager
                     ->searchable(),
                 Tables\Columns\TextColumn::make('updated_at')
                     ->label('Renamed')
-                    ->dateTime('d/m/Y H:i')
+                    ->dateTime()
                     ->sortable()
                     ->toggleable(isToggledHiddenByDefault: true),
             ])

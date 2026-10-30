@@ -423,6 +423,53 @@ class Box extends Model implements AuditableContract, Sortable
     }
 
     /**
+     * The live box that already carries this identity: the same type and
+     * number in the same batch or, with no batch, in the same repository.
+     * Client 2026-10-30: two batch-less "NRA 500" were accepted, because a SQL
+     * unique index counts every NULL batch as different; the form rule and
+     * the saving guard both ask this instead.
+     */
+    public static function identityClash(?int $batchId, ?int $repositoryId, ?string $boxType, ?string $boxNumber, int|string|null $ignoreId = null): ?self
+    {
+        $boxNumber = trim((string) $boxNumber);
+        if ($boxNumber === '' || $boxType === null || $boxType === '') {
+            return null;
+        }
+        if ($batchId === null && $repositoryId === null) {
+            return null;
+        }
+
+        return static::query()
+            ->withoutGlobalScopes()
+            ->whereNull('deleted_at')
+            ->where('box_type', $boxType)
+            ->where('box_number', $boxNumber)
+            ->when(
+                $batchId !== null,
+                fn (Builder $q): Builder => $q->where('batch_id', $batchId),
+                fn (Builder $q): Builder => $q->whereNull('batch_id')->where('repository_id', $repositoryId),
+            )
+            ->when($ignoreId !== null, fn (Builder $q): Builder => $q->whereKeyNot($ignoreId))
+            ->with(['batch' => fn ($q) => $q->withoutGlobalScopes()])
+            ->first();
+    }
+
+    /** What the duplicate-box messages say about the box already there. */
+    public function identityClashMessage(): string
+    {
+        $rule = 'A box type and number can be used only once per batch, or once per repository for boxes with no batch.';
+        // A box the reader cannot open (another repository's) is not described.
+        if (! static::query()->whereKey($this->getKey())->exists()) {
+            return 'This box type and number are already used. ' . $rule;
+        }
+
+        $batch = $this->batch_id !== null ? $this->getRelationValue('batch')?->getAttribute('batch_number') : null;
+        $where = $batch !== null ? "in batch {$batch}" : 'with no batch in this repository';
+
+        return "There is already a {$this->box_type} box {$this->box_number} {$where} (box #{$this->getKey()}). " . $rule;
+    }
+
+    /**
      * RFQ Appendix 2 §vii — author of the destruction event.
      *
      * Nullable because the FK is `nullOnDelete()`: if the user record is
@@ -721,6 +768,32 @@ class Box extends Model implements AuditableContract, Sortable
             } elseif ($box->repository_id === null) {
                 $box->repository_id = app(ActiveRepository::class)->id()
                     ?? auth()->user()?->default_repository_id;
+            }
+        });
+
+        // One box per (batch, type, number), or per (repository, type, number)
+        // with no batch: every write path, importers included. Runs after the
+        // repository_id normalisation above, so a batch-less box is compared
+        // within the repository it is about to be saved under. Only a save
+        // that sets or changes the identity is checked (or restores a box), so
+        // duplicates already in the data do not block unrelated edits.
+        static::saving(function (self $box): void {
+            if ($box->deleted_at !== null) {
+                return;
+            }
+            if ($box->exists && ! $box->isDirty(['box_type', 'box_number', 'batch_id', 'repository_id', 'deleted_at'])) {
+                return;
+            }
+
+            $clash = self::identityClash(
+                $box->batch_id !== null ? (int) $box->batch_id : null,
+                $box->repository_id !== null ? (int) $box->repository_id : null,
+                $box->box_type,
+                $box->box_number,
+                $box->exists ? $box->getKey() : null,
+            );
+            if ($clash !== null) {
+                throw ValidationException::withMessages(['box_number' => $clash->identityClashMessage()]);
             }
         });
 
