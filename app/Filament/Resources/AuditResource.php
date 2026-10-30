@@ -4,6 +4,7 @@ namespace App\Filament\Resources;
 
 use App\Filament\Resources\AuditResource\Pages;
 use App\Models\User;
+use App\Support\DisplayDate;
 use App\Support\History\Timeline;
 use Filament\Actions\ViewAction;
 use Filament\Forms\Components\DatePicker;
@@ -80,7 +81,7 @@ class AuditResource extends Resource
             ->columns([
                 Tables\Columns\TextColumn::make('created_at')
                     ->label('When')
-                    ->dateTime('Y-m-d H:i:s')
+                    ->dateTime(DisplayDate::DATE_TIME_SECONDS)
                     ->sortable()
                     ->searchable(),
                 Tables\Columns\TextColumn::make('user.name')

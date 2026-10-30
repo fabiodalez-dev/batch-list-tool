@@ -14,6 +14,7 @@ use App\Models\Location;
 use App\Models\Repository;
 use App\Models\Series;
 use App\Models\Volume;
+use App\Support\DisplayDate;
 use Filament\Infolists\Components\KeyValueEntry;
 use Filament\Infolists\Components\TextEntry;
 use Filament\Resources\Pages\ViewRecord;
@@ -42,7 +43,7 @@ class ViewAudit extends ViewRecord
                     ->schema([
                         TextEntry::make('created_at')
                             ->label('When')
-                            ->dateTime('Y-m-d H:i:s'),
+                            ->dateTime(DisplayDate::DATE_TIME_SECONDS),
                         TextEntry::make('event')
                             ->label('Event')
                             ->badge(),

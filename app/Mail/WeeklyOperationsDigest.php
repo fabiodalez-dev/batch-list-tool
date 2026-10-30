@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace App\Mail;
 
+use App\Support\DisplayDate;
 use Illuminate\Bus\Queueable;
 use Illuminate\Mail\Mailable;
 use Illuminate\Mail\Mailables\Content;
@@ -37,7 +38,7 @@ class WeeklyOperationsDigest extends Mailable
     public function envelope(): Envelope
     {
         return new Envelope(
-            subject: 'Batch List Tool — Weekly Operations Digest ' . now()->format('Y-m-d'),
+            subject: 'Batch List Tool — Weekly Operations Digest ' . now()->format(DisplayDate::DATE),
         );
     }
 

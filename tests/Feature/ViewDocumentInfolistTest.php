@@ -301,7 +301,7 @@ it('ViewDocument page shows the disinfestation_date in the hero card when set', 
 
     Livewire::test(ViewDocument::class, ['record' => $doc->getRouteKey()])
         ->assertOk()
-        ->assertSee('Mar 22, 2024');
+        ->assertSee('22-03-2024'); // dd-mm-yyyy everywhere (client 2026-10-30)
 });
 
 /* ---------------------------------------------------------------------------

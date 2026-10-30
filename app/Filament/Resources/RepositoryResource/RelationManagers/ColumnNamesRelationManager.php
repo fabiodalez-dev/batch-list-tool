@@ -143,7 +143,7 @@ class ColumnNamesRelationManager extends RelationManager
                     ->searchable(),
                 Tables\Columns\TextColumn::make('updated_at')
                     ->label('Renamed')
-                    ->dateTime('d/m/Y H:i')
+                    ->dateTime()
                     ->sortable()
                     ->toggleable(isToggledHiddenByDefault: true),
             ])

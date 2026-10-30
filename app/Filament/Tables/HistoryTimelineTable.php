@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace App\Filament\Tables;
 
+use App\Support\DisplayDate;
 use App\Support\History\Timeline;
 use App\Support\Reports\ReportRenderer;
 use Carbon\CarbonInterface;
@@ -149,7 +150,7 @@ final class HistoryTimelineTable
     {
         return [
             '__key' => $entry['key'],
-            'at' => $entry['at'] instanceof CarbonInterface ? $entry['at']->format('Y-m-d H:i') : null,
+            'at' => $entry['at'] instanceof CarbonInterface ? $entry['at']->format(DisplayDate::DATE_TIME) : null,
             'kind' => $entry['kind'],
             'subject' => $entry['subject'],
             'from' => $entry['from'],

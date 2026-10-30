@@ -13,6 +13,7 @@ use App\Models\Document;
 use App\Models\Lookup\BoxType;
 use App\Models\ReportTemplate;
 use App\Models\Repository;
+use App\Support\DisplayDate;
 use App\Support\Reports\ReportRenderer;
 use Filament\Actions\Action;
 use Filament\Pages\Page;
@@ -245,7 +246,7 @@ class BoxesReadyToDestroyReport extends Page implements HasTable
                 $box->barcode,
                 $box->location?->getAttribute('name'),
                 (int) $box->getAttribute('documents_count'),
-                $box->getAttribute('last_catalogued_at') ? substr((string) $box->getAttribute('last_catalogued_at'), 0, 10) : null,
+                DisplayDate::date($box->getAttribute('last_catalogued_at')),
             ];
         }
 

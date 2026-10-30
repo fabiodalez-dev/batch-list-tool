@@ -20,8 +20,8 @@ use App\Models\Lookup\CurrentBoxType;
 use App\Support\ActiveRepository;
 use App\Support\ColumnLabels\ColumnLabels;
 use App\Support\CustomFields\CustomFieldSchema;
+use App\Support\DisplayDate;
 use App\Support\LocationBreadcrumbCache;
-use Carbon\Carbon;
 use Filament\Actions\Action;
 use Filament\Actions\BulkAction;
 use Filament\Actions\BulkActionGroup;
@@ -678,8 +678,8 @@ class BoxResource extends Resource
                             }
                             $displayValue = match ($def->type) {
                                 'boolean' => $value ? 'Yes' : 'No',
-                                'date' => $value instanceof Carbon ? $value->toDateString() : (string) $value,
-                                'datetime' => $value instanceof Carbon ? $value->toDateTimeString() : (string) $value,
+                                'date' => DisplayDate::date($value) ?? (string) $value,
+                                'datetime' => DisplayDate::dateTime($value) ?? (string) $value,
                                 default => (string) $value,
                             };
                             $entries[] = TextEntry::make('cf_' . $def->key)

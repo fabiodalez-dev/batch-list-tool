@@ -97,7 +97,7 @@ class PracticeResource extends Resource
                     ->placeholder('GLOBAL')
                     ->sortable()
                     ->toggleable(isToggledHiddenByDefault: true),
-                Tables\Columns\TextColumn::make('updated_at')->dateTime('Y-m-d H:i')->sortable()->toggleable(),
+                Tables\Columns\TextColumn::make('updated_at')->dateTime()->sortable()->toggleable(),
                 CreatorColumn::make(),
             ])
             ->defaultSort('name')

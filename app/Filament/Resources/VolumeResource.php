@@ -8,7 +8,7 @@ use App\Models\Document;
 use App\Models\Volume;
 use App\Support\ColumnLabels\ColumnLabels;
 use App\Support\CustomFields\CustomFieldSchema;
-use Carbon\Carbon;
+use App\Support\DisplayDate;
 use Filament\Actions\BulkActionGroup;
 use Filament\Actions\DeleteBulkAction;
 use Filament\Actions\EditAction;
@@ -202,8 +202,8 @@ class VolumeResource extends Resource
                             }
                             $displayValue = match ($def->type) {
                                 'boolean' => $value ? 'Yes' : 'No',
-                                'date' => $value instanceof Carbon ? $value->toDateString() : (string) $value,
-                                'datetime' => $value instanceof Carbon ? $value->toDateTimeString() : (string) $value,
+                                'date' => DisplayDate::date($value) ?? (string) $value,
+                                'datetime' => DisplayDate::dateTime($value) ?? (string) $value,
                                 default => (string) $value,
                             };
                             $entries[] = TextEntry::make('cf_' . $def->key)

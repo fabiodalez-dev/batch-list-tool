@@ -13,6 +13,7 @@ use App\Filament\Pages\Reports\Filters\DateRangeFilter;
 use App\Filament\Widgets\PendingDisinfestationTable;
 use App\Models\Document;
 use App\Models\ReportTemplate;
+use App\Support\DisplayDate;
 use App\Support\Reports\ReportRenderer;
 use Filament\Actions\Action;
 use Filament\Pages\Page;
@@ -358,7 +359,7 @@ class PendingDisinfestationReport extends Page implements HasTable
             'Box barcode' => fn (Document $r) => $r->currentBox?->getAttribute('barcode'),
             'Box status' => fn (Document $r) => $r->currentBox?->getAttribute('barcode_status'),
             'Location' => fn (Document $r) => $this->effectiveLocationBreadcrumb($r),
-            'Created at' => fn (Document $r) => $r->created_at instanceof \DateTimeInterface ? $r->created_at->format('Y-m-d') : null,
+            'Created at' => fn (Document $r) => $r->created_at instanceof \DateTimeInterface ? $r->created_at->format(DisplayDate::DATE) : null,
             'Days waiting' => function (Document $r): int {
                 $created = $r->created_at;
 
@@ -428,7 +429,7 @@ class PendingDisinfestationReport extends Page implements HasTable
             $r->currentBox?->getAttribute('barcode'),
             $r->currentBox?->getAttribute('barcode_status'),
             $this->effectiveLocationBreadcrumb($r),
-            $created instanceof \DateTimeInterface ? $created->format('Y-m-d') : null,
+            $created instanceof \DateTimeInterface ? $created->format(DisplayDate::DATE) : null,
             $days,
         ];
     }

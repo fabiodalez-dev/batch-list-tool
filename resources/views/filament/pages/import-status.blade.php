@@ -101,7 +101,7 @@
                             {{-- Completed at --}}
                             <td class="px-4 py-3 text-gray-500 dark:text-gray-400 whitespace-nowrap">
                                 @if ($row['completed_at'])
-                                    <span title="{{ \Carbon\Carbon::createFromTimestamp($row['completed_at'])->toDateTimeString() }}">
+                                    <span title="{{ \Carbon\Carbon::createFromTimestamp($row['completed_at'])->format(\App\Support\DisplayDate::DATE_TIME) }}">
                                         {{ \Carbon\Carbon::createFromTimestamp($row['completed_at'])->diffForHumans() }}
                                     </span>
                                 @elseif (!empty($row['is_stalled']))

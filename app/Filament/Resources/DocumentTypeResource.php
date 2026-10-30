@@ -136,7 +136,7 @@ class DocumentTypeResource extends Resource
                     ->boolean()
                     ->sortable()
                     ->toggleable(),
-                Tables\Columns\TextColumn::make('updated_at')->dateTime('Y-m-d H:i')->sortable()->toggleable(),
+                Tables\Columns\TextColumn::make('updated_at')->dateTime()->sortable()->toggleable(),
                 CreatorColumn::make(),
             ])
             ->defaultSort('name')

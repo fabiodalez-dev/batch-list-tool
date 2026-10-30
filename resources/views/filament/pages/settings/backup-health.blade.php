@@ -207,10 +207,10 @@
                                     <x-filament::badge :color="$statusColour">{{ ucfirst((string) $run->status) }}</x-filament::badge>
                                 </td>
                                 <td class="py-2 pr-4 text-gray-500 dark:text-gray-400">
-                                    {{ $run->started_at?->toDateTimeString() ?? '—' }}
+                                    {{ \App\Support\DisplayDate::dateTime($run->started_at) ?? '—' }}
                                 </td>
                                 <td class="py-2 pr-4 text-gray-500 dark:text-gray-400">
-                                    {{ $run->finished_at?->toDateTimeString() ?? '—' }}
+                                    {{ \App\Support\DisplayDate::dateTime($run->finished_at) ?? '—' }}
                                 </td>
                                 <td class="py-2 pr-4 text-gray-500 dark:text-gray-400">
                                     {{ $run->duration_seconds !== null ? $run->duration_seconds . 's' : '—' }}
