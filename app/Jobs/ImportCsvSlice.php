@@ -6,6 +6,7 @@ namespace App\Jobs;
 
 use App\Filament\Imports\DocumentImporter;
 use App\Filament\Pages\ImportWizard;
+use App\Support\BulkImport\EntityResolver;
 use Filament\Actions\Imports\Jobs\ImportCsv;
 use Filament\Actions\Imports\Models\Import;
 use Illuminate\Queue\Middleware\WithoutOverlapping;
@@ -58,6 +59,11 @@ class ImportCsvSlice extends ImportCsv
 
     public function handle(): void
     {
+        // The queue worker lives across imports: ids remembered by the
+        // previous one may name boxes or batches deleted since ("The selected
+        // box does not exist." on a row of the next import).
+        EntityResolver::flushMemo();
+
         $headers = ImportWizard::csvHeaderKeys($this->csvPath);
         $withSourceRow = $this->import->importer === DocumentImporter::class;
 

@@ -10,6 +10,7 @@ use App\Filament\Resources\Lookups\FlagTypeResource\Pages\EditFlagType;
 use App\Jobs\ImportCsvSlice;
 use App\Models\Authority;
 use App\Models\Batch;
+use App\Models\Box;
 use App\Models\Document;
 use App\Models\DocumentFlag;
 use App\Models\DocumentType;
@@ -154,4 +155,20 @@ it('mixes AND and OR with an OR group inside the rules: (R16 OR R12) AND Bastard
 
     // Livewire accepts the path of a value inside a group (it stopped at 10 levels).
     expect(config('livewire.payload.max_nesting_depth'))->toBeGreaterThanOrEqual(13);
+});
+
+it('does not reuse a box remembered by the previous import in the same worker', function (): void {
+    Batch::withoutGlobalScopes()->create(['batch_number' => '7', 'type' => 'MAIN_COLLECTION', 'repository_id' => $this->repo->id]);
+    Authority::withoutGlobalScopes()->create(['identifier' => 'NAM-18', 'alternative_identifier' => 'R18', 'surname' => 'Allegritto', 'repository_id' => $this->repo->id]);
+    $row = ['RAS Batch 1' => '7', 'RAS Box 1' => '52', 'In Situ Box 1' => 'NRA58', 'Authority Identifier' => 'R18', 'Volume' => '69', 'Subseries' => 'REG: Registers'];
+
+    expect(b30_import([$row], overwrite: true)->successful_rows)->toBe(1);
+
+    // The boxes go (as when an archive is emptied and imported again), the
+    // worker process stays.
+    Document::withoutGlobalScopes()->get()->each->forceDelete();
+    Box::withoutGlobalScopes()->withTrashed()->get()->each->forceDelete();
+
+    $again = b30_import([['Volume' => '70'] + $row], overwrite: true);
+    expect($again->successful_rows)->toBe(1, (string) json_encode($again->failedRows()->pluck('validation_error')));
 });
