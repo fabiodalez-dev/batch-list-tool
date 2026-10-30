@@ -30,12 +30,15 @@ class MatchQueryBuilder extends QueryBuilder
     {
         parent::setUp();
 
-        // No nested "OR condition" rule: the choice above replaces it.
-        $this->maxNestingDepth(1);
+        // Client 2026-10-30: one level of "OR group" inside the rules, to
+        // mix the two ("R16 OR R12", AND "Bastardello"). Deeper groups stay
+        // out: they are hard to read, and every level lengthens the Livewire
+        // property path (see config/livewire.php).
+        $this->maxNestingDepth(2);
 
         $this->schema(fn (QueryBuilder $filter): array => [
             Select::make('match')
-                ->label('Show documents that match')
+                ->label('Show records that match')
                 ->options([
                     self::MATCH_ALL => 'All of the rules (AND)',
                     self::MATCH_ANY => 'Any of the rules (OR)',

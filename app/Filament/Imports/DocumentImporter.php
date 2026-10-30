@@ -460,8 +460,12 @@ class DocumentImporter extends Importer
         // template has no identifier column and the auto identifier changes with
         // the row's content. Such a row is the document already filed at the
         // same place in the sheet (see matchBySheetPosition()).
-        if ($record === null && $autoIdentifier !== null) {
-            $record = $this->matchBySheetPosition((int) $repoId);
+        // Client 2026-10-30: the same row's auto identifier also named a copy
+        // deleted the day before, so the import restored the deleted copy
+        // instead of updating the document still in the archive. The live
+        // document at that place in the sheet comes first.
+        if ($autoIdentifier !== null && ($record === null || $record->trashed())) {
+            $record = $this->matchBySheetPosition((int) $repoId) ?? $record;
         }
 
         $record ??= new Document;
@@ -898,6 +902,9 @@ class DocumentImporter extends Importer
         $candidates = Document::withoutGlobalScopes()
             ->where('repository_id', $repoId)
             ->whereIn('batch_id', $batchIds)
+            // withoutGlobalScopes() drops SoftDeletes too: a deleted copy is
+            // not the document the row describes.
+            ->whereNull('deleted_at')
             // Narrowed in SQL to the box, so a big sheet re-imported over a
             // full archive compares a handful of documents per row, not a batch.
             ->whereIn('ras_box_1', array_unique([trim((string) $this->data['current_box_number']), $boxNumber]))

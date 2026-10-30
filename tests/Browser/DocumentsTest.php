@@ -179,3 +179,30 @@ it('paints an open flag badge in its Flag Types colour, not the theme cream (cli
         ->and((float) $m[2])->toBeGreaterThan(0.02)
         ->and((float) $m[3])->toBeGreaterThan(15.0)->toBeLessThan(40.0);
 });
+
+it('adds a rule inside an OR group of the filters without a Livewire error (client 2026-10-30)', function () {
+    $admin = bl_actor('super_admin');
+    bl_seedDocument($admin->repositories()->first());
+
+    $page = bl_login($admin)->navigate('/admin/documents');
+    $page->script("document.querySelector('button[title=Filter], .fi-ta-filters-trigger-action-ctn button').click()");
+    $page->wait(1)
+        ->click('Add rule')
+        ->wait(1);
+    $page->script("[...document.querySelectorAll('button, li, [role=menuitem]')].find(e => e.textContent.trim() === 'OR group (any of)').click()");
+    $page->wait(2)
+        ->assertSee('OR');
+
+    // The first alternative's "Add rule" → Document identifier.
+    $page->script(<<<'JS'
+        [...document.querySelectorAll('button[wire\\:click]')].find(b => b.getAttribute('wire:click').includes('identifier') && b.getAttribute('wire:click').includes('.groups.')).click()
+    JS);
+    $page->wait(2);
+    $page->script(<<<'JS'
+        (() => { const i = [...document.querySelectorAll('.fi-ta-filters input[type=text], .fi-modal input[type=text]')].filter(e => e.offsetParent !== null).pop(); i.value = 'R-DOC-001'; i.dispatchEvent(new Event('input', { bubbles: true })); })()
+    JS);
+    $page->wait(2)->click('Apply filters')->wait(2)
+        ->assertSee('equals R-DOC-001')
+        ->assertDontSee('Maximum nesting depth')
+        ->assertNoJavascriptErrors();
+});

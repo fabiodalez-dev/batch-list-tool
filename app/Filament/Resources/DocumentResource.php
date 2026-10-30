@@ -169,15 +169,25 @@ class DocumentResource extends Resource
                             ->label(ColumnLabels::get('document', 'document_type'))
                             ->searchable()
                             ->preload()
+                            // Client 2026-10-30: the documents store the type's
+                            // code (DT00010), so the options are keyed by it and a
+                            // saved document showed the bare code and failed to save.
                             ->options(fn (): array => DocumentType::query()
-                                ->where('is_active', true)->orderBy('name')->pluck('name', 'name')->all())
+                                ->where('is_active', true)->orderBy('name')->get()
+                                ->mapWithKeys(fn (DocumentType $type): array => [$type->storedValue() => $type->name])->all())
+                            ->afterStateHydrated(function (Forms\Components\Select $component, ?string $state): void {
+                                $type = DocumentType::forStoredValue($state);
+                                if ($type !== null) {
+                                    $component->state($type->storedValue());
+                                }
+                            })
                             ->createOptionForm([
                                 Forms\Components\TextInput::make('name')->required()->maxLength(100)->unique(DocumentType::class, 'name'),
                                 Forms\Components\Textarea::make('description')->maxLength(500),
                             ])
                             ->createOptionUsing(fn (array $data): string => DocumentType::create([
                                 'name' => $data['name'], 'description' => $data['description'] ?? null, 'is_active' => true,
-                            ])->name)),
+                            ])->storedValue())),
                         $g(SearchableSelects::series('series_id')
                             ->label('Series')
                             ->required()),
@@ -656,7 +666,8 @@ class DocumentResource extends Resource
                     ->columns($twoCols)
                     ->schema([
                         TextEntry::make('catalogue_identifier')->label(ColumnLabels::get('document', 'catalogue_identifier'))->copyable()->placeholder('—'),
-                        TextEntry::make('document_type')->label(ColumnLabels::get('document', 'document_type'))->placeholder('—'),
+                        TextEntry::make('document_type')->label(ColumnLabels::get('document', 'document_type'))
+                            ->formatStateUsing(fn (?string $state, Document $record): ?string => $record->documentTypeRef?->name ?? $state)->placeholder('—'),
                         TextEntry::make('series.code')
                             ->label('Series')
                             ->badge()
@@ -1349,15 +1360,20 @@ class DocumentResource extends Resource
                 // §3.1.5) live in a dedicated bulk-action group so the
                 // operator can act on tens-of-rows-at-a-time selections
                 // without leaving the list page.
-                BulkActionGroup::make(DocumentActionGroup::bulkActions())
+                // Client 2026-10-30: one menu for every bulk action, the
+                // deleting ones in their own block at the bottom.
+                BulkActionGroup::make([
+                    ...DocumentActionGroup::bulkActions(),
+                    BulkActionGroup::make([
+                        DeleteBulkAction::make(),
+                        RestoreBulkAction::make(),
+                        ForceDeleteBulkAction::make(),
+                        Pages\ListDocuments::deleteAllAction(),
+                    ])->dropdown(false),
+                ])
                     ->label('Power actions')
                     ->icon('heroicon-o-bolt')
                     ->color('primary'),
-                BulkActionGroup::make([
-                    DeleteBulkAction::make(),
-                    RestoreBulkAction::make(),
-                    ForceDeleteBulkAction::make(),
-                ]),
             ]);
     }
 

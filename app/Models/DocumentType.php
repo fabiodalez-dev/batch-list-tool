@@ -39,6 +39,29 @@ class DocumentType extends Model implements AuditableContract
      * "documentType", and two spellings of one key would silently split the
      * definitions in half.
      */
+    /**
+     * What a document stores in its document_type text: the code (DT00010),
+     * or the name for a type created without one.
+     */
+    public function storedValue(): string
+    {
+        return filled($this->identifier) ? (string) $this->identifier : (string) $this->name;
+    }
+
+    /**
+     * The type a document's document_type text names, by code or by name.
+     */
+    public static function forStoredValue(?string $value): ?self
+    {
+        $value = trim((string) $value);
+        if ($value === '') {
+            return null;
+        }
+
+        return static::query()->where('identifier', $value)->first()
+            ?? static::query()->where('name', $value)->first();
+    }
+
     public function customFieldEntityType(): string
     {
         return 'documentType';
