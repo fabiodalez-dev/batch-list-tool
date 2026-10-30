@@ -3,16 +3,18 @@
 namespace App\Filament\Resources;
 
 use App\Filament\Resources\AuditResource\Pages;
+use App\Filament\Support\EqualsFirst;
+use App\Filament\Support\ListRules;
+use App\Filament\Support\MatchQueryBuilder;
 use App\Models\User;
 use App\Support\DisplayDate;
 use App\Support\History\Timeline;
 use Filament\Actions\ViewAction;
-use Filament\Forms\Components\DatePicker;
-use Filament\Forms\Components\TextInput;
 use Filament\Resources\Resource;
 use Filament\Tables;
-use Filament\Tables\Filters\Filter;
-use Filament\Tables\Filters\SelectFilter;
+use Filament\Tables\Filters\QueryBuilder\Constraints\SelectConstraint;
+use Filament\Tables\Filters\QueryBuilder\Constraints\TextConstraint;
+use Filament\Tables\Filters\QueryBuilder\Constraints\TextConstraint\Operators as TextOps;
 use Filament\Tables\Table;
 use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Database\Eloquent\Model;
@@ -137,64 +139,60 @@ class AuditResource extends Resource
                     ->toggleable(isToggledHiddenByDefault: true),
             ])
             ->filters([
-                SelectFilter::make('event')
-                    ->options([
-                        'created' => 'Created',
-                        'updated' => 'Updated',
-                        'deleted' => 'Deleted',
-                        'restored' => 'Restored',
-                        'impersonation_started' => 'Impersonation started',
-                        'impersonation_ended' => 'Impersonation ended',
-                    ]),
-                SelectFilter::make('auditable_type')
-                    ->label('Model')
-                    ->options(fn () => Audit::query()
-                        ->select('auditable_type')
-                        ->distinct()
-                        ->orderBy('auditable_type')
-                        ->pluck('auditable_type')
-                        ->mapWithKeys(fn (string $type) => [$type => class_basename($type)])
-                        ->all()),
-                SelectFilter::make('user_id')
-                    ->label('Who')
-                    ->searchable()
-                    ->options(fn (): array => User::query()
-                        ->whereIn('id', Audit::query()->select('user_id')->whereNotNull('user_id')->distinct())
-                        ->orderBy('name')
-                        ->pluck('name', 'id')
-                        ->all()),
-                Filter::make('field')
-                    ->form([
-                        TextInput::make('field')
+                // Client 2026-10-30: one rule per column, as on Documents.
+                MatchQueryBuilder::make()
+                    ->constraints([
+                        ListRules::date('created_at', 'When'),
+                        // `user` is a morph-to on the audit: a plain select on
+                        // user_id.
+                        SelectConstraint::make('user_id')
+                            ->label('Who')
+                            ->searchable()
+                            ->multiple()
+                            ->nullable()
+                            ->options(fn (): array => User::query()->orderBy('name')->pluck('name', 'id')->all()),
+                        SelectConstraint::make('event')
+                            ->options([
+                                'created' => 'Created',
+                                'updated' => 'Updated',
+                                'deleted' => 'Deleted',
+                                'restored' => 'Restored',
+                                'impersonation_started' => 'Impersonation started',
+                                'impersonation_ended' => 'Impersonation ended',
+                            ])
+                            ->multiple(),
+                        SelectConstraint::make('auditable_type')
+                            ->label('Model')
+                            ->options(fn () => Audit::query()
+                                ->select('auditable_type')
+                                ->distinct()
+                                ->orderBy('auditable_type')
+                                ->pluck('auditable_type')
+                                ->mapWithKeys(fn (string $type) => [$type => class_basename($type)])
+                                ->all())
+                            ->multiple(),
+                        EqualsFirst::number('auditable_id', 'Record ID'),
+                        // The JSON key in quotes. No escaping of _ : a backslash
+                        // escape works on MySQL but not on SQLite, and the quotes
+                        // already pin the match to one key.
+                        TextConstraint::make('changed_field')
                             ->label('Field changed')
-                            ->helperText('The column name, e.g. barcode_status or location_id.'),
-                    ])
-                    ->query(fn (Builder $query, array $data): Builder => $query->when(
-                        filled($data['field'] ?? null),
-                        fn (Builder $query): Builder => $query->where(function (Builder $query) use ($data): void {
-                            // The JSON key in quotes. No escaping of _ : a backslash
-                            // escape works on MySQL but not on SQLite, and the quotes
-                            // already pin the match to one key.
-                            $needle = '%"' . trim((string) $data['field']) . '"%';
-                            $query->where('old_values', 'like', $needle)->orWhere('new_values', 'like', $needle);
-                        }),
-                    ))
-                    ->indicateUsing(fn (array $data): ?string => filled($data['field'] ?? null) ? 'Field: ' . $data['field'] : null),
-                Filter::make('record_id')
-                    ->form([TextInput::make('id')->label('Record ID')->numeric()])
-                    ->query(fn (Builder $query, array $data): Builder => $query->when(
-                        filled($data['id'] ?? null),
-                        fn (Builder $query): Builder => $query->where('auditable_id', (int) $data['id']),
-                    ))
-                    ->indicateUsing(fn (array $data): ?string => filled($data['id'] ?? null) ? 'Record #' . $data['id'] : null),
-                Filter::make('date')
-                    ->form([
-                        DatePicker::make('from')->label('From'),
-                        DatePicker::make('to')->label('To'),
-                    ])
-                    ->query(fn (Builder $query, array $data) => $query
-                        ->when($data['from'] ?? null, fn ($q, $d) => $q->whereDate('created_at', '>=', $d))
-                        ->when($data['to'] ?? null, fn ($q, $d) => $q->whereDate('created_at', '<=', $d))),
+                            ->icon('heroicon-o-pencil-square')
+                            ->operators([
+                                TextOps\EqualsOperator::make()->modifyBaseQueryUsing(function (Builder $query, ?array $settings, ?bool $isInverse): Builder {
+                                    $field = trim((string) (is_scalar($settings['text'] ?? null) ? $settings['text'] : ''));
+                                    if ($field === '') {
+                                        return $query;
+                                    }
+                                    $needle = '%"' . $field . '"%';
+                                    $changed = fn (Builder $q): Builder => $q->where('old_values', 'like', $needle)->orWhere('new_values', 'like', $needle);
+
+                                    return $isInverse ? $query->whereNot($changed) : $query->where($changed);
+                                }),
+                            ]),
+                        EqualsFirst::text('ip_address', 'Ip address', nullable: true),
+                        EqualsFirst::text('user_agent', 'User agent', nullable: true),
+                    ]),
             ])
             ->defaultSort('created_at', 'desc')
             ->actions([

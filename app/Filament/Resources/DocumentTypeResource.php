@@ -6,6 +6,9 @@ namespace App\Filament\Resources;
 
 use App\Filament\Resources\DocumentTypeResource\Pages;
 use App\Filament\Support\CreatorColumn;
+use App\Filament\Support\EqualsFirst;
+use App\Filament\Support\ListRules;
+use App\Filament\Support\MatchQueryBuilder;
 use App\Models\DocumentType;
 use App\Support\ColumnLabels\ColumnLabels;
 use App\Support\CustomFields\CustomFieldResolver;
@@ -19,6 +22,7 @@ use Filament\Resources\Resource;
 use Filament\Schemas\Components\Section;
 use Filament\Schemas\Schema;
 use Filament\Tables;
+use Filament\Tables\Filters\QueryBuilder\Constraints\BooleanConstraint;
 use Filament\Tables\Table;
 use Illuminate\Database\Eloquent\Builder;
 
@@ -141,7 +145,17 @@ class DocumentTypeResource extends Resource
             ])
             ->defaultSort('name')
             ->filters([
-                Tables\Filters\TernaryFilter::make('is_active'),
+                // Client 2026-10-30: one rule per column, as on Documents.
+                MatchQueryBuilder::make()
+                    ->constraints([
+                        EqualsFirst::text('identifier', ColumnLabels::get('documentType', 'identifier'), nullable: true),
+                        EqualsFirst::text('name', ColumnLabels::get('documentType', 'name')),
+                        EqualsFirst::text('description', ColumnLabels::get('documentType', 'description'), nullable: true),
+                        BooleanConstraint::make('is_active')
+                            ->label(ColumnLabels::get('documentType', 'is_active')),
+                        ListRules::date('updated_at'),
+                        ListRules::inputter(),
+                    ]),
             ])
             ->recordActions([EditAction::make()])
             ->toolbarActions([

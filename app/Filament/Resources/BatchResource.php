@@ -6,6 +6,9 @@ use App\Filament\Concerns\AppliesFieldPermissions;
 use App\Filament\Resources\BatchResource\Pages;
 use App\Filament\Support\CompactLayout;
 use App\Filament\Support\CreatorColumn;
+use App\Filament\Support\EqualsFirst;
+use App\Filament\Support\ListRules;
+use App\Filament\Support\MatchQueryBuilder;
 use App\Filament\Support\SearchableSelects;
 use App\Models\Accession;
 use App\Models\Batch;
@@ -33,8 +36,8 @@ use Filament\Schemas\Components\Utilities\Get;
 use Filament\Schemas\Components\Utilities\Set;
 use Filament\Schemas\Schema;
 use Filament\Tables;
-use Filament\Tables\Filters\SelectFilter;
-use Filament\Tables\Filters\TernaryFilter;
+use Filament\Tables\Filters\QueryBuilder\Constraints\BooleanConstraint;
+use Filament\Tables\Filters\QueryBuilder\Constraints\SelectConstraint;
 use Filament\Tables\Filters\TrashedFilter;
 use Filament\Tables\Table;
 use Illuminate\Database\Eloquent\Builder;
@@ -462,26 +465,25 @@ class BatchResource extends Resource
                 ...DocumentResource::customFieldTableColumns('batch'),
             ])
             ->filters([
-                // Feedback1 Wave B (B1) — dropdown-driven filters alongside the
-                // free-text search on `description`. BatchResource is light
-                // enough that plain SelectFilters cover it (no QueryBuilder).
-                SelectFilter::make('batch_number')
-                    ->label(ColumnLabels::get('batch', 'batch_number'))
-                    ->options(fn (): array => Batch::query()
-                        ->orderByRaw('batch_number + 0')
-                        ->pluck('batch_number', 'batch_number')
-                        ->all())
-                    ->searchable()
-                    ->multiple(),
-                SelectFilter::make('type')
-                    ->label(ColumnLabels::get('batch', 'type'))
-                    ->options(fn (): array => BatchType::optionsWith(null))
-                    ->multiple(),
-                TernaryFilter::make('is_active')
-                    ->label(ColumnLabels::get('batch', 'is_active'))
-                    ->placeholder('All')
-                    ->trueLabel('Active only')
-                    ->falseLabel('Inactive only'),
+                // Client 2026-10-30: the filters are rules, as on Documents —
+                // one per column.
+                MatchQueryBuilder::make()
+                    ->constraints([
+                        EqualsFirst::text('batch_number', ColumnLabels::get('batch', 'batch_number')),
+                        EqualsFirst::text('description', ColumnLabels::get('batch', 'description'), nullable: true),
+                        SelectConstraint::make('type')
+                            ->label(ColumnLabels::get('batch', 'type'))
+                            ->options(fn (): array => BatchType::optionsWith(null))
+                            ->multiple(),
+                        ListRules::relation('repository', 'Repository', 'name'),
+                        BooleanConstraint::make('is_active')
+                            ->label(ColumnLabels::get('batch', 'is_active')),
+                        ListRules::inputter(),
+                        ListRules::date('created_at'),
+                        ListRules::date('updated_at'),
+                        ListRules::date('deleted_at'),
+                        ...DocumentResource::customFieldConstraints('batch'),
+                    ]),
                 TrashedFilter::make(),
             ])
             ->actions([
@@ -495,9 +497,7 @@ class BatchResource extends Resource
                     ->label('View boxes')
                     ->icon('heroicon-o-archive-box')
                     ->color('gray')
-                    ->url(fn (Batch $record): string => BoxResource::getUrl('index', [
-                        'filters' => ['batch' => ['values' => [$record->getKey()]]],
-                    ])),
+                    ->url(fn (Batch $record): string => self::boxesUrl($record)),
             ])
             ->bulkActions([
                 BulkActionGroup::make([
@@ -506,6 +506,17 @@ class BatchResource extends Resource
                     ForceDeleteBulkAction::make(),
                 ]),
             ]);
+    }
+
+    /**
+     * The Boxes list showing this batch's boxes: a "Batch is" rule, since the
+     * Boxes filters are rules only (client 2026-10-30).
+     */
+    public static function boxesUrl(Batch $batch): string
+    {
+        return BoxResource::getUrl('index', [
+            'filters' => MatchQueryBuilder::urlFilters('batch', 'isRelatedTo', ['value' => [$batch->getKey()]]),
+        ]);
     }
 
     public static function getRelations(): array

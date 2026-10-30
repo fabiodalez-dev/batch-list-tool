@@ -6,6 +6,10 @@ use App\Filament\Concerns\AppliesFieldPermissions;
 use App\Filament\Resources\SeriesResource\Pages;
 use App\Filament\Support\CompactLayout;
 use App\Filament\Support\CreatorColumn;
+use App\Filament\Support\DocumentRules;
+use App\Filament\Support\EqualsFirst;
+use App\Filament\Support\ListRules;
+use App\Filament\Support\MatchQueryBuilder;
 use App\Models\Repository;
 use App\Models\Series;
 use App\Support\ColumnLabels\ColumnLabels;
@@ -25,8 +29,9 @@ use Filament\Schemas\Components\Section;
 use Filament\Schemas\Components\Utilities\Get;
 use Filament\Schemas\Schema;
 use Filament\Tables;
-use Filament\Tables\Filters\SelectFilter;
-use Filament\Tables\Filters\TernaryFilter;
+use Filament\Tables\Filters\QueryBuilder\Constraints\BooleanConstraint;
+use Filament\Tables\Filters\QueryBuilder\Constraints\SelectConstraint;
+use Filament\Tables\Filters\QueryBuilder\Constraints\SelectConstraint\Operators\IsOperator;
 use Filament\Tables\Filters\TrashedFilter;
 use Filament\Tables\Table;
 use Illuminate\Database\Eloquent\Builder;
@@ -384,46 +389,26 @@ class SeriesResource extends Resource
                     ->tooltip('The account that imported or created this record — not the cataloguer named in the sheet.'),
             ])
             ->filters([
-                // Feedback1 Wave B (B1) — dropdown-driven filters (mechanism #1)
-                // alongside the free-text search on code/title (mechanism #2).
-                // Series is a small reference table → plain SelectFilter on the
-                // distinct codes plus the two boolean flags as TernaryFilters.
-                // A3/D9 — filter label matches the column rename: "Identifier".
-                SelectFilter::make('code')
-                    ->label(ColumnLabels::get('series', 'code'))
-                    ->options(fn (): array => Series::query()
-                        ->orderBy('code')
-                        ->pluck('code', 'code')
-                        ->all())
-                    ->searchable()
-                    ->multiple(),
-                TernaryFilter::make('is_wills_series')
-                    ->label('Wills subseries')
-                    ->placeholder('All')
-                    ->trueLabel('Wills subseries only')
-                    ->falseLabel('Non-wills only'),
-                TernaryFilter::make('is_active')
-                    ->label('Active')
-                    ->placeholder('All')
-                    ->trueLabel('Active only')
-                    ->falseLabel('Inactive only'),
-                // Feedback1 C1.4 — narrow to root series, and pick a parent.
-                TernaryFilter::make('top_level')
-                    ->label('Top-level only')
-                    ->placeholder('All levels')
-                    ->trueLabel('Top-level subseries only')
-                    ->falseLabel('Child subseries only')
-                    ->queries(
-                        true: fn (Builder $q): Builder => $q->whereNull('parent_id'),
-                        false: fn (Builder $q): Builder => $q->whereNotNull('parent_id'),
-                        blank: fn (Builder $q): Builder => $q,
-                    ),
-                SelectFilter::make('parent_id')
-                    ->label('Parent subseries')
-                    ->options(fn (): array => Series::linkParents(Series::query()->orderBy('code')->get())
-                        ->mapWithKeys(fn (Series $s): array => [$s->getKey() => $s->qualifiedTitle()])
-                        ->all())
-                    ->searchable(),
+                // Client 2026-10-30: one rule per column, AND / OR above them,
+                // as on Documents. "Top-level only" is Parent "Is empty".
+                MatchQueryBuilder::make()
+                    ->constraints([
+                        ListRules::relation('repository', 'Repo', 'code', emptyable: true),
+                        EqualsFirst::text('code', ColumnLabels::get('series', 'code')),
+                        EqualsFirst::text('title', ColumnLabels::get('series', 'title'), nullable: true),
+                        EqualsFirst::text('level_of_description', ColumnLabels::get('series', 'level_of_description'), nullable: true),
+                        EqualsFirst::text('date_of_creation', ColumnLabels::get('series', 'date_of_creation'), nullable: true),
+                        EqualsFirst::text('name_of_inputter', ColumnLabels::get('series', 'name_of_inputter'), nullable: true),
+                        ListRules::count('document_types_count', 'Doc. types', 'documentTypes'),
+                        self::hierarchyRule(),
+                        ListRules::relation('parent', 'Parent', 'code', emptyable: true),
+                        BooleanConstraint::make('is_wills_series'),
+                        BooleanConstraint::make('is_active'),
+                        ListRules::date('created_at'),
+                        ListRules::date('updated_at'),
+                        ListRules::date('deleted_at'),
+                        ListRules::inputter('Uploaded by'),
+                    ]),
                 // Client 2026-10-14: a deleted subseries (MDV) kept its
                 // identifier but was nowhere to be seen, so "This series
                 // identifier is already in use" had no visible cause. Deleted
@@ -467,6 +452,36 @@ class SeriesResource extends Resource
     {
         return parent::getRecordRouteBindingEloquentQuery()
             ->withoutGlobalScopes([SoftDeletingScope::class]);
+    }
+
+    /**
+     * The Hierarchy column as a rule: the chosen subseries and every
+     * subseries under it ("REG" finds REG, RWL, …).
+     */
+    public static function hierarchyRule(): SelectConstraint
+    {
+        return SelectConstraint::make('hierarchy')
+            ->label('Hierarchy')
+            ->icon('heroicon-o-queue-list')
+            ->multiple()
+            ->searchable()
+            ->options(fn (): array => Series::linkParents(Series::query()->orderBy('code')->get())
+                ->mapWithKeys(fn (Series $s): array => [$s->getKey() => $s->qualifiedTitle()])
+                ->all())
+            ->operators([
+                IsOperator::make()->modifyBaseQueryUsing(function (Builder $query, ?array $settings, ?bool $isInverse): Builder {
+                    $ids = [];
+                    foreach (Series::query()->whereKey(DocumentRules::values($settings))->get() as $series) {
+                        $ids[] = (int) $series->getKey();
+                        foreach ($series->descendants() as $child) {
+                            $ids[] = (int) $child->getKey();
+                        }
+                    }
+                    $column = $query->qualifyColumn('id');
+
+                    return $isInverse ? $query->whereNotIn($column, $ids) : $query->whereIn($column, $ids);
+                }),
+            ]);
     }
 
     public static function getRelations(): array

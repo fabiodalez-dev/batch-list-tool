@@ -50,23 +50,23 @@ it('filters the trail by the field that changed and by who changed it', function
     $created = Audit::query()->where('auditable_type', Box::class)->where('event', 'created')->firstOrFail();
 
     Livewire::test(ListAudits::class)
-        ->filterTable('field', ['field' => 'tracking_note'])
+        ->filterTable('queryBuilder', doc_rule('changed_field', 'equals', ['text' => 'tracking_note']))
         ->assertCanSeeTableRecords([$batchChange])
         ->assertCanNotSeeTableRecords([$created]);
 
     Livewire::test(ListAudits::class)
-        ->filterTable('field', ['field' => 'seal_number'])
+        ->filterTable('queryBuilder', doc_rule('changed_field', 'equals', ['text' => 'seal_number']))
         ->assertCanNotSeeTableRecords([$batchChange]);
 
     $someoneElse = User::factory()->create();
     Livewire::test(ListAudits::class)
-        ->filterTable('user_id', $someoneElse->id)
+        ->filterTable('queryBuilder', doc_rule('user_id', 'is', ['values' => [$someoneElse->id]]))
         ->assertCanNotSeeTableRecords([$batchChange]);
 });
 
 it('exports one row per changed field, old and new value side by side', function (): void {
     $component = Livewire::test(ListAudits::class)
-        ->filterTable('record_id', ['id' => $this->box->id])
+        ->filterTable('queryBuilder', doc_rule('auditable_id', 'equals', ['number' => $this->box->id]))
         ->callAction('export_csv');
     $csv = (string) base64_decode((string) $component->effects['download']['content'], true);
     $rows = array_map(fn (string $l): array => str_getcsv($l, escape: '\\'), array_values(array_filter(explode("\n", preg_replace('/^\x{FEFF}/u', '', $csv) ?? $csv))));

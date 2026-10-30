@@ -26,6 +26,22 @@ class MatchQueryBuilder extends QueryBuilder
 
     public const MATCH_ANY = 'any';
 
+    /**
+     * The `filters` query parameter of a link that opens a list with one rule
+     * applied. Hidden filters are not read from the URL, so a link into a list
+     * carries a rule (client 2026-10-30: every list filters by rules only).
+     *
+     * @param array<string, mixed> $settings
+     * @return array{queryBuilder: array{match: string, rules: array<string, array{type: string, data: array{operator: string, settings: array<string, mixed>}}>}}
+     */
+    public static function urlFilters(string $rule, string $operator, array $settings = []): array
+    {
+        return ['queryBuilder' => ['match' => self::MATCH_ALL, 'rules' => [$rule => [
+            'type' => $rule,
+            'data' => ['operator' => $operator, 'settings' => $settings],
+        ]]]];
+    }
+
     protected function setUp(): void
     {
         parent::setUp();
@@ -53,7 +69,10 @@ class MatchQueryBuilder extends QueryBuilder
                 ->blockPickerColumns($filter->getConstraintPickerColumns())
                 ->blockPickerWidth($filter->getConstraintPickerWidth())
                 ->maxRules($filter->getMaxRules())
-                ->maxNestingDepth($filter->getMaxNestingDepth()),
+                ->maxNestingDepth($filter->getMaxNestingDepth())
+                // A list may open on a rule (Flags: the open ones), set with
+                // ->default(['rules' => [...]]); Reset brings it back.
+                ->default(fn (): ?array => $filter->getDefaultState()['rules'] ?? null),
         ]);
 
         $this->query(function (Builder $query, array $data): void {

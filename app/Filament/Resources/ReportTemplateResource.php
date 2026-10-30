@@ -3,6 +3,9 @@
 namespace App\Filament\Resources;
 
 use App\Filament\Resources\ReportTemplateResource\Pages;
+use App\Filament\Support\EqualsFirst;
+use App\Filament\Support\ListRules;
+use App\Filament\Support\MatchQueryBuilder;
 use App\Models\ReportTemplate;
 use App\Models\User;
 use Filament\Actions\BulkActionGroup;
@@ -16,8 +19,8 @@ use Filament\Resources\Resource;
 use Filament\Schemas\Components\Section;
 use Filament\Schemas\Schema;
 use Filament\Tables;
-use Filament\Tables\Filters\SelectFilter;
-use Filament\Tables\Filters\TernaryFilter;
+use Filament\Tables\Filters\QueryBuilder\Constraints\BooleanConstraint;
+use Filament\Tables\Filters\QueryBuilder\Constraints\SelectConstraint;
 use Filament\Tables\Table;
 use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Database\Eloquent\Model;
@@ -197,14 +200,20 @@ class ReportTemplateResource extends Resource
                     ->toggleable(isToggledHiddenByDefault: true),
             ])
             ->filters([
-                SelectFilter::make('source')
-                    ->label('Report')
-                    ->options(self::sourceOptions()),
-                TernaryFilter::make('is_shared')
-                    ->label('Shared')
-                    ->placeholder('All')
-                    ->trueLabel('Shared')
-                    ->falseLabel('Private'),
+                // Client 2026-10-30: one rule per column, as on Documents.
+                MatchQueryBuilder::make()
+                    ->constraints([
+                        EqualsFirst::text('name', 'Name'),
+                        SelectConstraint::make('source')
+                            ->label('Report')
+                            ->options(self::sourceOptions())
+                            ->multiple(),
+                        BooleanConstraint::make('is_shared')
+                            ->label('Shared'),
+                        ListRules::relation('user', 'Owner', 'name', emptyable: true),
+                        ListRules::date('created_at'),
+                        ListRules::date('updated_at'),
+                    ]),
             ])
             ->actions([
                 ViewAction::make(),

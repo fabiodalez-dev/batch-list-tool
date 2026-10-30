@@ -114,13 +114,13 @@ it('filters creators that worked as NTG (true / false)', function () {
 
     // true → only the NTG creator
     Livewire::test(ListAuthorities::class)
-        ->filterTable('worked_as_ntg', true)
+        ->filterTable('queryBuilder', doc_rule('worked_as_ntg', 'yes'))
         ->assertCanSeeTableRecords([$withNtg])
         ->assertCanNotSeeTableRecords([$withoutNtg]);
 
     // false → only the non-NTG creator
     Livewire::test(ListAuthorities::class)
-        ->filterTable('worked_as_ntg', false)
+        ->filterTable('queryBuilder', doc_rule('worked_as_ntg', 'yes.inverse'))
         ->assertCanSeeTableRecords([$withoutNtg])
         ->assertCanNotSeeTableRecords([$withNtg]);
 });

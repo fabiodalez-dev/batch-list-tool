@@ -6,6 +6,9 @@ use App\Filament\Resources\RepositoryResource\Pages;
 use App\Filament\Resources\RepositoryResource\RelationManagers;
 use App\Filament\Support\CompactLayout;
 use App\Filament\Support\CreatorColumn;
+use App\Filament\Support\EqualsFirst;
+use App\Filament\Support\ListRules;
+use App\Filament\Support\MatchQueryBuilder;
 use App\Models\Repository;
 use Filament\Actions\BulkActionGroup;
 use Filament\Actions\DeleteBulkAction;
@@ -18,6 +21,7 @@ use Filament\Resources\Resource;
 use Filament\Schemas\Components\Section;
 use Filament\Schemas\Schema;
 use Filament\Tables;
+use Filament\Tables\Filters\QueryBuilder\Constraints\BooleanConstraint;
 use Filament\Tables\Table;
 use Illuminate\Database\Eloquent\Builder;
 
@@ -145,7 +149,17 @@ class RepositoryResource extends Resource
                 CreatorColumn::make(),
             ])
             ->filters([
-                //
+                // Client 2026-10-30: one rule per column, as on Documents.
+                MatchQueryBuilder::make()
+                    ->constraints([
+                        EqualsFirst::text('code', 'Code'),
+                        EqualsFirst::text('name', 'Name'),
+                        BooleanConstraint::make('is_active'),
+                        ListRules::date('created_at'),
+                        ListRules::date('updated_at'),
+                        ListRules::date('deleted_at'),
+                        ListRules::inputter(),
+                    ]),
             ])
             ->actions([
                 ViewAction::make(),

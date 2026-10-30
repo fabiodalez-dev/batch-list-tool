@@ -3,6 +3,8 @@
 namespace App\Filament\Resources;
 
 use App\Filament\Resources\BackupDestinationResource\Pages;
+use App\Filament\Support\EqualsFirst;
+use App\Filament\Support\MatchQueryBuilder;
 use App\Models\BackupDestination;
 use App\Support\BackupDestinations;
 use BackedEnum;
@@ -23,6 +25,8 @@ use Filament\Schemas\Schema;
 use Filament\Tables\Columns\IconColumn;
 use Filament\Tables\Columns\TextColumn;
 use Filament\Tables\Columns\ToggleColumn;
+use Filament\Tables\Filters\QueryBuilder\Constraints\BooleanConstraint;
+use Filament\Tables\Filters\QueryBuilder\Constraints\SelectConstraint;
 use Filament\Tables\Table;
 use UnitEnum;
 
@@ -315,6 +319,22 @@ class BackupDestinationResource extends Resource
                     ->label('Order')
                     ->sortable()
                     ->toggleable(),
+            ])
+            ->filters([
+                // Client 2026-10-30: one rule per column, as on every list.
+                MatchQueryBuilder::make()
+                    ->constraints([
+                        EqualsFirst::text('name', 'Name'),
+                        SelectConstraint::make('driver')
+                            ->options(['local' => 'local', 'ftp' => 'ftp', 'sftp' => 'sftp', 's3' => 's3'])
+                            ->multiple(),
+                        EqualsFirst::text('disk_key', 'Disk key'),
+                        BooleanConstraint::make('is_active')
+                            ->label('Active'),
+                        BooleanConstraint::make('is_default')
+                            ->label('Default'),
+                        EqualsFirst::number('sort_order', 'Order'),
+                    ]),
             ])
             ->recordActions([
                 Action::make('testConnection')

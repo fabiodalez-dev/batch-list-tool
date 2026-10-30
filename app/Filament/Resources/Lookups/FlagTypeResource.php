@@ -6,6 +6,9 @@ namespace App\Filament\Resources\Lookups;
 
 use App\Filament\Resources\Lookups\FlagTypeResource\Pages;
 use App\Filament\Support\CreatorColumn;
+use App\Filament\Support\EqualsFirst;
+use App\Filament\Support\ListRules;
+use App\Filament\Support\MatchQueryBuilder;
 use App\Models\Lookup\FlagType;
 use Filament\Actions\Action;
 use Filament\Actions\BulkActionGroup;
@@ -139,7 +142,11 @@ class FlagTypeResource extends Resource
             ->defaultSort('sort_order')
             ->reorderable('sort_order')
             ->filters([
-                Tables\Filters\TernaryFilter::make('is_active'),
+                // Client 2026-10-30: one rule per column, as on Documents.
+                MatchQueryBuilder::make()
+                    ->constraints(ListRules::lookup('Code', [
+                        EqualsFirst::text('colour', 'Colour', nullable: true),
+                    ])),
             ])
             ->actions([
                 Action::make('toggle_active')

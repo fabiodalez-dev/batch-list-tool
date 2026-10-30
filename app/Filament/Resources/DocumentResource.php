@@ -10,6 +10,7 @@ use App\Filament\Resources\DocumentResource\Pages;
 use App\Filament\Support\CreatorColumn;
 use App\Filament\Support\DocumentRules;
 use App\Filament\Support\EqualsFirst;
+use App\Filament\Support\ListRules;
 use App\Filament\Support\MatchQueryBuilder;
 use App\Filament\Support\SearchableSelects;
 use App\Models\Authority;
@@ -1336,6 +1337,10 @@ class DocumentResource extends Resource
                             ->nullable(),
                         BooleanConstraint::make('torre')
                             ->label(ColumnLabels::get('document', 'torre')),
+                        // Client 2026-10-30: every column has a rule.
+                        ListRules::relation('repository', 'Repo', 'code'),
+                        ListRules::inputter(),
+                        ListRules::date('updated_at'),
                         // Client 2026-10-27: "Cannot filter by Past Reference
                         // Code" — a custom field. One rule per custom field.
                         ...self::customFieldConstraints('document'),

@@ -7,6 +7,9 @@ namespace App\Filament\Resources;
 use App\Filament\Resources\LocationResource\Pages;
 use App\Filament\Support\CompactLayout;
 use App\Filament\Support\CreatorColumn;
+use App\Filament\Support\EqualsFirst;
+use App\Filament\Support\ListRules;
+use App\Filament\Support\MatchQueryBuilder;
 use App\Models\Location;
 use App\Models\LocationType;
 use App\Models\Repository;
@@ -26,8 +29,8 @@ use Filament\Schemas\Components\Section;
 use Filament\Schemas\Components\Utilities\Get;
 use Filament\Schemas\Schema;
 use Filament\Tables;
-use Filament\Tables\Filters\SelectFilter;
-use Filament\Tables\Filters\TernaryFilter;
+use Filament\Tables\Filters\QueryBuilder\Constraints\BooleanConstraint;
+use Filament\Tables\Filters\QueryBuilder\Constraints\SelectConstraint;
 use Filament\Tables\Filters\TrashedFilter;
 use Filament\Tables\Table;
 use Illuminate\Database\Eloquent\Builder;
@@ -318,23 +321,28 @@ class LocationResource extends Resource
                     ->toggleable(isToggledHiddenByDefault: true),
             ])
             ->filters([
-                SelectFilter::make('type')
-                    // Feedback1 gaps (F006) — options come from the editable
-                    // location_types lookup (same source as the form Select)
-                    // so operator-added types are filterable. Closure keeps it
-                    // lazy (no DB query at class-resolution time).
-                    ->options(fn (): array => self::typeOptions())
-                    ->multiple(),
-                SelectFilter::make('repository_id')
-                    ->label('Repository')
-                    ->relationship('repository', 'code')
-                    ->searchable()
-                    ->preload(),
-                TernaryFilter::make('is_active')
-                    ->label(ColumnLabels::get('location', 'is_active'))
-                    ->placeholder('Any')
-                    ->trueLabel('Active')
-                    ->falseLabel('Inactive'),
+                // Client 2026-10-30: "Locations Page has all these fields
+                // available [...] but only some of them can be filtered" — one
+                // rule per column, AND / OR above them, as on Documents.
+                MatchQueryBuilder::make()
+                    ->constraints([
+                        EqualsFirst::text('name', ColumnLabels::get('location', 'name')),
+                        // Feedback1 gaps (F006) — the editable location_types
+                        // lookup, the form's source.
+                        SelectConstraint::make('type')
+                            ->label(ColumnLabels::get('location', 'type'))
+                            ->options(fn (): array => self::typeOptions())
+                            ->multiple(),
+                        // No repository = a GLOBAL location.
+                        ListRules::relation('repository', 'Repo', 'code', emptyable: true),
+                        EqualsFirst::text('code', ColumnLabels::get('location', 'code'), nullable: true),
+                        ListRules::count('boxes_count', 'Boxes', 'boxes'),
+                        ListRules::count('documents_count', 'Documents', 'documents'),
+                        BooleanConstraint::make('is_active')
+                            ->label(ColumnLabels::get('location', 'is_active')),
+                        ListRules::inputter(),
+                        ListRules::date('updated_at'),
+                    ]),
                 TrashedFilter::make(),
             ])
             ->actions([

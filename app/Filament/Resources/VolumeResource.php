@@ -3,6 +3,9 @@
 namespace App\Filament\Resources;
 
 use App\Filament\Resources\VolumeResource\Pages;
+use App\Filament\Support\EqualsFirst;
+use App\Filament\Support\ListRules;
+use App\Filament\Support\MatchQueryBuilder;
 use App\Filament\Support\SearchableSelects;
 use App\Models\Document;
 use App\Models\Volume;
@@ -273,7 +276,18 @@ class VolumeResource extends Resource
                 ...DocumentResource::customFieldTableColumns('volume'),
             ])
             ->filters([
-                //
+                // Client 2026-10-30: one rule per column, as on Documents.
+                MatchQueryBuilder::make()
+                    ->constraints([
+                        ListRules::relation('document', 'Document', 'identifier', preload: false),
+                        EqualsFirst::text('volume_number', ColumnLabels::get('volume', 'volume_number'), nullable: true),
+                        ListRules::date('dates_start', ColumnLabels::get('volume', 'dates_start')),
+                        ListRules::date('dates_end', ColumnLabels::get('volume', 'dates_end')),
+                        ListRules::date('created_at'),
+                        ListRules::date('updated_at'),
+                        ListRules::date('deleted_at'),
+                        ...DocumentResource::customFieldConstraints('volume'),
+                    ]),
             ])
             ->actions([
                 ViewAction::make(),

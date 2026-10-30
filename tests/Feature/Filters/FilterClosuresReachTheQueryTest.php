@@ -101,7 +101,7 @@ it('applies every documents-list rule to the query', function (string $type, str
 ]);
 
 it('applies the flags-list date range to the query', function (): void {
-    $sql = fcq_sql(Livewire::test(ListDocumentFlags::class)->filterTable('flagged_at_range', ['from' => '2026-02-03']));
+    $sql = fcq_sql(Livewire::test(ListDocumentFlags::class)->filterTable('queryBuilder', doc_rule('flagged_at', 'isAfter', ['date' => '2026-02-03'])));
 
     expect($sql)->toContain('2026-02-03');
 });

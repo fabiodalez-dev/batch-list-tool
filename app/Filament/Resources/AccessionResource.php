@@ -4,6 +4,9 @@ namespace App\Filament\Resources;
 
 use App\Filament\Resources\AccessionResource\Pages;
 use App\Filament\Support\CreatorColumn;
+use App\Filament\Support\EqualsFirst;
+use App\Filament\Support\ListRules;
+use App\Filament\Support\MatchQueryBuilder;
 use App\Filament\Support\SearchableSelects;
 use App\Models\Accession;
 use App\Models\Batch;
@@ -22,8 +25,6 @@ use Filament\Schemas\Components\Section;
 use Filament\Schemas\Components\Utilities\Get;
 use Filament\Schemas\Schema;
 use Filament\Tables;
-use Filament\Tables\Filters\SelectFilter;
-use Filament\Tables\Filters\TernaryFilter;
 use Filament\Tables\Table;
 use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Support\Collection;
@@ -380,42 +381,24 @@ class AccessionResource extends Resource
                     ->toggleable(isToggledHiddenByDefault: true),
             ])
             ->filters([
-                // A7 / Wave B (B1) — dropdown-driven filters. The panel stays
-                // visible when the result set is empty (Filament 5 default).
-                // Server-side searchable relationship selects (no preload):
-                // production carries 800+ authorities / 600+ batches.
-                SelectFilter::make('authority')
-                    ->label('Authority')
-                    ->relationship('authority', 'surname')
-                    ->searchable()
-                    ->multiple(),
-                // Wave B (B4) — filter by any of the batches linked via the pivot.
-                SelectFilter::make('batches')
-                    ->label('Batch')
-                    ->relationship('batches', 'batch_number')
-                    ->searchable()
-                    ->multiple(),
-                SelectFilter::make('repository')
-                    ->label(ColumnLabels::get('accession', 'repository'))
-                    ->relationship('repository', 'code')
-                    ->searchable()
-                    ->preload(),
-                // Feedback1 C1.3 — quickly isolate accessions that do / do not
-                // carry an Accession Number.
-                TernaryFilter::make('has_accession_number')
-                    ->label('Has Accession Number')
-                    ->placeholder('All accessions')
-                    ->trueLabel('Has a number')
-                    ->falseLabel('No number')
-                    ->queries(
-                        true: fn (Builder $q): Builder => $q->whereNotNull('accession_number')
-                            ->where('accession_number', '!=', ''),
-                        false: fn (Builder $q): Builder => $q->where(
-                            fn (Builder $q) => $q->whereNull('accession_number')
-                                ->orWhere('accession_number', '=', '')
-                        ),
-                        blank: fn (Builder $q): Builder => $q,
-                    ),
+                // Client 2026-10-30: one rule per column, AND / OR above them,
+                // as on Documents. "Has Accession Number" is the Accession
+                // Number "Is filled". Authorities and batches are searched on
+                // the server, not preloaded (800+ / 600+ in production).
+                MatchQueryBuilder::make()
+                    ->constraints([
+                        EqualsFirst::text('code', 'Title'),
+                        EqualsFirst::text('accession_number', ColumnLabels::get('accession', 'accession_number'), nullable: true),
+                        ListRules::date('accession_date', 'Accession Date'),
+                        ListRules::relation('authority', 'Authority', 'surname', emptyable: true, preload: false),
+                        // Wave B (B4) — any of the batches linked via the pivot.
+                        ListRules::relation('batches', 'Batch Numbers', 'batch_number', emptyable: true, preload: false),
+                        ListRules::relation('repository', 'Repository', 'name'),
+                        ListRules::inputter(),
+                        ListRules::date('created_at'),
+                        ListRules::date('updated_at'),
+                        ListRules::date('deleted_at'),
+                    ]),
             ])
             ->actions([
                 ViewAction::make(),

@@ -123,7 +123,7 @@ it('filters to top-level series only', function () {
     $sub = sh_series('REG', $root->id);
 
     Livewire::test(ListSeries::class)
-        ->filterTable('top_level', true)
+        ->filterTable('queryBuilder', doc_rule('parent', 'isEmpty'))
         ->assertCanSeeTableRecords([$root])
         ->assertCanNotSeeTableRecords([$sub]);
 });

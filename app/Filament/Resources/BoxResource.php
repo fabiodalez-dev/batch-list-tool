@@ -6,9 +6,12 @@ use App\Filament\Actions\Boxes\DestroyBoxAction;
 use App\Filament\Actions\Boxes\MoveBoxToLocationAction;
 use App\Filament\Concerns\AppliesFieldPermissions;
 use App\Filament\Resources\BoxResource\Pages;
+use App\Filament\Support\BoxRules;
 use App\Filament\Support\CompactLayout;
 use App\Filament\Support\CreatorColumn;
 use App\Filament\Support\EqualsFirst;
+use App\Filament\Support\ListRules;
+use App\Filament\Support\MatchQueryBuilder;
 use App\Filament\Support\SearchableSelects;
 use App\Models\Batch;
 use App\Models\Box;
@@ -44,12 +47,10 @@ use Filament\Schemas\Components\Utilities\Set;
 use Filament\Schemas\Schema;
 use Filament\Tables;
 use Filament\Tables\Enums\FiltersLayout;
-use Filament\Tables\Filters\QueryBuilder;
+use Filament\Tables\Filters\QueryBuilder\Constraints\BooleanConstraint;
 use Filament\Tables\Filters\QueryBuilder\Constraints\RelationshipConstraint;
 use Filament\Tables\Filters\QueryBuilder\Constraints\RelationshipConstraint\Operators\IsRelatedToOperator;
 use Filament\Tables\Filters\QueryBuilder\Constraints\SelectConstraint;
-use Filament\Tables\Filters\SelectFilter;
-use Filament\Tables\Filters\TernaryFilter;
 use Filament\Tables\Filters\TrashedFilter;
 use Filament\Tables\Table;
 use Illuminate\Database\Eloquent\Builder;
@@ -885,22 +886,11 @@ class BoxResource extends Resource
                 ...DocumentResource::customFieldTableColumns('box'),
             ])
             ->filters([
-                // Feedback1 Wave B (B3) — `batch` SelectFilter. The Batch
-                // dashboard navigates here with
-                // ?tableFilters[batch][values][]=<id>, so the filter name MUST
-                // be `batch` and it queries `batch_id` via the relationship.
-                // `->multiple()` matches the `values` URL shape used by the
-                // BatchResource recordUrl / "View boxes" action.
-                SelectFilter::make('batch')
-                    ->label('Batch')
-                    ->relationship('batch', 'batch_number')
-                    ->searchable()
-                    ->multiple(),
-
-                // Feedback1 Wave B (B1) — rich filter mechanism (#1) with
-                // AND/OR/NOT nested groups and per-field dropdown constraints,
-                // complementing the free-text search on box_number / barcode (#2).
-                QueryBuilder::make()
+                // Client 2026-10-30: "Can all the filters be built up exactly
+                // like Documents with the AND OR rule and then Add Condition?"
+                // One rule per column. The Batch pages link here with a
+                // `batch` rule in the URL (see BatchResource).
+                MatchQueryBuilder::make()
                     ->constraints([
                         RelationshipConstraint::make('batch')
                             ->label('Batch')
@@ -910,41 +900,32 @@ class BoxResource extends Resource
                                     ->searchable()
                                     ->multiple(),
                             ),
-                        SelectConstraint::make('box_type')
-                            ->label(ColumnLabels::get('box', 'box_type'))
-                            ->options(fn (): array => BoxType::filterOptions())
-                            ->multiple(),
                         EqualsFirst::text('box_number', ColumnLabels::get('box', 'box_number')),
-                        EqualsFirst::text('barcode', ColumnLabels::get('box', 'barcode')),
+                        EqualsFirst::text('barcode', ColumnLabels::get('box', 'barcode'), nullable: true),
                         SelectConstraint::make('barcode_status')
                             ->label(ColumnLabels::get('box', 'barcode_status'))
                             ->options(array_combine(Box::BARCODE_STATUSES, Box::BARCODE_STATUSES))
                             ->multiple(),
-                        RelationshipConstraint::make('location')
-                            ->label('Location')
-                            ->selectable(
-                                IsRelatedToOperator::make()
-                                    ->titleAttribute('name')
-                                    ->searchable()
-                                    ->multiple(),
-                            ),
+                        SelectConstraint::make('box_type')
+                            ->label(ColumnLabels::get('box', 'box_type'))
+                            ->options(fn (): array => BoxType::filterOptions())
+                            ->multiple(),
+                        EqualsFirst::text('current_box_type', ColumnLabels::get('box', 'current_box_type'), nullable: true),
+                        BoxRules::location(),
+                        EqualsFirst::text('tracking_note', ColumnLabels::get('box', 'tracking_note'), nullable: true),
+                        EqualsFirst::text('seal_number', ColumnLabels::get('box', 'seal_number'), nullable: true),
+                        EqualsFirst::text('notes', ColumnLabels::get('box', 'notes'), nullable: true),
+                        // RFQ App.2 §vii — destroyed or still in the inventory.
+                        ListRules::yesNo('destroyed', 'Destroyed', 'Is destroyed', 'Is not destroyed', fn (Builder $q): Builder => $q->whereNotNull($q->qualifyColumn('destroyed_at'))),
+                        BoxRules::parentBox(),
+                        BooleanConstraint::make('is_legacy')
+                            ->label(ColumnLabels::get('box', 'is_legacy')),
+                        ListRules::inputter(),
+                        ListRules::date('created_at'),
+                        ListRules::date('updated_at'),
+                        ListRules::date('deleted_at'),
+                        ...DocumentResource::customFieldConstraints('box'),
                     ]),
-
-                // RFQ App.2 §vii — destroyed / active filter. Default is
-                // "All" so users see the full archive; flip to "Active"
-                // to restrict to the physical inventory.
-                TernaryFilter::make('destroyed_at')
-                    ->label('Destruction')
-                    ->placeholder('All')
-                    ->trueLabel('Destroyed')
-                    ->falseLabel('Active')
-                    ->queries(
-                        true: fn ($query) => $query->whereNotNull('destroyed_at'),
-                        false: fn ($query) => $query->whereNull('destroyed_at'),
-                        blank: fn ($query) => $query,
-                    ),
-                // Deleted (archived) boxes: hidden by default, shown here to be
-                // restored or deleted for good.
                 TrashedFilter::make()->label('Archived (deleted) boxes'),
             ])
             ->actions([

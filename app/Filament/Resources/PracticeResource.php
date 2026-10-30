@@ -6,6 +6,9 @@ namespace App\Filament\Resources;
 
 use App\Filament\Resources\PracticeResource\Pages;
 use App\Filament\Support\CreatorColumn;
+use App\Filament\Support\EqualsFirst;
+use App\Filament\Support\ListRules;
+use App\Filament\Support\MatchQueryBuilder;
 use App\Models\Practice;
 use App\Models\Repository;
 use Filament\Actions\BulkAction;
@@ -15,6 +18,7 @@ use Filament\Forms;
 use Filament\Resources\Resource;
 use Filament\Schemas\Schema;
 use Filament\Tables;
+use Filament\Tables\Filters\QueryBuilder\Constraints\BooleanConstraint;
 use Filament\Tables\Table;
 use Illuminate\Database\Eloquent\Builder;
 
@@ -102,7 +106,17 @@ class PracticeResource extends Resource
             ])
             ->defaultSort('name')
             ->filters([
-                Tables\Filters\TernaryFilter::make('is_active'),
+                // Client 2026-10-30: one rule per column, as on Documents.
+                MatchQueryBuilder::make()
+                    ->constraints([
+                        EqualsFirst::text('identifier', 'Identifier', nullable: true),
+                        EqualsFirst::text('name', 'Name'),
+                        EqualsFirst::text('description', 'Description', nullable: true),
+                        BooleanConstraint::make('is_active'),
+                        ListRules::relation('repository', 'Repository', 'code', emptyable: true),
+                        ListRules::date('updated_at'),
+                        ListRules::inputter(),
+                    ]),
             ])
             ->recordActions([EditAction::make()])
             ->toolbarActions([

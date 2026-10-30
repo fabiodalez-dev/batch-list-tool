@@ -5,6 +5,10 @@ namespace App\Filament\Resources;
 use App\Filament\Concerns\AppliesFieldPermissions;
 use App\Filament\Resources\AuthorityResource\Pages;
 use App\Filament\Support\CreatorColumn;
+use App\Filament\Support\EqualsFirst;
+use App\Filament\Support\ListRules;
+use App\Filament\Support\MatchQueryBuilder;
+use App\Filament\Support\Operators\WorkedBetweenOperator;
 use App\Models\Authority;
 use App\Support\ColumnLabels\ColumnLabels;
 use Filament\Actions\BulkActionGroup;
@@ -22,11 +26,8 @@ use Filament\Schemas\Components\Utilities\Get;
 use Filament\Schemas\Schema;
 use Filament\Tables;
 use Filament\Tables\Filters\Filter;
-use Filament\Tables\Filters\QueryBuilder;
-use Filament\Tables\Filters\QueryBuilder\Constraints\NumberConstraint;
+use Filament\Tables\Filters\QueryBuilder\Constraints\Constraint;
 use Filament\Tables\Filters\QueryBuilder\Constraints\SelectConstraint;
-use Filament\Tables\Filters\QueryBuilder\Constraints\TextConstraint;
-use Filament\Tables\Filters\TernaryFilter;
 use Filament\Tables\Table;
 use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Database\Eloquent\Collection as EloquentCollection;
@@ -558,119 +559,58 @@ class AuthorityResource extends Resource
                     ->toggleable(),
             ])
             ->filters([
-                // Feedback1 Wave B (B1) — rich filter mechanism (#1) on top of
-                // the free-text column search (#2). The QueryBuilder natively
-                // supports AND/OR/NOT nested groups with per-field dropdown
-                // constraints — exactly the "select a field then a dropdown"
-                // UX the client asked for. NOTE (client comment): identifier is
-                // available as a constraint here but is NOT also added as a
-                // standalone free-text filter — there is already a dedicated
-                // identifier column, so duplicating it would be redundant.
-                QueryBuilder::make()
+                // Client 2026-10-30: one rule per column, AND / OR above them,
+                // as on Documents. What the panel's ready-made filters did is a
+                // rule too: "Has MS number", "Practice period" and "Worked as
+                // NTG" are rules of their own.
+                MatchQueryBuilder::make()
                     ->constraints([
-                        TextConstraint::make('identifier')
-                            ->label(ColumnLabels::get('authority', 'identifier')),
-                        TextConstraint::make('alternative_identifier')
-                            ->label(ColumnLabels::get('authority', 'alternative_identifier')),
-                        TextConstraint::make('surname')
-                            ->label(ColumnLabels::get('authority', 'surname')),
-                        TextConstraint::make('given_names')
-                            ->label(ColumnLabels::get('authority', 'given_names')),
+                        EqualsFirst::text('identifier', ColumnLabels::get('authority', 'identifier')),
+                        EqualsFirst::text('alternative_identifier', ColumnLabels::get('authority', 'alternative_identifier'), nullable: true),
+                        EqualsFirst::text('alternative_identifier_warrant', ColumnLabels::get('authority', 'alternative_identifier_warrant'), nullable: true),
+                        EqualsFirst::text('previous_temporary_identifiers', ColumnLabels::get('authority', 'previous_temporary_identifiers'), nullable: true),
+                        SelectConstraint::make('status')
+                            ->label(ColumnLabels::get('authority', 'status'))
+                            ->options(array_combine(Authority::RECORD_STATUSES, Authority::RECORD_STATUSES))
+                            ->multiple()
+                            ->nullable(),
+                        SelectConstraint::make('level_of_detail')
+                            ->label(ColumnLabels::get('authority', 'level_of_detail'))
+                            ->options(array_combine(Authority::LEVELS_OF_DETAIL, Authority::LEVELS_OF_DETAIL))
+                            ->multiple()
+                            ->nullable(),
+                        EqualsFirst::text('date_of_creation', ColumnLabels::get('authority', 'date_of_creation'), nullable: true),
+                        EqualsFirst::text('creator_of_record', ColumnLabels::get('authority', 'creator_of_record'), nullable: true),
+                        EqualsFirst::text('surname', ColumnLabels::get('authority', 'surname'), nullable: true),
+                        EqualsFirst::text('given_names', ColumnLabels::get('authority', 'given_names'), nullable: true),
+                        EqualsFirst::text('name_suffix', ColumnLabels::get('authority', 'name_suffix'), nullable: true),
+                        EqualsFirst::text('maiden_surname', ColumnLabels::get('authority', 'maiden_surname'), nullable: true),
                         SelectConstraint::make('entity_type')
                             ->label(ColumnLabels::get('authority', 'entity_type'))
                             ->options(self::ENTITY_TYPES)
                             ->multiple(),
-                        NumberConstraint::make('practice_dates_start')
-                            ->label('Practice start year')
-                            ->integer(),
-                        NumberConstraint::make('practice_dates_end')
-                            ->label('Practice end year')
-                            ->integer(),
-                        // NTG year range as numeric constraints (same shape as
-                        // the private-practice start/end above).
-                        NumberConstraint::make('ntg_dates_start')
-                            ->label('NTG start year')
-                            ->integer(),
-                        NumberConstraint::make('ntg_dates_end')
-                            ->label('NTG end year')
-                            ->integer(),
+                        EqualsFirst::number('practice_dates_start', 'Practice dates start'),
+                        EqualsFirst::number('practice_dates_end', 'Practice dates end'),
+                        EqualsFirst::number('ntg_dates_start', 'NTG from'),
+                        EqualsFirst::number('ntg_dates_end', 'NTG to'),
+                        Constraint::make('practice_period')
+                            ->label('Practice period')
+                            ->icon('heroicon-o-calendar')
+                            ->operators([WorkedBetweenOperator::class]),
+                        // "Filter which creators worked as NTG ie: have NTG
+                        // dates associated": either NTG year is there.
+                        ListRules::yesNo('worked_as_ntg', 'Worked as NTG', 'Worked as NTG', 'Never NTG', fn (Builder $q): Builder => $q
+                            ->whereNotNull($q->qualifyColumn('ntg_dates_start'))
+                            ->orWhereNotNull($q->qualifyColumn('ntg_dates_end'))),
+                        // Feedback1 Wave B (B2) — a whitespace-only MS number
+                        // is no MS number, both ways (TRIM parity).
+                        ListRules::yesNo('has_ms_number', 'Has MS number', 'Has MS number', 'No MS number', fn (Builder $q): Builder => $q
+                            ->whereRaw("TRIM(COALESCE(alternative_identifier, '')) <> ''")),
+                        ListRules::date('created_at'),
+                        ListRules::date('updated_at'),
+                        ListRules::date('deleted_at'),
+                        ListRules::inputter(),
                     ]),
-
-                // Feedback1 Wave B (B2) — "worked between X and Y" helper. Two
-                // optional year inputs; whichever bound is filled is applied.
-                // A notary "worked in [from,to]" if their practice window
-                // overlaps it: practice_dates_end >= from AND
-                // practice_dates_start <= to. Nulls are treated as open-ended.
-                Filter::make('practice_period')
-                    ->label('Practice period')
-                    ->form([
-                        Forms\Components\TextInput::make('from')
-                            ->label('Worked after / from (year)')
-                            ->numeric(),
-                        Forms\Components\TextInput::make('to')
-                            ->label('Worked before / to (year)')
-                            ->numeric(),
-                    ])
-                    ->query(fn (Builder $query, array $data): Builder => $query
-                        ->when(
-                            $data['from'] ?? null,
-                            fn (Builder $q, $from): Builder => $q->where(
-                                fn (Builder $q) => $q
-                                    ->whereNull('practice_dates_end')
-                                    ->orWhere('practice_dates_end', '>=', (int) $from)
-                            )
-                        )
-                        ->when(
-                            $data['to'] ?? null,
-                            fn (Builder $q, $to): Builder => $q->where(
-                                fn (Builder $q) => $q
-                                    ->whereNull('practice_dates_start')
-                                    ->orWhere('practice_dates_start', '<=', (int) $to)
-                            )
-                        ))
-                    ->indicateUsing(function (array $data): array {
-                        $i = [];
-                        if (! empty($data['from'])) {
-                            $i[] = "Worked from {$data['from']}";
-                        }
-                        if (! empty($data['to'])) {
-                            $i[] = "Worked to {$data['to']}";
-                        }
-
-                        return $i;
-                    }),
-
-                // Feedback1 Wave B (B2) — "has MS number" ternary on the
-                // optional MS-prefixed alternative_identifier column.
-                TernaryFilter::make('has_ms_number')
-                    ->label('Has MS number')
-                    ->placeholder('All creators')
-                    ->trueLabel('Has MS number')
-                    ->falseLabel('No MS number')
-                    // TRIM parity so the two branches partition the set exactly:
-                    // a whitespace-only alternative_identifier counts as "no MS
-                    // number" on BOTH sides (without TRIM, a single space would
-                    // slip into "has" but not "no").
-                    ->queries(
-                        true: fn (Builder $q): Builder => $q->whereRaw("TRIM(COALESCE(alternative_identifier, '')) <> ''"),
-                        false: fn (Builder $q): Builder => $q->whereRaw("TRIM(COALESCE(alternative_identifier, '')) = ''"),
-                        blank: fn (Builder $q): Builder => $q,
-                    ),
-
-                // "Filter which creators worked as NTG ie: have NTG dates
-                // associated". A creator counts as NTG when either bound of the
-                // NTG year range is present.
-                TernaryFilter::make('worked_as_ntg')
-                    ->label('Worked as NTG')
-                    ->placeholder('All creators')
-                    ->trueLabel('Worked as NTG')
-                    ->falseLabel('Never NTG')
-                    ->queries(
-                        true: fn (Builder $q): Builder => $q->where(fn (Builder $sub): Builder => $sub
-                            ->whereNotNull('ntg_dates_start')->orWhereNotNull('ntg_dates_end')),
-                        false: fn (Builder $q): Builder => $q->whereNull('ntg_dates_start')->whereNull('ntg_dates_end'),
-                        blank: fn (Builder $q): Builder => $q,
-                    ),
             ])
             ->actions([
                 ViewAction::make(),

@@ -366,7 +366,7 @@ test('severity filter on DocumentFlagResource works', function () {
     ]);
 
     Livewire::test(ListDocumentFlags::class)
-        ->filterTable('severity', ['critical'])
+        ->filterTable('queryBuilder', doc_rule('severity', 'is', ['values' => ['critical']]))
         ->assertCanSeeTableRecords([$critical])
         ->assertCanNotSeeTableRecords([$warning]);
 });

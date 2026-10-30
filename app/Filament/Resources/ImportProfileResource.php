@@ -6,6 +6,9 @@ namespace App\Filament\Resources;
 
 use App\Filament\Pages\ImportWizard;
 use App\Filament\Resources\ImportProfileResource\Pages;
+use App\Filament\Support\EqualsFirst;
+use App\Filament\Support\ListRules;
+use App\Filament\Support\MatchQueryBuilder;
 use App\Models\ImportProfile;
 use App\Models\User;
 use Filament\Actions\BulkActionGroup;
@@ -19,8 +22,8 @@ use Filament\Resources\Resource;
 use Filament\Schemas\Components\Section;
 use Filament\Schemas\Schema;
 use Filament\Tables;
-use Filament\Tables\Filters\SelectFilter;
-use Filament\Tables\Filters\TernaryFilter;
+use Filament\Tables\Filters\QueryBuilder\Constraints\BooleanConstraint;
+use Filament\Tables\Filters\QueryBuilder\Constraints\SelectConstraint;
 use Filament\Tables\Table;
 use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Database\Eloquent\Model;
@@ -221,14 +224,22 @@ class ImportProfileResource extends Resource
                     ->toggleable(isToggledHiddenByDefault: true),
             ])
             ->filters([
-                SelectFilter::make('import_type')
-                    ->label('Imports')
-                    ->options(self::importTypeOptions()),
-                TernaryFilter::make('is_shared')
-                    ->label('Shared')
-                    ->placeholder('All')
-                    ->trueLabel('Shared')
-                    ->falseLabel('Private'),
+                // Client 2026-10-30: one rule per column, as on Documents.
+                MatchQueryBuilder::make()
+                    ->constraints([
+                        EqualsFirst::text('name', 'Name'),
+                        SelectConstraint::make('import_type')
+                            ->label('Imports')
+                            ->options(self::importTypeOptions())
+                            ->multiple(),
+                        BooleanConstraint::make('is_shared')
+                            ->label('Shared'),
+                        ListRules::relation('user', 'Owner', 'name', emptyable: true),
+                        EqualsFirst::number('use_count', 'Used'),
+                        ListRules::date('last_used_at', 'Last used'),
+                        ListRules::date('created_at'),
+                        ListRules::date('updated_at'),
+                    ]),
             ])
             ->actions([
                 ViewAction::make(),
