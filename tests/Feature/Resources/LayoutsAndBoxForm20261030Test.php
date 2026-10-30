@@ -420,3 +420,28 @@ it('opens the server-searched dropdowns on their first options, and filters as y
         expect(l30_field($lw, $name)->isSearchable())->toBeTrue();
     }
 });
+
+it('does not describe another repository\'s box in the duplicate message', function (): void {
+    $other = Repository::query()->create(['code' => 'OTH', 'name' => 'Other archive']);
+    $otherBatch = Batch::withoutGlobalScope(RepositoryScope::class)->create(['batch_number' => '77', 'repository_id' => $other->id, 'type' => 'MAIN_COLLECTION']);
+    $foreign = l30_box(['box_type' => 'NRA', 'box_number' => '7', 'batch_id' => $otherBatch->id, 'repository_id' => $other->id, 'provenance_unknown' => true]);
+
+    $editor = User::factory()->create(['is_active' => true, 'default_repository_id' => $this->repo->id]);
+    $editor->assignRole('editor');
+    $editor->repositories()->attach($this->repo->id);
+    $this->actingAs($editor);
+
+    expect($foreign->identityClashMessage())->not->toContain('#' . $foreign->id)->not->toContain('77')
+        ->toStartWith('This box type and number are already used.');
+
+    // A crafted request naming the other repository's batch learns nothing either.
+    $errors = Livewire::test(CreateBox::class)
+        ->fillForm(['box_type' => 'NRA', 'box_number' => '7', 'batch_id' => $otherBatch->id, 'provenance_unknown' => true])
+        ->call('create')
+        ->errors()->all();
+    expect(implode(' ', $errors))->not->toContain('#' . $foreign->id)->not->toContain('batch 77');
+
+    // A super admin, who sees every repository, gets the full message.
+    $this->actingAs($this->user);
+    expect($foreign->identityClashMessage())->toContain("box #{$foreign->id}");
+});

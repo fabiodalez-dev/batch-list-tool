@@ -457,11 +457,16 @@ class Box extends Model implements AuditableContract, Sortable
     /** What the duplicate-box messages say about the box already there. */
     public function identityClashMessage(): string
     {
+        $rule = 'A box type and number can be used only once per batch, or once per repository for boxes with no batch.';
+        // A box the reader cannot open (another repository's) is not described.
+        if (! static::query()->whereKey($this->getKey())->exists()) {
+            return 'This box type and number are already used. ' . $rule;
+        }
+
         $batch = $this->batch_id !== null ? $this->getRelationValue('batch')?->getAttribute('batch_number') : null;
         $where = $batch !== null ? "in batch {$batch}" : 'with no batch in this repository';
 
-        return "There is already a {$this->box_type} box {$this->box_number} {$where} (box #{$this->getKey()}). "
-            . 'A box type and number can be used only once per batch, or once per repository for boxes with no batch.';
+        return "There is already a {$this->box_type} box {$this->box_number} {$where} (box #{$this->getKey()}). " . $rule;
     }
 
     /**

@@ -152,6 +152,13 @@ class BoxResource extends Resource
                             ->rule(static fn (Get $get, ?Box $record): \Closure => static function (string $attribute, $value, \Closure $fail) use ($get, $record): void {
                                 $batchId = $get('batch_id');
                                 $batchId = $batchId !== null && $batchId !== '' ? (int) $batchId : null;
+                                // A batch outside the user's repositories is not
+                                // asked about here (the saving guard still refuses
+                                // the duplicate), so the form never describes a
+                                // box the user cannot see.
+                                if ($batchId !== null && ! Batch::query()->whereKey($batchId)->exists()) {
+                                    return;
+                                }
                                 $clash = Box::identityClash(
                                     $batchId,
                                     $batchId === null ? self::batchlessRepositoryId($record) : null,
