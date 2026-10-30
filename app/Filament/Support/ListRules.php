@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace App\Filament\Support;
 
+use App\Models\Repository;
 use App\Models\User;
 use Closure;
 use Filament\Tables\Filters\QueryBuilder\Constraints\BooleanConstraint;
@@ -68,7 +69,7 @@ final class ListRules
         return SelectConstraint::make('inputter')
             ->label($label)
             ->icon('heroicon-o-user')
-            ->options(fn (): array => User::query()->orderBy('name')->pluck('name', 'id')->all())
+            ->options(fn (): array => self::visibleToViewer(User::query())->orderBy('name')->pluck('name', 'id')->all())
             ->searchable()
             ->multiple()
             ->operators([
@@ -99,6 +100,35 @@ final class ListRules
     }
 
     /**
+     * The choices a rule offers, cut to what the viewer may see: repositories
+     * they belong to, and the users of those repositories. Admins see all.
+     * Batches, boxes and the other records already carry the repository scope.
+     *
+     * @template TModel of \Illuminate\Database\Eloquent\Model
+     *
+     * @param Builder<TModel> $query
+     * @return Builder<TModel>
+     */
+    public static function visibleToViewer(Builder $query): Builder
+    {
+        $viewer = auth()->user();
+        if (! $viewer instanceof User || $viewer->hasAnyRole(['super_admin', 'admin'])) {
+            return $query;
+        }
+
+        $repositoryIds = $viewer->repositories()->pluck('repositories.id');
+        $model = $query->getModel();
+
+        return match (true) {
+            $model instanceof Repository => $query->whereIn($model->getQualifiedKeyName(), $repositoryIds),
+            $model instanceof User => $query->where(fn (Builder $q): Builder => $q
+                ->whereKey($viewer->getKey())
+                ->orWhereHas('repositories', fn (Builder $r): Builder => $r->whereIn('repositories.id', $repositoryIds))),
+            default => $query,
+        };
+    }
+
+    /**
      * A belongs-to column ("Repository", "Owner"): is one of the chosen
      * records, or (when the column can be empty) is empty.
      */
@@ -106,6 +136,7 @@ final class ListRules
     {
         $operator = IsRelatedToOperator::make()
             ->titleAttribute($titleAttribute)
+            ->modifyRelationshipQueryUsing(fn (Builder $query): Builder => self::visibleToViewer($query))
             ->searchable()
             ->multiple();
         if ($preload) {

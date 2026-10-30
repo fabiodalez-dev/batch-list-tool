@@ -28,6 +28,7 @@ use App\Filament\Resources\RepositoryResource\Pages\ListRepositories;
 use App\Filament\Resources\SeriesResource\Pages\ListSeries;
 use App\Filament\Resources\UserResource\Pages\ListUsers;
 use App\Filament\Resources\VolumeResource\Pages\ListVolumes;
+use App\Filament\Support\ListRules;
 use App\Filament\Support\MatchQueryBuilder;
 use App\Models\Batch;
 use App\Models\Box;
@@ -420,4 +421,26 @@ it('finds the audits that changed a field', function (): void {
     $notesAudit = Audit::query()->where('event', 'updated')->where('new_values', 'like', '%"notes"%')->value('id');
 
     expect($ids)->toContain($codeAudit)->not->toContain($notesAudit);
+});
+
+it('offers a non admin only their repositories and the users of those in the rules', function (): void {
+    $mine = Repository::query()->create(['code' => 'MINE', 'name' => 'Mine']);
+    $other = Repository::query()->create(['code' => 'OTHR', 'name' => 'Other']);
+    $editor = User::factory()->create(['is_active' => true, 'default_repository_id' => $mine->id]);
+    $editor->assignRole(Role::firstOrCreate(['name' => 'editor', 'guard_name' => 'web']));
+    $editor->repositories()->attach($mine->id);
+    $colleague = User::factory()->create(['is_active' => true]);
+    $colleague->repositories()->attach($mine->id);
+    $stranger = User::factory()->create(['is_active' => true]);
+    $stranger->repositories()->attach($other->id);
+
+    $this->actingAs($editor);
+    expect(ListRules::visibleToViewer(Repository::query())->pluck('id')->all())->toBe([$mine->id])
+        ->and(ListRules::visibleToViewer(User::query())->pluck('id')->all())
+        ->toContain($editor->id, $colleague->id)->not->toContain($stranger->id);
+
+    $admin = User::factory()->create(['is_active' => true]);
+    $admin->assignRole(Role::firstOrCreate(['name' => 'admin', 'guard_name' => 'web']));
+    $this->actingAs($admin);
+    expect(ListRules::visibleToViewer(User::query())->pluck('id')->all())->toContain($stranger->id);
 });
