@@ -445,3 +445,31 @@ it('does not describe another repository\'s box in the duplicate message', funct
     $this->actingAs($this->user);
     expect($foreign->identityClashMessage())->toContain("box #{$foreign->id}");
 });
+
+it('refuses a parent box from another repository, even posted by id', function (): void {
+    $other = Repository::query()->create(['code' => 'OTH', 'name' => 'Other archive']);
+    $otherBatch = Batch::withoutGlobalScope(RepositoryScope::class)->create(['batch_number' => '77', 'repository_id' => $other->id, 'type' => 'MAIN_COLLECTION']);
+    $foreignRas = l30_box(['box_type' => 'RAS', 'box_number' => '1', 'batch_id' => $otherBatch->id, 'repository_id' => $other->id, 'barcode' => 'OT0001']);
+    $ownRas = l30_box(['box_type' => 'RAS', 'box_number' => '2', 'batch_id' => $this->batch->id, 'barcode' => 'AA0002']);
+
+    $editor = User::factory()->create(['is_active' => true, 'default_repository_id' => $this->repo->id]);
+    $editor->assignRole('editor');
+    $editor->repositories()->attach($this->repo->id);
+    $this->actingAs($editor);
+
+    Livewire::test(CreateBox::class)
+        ->fillForm(['box_type' => 'NRA', 'box_number' => '900', 'parent_box_id' => $foreignRas->id])
+        ->call('create')
+        ->assertHasFormErrors(['parent_box_id']);
+
+    // Nor a box of a batch other than the one picked.
+    Livewire::test(CreateBox::class)
+        ->fillForm(['box_type' => 'NRA', 'box_number' => '901', 'parent_batch_id' => $this->batch33->id, 'parent_box_id' => $ownRas->id])
+        ->call('create')
+        ->assertHasFormErrors(['parent_box_id']);
+
+    Livewire::test(CreateBox::class)
+        ->fillForm(['box_type' => 'NRA', 'box_number' => '902', 'parent_batch_id' => $this->batch->id, 'parent_box_id' => $ownRas->id])
+        ->call('create')
+        ->assertHasNoFormErrors();
+});

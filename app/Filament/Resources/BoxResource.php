@@ -254,10 +254,16 @@ class BoxResource extends Resource
 
                                     return;
                                 }
-                                // The list only offers RAS boxes; this keeps a
-                                // posted id to the same rule.
-                                if (! empty($value) && Box::withoutGlobalScopes()->whereKey($value)->value('box_type') !== 'RAS') {
-                                    $fail('The parent box must be a RAS box (RFQ Appendix-1 rule #3).');
+                                // The list only offers RAS boxes the user can see
+                                // (of the batch picked above); this keeps a posted
+                                // id to the same rule.
+                                if (! empty($value)) {
+                                    $parent = Box::query()->whereKey($value)->first(['id', 'box_type', 'batch_id']);
+                                    $batch = $get('parent_batch_id');
+                                    if ($parent === null || $parent->box_type !== 'RAS'
+                                        || ($batch !== null && $batch !== '' && (int) $parent->batch_id !== (int) $batch)) {
+                                        $fail('The parent box must be a RAS box (RFQ Appendix-1 rule #3).');
+                                    }
                                 }
                             })),
                         // Bug #36 — a box may have MORE THAN ONE parent box (documents
