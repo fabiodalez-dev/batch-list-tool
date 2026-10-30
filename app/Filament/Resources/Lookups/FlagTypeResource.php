@@ -82,9 +82,12 @@ class FlagTypeResource extends Resource
                             ->minValue(0),
                         Forms\Components\Toggle::make('is_active')
                             ->default(true),
-                        Forms\Components\TextInput::make('colour')
-                            ->maxLength(64)
-                            ->helperText('Legacy colour code (e.g. brown, pink, yellow).')
+                        // Client 2026-10-30: picked from a colour wheel rather
+                        // than typed. A legacy name ("red") opens as its colour.
+                        Forms\Components\ColorPicker::make('colour')
+                            ->hex()
+                            ->afterStateHydrated(fn (Forms\Components\ColorPicker $component, ?string $state) => $component->state(FlagType::cssColour($state)))
+                            ->helperText('The colour of this flag in the Flags column and on the document page.')
                             ->nullable(),
                     ]),
                 Section::make('Metadata')
@@ -116,9 +119,9 @@ class FlagTypeResource extends Resource
                 Tables\Columns\TextColumn::make('sort_order')
                     ->sortable()
                     ->toggleable(),
-                Tables\Columns\TextColumn::make('colour')
+                Tables\Columns\ColorColumn::make('colour')
                     ->label('Colour')
-                    ->placeholder('—')
+                    ->state(fn (FlagType $record): ?string => FlagType::cssColour($record->colour))
                     ->sortable()
                     ->toggleable(),
                 Tables\Columns\IconColumn::make('is_active')

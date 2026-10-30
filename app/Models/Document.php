@@ -886,6 +886,12 @@ class Document extends Model implements AuditableContract, HasMedia, Sortable
         // the canonical value before the strict membership check, so the
         // import survives without rewriting the source data.
         static::saving(function (Document $document): void {
+            // The type picked on the edit page is stored as text; the lookup
+            // link follows it (the importer sets both itself).
+            if ($document->isDirty('document_type') && ! $document->isDirty('document_type_id')) {
+                $document->document_type_id = DocumentType::forStoredValue($document->document_type)?->getKey();
+            }
+
             if ($document->digitised !== null) {
                 $normalized = self::canonicalEnumValue($document->digitised, self::DIGITISED_VALUES);
                 if ($normalized === null) {
