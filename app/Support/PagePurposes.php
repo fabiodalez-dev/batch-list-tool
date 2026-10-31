@@ -80,7 +80,7 @@ Changes take effect after you press “Save changes”. The default-repository c
             EditProfile::class => [
                 'body' => 'Your account Profile page. Here you maintain your own identity in the system — name and email — and change your password (the current password is required to confirm any sensitive change). Because every edit, box move and disinfestation entry is written to the audit trail against your user, keeping this record accurate is what makes “who changed what” trustworthy.
 
-This page also holds your Default repository: the archive that is pre-selected when you open the panel. The list is restricted to repositories you are actually assigned to, and the server re-checks that constraint on save — you cannot set a repository you do not belong to. This keeps each repository\'s boxes, locations and records properly separated.
+This page also holds your Default repository: the repository pre-selected for new records, and the one document and box imports use when "All repositories" is selected in the top bar. It does not decide which repository is selected when you sign in; the top bar keeps your last choice. The list is restricted to repositories you are actually assigned to, and the server re-checks that constraint on save — you cannot set a repository you do not belong to. This keeps each repository\'s boxes, locations and records properly separated.
 
 Profile changes affect only your account, never the archival data itself.',
                 'refs' => 'RFQ §3.3 (User Roles) · §3.1.5 (Full audit trail — User) · §3.5 (Multi-Repository / provenance & data separation) · §3.4.3 (Usability)',
@@ -234,7 +234,7 @@ This page is mostly a read/audit view: most movements are created through the Do
 
 Each box carries a type, batch, barcode and barcode status (IN / OUT / PERM OUT), an optional seal number (recorded for Batch 50 wills boxes), a current NRA location, and a destroyed flag. Box and barcode changes are versioned: the page exposes the box barcode history (old/new barcode, status from/to, reason, timestamp) and the seal number history, satisfying the requirement to preserve movement and barcode provenance.
 
-Key rules enforced here: In Situ boxes (NRA/MAV/STVC) must reference a parent RAS box unless explicitly marked as provenance-unknown; MAV and STVC are legacy types and are flagged as such; a box/document cannot be set PERM OUT without a disinfestation date; and once every document in a box is catalogued the box may be marked destroyed. New rows can be created individually or bulk-imported from Excel/CSV (with a downloadable template).',
+Key rules enforced here: In Situ boxes (NRA/MAV/STVC) must reference a parent RAS box unless explicitly marked as provenance-unknown; MAV and STVC are legacy types and are flagged as such; a box can be set PERM OUT without a disinfestation date (the rule was relaxed in August 2026 so legacy perm-out boxes could be loaded), while the "Mark PERM_OUT" action on the Documents list still asks for one on every selected document; and once every document in a box is catalogued the box may be marked destroyed. New rows can be created individually or bulk-imported from Excel/CSV (with a downloadable template).',
                 'refs' => 'RFQ §3.1.1, §3.1.6, §3.1.7, §3.1.10 · Appendix 1 rules 1, 3 · Appendix 2: RAS Box, In Situ Box, Box History, Barcodes, Box Destroyed, Current Box · Glossary: Box, RAS Box, In Situ Box, Barcode Status',
             ],
             ListDocumentFlags::class => [
