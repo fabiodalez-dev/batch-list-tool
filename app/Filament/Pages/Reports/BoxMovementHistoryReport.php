@@ -123,10 +123,10 @@ class BoxMovementHistoryReport extends Page implements HasTable
                     ->indicateUsing(function (array $data): array {
                         $indicators = [];
                         if (! empty($data['from'])) {
-                            $indicators[] = 'From: ' . $data['from'];
+                            $indicators[] = 'From: ' . DisplayDate::date($data['from']);
                         }
                         if (! empty($data['to'])) {
-                            $indicators[] = 'To: ' . $data['to'];
+                            $indicators[] = 'To: ' . DisplayDate::date($data['to']);
                         }
 
                         return $indicators;

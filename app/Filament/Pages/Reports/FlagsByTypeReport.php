@@ -168,10 +168,10 @@ class FlagsByTypeReport extends Page implements HasTable
                     ->indicateUsing(function (array $data): array {
                         $out = [];
                         if (! empty($data['from'])) {
-                            $out[] = 'From: ' . $data['from'];
+                            $out[] = 'From: ' . DisplayDate::date($data['from']);
                         }
                         if (! empty($data['to'])) {
-                            $out[] = 'To: ' . $data['to'];
+                            $out[] = 'To: ' . DisplayDate::date($data['to']);
                         }
 
                         return $out;

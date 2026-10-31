@@ -13,6 +13,7 @@ use App\Models\Document;
 use App\Models\ReportTemplate;
 use App\Models\Repository;
 use App\Models\Series;
+use App\Support\DisplayDate;
 use App\Support\Reports\ReportRenderer;
 use Filament\Actions\Action;
 use Filament\Forms;
@@ -316,10 +317,10 @@ class DocumentsByCreatorReport extends Page implements HasTable
             ->indicateUsing(function (array $data) use ($label): array {
                 $i = [];
                 if (! empty($data['from'])) {
-                    $i[] = $label . ' ≥ ' . $data['from'];
+                    $i[] = $label . ' ≥ ' . DisplayDate::date($data['from']);
                 }
                 if (! empty($data['to'])) {
-                    $i[] = $label . ' ≤ ' . $data['to'];
+                    $i[] = $label . ' ≤ ' . DisplayDate::date($data['to']);
                 }
 
                 return $i;
