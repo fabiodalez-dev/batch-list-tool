@@ -4,6 +4,9 @@ declare(strict_types=1);
 
 namespace App\Filament\Support;
 
+use App\Filament\Support\Operators\DisplayDateIsAfterOperator;
+use App\Filament\Support\Operators\DisplayDateIsBeforeOperator;
+use App\Filament\Support\Operators\DisplayDateIsDateOperator;
 use App\Models\Repository;
 use App\Models\User;
 use Closure;
@@ -155,7 +158,12 @@ final class ListRules
      */
     public static function date(string $name, ?string $label = null): DateConstraint
     {
-        $constraint = DateConstraint::make($name)->nullable();
+        // Same operators, in place, with the chip written dd-mm-yyyy.
+        $constraint = DateConstraint::make($name)->nullable()->pushOperators([
+            DisplayDateIsAfterOperator::class,
+            DisplayDateIsBeforeOperator::class,
+            DisplayDateIsDateOperator::class,
+        ]);
 
         return $label === null ? $constraint : $constraint->label($label);
     }

@@ -58,7 +58,6 @@ use Filament\Tables;
 use Filament\Tables\Enums\FiltersLayout;
 use Filament\Tables\Filters\Filter;
 use Filament\Tables\Filters\QueryBuilder\Constraints\BooleanConstraint;
-use Filament\Tables\Filters\QueryBuilder\Constraints\DateConstraint;
 use Filament\Tables\Filters\QueryBuilder\Constraints\RelationshipConstraint;
 use Filament\Tables\Filters\QueryBuilder\Constraints\RelationshipConstraint\Operators\IsRelatedToOperator;
 use Filament\Tables\Filters\QueryBuilder\Constraints\SelectConstraint;
@@ -1332,9 +1331,7 @@ class DocumentResource extends Resource
                             ->options(array_combine(Document::DIGITISED_VALUES, Document::DIGITISED_VALUES))
                             ->multiple()
                             ->nullable(),
-                        DateConstraint::make('disinfestation_date')
-                            ->label('Disinfested Date')
-                            ->nullable(),
+                        ListRules::date('disinfestation_date', 'Disinfested Date'),
                         BooleanConstraint::make('torre')
                             ->label(ColumnLabels::get('document', 'torre')),
                         // Client 2026-10-30: every column has a rule.
