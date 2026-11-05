@@ -4,6 +4,7 @@ namespace App\Providers;
 
 use App\Support\DisplayDate;
 use App\Support\UserTablePreferences;
+use Filament\Actions\ActionGroup;
 use Filament\Forms\Components\DatePicker;
 use Filament\Forms\Components\DateTimePicker;
 use Filament\Schemas\Schema;
@@ -23,6 +24,29 @@ class PresentationServiceProvider extends ServiceProvider
     {
         $this->bootDateFormats();
         $this->bootTablePreferences();
+        $this->bootActionGroupDropdowns();
+    }
+
+    /**
+     * Client 2026-11-05: "Power actions options cut off when few records". The
+     * table's box clips what overflows it, and a menu opening inside it is
+     * cut at its bottom edge. Filament's teleport positions the panel `fixed`,
+     * which leaves the clip behind, for every action group of every table.
+     *
+     * Out of the box's reach a long menu could run off the screen instead, so it
+     * scrolls: at each opening its height is capped to the larger room, above or
+     * below the button, and Filament's flip then opens it on that side. The panel
+     * has no size option of its own (ActionGroup renders no `.size` modifier);
+     * dropdownMaxHeight is what makes it scrollable at all.
+     */
+    private function bootActionGroupDropdowns(): void
+    {
+        ActionGroup::configureUsing(fn (ActionGroup $group) => $group
+            ->dropdownTeleport()
+            ->dropdownMaxHeight('calc(100dvh - 3rem)')
+            ->extraDropdownAttributes([
+                'x-on:mousedown.capture' => "\$refs.panel.style.maxHeight = (Math.max(window.innerHeight - \$el.getBoundingClientRect().bottom, \$el.getBoundingClientRect().top) - 24) + 'px'",
+            ]));
     }
 
     /**

@@ -127,7 +127,17 @@ final class MarkDisinfestedAction
                     ? $box->barcode_status
                     : $doc->barcode_status;
 
-                if ($authoritativeStatus !== 'PERM_OUT') {
+                // Client 2026-11-05: a box in disinfestation stays out until the
+                // last of its documents there is back, or marking one would
+                // return the box, and move it to RAS, with the others still out.
+                $othersStillOut = $box instanceof Box && Document::query()
+                    ->where('current_box_id', $box->getKey())
+                    ->whereKeyNot($doc->getKey())
+                    ->where('is_in_disinfestation', true)
+                    ->exists();
+                $returns = $authoritativeStatus !== 'PERM_OUT' && ! $othersStillOut;
+
+                if ($returns) {
                     // Box-authoritative write (mirror hook propagates to docs);
                     // falls back to the document column when there is no box.
                     ActionSupport::applyBarcodeStatus($doc, 'IN');
@@ -139,7 +149,7 @@ final class MarkDisinfestedAction
                     newValues: [
                         'disinfestation_date' => $date,
                         'is_in_disinfestation' => false,
-                        'barcode_status' => $authoritativeStatus !== 'PERM_OUT' ? 'IN' : 'PERM_OUT',
+                        'barcode_status' => $returns ? 'IN' : $authoritativeStatus,
                     ],
                     oldValues: $oldValues,
                     tags: 'disinfestation,document',

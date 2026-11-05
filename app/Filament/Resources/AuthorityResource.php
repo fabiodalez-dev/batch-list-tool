@@ -10,6 +10,7 @@ use App\Filament\Support\ListRules;
 use App\Filament\Support\MatchQueryBuilder;
 use App\Filament\Support\Operators\WorkedBetweenOperator;
 use App\Models\Authority;
+use App\Models\Lookup\EntityType;
 use App\Support\ColumnLabels\ColumnLabels;
 use Filament\Actions\BulkActionGroup;
 use Filament\Actions\DeleteAction;
@@ -37,22 +38,20 @@ class AuthorityResource extends Resource
 {
     use AppliesFieldPermissions;
 
-    /**
-     * Feedback1 G-? — entity_type is now a constrained vocabulary
-     * (Notary / Interventor) instead of free text. Kept as a constant so
-     * the option set stays extensible without touching the form. Any value
-     * already stored on a record (e.g. legacy 'PERSON') is merged into the
-     * options at render time so existing rows remain editable/saveable.
-     *
-     * @var array<string, string>
-     */
-    public const ENTITY_TYPES = [
-        'Notary' => 'Notary',
-        'Interventor' => 'Interventor',
-    ];
-
     /** RFQ §3.1.8 — see config/field_permissions.php */
     private const string FIELD_PERMISSIONS_KEY = 'authority';
+
+    // Client 2026-11-05, her wording. These columns are not renameable, so they
+    // are not in ColumnLabels.
+    private const string PRACTICE_START_LABEL = 'Practice date start';
+
+    private const string PRACTICE_END_LABEL = 'Practice date end';
+
+    private const string NTG_START_LABEL = 'NTG date start';
+
+    private const string NTG_END_LABEL = 'NTG date end';
+
+    private const int FIRST_YEAR = 1400;
 
     protected static ?string $model = Authority::class;
 
@@ -76,7 +75,9 @@ class AuthorityResource extends Resource
         return $schema
             ->columns(1)
             ->schema([
-                Section::make('Identification')
+                // Client 2026-11-05: the three areas, in her order, on New, Edit
+                // and View alike (see infolist()).
+                Section::make('Control Area')
                     ->columns($twoCols)
                     ->schema([
                         // Client 2026-09-25: the two identifiers swapped roles.
@@ -119,104 +120,11 @@ class AuthorityResource extends Resource
                             ->rows(2)
                             ->maxLength(65535)
                             ->columnSpanFull()),
-                        $g(Forms\Components\TextInput::make('surname')
-                            ->label(ColumnLabels::get('authority', 'surname'))
-                            ->required()
-                            ->maxLength(255)),
-                        // Feedback1 — "New Creator Given Name should be mandatory".
-                        $g(Forms\Components\TextInput::make('given_names')
-                            ->label(ColumnLabels::get('authority', 'given_names'))
-                            ->required()
-                            ->maxLength(255)),
-                        $g(Forms\Components\TextInput::make('name_suffix')
-                            ->label(ColumnLabels::get('authority', 'name_suffix'))
-                            ->maxLength(64)),
-                        $g(Forms\Components\TextInput::make('maiden_surname')
-                            ->label(ColumnLabels::get('authority', 'maiden_surname'))
-                            ->maxLength(255)),
-                        // Feedback1 — replace free-text "Person" with a
-                        // constrained Notary / Interventor vocabulary. Existing
-                        // values (e.g. legacy 'PERSON') are merged into the
-                        // options so the record stays editable/saveable.
-                        $g(Forms\Components\Select::make('entity_type')
-                            ->searchable()
-                            ->label(ColumnLabels::get('authority', 'entity_type'))
-                            ->required()
-                            ->native(false)
-                            ->options(fn (?Authority $record): array => self::entityTypeOptions($record?->entity_type))
-                            ->default('Notary')),
-                    ]),
-
-                Section::make('Practice dates')
-                    ->columns($twoCols)
-                    ->schema([
-                        // Feedback1 — optional, but each accepts only a 4-digit
-                        // year and end must be ≥ start when both are filled.
-                        $g(Forms\Components\TextInput::make('practice_dates_start')
-                            ->numeric()
-                            ->minValue(1000)
-                            ->maxValue(9999)
-                            ->rule('digits:4')
-                            ->validationMessages(['digits' => 'Enter a 4-digit year.'])),
-                        $g(Forms\Components\TextInput::make('practice_dates_end')
-                            ->numeric()
-                            ->minValue(1000)
-                            ->maxValue(9999)
-                            ->rule('digits:4')
-                            ->validationMessages(['digits' => 'Enter a 4-digit year.'])
-                            // Closure rule so the comparison is skipped when
-                            // either bound is empty (both dates are optional).
-                            ->rule(static fn (Get $get): \Closure => static function (string $attribute, mixed $value, \Closure $fail) use ($get): void {
-                                $start = $get('practice_dates_start');
-                                if ($value === null || $value === '' || $start === null || $start === '') {
-                                    return;
-                                }
-                                if ((int) $value < (int) $start) {
-                                    $fail('End year must be greater than or equal to the start year.');
-                                }
-                            })),
-                        // NTG (Notari tal-Gvern / Notary to Government) dates —
-                        // a YEAR RANGE, same shape as the private-practice dates
-                        // above. Presence of either bound is what the "worked as
-                        // NTG" filter keys off.
-                        $g(Forms\Components\TextInput::make('ntg_dates_start')
-                            ->label('NTG dates — start')
-                            ->helperText('Year the creator started working as Notary to Government (if applicable)')
-                            ->numeric()
-                            ->minValue(1000)
-                            ->maxValue(9999)
-                            ->rule('digits:4')
-                            ->validationMessages(['digits' => 'Enter a 4-digit year.'])),
-                        $g(Forms\Components\TextInput::make('ntg_dates_end')
-                            ->label('NTG dates — end')
-                            ->numeric()
-                            ->minValue(1000)
-                            ->maxValue(9999)
-                            ->rule('digits:4')
-                            ->validationMessages(['digits' => 'Enter a 4-digit year.'])
-                            ->rule(static fn (Get $get): \Closure => static function (string $attribute, mixed $value, \Closure $fail) use ($get): void {
-                                $start = $get('ntg_dates_start');
-                                if ($value === null || $value === '' || $start === null || $start === '') {
-                                    return;
-                                }
-                                if ((int) $value < (int) $start) {
-                                    $fail('End year must be greater than or equal to the start year.');
-                                }
-                            })),
-                    ]),
-
-                // Client 2026-09-16 — ISAAR(CPF) descriptive fields.
-                Section::make('Archival description')
-                    ->columns($twoCols)
-                    ->schema([
-                        $g(Forms\Components\Textarea::make('authorised_form_of_name')
-                            ->label(ColumnLabels::get('authority', 'authorised_form_of_name'))
-                            ->rows(2)
-                            ->columnSpanFull()),
-                        $g(Forms\Components\Textarea::make('functions_occupations_activities')
-                            ->label(ColumnLabels::get('authority', 'functions_occupations_activities'))
+                        $g(Forms\Components\Textarea::make('notes')
+                            ->label(ColumnLabels::get('authority', 'notes'))
                             ->rows(3)
                             ->columnSpanFull()),
+                        // Client 2026-09-16 — ISAAR(CPF) descriptive fields.
                         $g(Forms\Components\Select::make('level_of_detail')
                             ->searchable()
                             ->label(ColumnLabels::get('authority', 'level_of_detail'))
@@ -244,12 +152,58 @@ class AuthorityResource extends Resource
                             ->maxLength(255)),
                     ]),
 
-                Section::make('Notes')
-                    ->columns(1)
-                    ->collapsed()
+                Section::make('Identity Area')
+                    ->columns($twoCols)
                     ->schema([
-                        $g(Forms\Components\Textarea::make('notes')
-                            ->label(ColumnLabels::get('authority', 'notes'))
+                        // Client 2026-11-05: the options are the Entity Types
+                        // page. A value it does not offer (deactivated, or from
+                        // before the page) stays selectable, so the record stays
+                        // editable and saveable.
+                        $g(Forms\Components\Select::make('entity_type')
+                            ->searchable()
+                            ->label(ColumnLabels::get('authority', 'entity_type'))
+                            ->required()
+                            ->native(false)
+                            ->options(fn (?Authority $record): array => EntityType::optionsWith($record?->entity_type))
+                            ->default(fn (): ?string => EntityType::defaultCode())),
+                        $g(Forms\Components\TextInput::make('surname')
+                            ->label(ColumnLabels::get('authority', 'surname'))
+                            ->required()
+                            ->maxLength(255)),
+                        // Feedback1 — "New Creator Given Name should be mandatory".
+                        $g(Forms\Components\TextInput::make('given_names')
+                            ->label(ColumnLabels::get('authority', 'given_names'))
+                            ->required()
+                            ->maxLength(255)),
+                        $g(Forms\Components\TextInput::make('name_suffix')
+                            ->label(ColumnLabels::get('authority', 'name_suffix'))
+                            ->maxLength(64)),
+                        $g(Forms\Components\TextInput::make('maiden_surname')
+                            ->label(ColumnLabels::get('authority', 'maiden_surname'))
+                            ->maxLength(255)),
+                        $g(Forms\Components\Textarea::make('authorised_form_of_name')
+                            ->label(ColumnLabels::get('authority', 'authorised_form_of_name'))
+                            ->helperText('Created automatically when saved, from the name and the dates. You may edit it: an edited form is kept.')
+                            ->rows(2)
+                            ->columnSpanFull()),
+                    ]),
+
+                Section::make('Description Area')
+                    ->columns($twoCols)
+                    ->schema([
+                        // Feedback1 — optional, but each accepts only a 4-digit
+                        // year and end must be ≥ start when both are filled.
+                        $g(self::yearSelect('practice_dates_start', self::PRACTICE_START_LABEL)),
+                        $g(self::yearSelect('practice_dates_end', self::PRACTICE_END_LABEL, startField: 'practice_dates_start')),
+                        // NTG (Notari tal-Gvern / Notary to Government) dates —
+                        // a YEAR RANGE, same shape as the private-practice dates
+                        // above. Presence of either bound is what the "worked as
+                        // NTG" filter keys off.
+                        $g(self::yearSelect('ntg_dates_start', self::NTG_START_LABEL)
+                            ->helperText('Year the creator started working as Notary to Government (if applicable)')),
+                        $g(self::yearSelect('ntg_dates_end', self::NTG_END_LABEL, startField: 'ntg_dates_start')),
+                        $g(Forms\Components\Textarea::make('functions_occupations_activities')
+                            ->label(ColumnLabels::get('authority', 'functions_occupations_activities'))
                             ->rows(3)
                             ->columnSpanFull()),
                     ]),
@@ -265,17 +219,17 @@ class AuthorityResource extends Resource
         return $schema
             ->columns(1)
             ->components([
-                Section::make('Identification')
+                Section::make('Control Area')
                     ->columns($twoCols)
                     ->schema([
+                        TextEntry::make('alternative_identifier')
+                            ->label(ColumnLabels::get('authority', 'alternative_identifier'))
+                            ->copyable()
+                            ->placeholder('—'),
                         TextEntry::make('identifier')
                             ->label(ColumnLabels::get('authority', 'identifier'))
                             ->badge()
                             ->color('primary')
-                            ->copyable()
-                            ->placeholder('—'),
-                        TextEntry::make('alternative_identifier')
-                            ->label(ColumnLabels::get('authority', 'alternative_identifier'))
                             ->copyable()
                             ->placeholder('—'),
                         TextEntry::make('alternative_identifier_warrant')
@@ -287,90 +241,9 @@ class AuthorityResource extends Resource
                             ->copyable()
                             ->placeholder('—')
                             ->columnSpanFull(),
-                        TextEntry::make('surname')
-                            ->label(ColumnLabels::get('authority', 'surname'))
-                            ->placeholder('—'),
-                        TextEntry::make('given_names')
-                            ->label(ColumnLabels::get('authority', 'given_names'))
-                            ->placeholder('—'),
-                        TextEntry::make('name_suffix')
-                            ->label(ColumnLabels::get('authority', 'name_suffix'))
-                            ->placeholder('—'),
-                        TextEntry::make('maiden_surname')
-                            ->label(ColumnLabels::get('authority', 'maiden_surname'))
-                            ->placeholder('—'),
-                        TextEntry::make('entity_type')
-                            ->label(ColumnLabels::get('authority', 'entity_type'))
-                            ->badge()
-                            ->color('gray')
-                            ->placeholder('—'),
-                    ]),
-
-                Section::make('Practice dates')
-                    ->columns($twoCols)
-                    ->schema([
-                        TextEntry::make('practice_dates_start')
-                            ->label('From')
-                            ->placeholder('—'),
-                        TextEntry::make('practice_dates_end')
-                            ->label('To')
-                            ->placeholder('—'),
-                        TextEntry::make('practice_dates_display')
-                            ->label('Range')
-                            ->state(function (?Authority $record): string {
-                                $start = $record?->practice_dates_start;
-                                $end = $record?->practice_dates_end;
-                                if ($start && $end) {
-                                    return "{$start} – {$end}";
-                                }
-                                if ($start) {
-                                    return "from {$start}";
-                                }
-                                if ($end) {
-                                    return "to {$end}";
-                                }
-
-                                return '—';
-                            })
-                            ->columnSpanFull(),
-                        // NTG dates shown as separate beginning/end + a combined
-                        // range, exactly like the private-practice dates above
-                        // (client request 2026-07-29).
-                        TextEntry::make('ntg_dates_start')
-                            ->label('NTG from')
-                            ->placeholder('—'),
-                        TextEntry::make('ntg_dates_end')
-                            ->label('NTG to')
-                            ->placeholder('—'),
-                        TextEntry::make('ntg_dates_display')
-                            ->label('NTG range')
-                            ->state(function (?Authority $record): string {
-                                $start = $record?->ntg_dates_start;
-                                $end = $record?->ntg_dates_end;
-                                if ($start && $end) {
-                                    return "{$start} – {$end}";
-                                }
-                                if ($start) {
-                                    return "from {$start}";
-                                }
-                                if ($end) {
-                                    return "to {$end}";
-                                }
-
-                                return '—';
-                            })
-                            ->columnSpanFull(),
-                    ]),
-
-                Section::make('Archival description')
-                    ->columns($twoCols)
-                    ->schema([
-                        TextEntry::make('authorised_form_of_name')
-                            ->label(ColumnLabels::get('authority', 'authorised_form_of_name'))
-                            ->placeholder('—')
-                            ->columnSpanFull(),
-                        TextEntry::make('functions_occupations_activities')
-                            ->label(ColumnLabels::get('authority', 'functions_occupations_activities'))
+                        TextEntry::make('notes')
+                            ->label(ColumnLabels::get('authority', 'notes'))
+                            ->prose()
                             ->placeholder('—')
                             ->columnSpanFull(),
                         TextEntry::make('level_of_detail')
@@ -395,15 +268,51 @@ class AuthorityResource extends Resource
                             ->placeholder('—'),
                     ]),
 
-                Section::make('Notes')
-                    ->columns(1)
-                    ->collapsed()
+                Section::make('Identity Area')
+                    ->columns($twoCols)
                     ->schema([
-                        TextEntry::make('notes')
-                            ->label(ColumnLabels::get('authority', 'notes'))
-                            ->hiddenLabel()
-                            ->prose()
-                            ->placeholder('No notes.')
+                        TextEntry::make('entity_type')
+                            ->label(ColumnLabels::get('authority', 'entity_type'))
+                            ->badge()
+                            ->color('gray')
+                            ->formatStateUsing(fn (?string $state): string => EntityType::labels()[$state] ?? (string) $state)
+                            ->placeholder('—'),
+                        TextEntry::make('surname')
+                            ->label(ColumnLabels::get('authority', 'surname'))
+                            ->placeholder('—'),
+                        TextEntry::make('given_names')
+                            ->label(ColumnLabels::get('authority', 'given_names'))
+                            ->placeholder('—'),
+                        TextEntry::make('name_suffix')
+                            ->label(ColumnLabels::get('authority', 'name_suffix'))
+                            ->placeholder('—'),
+                        TextEntry::make('maiden_surname')
+                            ->label(ColumnLabels::get('authority', 'maiden_surname'))
+                            ->placeholder('—'),
+                        TextEntry::make('authorised_form_of_name')
+                            ->label(ColumnLabels::get('authority', 'authorised_form_of_name'))
+                            ->placeholder('—')
+                            ->columnSpanFull(),
+                    ]),
+
+                Section::make('Description Area')
+                    ->columns($twoCols)
+                    ->schema([
+                        TextEntry::make('practice_dates_start')
+                            ->label(self::PRACTICE_START_LABEL)
+                            ->placeholder('—'),
+                        TextEntry::make('practice_dates_end')
+                            ->label(self::PRACTICE_END_LABEL)
+                            ->placeholder('—'),
+                        TextEntry::make('ntg_dates_start')
+                            ->label(self::NTG_START_LABEL)
+                            ->placeholder('—'),
+                        TextEntry::make('ntg_dates_end')
+                            ->label(self::NTG_END_LABEL)
+                            ->placeholder('—'),
+                        TextEntry::make('functions_occupations_activities')
+                            ->label(ColumnLabels::get('authority', 'functions_occupations_activities'))
+                            ->placeholder('—')
                             ->columnSpanFull(),
                     ]),
 
@@ -422,6 +331,8 @@ class AuthorityResource extends Resource
     public static function table(Table $table): Table
     {
         $gc = fn (mixed $col, ?string $fieldOverride = null): mixed => self::gateColumn($col, self::FIELD_PERMISSIONS_KEY, $fieldOverride);
+        // Read once per table, not once per row.
+        $entityTypeLabels = EntityType::labels();
 
         return $table
             // Feedback1 Wave B (B1) — persist & defer filters so an applied
@@ -459,6 +370,8 @@ class AuthorityResource extends Resource
                     ->label(ColumnLabels::get('authority', 'previous_temporary_identifiers'))
                     ->placeholder('—')
                     ->limit(40)
+                    // Client 2026-11-05: "Past Reference Code does not have a sort".
+                    ->sortable()
                     ->searchable()
                     ->toggleable(isToggledHiddenByDefault: true)),
                 // Status and Level of detail stay visible: they are how the
@@ -513,7 +426,7 @@ class AuthorityResource extends Resource
                 $gc(Tables\Columns\TextColumn::make('entity_type')
                     ->label(ColumnLabels::get('authority', 'entity_type'))
                     ->badge()
-                    ->formatStateUsing(fn (?string $state): string => self::ENTITY_TYPES[$state] ?? (string) $state)
+                    ->formatStateUsing(fn (?string $state): string => $entityTypeLabels[$state] ?? (string) $state)
                     ->sortable()
                     ->searchable()
                     ->toggleable()),
@@ -522,10 +435,12 @@ class AuthorityResource extends Resource
                 // thousandsSeparator drops the comma the client asked to remove
                 // while keeping the numeric right-alignment.
                 $gc(Tables\Columns\TextColumn::make('practice_dates_start')
+                    ->label(self::PRACTICE_START_LABEL)
                     ->numeric(thousandsSeparator: '')
                     ->sortable()
                     ->toggleable()),
                 $gc(Tables\Columns\TextColumn::make('practice_dates_end')
+                    ->label(self::PRACTICE_END_LABEL)
                     ->numeric(thousandsSeparator: '')
                     ->sortable()
                     ->toggleable()),
@@ -533,12 +448,12 @@ class AuthorityResource extends Resource
                 // private-practice columns above (client request 2026-07-29).
                 // Toggleable off by default to keep the default grid focused.
                 $gc(Tables\Columns\TextColumn::make('ntg_dates_start')
-                    ->label('NTG from')
+                    ->label(self::NTG_START_LABEL)
                     ->numeric(thousandsSeparator: '')
                     ->sortable()
                     ->toggleable(isToggledHiddenByDefault: true)),
                 $gc(Tables\Columns\TextColumn::make('ntg_dates_end')
-                    ->label('NTG to')
+                    ->label(self::NTG_END_LABEL)
                     ->numeric(thousandsSeparator: '')
                     ->sortable()
                     ->toggleable(isToggledHiddenByDefault: true)),
@@ -587,12 +502,12 @@ class AuthorityResource extends Resource
                         EqualsFirst::text('maiden_surname', ColumnLabels::get('authority', 'maiden_surname'), nullable: true),
                         SelectConstraint::make('entity_type')
                             ->label(ColumnLabels::get('authority', 'entity_type'))
-                            ->options(self::ENTITY_TYPES)
+                            ->options($entityTypeLabels)
                             ->multiple(),
-                        EqualsFirst::number('practice_dates_start', 'Practice dates start'),
-                        EqualsFirst::number('practice_dates_end', 'Practice dates end'),
-                        EqualsFirst::number('ntg_dates_start', 'NTG from'),
-                        EqualsFirst::number('ntg_dates_end', 'NTG to'),
+                        EqualsFirst::number('practice_dates_start', self::PRACTICE_START_LABEL),
+                        EqualsFirst::number('practice_dates_end', self::PRACTICE_END_LABEL),
+                        EqualsFirst::number('ntg_dates_start', self::NTG_START_LABEL),
+                        EqualsFirst::number('ntg_dates_end', self::NTG_END_LABEL),
                         Constraint::make('practice_period')
                             ->label('Practice period')
                             ->icon('heroicon-o-calendar')
@@ -658,24 +573,6 @@ class AuthorityResource extends Resource
     }
 
     /**
-     * Build the entity_type Select options: the constrained vocabulary plus
-     * any legacy value already stored on the record (so existing rows such
-     * as 'PERSON' remain editable and saveable without data loss).
-     *
-     * @return array<string, string>
-     */
-    public static function entityTypeOptions(?string $current = null): array
-    {
-        $options = self::ENTITY_TYPES;
-
-        if ($current !== null && $current !== '' && ! array_key_exists($current, $options)) {
-            $options[$current] = $current;
-        }
-
-        return $options;
-    }
-
-    /**
      * Eager-load the first 'created' audit with its user so CreatorColumn
      * can render the inputter name without N+1 queries.
      */
@@ -702,5 +599,48 @@ class AuthorityResource extends Resource
             'view' => Pages\ViewAuthority::route('/{record}'),
             'edit' => Pages\EditAuthority::route('/{record}/edit'),
         ];
+    }
+
+    /**
+     * Client 2026-11-05: "(Select Year)". Newest first, from 1400 to this year.
+     * A year already stored outside that range stays selectable (the Select only
+     * accepts its own options), and the 4-digit and end >= start rules stay on
+     * the server.
+     */
+    private static function yearSelect(string $field, string $label, ?string $startField = null): Forms\Components\Select
+    {
+        $select = Forms\Components\Select::make($field)
+            ->label($label)
+            ->placeholder('Select Year')
+            ->searchable()
+            ->native(false)
+            ->options(function (?Authority $record) use ($field): array {
+                $years = range((int) now()->year, self::FIRST_YEAR);
+                $stored = $record?->getAttribute($field);
+                if ($stored !== null && ! in_array((int) $stored, $years, true)) {
+                    $years[] = (int) $stored;
+                    rsort($years);
+                }
+
+                return array_combine($years, array_map(strval(...), $years));
+            })
+            ->rule('digits:4')
+            ->validationMessages(['digits' => 'Enter a 4-digit year.']);
+
+        if ($startField === null) {
+            return $select;
+        }
+
+        // Closure rule so the comparison is skipped when either bound is empty
+        // (both dates are optional).
+        return $select->rule(static fn (Get $get): \Closure => static function (string $attribute, mixed $value, \Closure $fail) use ($get, $startField): void {
+            $start = $get($startField);
+            if ($value === null || $value === '' || $start === null || $start === '') {
+                return;
+            }
+            if ((int) $value < (int) $start) {
+                $fail('End year must be greater than or equal to the start year.');
+            }
+        });
     }
 }

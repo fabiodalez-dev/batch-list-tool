@@ -40,6 +40,18 @@ class Authority extends Model implements AuditableContract
      */
     public const RECORD_STATUSES = ['In Progress', 'Complete'];
 
+    /** The columns {@see computedAuthorisedForm()} is built from. */
+    private const AUTHORISED_FORM_PARTS = [
+        'surname', 'maiden_surname', 'given_names', 'name_suffix',
+        'practice_dates_start', 'practice_dates_end', 'ntg_dates_start', 'ntg_dates_end',
+    ];
+
+    /**
+     * Set by the importer: the sheet named this form of name, so the next save
+     * keeps it even if it equals the computed form of the old values.
+     */
+    public bool $authorisedFormIsExplicit = false;
+
     protected $table = 'authorities';
 
     protected $fillable = [
@@ -103,6 +115,41 @@ class Authority extends Model implements AuditableContract
         return $this->hasMany(Accession::class);
     }
 
+    /**
+     * Client 2026-11-05: "Concatenate Surname + neè + Maiden Surname, Name,
+     * Suffix, oldest start date - most recent end date", across the practice
+     * and NTG dates. A part that is empty is left out with its separator:
+     * "Psaila, Giuseppe Raimondo, 1831-1878".
+     */
+    public function computedAuthorisedForm(): string
+    {
+        $surname = trim((string) $this->surname);
+        $maiden = trim((string) $this->maiden_surname);
+        $starts = array_filter([$this->practice_dates_start, $this->ntg_dates_start]);
+        $ends = array_filter([$this->practice_dates_end, $this->ntg_dates_end]);
+        $years = trim(($starts !== [] ? min($starts) : '') . '-' . ($ends !== [] ? max($ends) : ''), '-');
+
+        return implode(', ', array_filter([
+            $maiden !== '' ? trim($surname . ' neè ' . $maiden) : $surname,
+            trim((string) $this->given_names),
+            trim((string) $this->name_suffix),
+            $years,
+        ], static fn (string $part): bool => $part !== ''));
+    }
+
+    /**
+     * How an authority reads wherever one is picked or shown on a document
+     * (client 2026-11-05): "Citing Reference Code: Authorised form of name".
+     */
+    public function citingLabel(): string
+    {
+        $form = trim((string) $this->authorised_form_of_name);
+        $form = $form !== '' ? $form : $this->computedAuthorisedForm();
+        $code = trim((string) $this->alternative_identifier);
+
+        return $code !== '' ? $code . ': ' . $form : $form;
+    }
+
     public function toSearchableArray(): array
     {
         return [
@@ -111,5 +158,42 @@ class Authority extends Model implements AuditableContract
             'surname' => $this->surname,
             'given_names' => $this->given_names,
         ];
+    }
+
+    protected static function booted(): void
+    {
+        static::saving(function (self $authority): void {
+            $authority->fillAuthorisedForm();
+        });
+    }
+
+    /**
+     * Client 2026-11-05: "Created automatically after saving but editable if
+     * needed". Blank is filled. A value that was the computed form of the old
+     * values follows the correction; anything else was written by someone and
+     * is never overwritten.
+     */
+    private function fillAuthorisedForm(): void
+    {
+        $explicit = $this->authorisedFormIsExplicit;
+        $this->authorisedFormIsExplicit = false;
+
+        $current = trim((string) $this->authorised_form_of_name);
+        $computed = $this->computedAuthorisedForm();
+
+        if ($current === '') {
+            $this->authorised_form_of_name = $computed !== '' ? $computed : null;
+
+            return;
+        }
+
+        if ($explicit || ! $this->exists || $this->isDirty('authorised_form_of_name') || ! $this->isDirty(self::AUTHORISED_FORM_PARTS)) {
+            return;
+        }
+
+        $before = (clone $this)->setRawAttributes($this->getRawOriginal());
+        if ($current === $before->computedAuthorisedForm()) {
+            $this->authorised_form_of_name = $computed;
+        }
     }
 }

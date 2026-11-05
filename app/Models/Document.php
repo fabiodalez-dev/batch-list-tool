@@ -6,6 +6,7 @@ use App\Models\Builders\DocumentBuilder;
 use App\Models\Concerns\BelongsToRepository;
 use App\Models\Concerns\HasCustomFields;
 use App\Models\Lookup\CurrentBoxType;
+use App\Models\Lookup\CustodyStatusType;
 use App\Models\Lookup\DigitisationStatus;
 use App\Observers\DocumentObserver;
 use App\Support\Lookups;
@@ -19,6 +20,7 @@ use Illuminate\Database\Eloquent\Relations\HasMany;
 use Illuminate\Database\Eloquent\SoftDeletes;
 use Illuminate\Support\Collection;
 use Illuminate\Support\Facades\Auth;
+use Illuminate\Support\Str;
 use Illuminate\Validation\ValidationException;
 use Laravel\Scout\Searchable;
 use OwenIt\Auditing\Auditable;
@@ -98,6 +100,10 @@ class Document extends Model implements AuditableContract, HasMedia, Sortable
      * - `not_in_box`    — in situ at NRA, not yet boxed
      * - `mounted_no_box`— framed / mounted; no box applicable
      * - `conservation_box` — in a conservation box (client 2026-10-19)
+     *
+     * Client 2026-11-05: these are only the seeded statuses now. The list lives
+     * on the Custody Status Types page: read {@see custodyLabels()} or
+     * {@see CustodyStatusType}, not this.
      *
      * @var array<int,string>
      */
@@ -187,18 +193,15 @@ class Document extends Model implements AuditableContract, HasMedia, Sortable
     }
 
     /**
-     * How each custody status reads on screen and in the sheet.
+     * The custody statuses a document can be given, code => label, from the
+     * Custody Status Types page (client 2026-11-05). To read a stored code that
+     * may since have been deactivated, use {@see CustodyStatusType::labels()}.
      *
      * @return array<string, string>
      */
     public static function custodyLabels(): array
     {
-        return [
-            'in_box' => 'In box',
-            'not_in_box' => 'Not in box',
-            'mounted_no_box' => 'Mounted; no box',
-            'conservation_box' => 'Conservation Box',
-        ];
+        return CustodyStatusType::options();
     }
 
     /**
@@ -382,6 +385,18 @@ class Document extends Model implements AuditableContract, HasMedia, Sortable
         return $this->hasMany(DocumentIdentifierHistory::class)->latest('changed_at');
     }
 
+    /** The volume numbers this document was known by before (client 2026-11-05). */
+    public function pastVolumes(): HasMany
+    {
+        return $this->identifierHistory()->whereNotNull('previous_volume')->where('previous_volume', '!=', '');
+    }
+
+    /** The authorities this document used to be attributed to (client 2026-11-05). */
+    public function pastAuthorities(): HasMany
+    {
+        return $this->identifierHistory()->whereNotNull('previous_authority_id');
+    }
+
     /**
      * The attribution the document had before ("Prev Attributed Identifier /
      * Volume" on the documents sheet), recorded on import as a history row.
@@ -394,6 +409,21 @@ class Document extends Model implements AuditableContract, HasMedia, Sortable
             ->first();
 
         return $row instanceof DocumentIdentifierHistory ? $row : null;
+    }
+
+    /**
+     * Client 2026-11-05: "From volume 5 I want to change it to volume 4 but I
+     * want to keep track of the old volume (Prev Attributed Volume)". The latest
+     * volume the document left, whether imported or changed on its Edit page.
+     */
+    public function latestPastVolume(): ?string
+    {
+        $row = $this->identifierHistory
+            ->filter(fn (Model $row): bool => filled($row->getAttribute('previous_volume')))
+            ->sortByDesc('id')
+            ->first();
+
+        return $row instanceof DocumentIdentifierHistory ? $row->previous_volume : null;
     }
 
     /**
@@ -864,6 +894,14 @@ class Document extends Model implements AuditableContract, HasMedia, Sortable
 
     protected static function booted(): void
     {
+        // Runs after BelongsToRepository's creating hook, which settles the
+        // repository. The importers set their own identifier first.
+        static::creating(function (self $document): void {
+            if (blank($document->identifier)) {
+                $document->identifier = self::generateIdentifier($document);
+            }
+        });
+
         // A box with no location of its own takes the one its documents share
         // (Box::syncLocationFromDocuments). Re-checked for the box a document
         // is in, and the box it left, whenever its location or box changes.
@@ -932,16 +970,25 @@ class Document extends Model implements AuditableContract, HasMedia, Sortable
             // Gate `custody_status` in PHP too: the MySQL CHECK does not run on
             // SQLite, so mirror the digitised / current_box_type guards above.
             // Normalise case-insensitively (consistency with the siblings),
-            // then reject anything outside the enum.
+            // then reject a newly written value the Custody Status Types page
+            // does not offer. Dirty-check so a document holding a value that
+            // was LATER deactivated still re-saves.
             if ($document->custody_status !== null) {
-                $normalized = self::canonicalEnumValue($document->custody_status, self::CUSTODY_STATUSES);
-                if ($normalized === null) {
-                    throw ValidationException::withMessages([
-                        'custody_status' => "Invalid custody_status '{$document->custody_status}'. Allowed: "
-                            . implode(', ', self::CUSTODY_STATUSES),
-                    ]);
+                $allowedCustody = CustodyStatusType::codes();
+                $normalized = self::canonicalEnumValue($document->custody_status, $allowedCustody);
+                if ($normalized !== null) {
+                    $document->custody_status = $normalized;
                 }
-                $document->custody_status = $normalized;
+
+                if ($document->isDirty('custody_status')) {
+                    if ($normalized === null) {
+                        throw ValidationException::withMessages([
+                            'custody_status' => "Invalid custody_status '{$document->custody_status}'. Allowed: "
+                                . implode(', ', $allowedCustody),
+                        ]);
+                    }
+                    Lookups::assertActive(CustodyStatusType::class, 'custody_status', $normalized);
+                }
             }
 
             // F1 (review finding) — when current_box_id is being set/changed
@@ -1130,6 +1177,28 @@ class Document extends Model implements AuditableContract, HasMedia, Sortable
         } finally {
             self::$bypassAuditGuard = $previous;
         }
+    }
+
+    /**
+     * Client 2026-11-05: "When creating a new document this should be filled up
+     * automatically". Reads like the importer's auto identifier (see
+     * DocumentImporter::buildAutoIdentifier): REPO-SERIES-TYP-<12 hex>.
+     */
+    private static function generateIdentifier(self $document): string
+    {
+        $type = DocumentType::forStoredValue($document->document_type)->name ?? (string) $document->document_type;
+        $prefix = implode('-', array_filter([
+            Repository::withoutGlobalScopes()->whereKey($document->repository_id)->value('code'),
+            Series::withoutGlobalScopes()->whereKey($document->series_id)->value('code'),
+            strtoupper(substr((string) preg_replace('/[^A-Za-z0-9]/', '', $type), 0, 3)),
+        ])) ?: 'DOC';
+
+        do {
+            // The column holds 64 characters; soft-deleted documents keep theirs.
+            $identifier = substr($prefix, 0, 51) . '-' . strtoupper(substr(sha1(Str::random(40)), 0, 12));
+        } while (self::withoutGlobalScopes()->where('identifier', $identifier)->exists());
+
+        return $identifier;
     }
 
     /**

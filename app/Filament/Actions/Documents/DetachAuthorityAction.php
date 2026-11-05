@@ -7,6 +7,7 @@ namespace App\Filament\Actions\Documents;
 use App\Filament\Support\SearchableSelects;
 use App\Models\Authority;
 use App\Models\Document;
+use App\Models\DocumentIdentifierHistory;
 use Filament\Actions\Action;
 use Filament\Actions\BulkAction;
 use Filament\Notifications\Notification;
@@ -18,7 +19,8 @@ use Illuminate\Support\Facades\DB;
  * Action #9 — Detach an Authority from document(s).
  *
  * Documents that don't currently have the chosen authority are silently
- * skipped (no-op intent).
+ * skipped (no-op intent). Client 2026-11-05: who the document used to be
+ * attributed to is kept, as for a replaced authority.
  *
  * Per-row atomicity (review C-2): each row runs in its own DB transaction
  * so the detach + audit row are atomic, and a single-row failure does
@@ -100,6 +102,7 @@ final class DetachAuthorityAction
 
                 DB::transaction(static function () use ($doc, $authority): void {
                     $doc->authorities()->detach($authority->getKey());
+                    DocumentIdentifierHistory::recordPastAuthority($doc, (int) $authority->getKey(), 'Detached');
 
                     ActionSupport::logPivotChange(
                         document: $doc,
@@ -116,7 +119,7 @@ final class DetachAuthorityAction
             }
         }
 
-        $label = "{$authority->identifier} — {$authority->surname}";
+        $label = $authority->citingLabel();
 
         if ($errors === [] && $detached > 0) {
             $suffix = $skipped > 0 ? " ({$skipped} did not have it)" : '';

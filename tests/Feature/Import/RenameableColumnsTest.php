@@ -207,7 +207,7 @@ it('restores the factory name when the rename is deleted', function (): void {
     ColumnLabels::flushMemo();
 
     [$headers, , $orphans] = rc_headersAndMap();
-    expect($headers)->toContain('Notes');
+    expect($headers)->toContain('Note');
     expect($headers)->not->toContain('Remarks');
     expect($orphans)->toBe([]);
 });

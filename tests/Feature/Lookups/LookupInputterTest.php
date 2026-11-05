@@ -7,6 +7,8 @@ use App\Models\Lookup\BarcodeStatus;
 use App\Models\Lookup\BatchType;
 use App\Models\Lookup\BoxType;
 use App\Models\Lookup\CurrentBoxType;
+use App\Models\Lookup\CustodyStatusType;
+use App\Models\Lookup\EntityType;
 use App\Models\Lookup\FlagType;
 use App\Models\User;
 use Illuminate\Foundation\Testing\RefreshDatabase;
@@ -29,7 +31,7 @@ beforeEach(function () {
 });
 
 it('every lookup model implements the Auditable contract', function () {
-    foreach ([BarcodeStatus::class, BoxType::class, FlagType::class, CurrentBoxType::class, BatchType::class, LocationType::class] as $model) {
+    foreach ([BarcodeStatus::class, BoxType::class, FlagType::class, CurrentBoxType::class, BatchType::class, LocationType::class, EntityType::class, CustodyStatusType::class] as $model) {
         expect(new $model)->toBeInstanceOf(AuditableContract::class);
     }
 });

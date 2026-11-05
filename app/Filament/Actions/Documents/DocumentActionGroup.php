@@ -8,13 +8,13 @@ use Filament\Actions\Action;
 use Filament\Actions\BulkAction;
 
 /**
- * Aggregates the 15 Document power-actions into ready-to-spread arrays for
+ * Aggregates the Document power-actions into ready-to-spread arrays for
  * the page-level mount points (ListDocuments header / bulkActions,
  * EditDocument header, ViewDocument header).
  *
  * Centralising the wiring here keeps the page classes terse and prevents
  * drift: when a new action is added, the resource files only declare
- * "use DocumentActionGroup" once, not 15 use statements.
+ * "use DocumentActionGroup" once, not one use statement per action.
  */
 final class DocumentActionGroup
 {
@@ -22,7 +22,7 @@ final class DocumentActionGroup
      * Single-record header actions used by EditDocument / ViewDocument.
      *
      * Order is tuned for the operator workflow: most-common actions first
-     * (move-to-box / move-to-batch) and destructive ones (PERM_OUT,
+     * (move-to-box / move out of box) and destructive ones (PERM_OUT,
      * identifier change) last.
      *
      * @return array<int, Action>
@@ -31,7 +31,7 @@ final class DocumentActionGroup
     {
         return [
             MoveToBoxAction::make(),
-            MoveToBatchAction::make(),
+            SetCustodyStatusAction::make(),
             SetLocationAction::make(),
             SetMuseumLocationAction::make(),
             SendToDisinfestationAction::make(),
@@ -42,9 +42,6 @@ final class DocumentActionGroup
             ReplaceAuthorityAction::make(),
             DetachAuthorityAction::make(),
             AddFlagAction::make(),
-            MoveToWillsAction::make(),
-            UpdateIdentifierAction::make(),
-            MarkPermOutAction::make(),
         ];
     }
 
@@ -57,7 +54,7 @@ final class DocumentActionGroup
     {
         return [
             MoveToBoxAction::bulk(),
-            MoveToBatchAction::bulk(),
+            SetCustodyStatusAction::bulk(),
             SetLocationAction::bulk(),
             SetMuseumLocationAction::bulk(),
             SendToDisinfestationAction::bulk(),
@@ -68,8 +65,6 @@ final class DocumentActionGroup
             ReplaceAuthorityAction::bulk(),
             DetachAuthorityAction::bulk(),
             AddFlagAction::bulk(),
-            MoveToWillsAction::bulk(),
-            MarkPermOutAction::bulk(),
             ExportSelectedAction::bulk(),
             MoveToRepositoryAction::bulk(),
         ];

@@ -50,7 +50,7 @@ it('TemplateGenerator: headersFor("authority") carries the ISAAR(CPF) contract',
         ->and($headers)->toContain('Alternate Reference Code')
         ->and($headers)->toContain('Level of detail')
         ->and($headers)->toContain('Status')
-        ->and($headers)->toContain('Notes');
+        ->and($headers)->toContain('Note');
 });
 
 it('TemplateGenerator: headersFor("series") starts at Identifier and includes the optional Repository and Parent columns', function () {

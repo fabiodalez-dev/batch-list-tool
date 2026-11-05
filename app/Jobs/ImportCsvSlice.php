@@ -6,6 +6,7 @@ namespace App\Jobs;
 
 use App\Filament\Imports\DocumentImporter;
 use App\Filament\Pages\ImportWizard;
+use App\Models\Lookup\CustodyStatusType;
 use App\Support\BulkImport\EntityResolver;
 use Filament\Actions\Imports\Jobs\ImportCsv;
 use Filament\Actions\Imports\Models\Import;
@@ -63,6 +64,7 @@ class ImportCsvSlice extends ImportCsv
         // previous one may name boxes or batches deleted since ("The selected
         // box does not exist." on a row of the next import).
         EntityResolver::flushMemo();
+        CustodyStatusType::flushMemo();
 
         $headers = ImportWizard::csvHeaderKeys($this->csvPath);
         $withSourceRow = $this->import->importer === DocumentImporter::class;

@@ -10,16 +10,12 @@ use App\Filament\Actions\Documents\DetachAuthorityAction;
 use App\Filament\Actions\Documents\DocumentActionGroup;
 use App\Filament\Actions\Documents\ExportSelectedAction;
 use App\Filament\Actions\Documents\MarkDisinfestedAction;
-use App\Filament\Actions\Documents\MarkPermOutAction;
-use App\Filament\Actions\Documents\MoveToBatchAction;
 use App\Filament\Actions\Documents\MoveToBoxAction;
 use App\Filament\Actions\Documents\MoveToRepositoryAction;
-use App\Filament\Actions\Documents\MoveToWillsAction;
 use App\Filament\Actions\Documents\ReplaceAuthorityAction;
 use App\Filament\Actions\Documents\SetLocationAction;
 use App\Filament\Actions\Documents\SetSeriesAction;
 use App\Filament\Actions\Documents\UpdateDocumentTypeAction;
-use App\Filament\Actions\Documents\UpdateIdentifierAction;
 use App\Filament\Resources\DocumentResource\Pages\EditDocument;
 use App\Filament\Resources\DocumentResource\Pages\ListDocuments;
 use App\Models\Authority;
@@ -28,6 +24,7 @@ use App\Models\Box;
 use App\Models\BoxMovement;
 use App\Models\Document;
 use App\Models\DocumentFlag;
+use App\Models\DocumentType;
 use App\Models\Location;
 use App\Models\Repository;
 use App\Models\Scopes\RepositoryScope;
@@ -45,7 +42,7 @@ use Symfony\Component\HttpFoundation\StreamedResponse;
 /**
  * RFQ §3.1.1 / §3.1.4 / §3.1.5 — Document power-actions.
  *
- * These tests exercise the 15 single-record / bulk Document actions defined
+ * These tests exercise the single-record / bulk Document actions defined
  * under {@see Documents}. They bypass the Filament UI
  * (no Livewire mount) and call the action closures directly via reflection,
  * because the Filament 5 testing API for nested ActionGroup + BulkActionGroup
@@ -270,59 +267,6 @@ test('Move to box fails gracefully when target box was deleted (no 500)', functi
 });
 
 /* -------------------------------------------------------------------------
- |  Action #2 — Move to Batch
- * ------------------------------------------------------------------------- */
-
-test('Move to batch updates batch_id and (by default) clears current_box_id', function () {
-    $this->actingAs(actAs_role('super_admin'));
-
-    $repo = repo_();
-    $series = series_();
-    $oldBatch = batch_($repo->id);
-    $box = box_($oldBatch->id);
-    $newBatch = batch_($repo->id);
-    $doc = doc_($repo->id, $series->id, ['batch_id' => $oldBatch->id, 'current_box_id' => $box->id]);
-
-    runAction(MoveToBatchAction::make(), [
-        'record' => $doc,
-        'data' => ['to_batch_id' => $newBatch->id, 'clear_current_box' => true],
-    ]);
-
-    $doc->refresh();
-    expect($doc->batch_id)->toBe($newBatch->id);
-    expect($doc->current_box_id)->toBeNull();
-});
-
-test('Move to batch refuses forbidden batch numbers (34, 36); allows reserved batch 33 (old MAV)', function () {
-    $this->actingAs(actAs_role('super_admin'));
-
-    $repo = repo_();
-    $series = series_();
-
-    // batch 34 is forbidden — move must be refused.
-    $forbidden = batch_($repo->id, 34);
-    $doc = doc_($repo->id, $series->id);
-
-    runAction(MoveToBatchAction::make(), [
-        'record' => $doc,
-        'data' => ['to_batch_id' => $forbidden->id, 'clear_current_box' => true],
-    ]);
-
-    $doc->refresh();
-    expect($doc->batch_id)->not->toBe($forbidden->id);
-
-    // batch 33 is reserved (not forbidden) — move must succeed.
-    $reserved = batch_($repo->id, 33);
-    runAction(MoveToBatchAction::make(), [
-        'record' => $doc,
-        'data' => ['to_batch_id' => $reserved->id, 'clear_current_box' => true],
-    ]);
-
-    $doc->refresh();
-    expect($doc->batch_id)->toBe($reserved->id);
-});
-
-/* -------------------------------------------------------------------------
  |  Action #3 — Move to Repository (super_admin only)
  * ------------------------------------------------------------------------- */
 
@@ -464,44 +408,6 @@ test('Mark disinfested (bulk) updates many at once', function () {
 /* -------------------------------------------------------------------------
  |  Action #6 — Mark PERM_OUT (requires disinfestation_date — RFQ App.1 #5)
  * ------------------------------------------------------------------------- */
-
-test('Mark PERM_OUT refuses to mark a document without disinfestation_date', function () {
-    $this->actingAs(actAs_role('super_admin'));
-
-    $repo = repo_();
-    $series = series_();
-    $doc = doc_($repo->id, $series->id, ['disinfestation_date' => null]);
-
-    runAction(MarkPermOutAction::make(), [
-        'record' => $doc,
-    ]);
-
-    $audit = Audit::query()
-        ->where('auditable_type', Document::class)
-        ->where('auditable_id', $doc->id)
-        ->where('event', 'permout_marked')
-        ->first();
-    expect($audit)->toBeNull(); // no audit row → action was blocked
-});
-
-test('Mark PERM_OUT succeeds when disinfestation_date is set and writes audit row', function () {
-    $this->actingAs(actAs_role('super_admin'));
-
-    $repo = repo_();
-    $series = series_();
-    $doc = doc_($repo->id, $series->id, ['disinfestation_date' => now()->subDay()]);
-
-    runAction(MarkPermOutAction::make(), [
-        'record' => $doc,
-    ]);
-
-    $audit = Audit::query()
-        ->where('auditable_type', Document::class)
-        ->where('auditable_id', $doc->id)
-        ->where('event', 'permout_marked')
-        ->first();
-    expect($audit)->not->toBeNull();
-});
 
 /* -------------------------------------------------------------------------
  |  Action #7 — Assign Authority
@@ -697,80 +603,18 @@ test('Update document type writes the new value (bulk)', function () {
     $series = series_();
     $docs = collect(range(0, 2))->map(fn () => doc_($repo->id, $series->id, ['document_type' => 'Old']));
 
+    // Client 2026-11-05: the types of the Document Type page, no free-typed ones.
+    DocumentType::create(['name' => 'Brand New Type', 'identifier' => 'DT00777', 'is_active' => true]);
+
     runAction(UpdateDocumentTypeAction::bulk(), [
         'records' => asColl(...$docs->all()),
-        'data' => ['document_type' => 'Brand New Type'],
+        'data' => ['document_type' => 'DT00777'],
     ]);
 
     foreach ($docs as $d) {
         $d->refresh();
-        expect($d->document_type)->toBe('Brand New Type');
+        expect($d->document_type)->toBe('DT00777');
     }
-});
-
-/* -------------------------------------------------------------------------
- |  Action #13 — Move to Wills (Batch 50)
- * ------------------------------------------------------------------------- */
-
-test('Move to wills assigns Batch 50 (auto-created when missing)', function () {
-    $this->actingAs(actAs_role('super_admin'));
-
-    $repo = repo_();
-    $series = series_('OTHER');
-    $doc = doc_($repo->id, $series->id);
-
-    runAction(MoveToWillsAction::make(), [
-        'record' => $doc,
-    ]);
-
-    $doc->refresh();
-    $b50 = Batch::withoutGlobalScopes()
-        ->where('batch_number', 50)
-        ->where('repository_id', $repo->id)
-        ->first();
-    expect($b50)->not->toBeNull()
-        ->and($doc->batch_id)->toBe($b50->id);
-});
-
-/* -------------------------------------------------------------------------
- |  Action #14 — Update Identifier (single only)
- * ------------------------------------------------------------------------- */
-
-test('Update identifier writes new identifier on a single document', function () {
-    $this->actingAs(actAs_role('super_admin'));
-
-    $repo = repo_();
-    $series = series_();
-    $doc = doc_($repo->id, $series->id, ['identifier' => 'R7-old']);
-
-    runAction(UpdateIdentifierAction::make(), [
-        'record' => $doc,
-        'data' => ['identifier' => 'R7-new'],
-    ]);
-
-    $doc->refresh();
-    expect($doc->identifier)->toBe('R7-new');
-});
-
-test('Update identifier rejects duplicates within the same repository', function () {
-    $this->actingAs(actAs_role('super_admin'));
-
-    $repo = repo_();
-    $series = series_();
-    $existing = doc_($repo->id, $series->id, ['identifier' => 'R10']);
-    $target = doc_($repo->id, $series->id, ['identifier' => 'R11']);
-
-    runAction(UpdateIdentifierAction::make(), [
-        'record' => $target,
-        'data' => ['identifier' => 'R10'],
-    ]);
-
-    $target->refresh();
-    expect($target->identifier)->toBe('R11');
-});
-
-test('UpdateIdentifierAction has no bulk variant', function () {
-    expect(method_exists(UpdateIdentifierAction::class, 'bulk'))->toBeFalse();
 });
 
 /* -------------------------------------------------------------------------
@@ -844,15 +688,16 @@ test('Audit metadata captures user_id and event', function () {
  |  Wiring on the resource pages
  * ------------------------------------------------------------------------- */
 
-test('DocumentActionGroup exposes 15 single-record header actions and 16 bulk actions', function () {
+test('DocumentActionGroup exposes 12 single-record header actions and 14 bulk actions', function () {
     // +1 single / +1 bulk after SetMuseumLocationAction was added in
-    // PR #85 (APP2-vi). Bump these counts whenever an action joins the
+    // PR #85 (APP2-vi). Client 2026-11-05: Move to batch and Move to wills went,
+    // Move out of box came. Bump these counts whenever an action joins the
     // group so a future regression that DROPS an action surfaces here.
     $single = DocumentActionGroup::singleHeaderActions();
     $bulk = DocumentActionGroup::bulkActions();
 
-    expect($single)->toHaveCount(15);
-    expect($bulk)->toHaveCount(16);
+    expect($single)->toHaveCount(12);
+    expect($bulk)->toHaveCount(14);
 });
 
 test('Every single-record action exposes a Filament Action instance', function () {
@@ -940,32 +785,14 @@ test('ActionSupport::logPivotChange writes an Audit row with the requested event
 
 /* ---- C-1: per-tenant Batch 50 (was: global unique blew up on 2nd repo) ---- */
 
-test('C-1 regression: Move to wills works for a second tenant after Repo A already owns Batch 50', function () {
+test('C-1 regression: a second tenant can have its own Batch 50 after Repo A already owns one', function () {
     $this->actingAs(actAs_role('super_admin'));
 
-    $repoA = repo_('A');
-    $repoB = repo_('B');
-    $seriesA = series_();
-    $seriesB = series_();
+    $b50A = batch_(repo_('A')->id, 50);
+    // Repo B does the same — must succeed (the schema unique is composite).
+    $b50B = batch_(repo_('B')->id, 50);
 
-    // Force Repo A to create its Batch 50 first.
-    $docA = doc_($repoA->id, $seriesA->id);
-    runAction(MoveToWillsAction::make(), ['record' => $docA]);
-    $b50A = Batch::withoutGlobalScopes()
-        ->where('batch_number', 50)->where('repository_id', $repoA->id)->first();
-    expect($b50A)->not->toBeNull();
-
-    // Now Repo B does the same — must succeed (the schema unique is composite).
-    $docB = doc_($repoB->id, $seriesB->id);
-    runAction(MoveToWillsAction::make(), ['record' => $docB]);
-
-    $b50B = Batch::withoutGlobalScopes()
-        ->where('batch_number', 50)->where('repository_id', $repoB->id)->first();
-    expect($b50B)->not->toBeNull()
-        ->and($b50B->id)->not->toBe($b50A->id);
-
-    $docB->refresh();
-    expect($docB->batch_id)->toBe($b50B->id);
+    expect($b50B->id)->not->toBe($b50A->id);
 });
 
 /* ---- C-2: per-row atomicity on bulk failure (mid-bulk failure rolls back THAT row only) ---- */
@@ -1004,7 +831,7 @@ test('C-2 regression: bulk failure on one row preserves earlier successful rows 
     expect(BoxMovement::query()->where('to_box_id', $box->id)->count())->toBe(3);
 });
 
-/* ---- C-3: cross-tenant box / batch targets blocked at the action layer ---- */
+/* ---- C-3: cross-tenant box targets blocked at the action layer ---- */
 
 test('C-3 regression: MoveToBoxAction refuses a target box from a different repository', function () {
     $this->actingAs(actAs_role('super_admin'));
@@ -1027,65 +854,6 @@ test('C-3 regression: MoveToBoxAction refuses a target box from a different repo
     $docInA->refresh();
     expect($docInA->current_box_id)->toBeNull();
     expect(BoxMovement::query()->where('document_id', $docInA->id)->count())->toBe(0);
-});
-
-test('C-3 regression: MoveToBatchAction refuses a target batch from a different repository', function () {
-    $this->actingAs(actAs_role('super_admin'));
-
-    $repoA = repo_('A');
-    $repoB = repo_('B');
-    $series = series_();
-
-    $batchInB = batch_($repoB->id);
-    $docInA = doc_($repoA->id, $series->id);
-
-    runAction(MoveToBatchAction::make(), [
-        'record' => $docInA,
-        'data' => ['to_batch_id' => $batchInB->id, 'clear_current_box' => false],
-    ]);
-
-    $docInA->refresh();
-    expect($docInA->batch_id)->not->toBe($batchInB->id);
-});
-
-/* ---- H-1: MarkPermOutAction actually writes documents.barcode_status ---- */
-
-test('H-1 regression: Mark PERM_OUT writes documents.barcode_status (column now exists)', function () {
-    $this->actingAs(actAs_role('super_admin'));
-
-    $repo = repo_();
-    $series = series_();
-    $doc = doc_($repo->id, $series->id, ['disinfestation_date' => now()->subDay()]);
-
-    runAction(MarkPermOutAction::make(), ['record' => $doc]);
-
-    $doc->refresh();
-    expect($doc->getAttribute('barcode_status'))->toBe('PERM_OUT');
-});
-
-/* ---- H-2: MarkPermOutAction strict bulk semantics (abort if any row missing) ---- */
-
-test('H-2 regression: Mark PERM_OUT bulk aborts entirely if ANY row lacks disinfestation_date', function () {
-    $this->actingAs(actAs_role('super_admin'));
-
-    $repo = repo_();
-    $series = series_();
-
-    // 2 valid + 1 invalid → the whole bulk must be aborted, NO writes.
-    $valid1 = doc_($repo->id, $series->id, ['disinfestation_date' => now()->subDay()]);
-    $valid2 = doc_($repo->id, $series->id, ['disinfestation_date' => now()->subWeek()]);
-    $invalid = doc_($repo->id, $series->id, ['disinfestation_date' => null]);
-
-    runAction(MarkPermOutAction::bulk(), [
-        'records' => asColl($valid1, $invalid, $valid2),
-    ]);
-
-    foreach ([$valid1, $valid2, $invalid] as $d) {
-        $d->refresh();
-        expect($d->getAttribute('barcode_status'))->not->toBe('PERM_OUT');
-    }
-    // No audit row was written either.
-    expect(Audit::query()->where('event', 'permout_marked')->count())->toBe(0);
 });
 
 /* ---- H-3: MoveToRepositoryAction re-stamps repository_id on related rows ---- */
@@ -1123,31 +891,9 @@ test('H-3 regression: cross-tenant transfer cascades repository_id onto document
     expect((int) $flag->repository_id)->toBe($repoB->id);
 });
 
-/* ---- H-4: UpdateIdentifierAction includes soft-deleted in uniqueness check ---- */
+/* ---- H-5: MoveToBoxAction and boxes with no batch ---- */
 
-test('H-4 regression: Update identifier rejects an identifier that is held by a soft-deleted document', function () {
-    $this->actingAs(actAs_role('super_admin'));
-
-    $repo = repo_();
-    $series = series_();
-    $trashed = doc_($repo->id, $series->id, ['identifier' => 'R99-archived']);
-    $trashed->delete(); // soft delete
-    expect($trashed->fresh()->trashed())->toBeTrue();
-
-    $target = doc_($repo->id, $series->id, ['identifier' => 'R100']);
-
-    runAction(UpdateIdentifierAction::make(), [
-        'record' => $target,
-        'data' => ['identifier' => 'R99-archived'],
-    ]);
-
-    $target->refresh();
-    expect($target->identifier)->toBe('R100');
-});
-
-/* ---- H-5: MoveToBoxAction refuses orphan target boxes (batch_id null) ---- */
-
-test('H-5 regression: Move to box refuses a target box with no batch assignment', function () {
+test('H-5, client 2026-11-05: Move to box takes a batch-less box of the same repository, and the document keeps its batch', function () {
     $this->actingAs(actAs_role('super_admin'));
 
     $repo = repo_();
@@ -1155,11 +901,11 @@ test('H-5 regression: Move to box refuses a target box with no batch assignment'
     $batch = batch_($repo->id);
     $oldBox = box_($batch->id);
 
-    // Build an orphan box (no batch_id) directly — Box::factory doesn't allow null.
-    $orphan = Box::withoutGlobalScopes()->create([
+    $batchLess = Box::withoutGlobalScopes()->create([
         'box_type' => 'RAS',
         'box_number' => 'ORPH-' . substr(uniqid(), -6),
         'batch_id' => null,
+        'repository_id' => $repo->id,
         'barcode' => 'BC' . substr(uniqid(), -8),
         'barcode_status' => 'IN',
         'is_legacy' => false,
@@ -1169,14 +915,13 @@ test('H-5 regression: Move to box refuses a target box with no batch assignment'
 
     runAction(MoveToBoxAction::make(), [
         'record' => $doc,
-        'data' => ['to_box_id' => $orphan->id, 'reason' => null],
+        'data' => ['to_box_id' => $batchLess->id, 'reason' => null],
     ]);
 
     $doc->refresh();
-    // Document was NOT reassigned (orphan target refused, no writes).
-    expect($doc->current_box_id)->toBe($oldBox->id);
+    expect($doc->current_box_id)->toBe($batchLess->id);
     expect($doc->batch_id)->toBe($batch->id);
-    expect(BoxMovement::query()->where('document_id', $doc->id)->count())->toBe(0);
+    expect(BoxMovement::query()->where('document_id', $doc->id)->count())->toBe(1);
 });
 
 /* -------------------------------------------------------------------------

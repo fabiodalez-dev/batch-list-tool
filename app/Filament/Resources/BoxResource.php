@@ -2,8 +2,13 @@
 
 namespace App\Filament\Resources;
 
+use App\Filament\Actions\Boxes\BoxBulkSupport;
+use App\Filament\Actions\Boxes\ChangeBoxBatchAction;
 use App\Filament\Actions\Boxes\DestroyBoxAction;
+use App\Filament\Actions\Boxes\FinishDisinfestationAction;
+use App\Filament\Actions\Boxes\MarkBoxStatusAction;
 use App\Filament\Actions\Boxes\MoveBoxToLocationAction;
+use App\Filament\Actions\Boxes\SendBoxesToDisinfestationAction;
 use App\Filament\Concerns\AppliesFieldPermissions;
 use App\Filament\Resources\BoxResource\Pages;
 use App\Filament\Support\BoxRules;
@@ -13,6 +18,7 @@ use App\Filament\Support\EqualsFirst;
 use App\Filament\Support\ListRules;
 use App\Filament\Support\MatchQueryBuilder;
 use App\Filament\Support\SearchableSelects;
+use App\Filament\Support\TableSorts;
 use App\Models\Batch;
 use App\Models\Box;
 use App\Models\Document;
@@ -103,7 +109,8 @@ class BoxResource extends Resource
                 Section::make(CompactLayout::DETAILS)
                     ->columns(CompactLayout::GRID)
                     ->schema([
-                        // Client 2026-10-30: Box type and Box identifier side by side.
+                        // Client 2026-11-05: "Box type, Current Box Type, Batch, Box
+                        // Identifier".
                         $g(Forms\Components\Select::make('box_type')->label(ColumnLabels::get('box', 'box_type'))
                             // C4 — keep the record's current (possibly inactive) value selectable on edit.
                             ->options(fn (?Box $record): array => BoxType::optionsWith($record?->box_type))
@@ -122,6 +129,26 @@ class BoxResource extends Resource
                                     $fail("Box type '{$value}' is a legacy type and cannot be assigned to new boxes (RFQ Appendix-1 rule #4). Allowed for create: " . implode(', ', array_diff(Box::TYPES, Box::LEGACY_TYPES)) . '.');
                                 }
                             })),
+                        // Physical container type (distinct from the archival
+                        // box_type). Client 2026-10-30: a dropdown fed by the
+                        // Physical Box Type lookup; a legacy free-text value stays
+                        // selectable on edit (optionsWith), so nothing is lost.
+                        $g(Forms\Components\Select::make('current_box_type')
+                            ->label(ColumnLabels::get('box', 'current_box_type'))
+                            ->options(fn (?Box $record): array => CurrentBoxType::optionsWith($record?->current_box_type))
+                            ->searchable()
+                            ->nullable()),
+                        // Feedback1 Wave B (B5) — `->live()` so box_number's helper
+                        // text + uniqueness re-evaluate when the batch changes.
+                        $g(SearchableSelects::batch('batch_id', 'batch')
+                            ->live()
+                            // C2.1 — Batch is required for RAS boxes only; an
+                            // IN_SITU / NRA box is identified by its own
+                            // identifier + location, not by a batch.
+                            ->required($isRas)
+                            ->helperText(fn (Get $get): ?string => $isInSitu($get)
+                                ? 'Optional for IN_SITU / NRA boxes.'
+                                : 'Required for RAS boxes.')),
                         // Feedback1 Wave B (B5) — the helper lists the numbers already
                         // taken in the selected batch so the operator can pick a free one.
                         $g(Forms\Components\TextInput::make('box_number')
@@ -171,26 +198,6 @@ class BoxResource extends Resource
                                     $fail($clash->identityClashMessage());
                                 }
                             })),
-                        // Feedback1 Wave B (B5) — `->live()` so box_number's helper
-                        // text + uniqueness re-evaluate when the batch changes.
-                        $g(SearchableSelects::batch('batch_id', 'batch')
-                            ->live()
-                            // C2.1 — Batch is required for RAS boxes only; an
-                            // IN_SITU / NRA box is identified by its own
-                            // identifier + location, not by a batch.
-                            ->required($isRas)
-                            ->helperText(fn (Get $get): ?string => $isInSitu($get)
-                                ? 'Optional for IN_SITU / NRA boxes.'
-                                : 'Required for RAS boxes.')),
-                        // Physical container type (distinct from the archival
-                        // box_type). Client 2026-10-30: a dropdown fed by the
-                        // Physical Box Type lookup; a legacy free-text value stays
-                        // selectable on edit (optionsWith), so nothing is lost.
-                        $g(Forms\Components\Select::make('current_box_type')
-                            ->label(ColumnLabels::get('box', 'current_box_type'))
-                            ->options(fn (?Box $record): array => CurrentBoxType::optionsWith($record?->current_box_type))
-                            ->searchable()
-                            ->nullable()),
 
                         // RFQ App.1 #3 applies to BOTH IN_SITU and NRA boxes — they
                         // each require a parent RAS box (or Provenance unknown).
@@ -526,11 +533,8 @@ class BoxResource extends Resource
                             ->badge()
                             ->color('gray')
                             ->placeholder('—'),
-                        TextEntry::make('box_number')
-                            ->label(fn (?Box $record): string => $isInSitu($record) ? 'Box identifier' : ColumnLabels::get('box', 'box_number'))
-                            ->badge()
-                            ->color('primary')
-                            ->copyable()
+                        TextEntry::make('current_box_type')
+                            ->label(ColumnLabels::get('box', 'current_box_type'))
                             ->placeholder('—'),
                         TextEntry::make('batch.batch_number')
                             ->label('Batch')
@@ -541,8 +545,11 @@ class BoxResource extends Resource
                                 : null)
                             ->openUrlInNewTab(false)
                             ->placeholder('—'),
-                        TextEntry::make('current_box_type')
-                            ->label(ColumnLabels::get('box', 'current_box_type'))
+                        TextEntry::make('box_number')
+                            ->label(fn (?Box $record): string => $isInSitu($record) ? 'Box identifier' : ColumnLabels::get('box', 'box_number'))
+                            ->badge()
+                            ->color('primary')
+                            ->copyable()
                             ->placeholder('—'),
 
                         // RFQ App.1 #3 — the parent RAS box of an IN_SITU / NRA box.
@@ -748,7 +755,7 @@ class BoxResource extends Resource
                 $gc(Tables\Columns\TextColumn::make('batch.batch_number')
                     ->label('Batch')
                     ->numeric()
-                    ->sortable()
+                    ->sortable(query: fn (Builder $query, string $direction): Builder => TableSorts::boxBatch($query, $direction))
                     ->toggleable(), 'batch_id'),
                 $gc(Tables\Columns\TextColumn::make('box_number')
                     ->label(ColumnLabels::get('box', 'box_number'))
@@ -761,10 +768,9 @@ class BoxResource extends Resource
                     // box_number is the tie-breaker for the handful of non-numeric
                     // ids (1A, 2A, "NULL", which cast to their leading integer / 0).
                     ->sortable(query: function (Builder $query, string $direction): Builder {
-                        $dir = strtolower($direction) === 'desc' ? 'desc' : 'asc';
+                        $dir = TableSorts::direction($direction);
 
-                        return $query
-                            ->orderByLeftPowerJoins('batch.batch_number', $direction)
+                        return TableSorts::boxBatch($query, $direction)
                             ->orderByRaw("CAST(box_number AS UNSIGNED) {$dir}")
                             ->orderBy('box_number', $direction);
                     })
@@ -780,7 +786,8 @@ class BoxResource extends Resource
                     // STVC…) has no barcode status; the column's database
                     // default 'IN' is not shown for it.
                     ->formatStateUsing(fn (?string $state, Box $record): ?string => filled($record->barcode) ? $state : '—')
-                    ->sortable()
+                    // The sort reads the same: no barcode is an empty cell.
+                    ->sortable(query: fn (Builder $query, string $direction): Builder => TableSorts::blanksLast($query, "CASE WHEN NULLIF(boxes.barcode, '') IS NULL THEN NULL ELSE boxes.barcode_status END", $direction))
                     ->toggleable()),
                 $gc(Tables\Columns\TextColumn::make('box_type')
                     ->label(ColumnLabels::get('box', 'box_type'))
@@ -795,9 +802,9 @@ class BoxResource extends Resource
                 // code), so operators can set where a box physically lives on
                 // import — surface it here too, otherwise that imported value is
                 // invisible on the list. Uses the same full_path accessor +
-                // deep-link as the view page. Not sortable: full_path is an
-                // accessor, not a DB column. Gated on the same field key as the
-                // form's location_id select.
+                // deep-link as the view page. Client 2026-11-05: sorted by what
+                // the cell shows. Gated on the same field key as the form's
+                // location_id select.
                 $gc(Tables\Columns\TextColumn::make('location.full_path')
                     ->label('Location')
                     // Memoise the breadcrumb by location id instead of
@@ -808,6 +815,7 @@ class BoxResource extends Resource
                     // (a destroyed RAS box, say) shows where all its documents are.
                     ->description(fn (?Box $record): ?string => $record !== null && $record->location === null && $record->sharedDocumentLocation() !== null ? 'from documents' : null)
                     ->placeholder('—')
+                    ->sortable(query: fn (Builder $query, string $direction): Builder => TableSorts::boxLocation($query, $direction))
                     ->toggleable()
                     // Gate the link on the RESOLVED relation, not the raw FK: an
                     // orphaned location_id renders a blank cell, so it must not
@@ -820,17 +828,20 @@ class BoxResource extends Resource
                     ->limit(60)
                     ->tooltip(fn (?string $state): ?string => $state)
                     ->placeholder('—')
+                    ->sortable(query: fn (Builder $query, string $direction): Builder => TableSorts::textColumn($query, 'tracking_note', $direction))
                     ->toggleable()),
                 $gc(Tables\Columns\TextColumn::make('seal_number')
                     ->label(ColumnLabels::get('box', 'seal_number'))
                     ->searchable()
                     ->placeholder('—')
+                    ->sortable(query: fn (Builder $query, string $direction): Builder => TableSorts::textColumn($query, 'seal_number', $direction))
                     ->toggleable()),
                 $gc(Tables\Columns\TextColumn::make('notes')
                     ->label(ColumnLabels::get('box', 'notes'))
                     ->limit(60)
                     ->tooltip(fn (?string $state): ?string => $state)
                     ->placeholder('—')
+                    ->sortable(query: fn (Builder $query, string $direction): Builder => TableSorts::textColumn($query, 'notes', $direction))
                     ->toggleable()),
                 // RFQ App.2 §vii — "destroyed" badge. Shown as a red
                 // chip on the row so operators can spot artefacts that
@@ -861,7 +872,7 @@ class BoxResource extends Resource
                     })
                     ->url(fn (Box $record): ?string => $record->parent_box_id ? static::getUrl('view', ['record' => $record->parent_box_id]) : null)
                     ->placeholder('—')
-                    ->sortable()
+                    ->sortable(query: fn (Builder $query, string $direction): Builder => TableSorts::boxParent($query, $direction))
                     ->toggleable()),
                 $gc(Tables\Columns\IconColumn::make('is_legacy')
                     ->label(ColumnLabels::get('box', 'is_legacy'))
@@ -955,141 +966,155 @@ class BoxResource extends Resource
                     ->failureNotificationTitle('Not deleted: the box still contains documents. Move or delete them first.'),
             ])
             ->bulkActions([
+                // Client 2026-11-05: as on Documents, one "Power actions" menu,
+                // the deleting actions in their own block at the bottom.
                 BulkActionGroup::make([
-                    BulkAction::make('relocate')
-                        ->label('Relocate boxes')
-                        ->icon('heroicon-o-arrows-right-left')
-                        // Gate on the same permission the model policy uses for edits.
-                        ->authorize(fn (): bool => (bool) (auth()->user()?->can('update_box')))
-                        ->form([
-                            // Repository-scoped + active locations only (same as the main
-                            // form field) so a bulk relocate can't reach another tenant's
-                            // or an inactive location.
-                            SearchableSelects::location(
-                                'location_id',
-                                fn ($query) => $query
-                                    ->active()
-                                    ->forRepository(auth()->user()?->default_repository_id),
-                            )
-                                // A normal relocation must have a target location
-                                // (otherwise the action just updates the note and
-                                // moves nothing). It's optional ONLY when marking
-                                // PERM OUT — a perm-out/destroyed box no longer
-                                // needs a box-level location (client feedback 2026-08-01).
-                                ->required(fn (Get $get): bool => ! (bool) $get('set_perm_out')),
-                            Forms\Components\Toggle::make('set_perm_out')
-                                ->label('Mark barcode as PERM OUT')
-                                ->live(),
-                            // Location + disinfestation are OPTIONAL even when marking
-                            // PERM OUT — the RFQ App.1 #5 preconditions were dropped
-                            // (client feedback 2026-08-01, later than the RFQ). Both
-                            // fields stay available so an operator can still record
-                            // them, but a perm-out/destroyed box no longer needs them.
-                            Forms\Components\TextInput::make('tracking_note')
-                                ->label(ColumnLabels::get('box', 'tracking_note'))
-                                ->maxLength(255),
-                        ])
-                        ->action(function (Collection $records, array $data): void {
-                            // Server-side guard mirroring the form filter AND the
-                            // per-row MoveBoxToLocationAction: a forged submit
-                            // carrying an inactive / soft-deleted / missing location
-                            // id must be rejected before any box is touched, so a
-                            // bulk relocate can never land boxes on a disabled
-                            // location.
-                            $location = null;
-                            if (filled($data['location_id'] ?? null)) {
-                                /** @var Location|null $location */
-                                $location = Location::withoutGlobalScopes()->find((int) $data['location_id']);
-                                if ($location === null || $location->trashed() || ! $location->is_active) {
+                    BulkActionGroup::make([
+                        BulkAction::make('relocate')
+                            ->label('Relocate boxes')
+                            ->icon('heroicon-o-arrows-right-left')
+                            // Gate on the same permission the model policy uses for edits.
+                            ->authorize(fn (): bool => (bool) (auth()->user()?->can('update_box')))
+                            ->form([
+                                // Repository-scoped + active locations only (same as the main
+                                // form field) so a bulk relocate can't reach another tenant's
+                                // or an inactive location. Client 2026-11-05: "Locations
+                                // options should be only of Type Repository/Room".
+                                BoxBulkSupport::archiveLocationSelect('location_id')
+                                    // A normal relocation must have a target location
+                                    // (otherwise the action just updates the note and
+                                    // moves nothing). It's optional ONLY when marking
+                                    // PERM OUT — a perm-out/destroyed box no longer
+                                    // needs a box-level location (client feedback 2026-08-01).
+                                    ->required(fn (Get $get): bool => ! (bool) $get('set_perm_out')),
+                                Forms\Components\Toggle::make('set_perm_out')
+                                    ->label('Mark barcode as PERM OUT')
+                                    ->live(),
+                                // Location + disinfestation are OPTIONAL even when marking
+                                // PERM OUT — the RFQ App.1 #5 preconditions were dropped
+                                // (client feedback 2026-08-01, later than the RFQ). Both
+                                // fields stay available so an operator can still record
+                                // them, but a perm-out/destroyed box no longer needs them.
+                                Forms\Components\TextInput::make('tracking_note')
+                                    ->label(ColumnLabels::get('box', 'tracking_note'))
+                                    ->maxLength(255),
+                            ])
+                            ->action(function (Collection $records, array $data): void {
+                                // Server-side guard mirroring the form filter AND the
+                                // per-row MoveBoxToLocationAction: a forged submit
+                                // carrying an inactive / soft-deleted / missing location
+                                // id must be rejected before any box is touched, so a
+                                // bulk relocate can never land boxes on a disabled
+                                // location.
+                                $location = null;
+                                if (filled($data['location_id'] ?? null)) {
+                                    /** @var Location|null $location */
+                                    $location = Location::withoutGlobalScopes()->find((int) $data['location_id']);
+                                    if ($location === null || $location->trashed() || ! $location->is_active || ! $location->isArchive()) {
+                                        Notification::make()
+                                            ->title('Cannot relocate — target location not found, deleted, inactive or not a Repository / Room')
+                                            ->danger()
+                                            ->send();
+
+                                        return;
+                                    }
+                                }
+
+                                // Review finding: count what actually changed so the
+                                // notification is honest — a submit that leaves every
+                                // field blank must not report success. $skipped counts
+                                // boxes withheld by the cross-repository tenant guard.
+                                $changed = 0;
+                                $skipped = 0;
+                                $records->each(function (Box $record) use ($data, $location, &$changed, &$skipped): void {
+                                    $update = [];
+
+                                    if ($location !== null) {
+                                        // Tenant isolation: a repository-scoped location
+                                        // may only be assigned to a box in the SAME
+                                        // repository (global locations go anywhere).
+                                        // Mirrors MoveBoxToLocationAction's guard.
+                                        if ($location->repository_id !== null
+                                            && (int) $location->repository_id !== (int) $record->customFieldRepositoryId()) {
+                                            $skipped++;
+
+                                            return;
+                                        }
+
+                                        $update['location_id'] = $location->getKey();
+                                    }
+
+                                    if (! empty($data['set_perm_out'])) {
+                                        $update['barcode_status'] = 'PERM_OUT';
+                                    }
+
+                                    if (filled($data['tracking_note'] ?? null)) {
+                                        // Client feedback 2026-08-04: relocation notes
+                                        // go to the dedicated tracking_note, no longer
+                                        // appended to the general note.
+                                        $record->appendTrackingNote((string) $data['tracking_note']);
+                                        $update['tracking_note'] = $record->tracking_note;
+                                    }
+
+                                    if ($update !== []) {
+                                        $record->update($update);
+                                        $changed++;
+                                    }
+                                });
+
+                                if ($changed === 0) {
                                     Notification::make()
-                                        ->title('Cannot relocate — target location not found, deleted or inactive')
-                                        ->danger()
+                                        ->title('No boxes changed')
+                                        ->body($skipped > 0
+                                            ? $skipped . ' ' . ($skipped === 1 ? 'box belongs' : 'boxes belong') . ' to a different repository than the target location.'
+                                            : 'Every field was left blank, so nothing was updated.')
+                                        ->warning()
                                         ->send();
 
                                     return;
                                 }
-                            }
 
-                            // Review finding: count what actually changed so the
-                            // notification is honest — a submit that leaves every
-                            // field blank must not report success. $skipped counts
-                            // boxes withheld by the cross-repository tenant guard.
-                            $changed = 0;
-                            $skipped = 0;
-                            $records->each(function (Box $record) use ($data, $location, &$changed, &$skipped): void {
-                                $update = [];
-
-                                if ($location !== null) {
-                                    // Tenant isolation: a repository-scoped location
-                                    // may only be assigned to a box in the SAME
-                                    // repository (global locations go anywhere).
-                                    // Mirrors MoveBoxToLocationAction's guard.
-                                    if ($location->repository_id !== null
-                                        && (int) $location->repository_id !== (int) $record->customFieldRepositoryId()) {
-                                        $skipped++;
-
-                                        return;
-                                    }
-
-                                    $update['location_id'] = $location->getKey();
-                                }
-
-                                if (! empty($data['set_perm_out'])) {
-                                    $update['barcode_status'] = 'PERM_OUT';
-                                }
-
-                                if (filled($data['tracking_note'] ?? null)) {
-                                    // Client feedback 2026-08-04: relocation notes
-                                    // go to the dedicated tracking_note, no longer
-                                    // appended to the general note.
-                                    $existing = trim((string) ($record->tracking_note ?? ''));
-                                    $update['tracking_note'] = $existing !== ''
-                                        ? $existing . "\n" . $data['tracking_note']
-                                        : $data['tracking_note'];
-                                }
-
-                                if ($update !== []) {
-                                    $record->update($update);
-                                    $changed++;
-                                }
-                            });
-
-                            if ($changed === 0) {
                                 Notification::make()
-                                    ->title('No boxes changed')
+                                    ->title($changed . ' ' . ($changed === 1 ? 'box' : 'boxes') . ' relocated')
                                     ->body($skipped > 0
-                                        ? $skipped . ' ' . ($skipped === 1 ? 'box belongs' : 'boxes belong') . ' to a different repository than the target location.'
-                                        : 'Every field was left blank, so nothing was updated.')
-                                    ->warning()
+                                        ? $skipped . ' skipped (different repository than the target location).'
+                                        : null)
+                                    ->success()
                                     ->send();
-
-                                return;
-                            }
-
-                            Notification::make()
-                                ->title($changed . ' ' . ($changed === 1 ? 'box' : 'boxes') . ' relocated')
-                                ->body($skipped > 0
-                                    ? $skipped . ' skipped (different repository than the target location).'
-                                    : null)
-                                ->success()
-                                ->send();
-                        })
-                        ->requiresConfirmation()
-                        ->modalHeading('Relocate boxes')
-                        // Review finding: confirmation must match blast radius —
-                        // state the count and that PERM OUT is a permanent change.
-                        ->modalDescription(fn (Collection $records): string => 'You are about to update '
-                            . $records->count() . ' ' . ($records->count() === 1 ? 'box' : 'boxes')
-                            . '. Marking them PERM OUT is a permanent custody change (RFQ A1.2).')
-                        ->deselectRecordsAfterCompletion(),
-                    DeleteBulkAction::make(),
-                    // Delete only archives a box: an import of the same box
-                    // brings it back, history and all. From the Archived filter
-                    // a box can be restored, or deleted for good.
-                    RestoreBulkAction::make(),
-                    ForceDeleteBulkAction::make()
-                        ->modalDescription('The selected boxes are deleted for good, with their barcode, seal and location history. A box that still contains documents is kept.'),
-                ]),
+                            })
+                            ->requiresConfirmation()
+                            ->modalHeading('Relocate boxes')
+                            // Review finding: confirmation must match blast radius —
+                            // state the count and that PERM OUT is a permanent change.
+                            ->modalDescription(fn (Collection $records): string => 'You are about to update '
+                                . $records->count() . ' ' . ($records->count() === 1 ? 'box' : 'boxes')
+                                . '. Marking them PERM OUT is a permanent custody change (RFQ A1.2).')
+                            ->deselectRecordsAfterCompletion(),
+                        ChangeBoxBatchAction::bulk(),
+                    ])->dropdown(false),
+                    BulkActionGroup::make([
+                        SendBoxesToDisinfestationAction::bulk(),
+                        FinishDisinfestationAction::bulk(),
+                    ])->dropdown(false),
+                    BulkActionGroup::make([
+                        MarkBoxStatusAction::bulk('IN'),
+                        MarkBoxStatusAction::bulk('OUT'),
+                        MarkBoxStatusAction::bulk('PERM_OUT'),
+                    ])->dropdown(false),
+                    BulkActionGroup::make([
+                        DestroyBoxAction::bulk(),
+                        DeleteBulkAction::make(),
+                        // Delete only archives a box: an import of the same box
+                        // brings it back, history and all. From the Archived filter
+                        // a box can be restored, or deleted for good.
+                        RestoreBulkAction::make(),
+                        ForceDeleteBulkAction::make()
+                            ->modalDescription('The selected boxes are deleted for good, with their barcode, seal and location history. A box that still contains documents is kept.'),
+                    ])->dropdown(false),
+                ])
+                    ->label('Power actions')
+                    ->icon('heroicon-o-bolt')
+                    ->color('primary'),
             ]);
     }
 

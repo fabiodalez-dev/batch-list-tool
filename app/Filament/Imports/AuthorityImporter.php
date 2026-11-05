@@ -8,12 +8,14 @@ use App\Filament\Imports\Concerns\LogsImportRows;
 use App\Filament\Imports\Concerns\RenamesColumns;
 use App\Filament\Imports\Concerns\SkipsExistingRows;
 use App\Models\Authority;
+use App\Models\Lookup\EntityType;
 use App\Support\BulkImport\SpreadsheetParsers;
 use App\Support\ColumnLabels\ColumnLabels;
 use App\Support\CustomFields\CustomFieldResolver;
 use Filament\Actions\Imports\ImportColumn;
 use Filament\Actions\Imports\Importer;
 use Filament\Actions\Imports\Models\Import;
+use Illuminate\Validation\Rule;
 use Illuminate\Validation\ValidationException;
 
 /**
@@ -174,7 +176,9 @@ class AuthorityImporter extends Importer
                 ->label('Type of Entity')
                 ->guess(['Type of Entity', 'Entity Type', 'Type'])
                 ->castStateUsing(fn (?string $state) => SpreadsheetParsers::normaliseEntityType($state))
-                ->rules(['nullable', 'in:' . implode(',', SpreadsheetParsers::ENTITY_TYPES)]),
+                // Client 2026-11-05: the Entity Types page is the list.
+                // A string, because the wizard's preflight drops a Rule object.
+                ->rules(['nullable', (string) Rule::in(array_keys(EntityType::options()))]),
 
             // Year range — we parse "1607-1629" → two integer columns. The
             // virtual column name (`practice_dates_active`) does NOT map to
@@ -221,7 +225,18 @@ class AuthorityImporter extends Importer
             ImportColumn::make('authorised_form_of_name')
                 ->label('Authorised form of name')
                 ->guess(['Authorised form of name', 'Authorized form of name', 'Authorised name'])
-                ->rules(['nullable', 'string', 'max:65535']),
+                ->rules(['nullable', 'string', 'max:65535'])
+                // Client 2026-11-05: "Created automatically after saving but
+                // editable". A value in the sheet wins, even one equal to what
+                // is stored; a blank cell leaves the Authority model to fill or
+                // keep it, so it cannot wipe a hand-edited form.
+                ->fillRecordUsing(function (Authority $record, ?string $state): void {
+                    $state = trim((string) $state);
+                    if ($state !== '') {
+                        $record->authorised_form_of_name = $state;
+                        $record->authorisedFormIsExplicit = true;
+                    }
+                }),
 
             ImportColumn::make('functions_occupations_activities')
                 ->label('Functions, occupations and activities')

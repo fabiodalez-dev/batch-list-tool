@@ -6,6 +6,7 @@ namespace App\Filament\Support;
 
 use App\Models\User;
 use Filament\Tables\Columns\TextColumn;
+use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Database\Eloquent\Collection;
 use Illuminate\Database\Eloquent\Model;
 use OwenIt\Auditing\Contracts\Auditable;
@@ -54,11 +55,10 @@ final class CreatorColumn
     /**
      * Build the "Inputter" TextColumn.
      *
-     * The column name is `inputter` (virtual — not a real DB column).
-     * It is not sortable because the value comes from a related table and
-     * sorting would require a sub-query join; the column is searchable
-     * via the toggleable panel instead.  Default visibility is SHOWN so
-     * operators see who entered a record immediately (A9 requirement).
+     * The column name is `inputter` (virtual — not a real DB column), so it
+     * sorts through a sub-select on the same audits (client 2026-11-05:
+     * {@see TableSorts::inputter()}). Default visibility is SHOWN so operators
+     * see who entered a record immediately (A9 requirement).
      */
     public static function make(): TextColumn
     {
@@ -126,6 +126,6 @@ final class CreatorColumn
             })
             ->placeholder('—')
             ->toggleable()
-            ->sortable(false);
+            ->sortable(query: static fn (Builder $query, string $direction): Builder => TableSorts::inputter($query, $direction));
     }
 }

@@ -489,7 +489,7 @@ test('a row with a blank Identifier fails validation and is NOT silently importe
 
 // ─── entity_type normalisation ─────────────────────────────────────────────
 
-test('entity_type "Person" (real CSV casing) normalises to PERSON', function () {
+test('entity_type "Person" (real CSV casing) stays Person, the code of the Entity Types page', function () {
     $u = at_admin();
     $this->actingAs($u);
 
@@ -497,7 +497,7 @@ test('entity_type "Person" (real CSV casing) normalises to PERSON', function () 
     // "Person" in this exact casing.
     at_run([at_realRow('R60')], AT_COLUMN_MAP, $u->id);
 
-    expect(Authority::where('alternative_identifier', 'R60')->value('entity_type'))->toBe('PERSON');
+    expect(Authority::where('alternative_identifier', 'R60')->value('entity_type'))->toBe('Person');
 });
 
 test('entity_type "Notary" (real NAF example file value) is kept as Notary, the value the Creator form offers', function () {

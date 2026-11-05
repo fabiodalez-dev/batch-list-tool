@@ -36,7 +36,9 @@ use App\Filament\Resources\Lookups\BarcodeStatusResource\Pages\ListBarcodeStatus
 use App\Filament\Resources\Lookups\BatchTypeResource\Pages\ListBatchTypes;
 use App\Filament\Resources\Lookups\BoxTypeResource\Pages\ListBoxTypes;
 use App\Filament\Resources\Lookups\CurrentBoxTypeResource\Pages\ListCurrentBoxTypes;
+use App\Filament\Resources\Lookups\CustodyStatusTypeResource\Pages\ListCustodyStatusTypes;
 use App\Filament\Resources\Lookups\DigitisationStatusResource\Pages\ListDigitisationStatuses;
+use App\Filament\Resources\Lookups\EntityTypeResource\Pages\ListEntityTypes;
 use App\Filament\Resources\Lookups\FlagTypeResource\Pages\ListFlagTypes;
 use App\Filament\Resources\PracticeResource\Pages\ListPractices;
 use App\Filament\Resources\ReportTemplateResource\Pages\ListReportTemplates;
@@ -292,6 +294,18 @@ Each entry has a machine code, a label, a sort order (reorderable), an active fl
 
 Within the workflow this list underpins box history and provenance: In Situ boxes (NRA / MAV / STVC) normally must reference a previous RAS box, so keeping these types accurate supports the move-tracking and migration rules.',
                 'refs' => 'RFQ §3.1.11, §3.1.10, §3.1.6 · Appendix 1 rules 3–4 · Appendix 2: RAS Box, In Situ Box (NRA / Conservation / MAV / STVC) · Glossary: RAS Box, In Situ Box',
+            ],
+            ListCustodyStatusTypes::class => [
+                'body' => 'This page manages the custody statuses a document can have: In Box, Not in Box, Mounted; no box, Conservation Box and any others the archive adds. Each entry has a machine code stored on the document, a label, a sort order and an active flag.
+
+A deactivated status is no longer offered, but documents that have it keep it. A status documents still have cannot be deleted and its identifier cannot change. In Box is needed by the system: it can be renamed, but not deleted, deactivated or re-coded. Editing is limited to Administrators.',
+                'refs' => 'Client feedback 2026-11-05, Issue 11 · RFQ §3.1.11 · Appendix 2: In Situ Box',
+            ],
+            ListEntityTypes::class => [
+                'body' => 'This page manages the options of the Type of Entity field on an authority: Notary, Interventor, Person and any others the archive adds. Each entry has a machine code stored on the authority, a label, a sort order and an active flag.
+
+A deactivated type is no longer offered for new records, but authorities that have it keep it. Editing is limited to Administrators.',
+                'refs' => 'Client feedback 2026-11-05, Issue 5 · RFQ §3.1.11',
             ],
             ListCurrentBoxTypes::class => [
                 'body' => 'This page manages the current-box-type controlled vocabulary — the present physical state of a document\'s storage, as opposed to the historical box-type list. It covers the box-lifecycle states described in Appendix 2 such as the actual box a document sits in, plus special states like Not in Box (temporarily on a conservation or transcription/digitisation shelf) and Mounted; No Box (framed museum items with no allocated box).

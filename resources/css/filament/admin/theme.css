@@ -795,10 +795,12 @@ input.fi-input {
    `.fi-ta-table thead th` earlier). At an equal z-index the sticky header wins
    and paints over the lower half of a dropdown that opens across it — which is
    exactly why the bulk-actions "Delete selected" item was invisible while
-   "Relocate boxes" (above the header line) showed. Filament modals sit at
-   z-index 40+, so 30 stays safely below them. */
+   "Relocate boxes" (above the header line) showed. The header's sticky checkbox
+   cell is at 30 and came later in the page, painting over the menu (client
+   2026-11-05, image14). Filament modals sit at z-index 40+, so 35 stays safely
+   below them. */
 .fi-dropdown-panel {
-    z-index: 30;
+    z-index: 35;
 }
 
 .fi-dropdown-list-item-button:hover {

@@ -7,7 +7,6 @@ use App\Filament\Resources\DocumentResource;
 use Filament\Actions;
 use Filament\Actions\ActionGroup;
 use Filament\Resources\Pages\ViewRecord;
-use Filament\Schemas\Schema;
 use Illuminate\Contracts\Support\Htmlable;
 
 class ViewDocument extends ViewRecord
@@ -55,29 +54,6 @@ class ViewDocument extends ViewRecord
         }
 
         return $identifier . ' — ' . $author;
-    }
-
-    /**
-     * Render the relation-manager tabs (Identifier history, Issue flags)
-     * ABOVE the infolist instead of Filament's default
-     * below-everything position, so the document's history is the first thing
-     * on the page. Mirrors the base ViewRecord::content() with the two
-     * components swapped.
-     */
-    public function content(Schema $schema): Schema
-    {
-        if ($this->hasCombinedRelationManagerTabsWithContent()) {
-            return $schema->components([
-                $this->getRelationManagersContentComponent(),
-            ]);
-        }
-
-        return $schema->components([
-            $this->getRelationManagersContentComponent(),
-            $this->hasInfolist()
-                ? $this->getInfolistContentComponent()
-                : $this->getFormContentComponent(),
-        ]);
     }
 
     protected function getHeaderActions(): array

@@ -47,6 +47,8 @@ class Box extends Model implements AuditableContract, Sortable
     /** box_location_history.source of a location taken from the box's documents. */
     public const string LOCATION_SOURCE_DOCUMENTS = 'documents';
 
+    private const string TRACKING_NOTE_DELIMITER = '; ';
+
     /**
      * Boxes are ordered WITHIN their batch — sort_order is unique per batch_id,
      * not globally. The override below scopes the sort query so renumbering
@@ -81,6 +83,13 @@ class Box extends Model implements AuditableContract, Sortable
      * operator change never sets it, so the live audit hook keeps working.
      */
     public bool $suppressBarcodeHistory = false;
+
+    /**
+     * Transient flag for the next save: the location on this instance was given
+     * on purpose, so the status IN rule below leaves it. BoxImporter sets it when
+     * the sheet names a location for the box (client 2026-11-05).
+     */
+    public bool $keepLocationWhenIn = false;
 
     protected $fillable = [
         'sort_order',
@@ -309,6 +318,18 @@ class Box extends Model implements AuditableContract, Sortable
         return $this->disinfestation_date !== null;
     }
 
+    /**
+     * Client 2026-11-05: "Tracking Note is being concatenated to tracking note
+     * but we need some kind of delimeter ex: '; ' if a tracking note already
+     * exists". Not saved here: the caller saves with the rest of its change.
+     */
+    public function appendTrackingNote(string $note): void
+    {
+        // A literal "0" is a real note, so no empty().
+        $existing = trim((string) $this->tracking_note);
+        $this->tracking_note = $existing !== '' ? $existing . self::TRACKING_NOTE_DELIMITER . $note : $note;
+    }
+
     /** RFQ rule #3: IN_SITU / NRA require parent RAS box */
     /**
      * How a person names the box: "RAS 110 (batch 28) · AA00110". Reads the
@@ -345,19 +366,27 @@ class Box extends Model implements AuditableContract, Sortable
      * 2026-10-28: a contains-search on the number filled the list with Batch
      * 19 and never reached Batch 30 / Box 8, and "MAV 1" found nothing).
      *
-     * @return array<int, string> id => shortLabel()
+     * $narrow limits every search to some boxes, and with it the empty search
+     * lists the first of them, so a picker can open on its options. A plain
+     * number or text that matches no box number is tried on the barcode.
+     *
+     * @param ?\Closure(Builder): mixed $narrow
+     * @param ?\Closure(self): string $label instead of shortLabel()
+     * @return array<int, string> id => label
      */
-    public static function searchOptions(string $search, int $limit = 50): array
+    public static function searchOptions(string $search, int $limit = 50, ?\Closure $narrow = null, ?\Closure $label = null): array
     {
         $search = trim((string) preg_replace('/\s+/u', ' ', $search));
-        if ($search === '') {
+        if ($search === '' && $narrow === null) {
             return [];
         }
 
         // The searches to run, best match first; each narrows the query it is given.
         $steps = [];
-        $type = self::splitTypeAndNumber($search);
-        if ($type !== null) {
+        $type = $search === '' ? null : self::splitTypeAndNumber($search);
+        if ($search === '') {
+            $steps[] = fn (Builder $q): Builder => $q;
+        } elseif ($type !== null) {
             [$code, $number] = $type;
             $byType = fn (Builder $q): Builder => $q->where('box_type', $code);
             $steps[] = $number === ''
@@ -378,6 +407,7 @@ class Box extends Model implements AuditableContract, Sortable
             $steps[] = fn (Builder $q): Builder => $q->where('box_number', $number);
             $steps[] = fn (Builder $q): Builder => $q->where('box_number', 'like', $number . '%');
             $steps[] = fn (Builder $q): Builder => $q->where('box_number', 'like', '%' . $number . '%');
+            $steps[] = fn (Builder $q): Builder => $q->where('barcode', 'like', '%' . $number . '%');
         }
 
         $batchNumber = '(select search_batch.batch_number from batches search_batch where search_batch.id = boxes.batch_id)';
@@ -389,6 +419,9 @@ class Box extends Model implements AuditableContract, Sortable
             }
             $query = self::query()->with('batch');
             $step($query);
+            if ($narrow !== null) {
+                $narrow($query);
+            }
             $query->whereNotIn('id', array_keys($options))
                 ->orderByRaw("CAST({$batchNumber} AS UNSIGNED)")
                 ->orderByRaw($batchNumber)
@@ -396,8 +429,8 @@ class Box extends Model implements AuditableContract, Sortable
                 ->orderBy('box_number')
                 ->limit($left)
                 ->get()
-                ->each(function (self $box) use (&$options): void {
-                    $options[$box->getKey()] = $box->shortLabel();
+                ->each(function (self $box) use (&$options, $label): void {
+                    $options[$box->getKey()] = $label !== null ? $label($box) : $box->shortLabel();
                 });
         }
 
@@ -511,6 +544,20 @@ class Box extends Model implements AuditableContract, Sortable
     public function scopeNotDestroyed(Builder $q): Builder
     {
         return $q->whereNull('destroyed_at');
+    }
+
+    /**
+     * Narrow a query to the boxes a document can be moved into: not destroyed, not
+     * permanently out. Only RAS boxes carry a meaningful barcode status, the
+     * others hold the column default; NULL has to stay in (NULL != x is not
+     * true in SQL).
+     */
+    public static function whereAssignable(Builder $q): Builder
+    {
+        return $q->whereNull($q->qualifyColumn('destroyed_at'))
+            ->where(fn (Builder $q): Builder => $q
+                ->whereNull($q->qualifyColumn('barcode_status'))
+                ->orWhere($q->qualifyColumn('barcode_status'), '!=', 'PERM_OUT'));
     }
 
     /**
@@ -974,6 +1021,28 @@ class Box extends Model implements AuditableContract, Sortable
                 throw ValidationException::withMessages([
                     'barcode_status' => 'PERM OUT is a permanent transfer: a box cannot move from PERM OUT to OUT. It may only stay PERM OUT or re-enter with status IN (which requires a new barcode) (RFQ Feedback1 C2.2).',
                 ]);
+            }
+        });
+
+        // Client 2026-11-05: "If a Box has Barcode Status IN, we should
+        // automatically set Location as RAS". On the way INTO status IN only, so
+        // an unrelated save of a box already IN leaves a location set by hand,
+        // and only where the location exists: without one, nothing changes. A
+        // RAS box alone (only they have a barcode status), and not a destroyed
+        // one. A box created without a status gets IN from the column default.
+        static::saving(function (self $box): void {
+            if ($box->keepLocationWhenIn || $box->box_type !== 'RAS' || $box->destroyed_at !== null) {
+                return;
+            }
+            $isIn = $box->exists
+                ? $box->isDirty('barcode_status') && $box->barcode_status === 'IN'
+                : ($box->barcode_status ?? 'IN') === 'IN';
+            if (! $isIn) {
+                return;
+            }
+            $ras = Location::namedFor(Location::NAME_RAS, $box->effectiveRepositoryId());
+            if ($ras !== null) {
+                $box->location_id = $ras->getKey();
             }
         });
 

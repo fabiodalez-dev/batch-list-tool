@@ -20,8 +20,7 @@ use Illuminate\Database\Eloquent\Collection as EloquentCollection;
  * starting with RWL/OWL) the operator is warned via the notification body
  * that they may also want to move the docs to Batch 50 — but the action
  * stays focused (no implicit batch move), keeping the unit-of-work tight.
- * Use the dedicated "Move to wills" composite action (#13) for the combined
- * intent.
+ * Client 2026-11-05: moving them there is a box under Batch 50 and "Move to box".
  */
 final class SetSeriesAction
 {
@@ -97,7 +96,7 @@ final class SetSeriesAction
             || str_starts_with(strtoupper((string) $series->code), 'OWL');
 
         $willsHint = $isWillsSeries
-            ? " — these documents may belong in Batch 50 (wills). Use 'Move to wills' to relocate them."
+            ? " — these documents may belong in Batch 50 (wills). Create a box under Batch 50 and use 'Move to box'."
             : '';
 
         ActionSupport::notifyBulkResult(

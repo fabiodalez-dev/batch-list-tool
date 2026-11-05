@@ -367,7 +367,7 @@ class ImportWizard extends Page
         'authority' => [
             'alternative_identifier' => 'The code this archive cites the creator by. Required, and unique.',
             'identifier' => 'The NAM code, where the archive holds one. Optional.',
-            'entity_type' => 'Person or Institution (e.g. "Notary" counts as Institution).',
+            'entity_type' => 'A value of the Entity Types page, e.g. Notary, Interventor or Person. Blank means Person.',
             'practice_dates_active' => 'A year range, e.g. "1607-1629".',
             'ntg_dates_active' => 'A year range for Notary-to-Government service, e.g. "1882-1893".',
             'name_suffix' => 'e.g. "Senior", "Junior". Kept apart from the given name.',

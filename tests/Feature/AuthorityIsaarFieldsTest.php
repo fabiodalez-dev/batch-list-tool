@@ -161,18 +161,18 @@ it('still imports a sheet that uses any of the previous identifier names', funct
     expect($older['identifier'] ?? null)->toBe('Identifier');
 });
 
-it('carries every new descriptive column, Notes included', function (): void {
+it('carries every new descriptive column, Note included', function (): void {
     $headers = TemplateGenerator::headersFor('authority');
 
     foreach ([
-        'Authorised form of name',
-        'Functions, occupations and activities',
+        'Authorised Form of Name',
+        'Functions, Occupations and Activities',
         'Level of detail',
         'Status',
         'Rules and/or conventions',
         'Date of creation',
         'Creator of record',
-        'Notes',
+        'Note',
     ] as $expected) {
         expect($headers)->toContain($expected);
     }
@@ -190,9 +190,9 @@ it('maps every template header onto an importer column without manual mapping', 
     expect($map['status'] ?? null)->toBe('Status');
     expect($map['date_of_creation'] ?? null)->toBe('Date of creation');
     expect($map['creator_of_record'] ?? null)->toBe('Creator of record');
-    expect($map['notes'] ?? null)->toBe('Notes');
-    expect($map['authorised_form_of_name'] ?? null)->toBe('Authorised form of name');
-    expect($map['functions_occupations_activities'] ?? null)->toBe('Functions, occupations and activities');
+    expect($map['notes'] ?? null)->toBe('Note');
+    expect($map['authorised_form_of_name'] ?? null)->toBe('Authorised Form of Name');
+    expect($map['functions_occupations_activities'] ?? null)->toBe('Functions, Occupations and Activities');
     expect($map['rules_and_conventions'] ?? null)->toBe('Rules and/or conventions');
 });
 
