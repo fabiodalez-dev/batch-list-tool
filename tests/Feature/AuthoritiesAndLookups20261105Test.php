@@ -395,6 +395,11 @@ it('adds, edits, views and deletes an entity type on its page, for the authority
     Livewire::test(ListEntityTypes::class)
         ->assertCanSeeTableRecords(EntityType::all())
         ->callTableBulkAction('delete', [$type]);
+    expect(EntityType::where('code', 'Family')->exists())->toBeTrue();
+
+    // Once no authority holds it, it can go.
+    $a->update(['entity_type' => 'Notary']);
+    Livewire::test(ListEntityTypes::class)->callTableBulkAction('delete', [$type]);
     expect(EntityType::where('code', 'Family')->exists())->toBeFalse();
 });
 

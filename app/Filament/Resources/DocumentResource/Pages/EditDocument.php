@@ -9,6 +9,7 @@ use App\Filament\Support\DocumentDates;
 use App\Models\Document;
 use App\Models\DocumentIdentifierHistory;
 use Filament\Actions;
+use Filament\Actions\Action;
 use Filament\Actions\ActionGroup;
 use Filament\Resources\Pages\EditRecord;
 
@@ -33,7 +34,10 @@ class EditDocument extends EditRecord
             // The 13 single-record power-actions live in a dropdown group
             // so the header stays scannable. ActionGroup is the Filament 5
             // way to nest header actions under a single trigger.
-            ActionGroup::make(DocumentActionGroup::singleHeaderActions())
+            ActionGroup::make(array_map(
+                fn (Action $action): Action => $action->after(fn () => $this->reloadForm()),
+                DocumentActionGroup::singleHeaderActions(),
+            ))
                 ->label('Actions')
                 ->icon('heroicon-o-bolt')
                 ->color('primary')
@@ -75,6 +79,20 @@ class EditDocument extends EditRecord
     {
         $this->saveCustomFields();
         $this->trackAttributionChanges();
+        $this->reloadForm();
+    }
+
+    /**
+     * The page stays open after a save and after a header action, and its next
+     * save writes the form's state back: a history row it does not list would
+     * be deleted, and an action's change undone. So the form always holds what
+     * the document holds now.
+     */
+    private function reloadForm(): void
+    {
+        $this->getRecord()->refresh();
+        $this->getRecord()->unsetRelations();
+        $this->fillForm();
     }
 
     private function document(): Document

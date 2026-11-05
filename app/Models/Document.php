@@ -419,7 +419,7 @@ class Document extends Model implements AuditableContract, HasMedia, Sortable
     public function latestPastVolume(): ?string
     {
         $row = $this->identifierHistory
-            ->filter(fn (DocumentIdentifierHistory $row): bool => filled($row->previous_volume))
+            ->filter(fn (Model $row): bool => filled($row->getAttribute('previous_volume')))
             ->sortByDesc('id')
             ->first();
 

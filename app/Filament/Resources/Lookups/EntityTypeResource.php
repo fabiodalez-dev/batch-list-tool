@@ -15,12 +15,15 @@ use Filament\Actions\DeleteBulkAction;
 use Filament\Actions\EditAction;
 use Filament\Actions\ViewAction;
 use Filament\Forms;
+use Filament\Notifications\Notification;
 use Filament\Resources\Resource;
 use Filament\Schemas\Components\Section;
 use Filament\Schemas\Schema;
 use Filament\Tables;
 use Filament\Tables\Table;
 use Illuminate\Database\Eloquent\Builder;
+use Illuminate\Database\Eloquent\Collection as EloquentCollection;
+use Illuminate\Support\LazyCollection;
 
 /**
  * Client 2026-11-05: administrator CRUD for an authority's Type of Entity
@@ -78,6 +81,8 @@ class EntityTypeResource extends Resource
                             // authorities.entity_type is varchar(64).
                             ->maxLength(64)
                             ->unique(ignoreRecord: true)
+                            // What authorities store: it stays once one holds it.
+                            ->disabled(fn (?EntityType $record): bool => $record?->isInUse() ?? false)
                             ->helperText('Machine key stored on records — renaming an in-use code does not update existing rows.'),
                         Forms\Components\TextInput::make('label')
                             ->required()
@@ -142,7 +147,31 @@ class EntityTypeResource extends Resource
             ])
             ->bulkActions([
                 BulkActionGroup::make([
-                    DeleteBulkAction::make(),
+                    // A type authorities hold is left out, and she reads why.
+                    DeleteBulkAction::make()
+                        ->action(function (EloquentCollection|LazyCollection $records): void {
+                            $deleted = 0;
+                            $refused = [];
+
+                            foreach ($records as $record) {
+                                /** @var EntityType $record */
+                                $reason = $record->deleteBlockedBecause();
+                                if ($reason !== null) {
+                                    $refused[] = $reason;
+
+                                    continue;
+                                }
+                                $record->delete();
+                                $deleted++;
+                            }
+
+                            $notification = Notification::make()->title("Deleted {$deleted} entity type(s).");
+
+                            ($refused === []
+                                ? $notification->success()
+                                : $notification->warning()->body(implode(' ', $refused)))->send();
+                        })
+                        ->deselectRecordsAfterCompletion(),
                 ]),
             ]);
     }

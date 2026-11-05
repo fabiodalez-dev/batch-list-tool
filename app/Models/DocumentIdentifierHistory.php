@@ -60,7 +60,7 @@ class DocumentIdentifierHistory extends Model implements AuditableContract
 
     public function previousAuthority(): BelongsTo
     {
-        return $this->belongsTo(Authority::class, 'previous_authority_id');
+        return $this->belongsTo(Authority::class, 'previous_authority_id')->withTrashed();
     }
 
     /**

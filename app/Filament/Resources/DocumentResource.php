@@ -388,7 +388,8 @@ class DocumentResource extends Resource
                                     ->preload()
                                     ->options(fn (): array => self::citingAuthorityOptions(''))
                                     ->getSearchResultsUsing(fn (string $search): array => self::citingAuthorityOptions($search))
-                                    ->getOptionLabelUsing(fn ($value): ?string => Authority::query()->find($value)?->citingLabel()),
+                                    // A past authority may since have been deleted: the row still names it.
+                                    ->getOptionLabelUsing(fn ($value): ?string => Authority::withTrashed()->find($value)?->citingLabel()),
                                 ...self::historyRowDetails(),
                             ]),
                         // The imported "Prev Attributed Identifier" is text, not a

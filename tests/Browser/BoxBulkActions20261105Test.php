@@ -74,10 +74,7 @@ it('shows Current Cycle on the Documents list after sending the box', function (
     Document::factory()->create(['repository_id' => $repo->id, 'batch_id' => $batch->id, 'current_box_id' => $box->id, 'is_in_disinfestation' => true, 'disinfestation_date' => '2021-03-04']);
 
     $page = bl_login($admin)->navigate('/admin/documents')->wait(1);
-    $page->click('[aria-label="Column manager"]')->wait(1)
-        ->click('input.fi-checkbox-input[id$="-disinfestation_date"]')->wait(1)
-        ->click('Apply columns')->wait(2)
-        ->assertSee('Current Cycle')
+    $page->assertSee('Current Cycle')
         ->assertDontSee('04-03-2021')
         ->assertNoJavascriptErrors();
 
