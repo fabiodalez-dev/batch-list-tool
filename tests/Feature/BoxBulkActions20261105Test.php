@@ -315,6 +315,15 @@ it('finishes back to RAS: documents dated, flag cleared, status IN, location RAS
         ->and(Audit::query()->where('event', 'document.marked_disinfested')->where('auditable_id', $doc->id)->exists())->toBeTrue();
 });
 
+it('names the disinfestation date as dd-mm-yyyy in its notification', function (): void {
+    bb_location('RAS');
+    $box = bb_box(['barcode_status' => 'OUT', 'location_id' => bb_location('Disinfestation')->id]);
+
+    Livewire::test(ListBoxes::class)
+        ->callTableBulkAction('finishDisinfestation', [$box], data: ['disinfestation_date' => '2026-10-01', 'destination' => 'ras'])
+        ->assertNotified('1 box finished disinfestation on 01-10-2026');
+});
+
 it('finishes to an archive location: RAS boxes PERM_OUT, other types the location only (issue 9)', function (): void {
     $chamber = bb_location('Disinfestation');
     $archive = bb_location('Archive 3', 'repository');
