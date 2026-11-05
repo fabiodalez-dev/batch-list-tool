@@ -153,7 +153,8 @@ it('records a history row automatically when the identifier changes', function (
         ->and($history->first()->new_identifier)->toBe('IDENT-AFTER');
 });
 
-it('adds an editable history row (incl. past volume) through the document edit form', function () {
+// Client 2026-11-05: past volumes replace the open-ended previous/new identifier inputs.
+it('adds a past volume row through the document edit form', function () {
     $user = dhs_actAsSuperAdmin();
     $this->actingAs($user);
 
@@ -170,12 +171,9 @@ it('adds an editable history row (incl. past volume) through the document edit f
 
     Livewire::test(EditDocument::class, ['record' => $doc->getRouteKey()])
         ->fillForm([
-            'identifierHistory' => [
+            'pastVolumes' => [
                 [
-                    'previous_identifier' => 'MANUAL-OLD-ID',
-                    'new_identifier' => 'EDIT-FORM-DOC',
                     'previous_volume' => 'MANUAL-OLD-VOL',
-                    'new_volume' => null,
                     'changed_at' => now(),
                     'reason' => 'Back-fill prior identification',
                 ],
@@ -185,7 +183,7 @@ it('adds an editable history row (incl. past volume) through the document edit f
         ->assertHasNoFormErrors();
 
     $row = DocumentIdentifierHistory::where('document_id', $doc->id)
-        ->where('previous_identifier', 'MANUAL-OLD-ID')
+        ->where('previous_identifier', 'EDIT-FORM-DOC')
         ->first();
 
     expect($row)->not->toBeNull()

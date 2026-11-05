@@ -8,17 +8,22 @@ use App\Filament\Actions\Documents\MoveToBoxAction;
 use App\Filament\Concerns\AppliesFieldPermissions;
 use App\Filament\Resources\DocumentResource\Pages;
 use App\Filament\Support\CreatorColumn;
+use App\Filament\Support\DocumentDates;
 use App\Filament\Support\DocumentRules;
 use App\Filament\Support\EqualsFirst;
 use App\Filament\Support\ListRules;
 use App\Filament\Support\MatchQueryBuilder;
+use App\Filament\Support\MultiValue;
 use App\Filament\Support\SearchableSelects;
+use App\Models\Accession;
 use App\Models\Authority;
 use App\Models\Box;
 use App\Models\CustomFieldDefinition;
 use App\Models\Document;
 use App\Models\DocumentFlag;
+use App\Models\DocumentIdentifierHistory;
 use App\Models\DocumentType;
+use App\Models\Location;
 use App\Models\Lookup\BoxType;
 use App\Models\Lookup\CurrentBoxType;
 use App\Models\Lookup\DigitisationStatus;
@@ -50,6 +55,7 @@ use Filament\Schemas;
 use Filament\Schemas\Components\Grid;
 use Filament\Schemas\Components\Section;
 use Filament\Schemas\Components\Utilities\Get;
+use Filament\Schemas\Components\Utilities\Set;
 use Filament\Schemas\Schema;
 use Filament\Support\Colors\Color;
 use Filament\Support\Enums\FontWeight;
@@ -89,6 +95,13 @@ class DocumentResource extends Resource
      * the per-field, per-role read/write/hidden matrix (RFQ §3.1.8).
      */
     private const string FIELD_PERMISSIONS_KEY = 'document';
+
+    /** The custom field shown under Alternate Identification (client 2026-11-05). */
+    private const string PAST_REFERENCE_CODE_KEY = 'past_reference_code';
+
+    private const string NOT_DISINFESTED = 'Not disinfested';
+
+    private const string CURRENT_CYCLE = 'Current Cycle';
 
     /**
      * Canonical list of Document direct columns the omni-search bar covers.
@@ -147,6 +160,14 @@ class DocumentResource extends Resource
         // Local alias so each gate call stays a one-liner instead of
         // repeating the resource key constant 40+ times.
         $g = fn (Schemas\Components\Component $c): Schemas\Components\Component => self::gateField($c, self::FIELD_PERMISSIONS_KEY);
+        // For a field that must then choose its own dehydrated(): gateField()
+        // forces dehydrated(true), which would write a disabled field's posted
+        // value back on save.
+        $gf = function (Forms\Components\Field $c): Forms\Components\Field {
+            self::gateField($c, self::FIELD_PERMISSIONS_KEY);
+
+            return $c;
+        };
 
         // Layout rule (user mandate, do NOT regress):
         //   - root schema is single-column (columns(1)) — no Filament-default
@@ -157,6 +178,12 @@ class DocumentResource extends Resource
         //     (Textarea, KeyValue, multi-Select with chips, helperText-heavy
         //     input, Repeater) must take columnSpanFull() so it never sits
         //     in a sub-cell of a grid-in-a-grid.
+        //
+        // Client 2026-11-05: New, Edit and View carry the same sections in the
+        // same order (infolist() below mirrors this one), then the History tabs.
+        // Legacy box history, legacy barcodes, No of Acts and the KeyValue
+        // buckets are no longer offered: not being in the form, a save leaves
+        // those columns as they are.
         return $schema
             ->columns(1)
             ->schema([
@@ -164,8 +191,116 @@ class DocumentResource extends Resource
                     ->columnSpanFull()
                     ->columns(3)
                     ->schema([
-                        $g(Forms\Components\TextInput::make('identifier')->required()->maxLength(64)),
+                        // Client 2026-11-05: "this shouldn't be editable (greyed
+                        // out) ... When creating a new document this should be
+                        // filled up automatically" (Document's creating hook).
+                        $gf(Forms\Components\TextInput::make('identifier')
+                            ->disabled()
+                            ->placeholder('Assigned automatically')
+                            ->helperText('Internal system number, assigned automatically.'))
+                            ->dehydrated(false),
+                        // Client 2026-10-29: "Add flag label rather than colour code".
+                        // The flags themselves, chosen by name; the legacy Colour code
+                        // (never filled in) is no longer offered.
+                        Forms\Components\Select::make('open_flag_types')
+                            ->searchable()
+                            ->label('Flag')
+                            ->multiple()
+                            ->options(fn (): array => DocumentFlag::typeOptions())
+                            ->afterStateHydrated(fn (Forms\Components\Select $component, ?Document $record) => $component->state(
+                                $record?->exists ? $record->openFlags()->pluck('type')->unique()->values()->all() : [],
+                            ))
+                            ->dehydrated(false)
+                            // Checked here too: a disabled field is only greyed out
+                            // in the browser.
+                            ->saveRelationshipsUsing(function (Document $record, ?array $state): void {
+                                if (auth()->user()?->can('create_document_flag') ?? false) {
+                                    $record->syncOpenFlagTypes($state ?? [], auth()->id());
+                                }
+                            })
+                            ->disabled(fn (): bool => ! (auth()->user()?->can('create_document_flag') ?? false))
+                            ->helperText('A flag removed here is marked resolved on the Document Flags page.')
+                            ->columnSpanFull(),
+                        self::disinfestationIndicatorEntry(),
+                        $g(SearchableSelects::repository(
+                            'repository_id',
+                            fn ($query) => $query->whereIn(
+                                'id',
+                                auth()->user()?->hasAnyRole(['super_admin', 'admin'])
+                                    ? Repository::query()->pluck('id')->all()
+                                    : (auth()->user()?->repositories()->pluck('repositories.id')->all() ?? [])
+                            ),
+                        )
+                            ->label('Repository')
+                            ->required()
+                            // live() so the Custom fields Section re-renders when
+                            // the operator picks a different repository (GROUP A fix).
+                            ->live()
+                            // The Past Reference Code tags appear with a repository
+                            // that has the field, and a tag input needs a list.
+                            ->afterStateUpdated(function (Get $get, Set $set): void {
+                                $set('custom.' . self::PAST_REFERENCE_CODE_KEY, MultiValue::split($get('custom.' . self::PAST_REFERENCE_CODE_KEY)));
+                            })
+                            ->default(fn () => auth()->user()?->default_repository_id)),
                         $g(Forms\Components\TextInput::make('catalogue_identifier')->label(ColumnLabels::get('document', 'catalogue_identifier'))->maxLength(191)),
+                        // Client feedback 2026-08-18 #26: a per-document temporary
+                        // identifier, unique across the archive (enforced by a DB
+                        // unique index + the importer's afterFill check).
+                        $g(Forms\Components\TextInput::make('temporary_identifier')
+                            ->label(ColumnLabels::get('document', 'temporary_identifier'))
+                            ->maxLength(191)
+                            ->unique(ignoreRecord: true)
+                            ->nullable()),
+                        $g(SearchableSelects::authoritiesMulti('authorities')
+                            ->label('Authority Reference Code')
+                            ->columnSpanFull()),
+                        $g(Forms\Components\TextInput::make('volume_number')->label(ColumnLabels::get('document', 'volume_number'))->maxLength(64)),
+                        // Client 2026-11-05: "ask the user to select which option
+                        // he wants for the date". Not stored: DocumentDates reads
+                        // it back from what the document holds, and turns the
+                        // chosen fields into the `dates` text on save.
+                        $gf(Forms\Components\Radio::make('dates_as')
+                            ->label('Dates as')
+                            ->options(DocumentDates::options())
+                            ->inline()
+                            ->live()
+                            ->afterStateHydrated(fn (Forms\Components\Radio $component, ?Document $record) => $component->state(DocumentDates::optionFor($record)))
+                            ->columnSpanFull())
+                            ->dehydrated(false),
+                        $g(Forms\Components\TextInput::make('dates_year_start')
+                            ->label('Year start')
+                            ->integer()->minValue(1)->maxValue(9999)
+                            ->visible(fn (Get $get): bool => $get('dates_as') === DocumentDates::YEAR)),
+                        $g(Forms\Components\TextInput::make('dates_year_end')
+                            ->label('Year end')
+                            ->integer()->maxValue(9999)
+                            ->minValue(fn (Get $get): int => max(1, (int) $get('dates_year_start')))
+                            ->visible(fn (Get $get): bool => $get('dates_as') === DocumentDates::YEAR)),
+                        $g(Forms\Components\DatePicker::make('dates_start')
+                            ->label('Date start')
+                            ->visible(fn (Get $get): bool => $get('dates_as') === DocumentDates::DATE)),
+                        $g(Forms\Components\DatePicker::make('dates_end')
+                            ->label('Date end')
+                            ->minDate(fn (Get $get): mixed => $get('dates_start') ?: null)
+                            ->visible(fn (Get $get): bool => $get('dates_as') === DocumentDates::DATE)),
+                        $g(Forms\Components\TextInput::make('dates')->label(ColumnLabels::get('document', 'dates'))->maxLength(191)
+                            ->helperText('As written on the document, e.g. "1607-1629" or "Jun 1997 - Nov 1998"')
+                            ->visible(fn (Get $get): bool => $get('dates_as') === DocumentDates::TEXT)
+                            ->columnSpanFull()),
+                        $g(Forms\Components\TextInput::make('part_number')->label(ColumnLabels::get('document', 'part_number'))->maxLength(64)->nullable()),
+                        $g(Forms\Components\Select::make('practice')
+                            ->label(ColumnLabels::get('document', 'practice'))
+                            ->searchable()
+                            ->options(fn (): array => Practice::query()
+                                ->where('is_active', true)->orderBy('name')->pluck('name', 'name')->all())
+                            ->createOptionForm([
+                                Forms\Components\TextInput::make('name')->required()->maxLength(100)->unique(Practice::class, 'name'),
+                                Forms\Components\Textarea::make('description')->maxLength(500),
+                            ])
+                            ->createOptionUsing(fn (array $data): string => Practice::create([
+                                'name' => $data['name'], 'description' => $data['description'] ?? null, 'is_active' => true,
+                            ])->name)),
+                        $g(Forms\Components\TextInput::make('deeds')->label(ColumnLabels::get('document', 'deeds'))->maxLength(2000)->columnSpanFull()),
                         $g(Forms\Components\Select::make('document_type')
                             ->label(ColumnLabels::get('document', 'document_type'))
                             ->searchable()
@@ -190,97 +325,92 @@ class DocumentResource extends Resource
                                 'name' => $data['name'], 'description' => $data['description'] ?? null, 'is_active' => true,
                             ])->storedValue())),
                         $g(SearchableSelects::series('series_id')
-                            ->label('Series')
+                            ->label(ColumnLabels::get('document', 'series'))
                             ->required()),
-                        $g(SearchableSelects::repository(
-                            'repository_id',
-                            fn ($query) => $query->whereIn(
-                                'id',
-                                auth()->user()?->hasAnyRole(['super_admin', 'admin'])
-                                    ? Repository::query()->pluck('id')->all()
-                                    : (auth()->user()?->repositories()->pluck('repositories.id')->all() ?? [])
-                            ),
-                        )
-                            ->label('Repository')
-                            ->required()
-                            // live() so the Custom fields Section re-renders when
-                            // the operator picks a different repository (GROUP A fix).
-                            ->live()
-                            ->default(fn () => auth()->user()?->default_repository_id)),
-                        $g(Forms\Components\TextInput::make('volume_number')->label(ColumnLabels::get('document', 'volume_number'))->maxLength(64)),
-                        $g(Forms\Components\TextInput::make('part_number')->label(ColumnLabels::get('document', 'part_number'))->maxLength(64)->nullable()),
-                        $g(Forms\Components\Select::make('practice')
-                            ->label(ColumnLabels::get('document', 'practice'))
-                            ->searchable()
-                            ->options(fn (): array => Practice::query()
-                                ->where('is_active', true)->orderBy('name')->pluck('name', 'name')->all())
-                            ->createOptionForm([
-                                Forms\Components\TextInput::make('name')->required()->maxLength(100)->unique(Practice::class, 'name'),
-                                Forms\Components\Textarea::make('description')->maxLength(500),
-                            ])
-                            ->createOptionUsing(fn (array $data): string => Practice::create([
-                                'name' => $data['name'], 'description' => $data['description'] ?? null, 'is_active' => true,
-                            ])->name)),
-                        $g(Forms\Components\TextInput::make('dates')->label(ColumnLabels::get('document', 'dates'))->maxLength(191)
-                            ->helperText('Free-text dates as in POC, e.g. "1607-1629" or "Jun 1997 - Nov 1998"')
+                        $g(Forms\Components\Toggle::make('torre')->label(ColumnLabels::get('document', 'torre'))),
+                        // Client 2026-11-05: "a drop down from Notary Accessions
+                        // (Accession Number concatenated with Title)". Only here:
+                        // the other Accession pickers keep their own labels.
+                        $g(SearchableSelects::accession('accession_id')
+                            ->label('Accession')
+                            ->getOptionLabelFromRecordUsing(fn (Accession $r): string => self::accessionLabel($r))
+                            ->options(fn (): array => self::accessionOptions(''))
+                            ->getSearchResultsUsing(fn (string $search): array => self::accessionOptions($search))
+                            ->getOptionLabelUsing(fn ($value): ?string => ($accession = Accession::withTrashed()->find($value)) instanceof Accession ? self::accessionLabel($accession) : null)
                             ->columnSpanFull()),
-                        $g(Forms\Components\TextInput::make('deeds')->label(ColumnLabels::get('document', 'deeds'))->maxLength(2000)->columnSpanFull()),
-                        $g(Forms\Components\TextInput::make('number_of_acts')->label('No of Acts')->maxLength(64)),
+                        $g(Forms\Components\Textarea::make('notes')->label(ColumnLabels::get('document', 'notes'))->columnSpanFull()->rows(3)),
+                        // Client feedback 2026-08-04: a Tracking Note distinct
+                        // from the general note (this is the existing `tracking`
+                        // column, relabelled and promoted to a multi-line field).
+                        $g(Forms\Components\Textarea::make('tracking')->label(ColumnLabels::get('document', 'tracking'))->rows(3)->maxLength(500)->columnSpanFull()),
                     ]),
 
-                // Feedback1 Wave C2.5 — editable history of PREVIOUS document
-                // identifications AND volume numbers. Operators can record
-                // prior identifiers / volumes the document was known by; the
-                // documents dashboard search matches these past values too
-                // (see applyOmniSearch + getGloballySearchableAttributes).
-                // The DocumentObserver ALSO appends a row on every identifier
-                // change, so this Repeater is an additive editing surface.
-                // Gated to users with the document update permission.
-                Section::make('Previous identifiers & volume numbers')
-                    ->columnSpanFull()
-                    ->collapsed()
-                    ->description('Past identifications and volume numbers this document was known by. Searchable from the documents dashboard. More can be added.')
-                    ->visible(fn (): bool => (bool) auth()->user()?->can('update_document'))
-                    ->schema([
-                        Forms\Components\Repeater::make('identifierHistory')
-                            ->relationship()
-                            ->hiddenLabel()
-                            ->columns(2)
-                            ->columnSpanFull()
-                            ->defaultItems(0)
-                            ->addActionLabel('Add previous identification')
-                            ->schema([
-                                // previous_identifier is NOT NULL in the schema.
-                                Forms\Components\TextInput::make('previous_identifier')
-                                    ->label('Previous identifier')
-                                    ->required()
-                                    ->maxLength(64),
-                                Forms\Components\TextInput::make('new_identifier')
-                                    ->label('New identifier')
-                                    ->maxLength(64),
-                                Forms\Components\TextInput::make('previous_volume')
-                                    ->label('Previous volume number')
-                                    ->maxLength(64),
-                                Forms\Components\TextInput::make('new_volume')
-                                    ->label('New volume number')
-                                    ->maxLength(64),
-                                Forms\Components\DateTimePicker::make('changed_at')
-                                    ->label('Changed at')
-                                    ->default(now()),
-                                Forms\Components\TextInput::make('reason')
-                                    ->label('Reason / note')
-                                    ->maxLength(255),
-                            ]),
-                    ]),
-
-                Section::make('Authorities (Creators)')
+                // Client 2026-11-05: "Multiple of each may exist". The values of
+                // a multi-value field stay in the one column, joined by "; ", so
+                // imports, exports, list columns and filters read them as before.
+                Section::make('Alternate Identification')
+                    ->description('Multiple of each may exist.')
                     ->columnSpanFull()
                     ->columns(1)
                     ->schema([
-                        $g(SearchableSelects::authoritiesMulti('authorities')->columnSpanFull()),
+                        $g(self::multiValueInput('object_reference_number', ColumnLabels::get('document', 'object_reference_number'), 500)),
+                        // The Edit page also adds a row by itself when the volume
+                        // or an authority changes (EditDocument::afterSave).
+                        Forms\Components\Repeater::make('pastVolumes')
+                            ->label('Past volume numbers')
+                            ->relationship()
+                            ->columnSpanFull()
+                            ->defaultItems(0)
+                            ->addActionLabel('Add past volume number')
+                            ->visible(fn (): bool => (bool) auth()->user()?->can('update_document'))
+                            ->mutateRelationshipDataBeforeCreateUsing(fn (array $data, Document $record): array => self::newHistoryRow($data, $record))
+                            ->mutateRelationshipDataBeforeSaveUsing(fn (array $data, DocumentIdentifierHistory $record): array => self::keepHistoryTime($data, $record))
+                            ->schema([
+                                Forms\Components\TextInput::make('previous_volume')->label('Previous volume number')->required()->maxLength(64),
+                                ...self::historyRowDetails(),
+                            ]),
+                        Forms\Components\Repeater::make('pastAuthorities')
+                            ->label('Past authorities')
+                            ->relationship()
+                            ->columnSpanFull()
+                            ->defaultItems(0)
+                            ->addActionLabel('Add past authority')
+                            ->visible(fn (): bool => (bool) auth()->user()?->can('update_document'))
+                            ->mutateRelationshipDataBeforeCreateUsing(fn (array $data, Document $record): array => self::newHistoryRow($data, $record))
+                            ->mutateRelationshipDataBeforeSaveUsing(fn (array $data, DocumentIdentifierHistory $record): array => self::keepHistoryTime($data, $record))
+                            ->schema([
+                                Forms\Components\Select::make('previous_authority_id')
+                                    ->label('Previous authority')
+                                    ->required()
+                                    ->searchable()
+                                    ->preload()
+                                    ->options(fn (): array => self::citingAuthorityOptions(''))
+                                    ->getSearchResultsUsing(fn (string $search): array => self::citingAuthorityOptions($search))
+                                    ->getOptionLabelUsing(fn ($value): ?string => Authority::query()->find($value)?->citingLabel()),
+                                ...self::historyRowDetails(),
+                            ]),
+                        // The imported "Prev Attributed Identifier" is text, not a
+                        // link to an authority: shown, and kept out of the rows above.
+                        self::previouslyAttributedEntry(),
+                        // A custom field, saved with the others through
+                        // HandlesCustomFieldForm and left out of the Custom fields
+                        // section below.
+                        Schemas\Components\Group::make()
+                            ->columnSpanFull()
+                            ->schema(function (Get $get, ?Document $record) use ($g): array {
+                                $definition = self::pastReferenceDefinition(self::formRepositoryId($get, $record));
+
+                                return $definition === null ? [] : [
+                                    $g(self::multiValueInput('custom.' . self::PAST_REFERENCE_CODE_KEY, $definition->label, 60000)
+                                        ->required((bool) $definition->is_required)),
+                                ];
+                            }),
+                        // Client feedback 2026-08-18 #28: free-text citation reference.
+                        $g(self::multiValueInput('citation_reference', ColumnLabels::get('document', 'citation_reference'), 60000)),
+                        $g(self::multiValueInput('museum_reference', ColumnLabels::get('document', 'museum_reference'), 500)),
                     ]),
 
-                Section::make('Current location')
+                Section::make('Logistics')
                     ->columnSpanFull()
                     ->columns(2)
                     ->schema([
@@ -292,12 +422,12 @@ class DocumentResource extends Resource
                         // batch, bypassing that invariant. On CREATE it stays
                         // editable (initial placement). Dehydrated only on create
                         // so an edit never writes a stale value.
-                        $g(SearchableSelects::batch('batch_id', 'batch')
+                        $gf(SearchableSelects::batch('batch_id', 'batch')
                             ->disabled(fn (string $operation): bool => $operation === 'edit')
-                            ->dehydrated(fn (string $operation): bool => $operation === 'create')
                             ->helperText(fn (string $operation): ?string => $operation === 'edit'
                                 ? 'Locked. Use the "Move to box" action to change the box; the batch follows the box automatically (writes an audited movement record).'
-                                : 'Initial batch for this document. After creation, the batch follows the box via the "Move to box" action.')),
+                                : 'Initial batch for this document. After creation, the batch follows the box via the "Move to box" action.'))
+                            ->dehydrated(fn (string $operation): bool => $operation === 'create'),
                         // F1 (review finding) — current_box_id is READ-ONLY on
                         // EDIT so every box move is forced through the audited
                         // MoveToBoxAction (which writes a BoxMovement, keeps
@@ -305,133 +435,71 @@ class DocumentResource extends Resource
                         // targets). On CREATE it stays editable so the Wave-B
                         // "add document to this box" prefill keeps working; the
                         // model `creating` guard validates the chosen box.
-                        $g(SearchableSelects::box('current_box_id', 'currentBox')
+                        $gf(SearchableSelects::box('current_box_id', 'currentBox')
+                            ->label('Current Box')
                             ->disabled(fn (string $operation): bool => $operation === 'edit')
-                            ->dehydrated(fn (string $operation): bool => $operation === 'create')
                             ->helperText(fn (string $operation): ?string => $operation === 'edit'
                                 ? 'Locked. Use the "Move to box" action to change the box (writes an audited movement record).'
-                                : 'Initial box for this document. After creation, use the "Move to box" action to change it.')),
-                        $g(SearchableSelects::accession('accession_id')),
-                        $g(SearchableSelects::location(
-                            'location_id',
-                            fn ($query) => $query
-                                ->active()
-                                ->forRepository(auth()->user()?->default_repository_id),
-                        )
-                            ->label('Location (RFQ §3.1.9)')
-                            ->nullable()
-                            ->helperText('Repository / room / shelf / showcase / temp-holding hierarchy.')),
+                                : 'Initial box for this document. After creation, use the "Move to box" action to change it.')
+                            // Client 2026-11-05: the box holds its own details.
+                            ->hintAction(Action::make('openCurrentBox')
+                                ->label('Open box')
+                                ->icon('heroicon-o-arrow-top-right-on-square')
+                                ->url(fn (?Document $record): ?string => self::currentBoxUrl($record))
+                                ->visible(fn (?Document $record): bool => self::currentBoxUrl($record) !== null)))
+                            ->dehydrated(fn (string $operation): bool => $operation === 'create'),
                         $g(Forms\Components\Select::make('current_box_type')
+                            ->label('Current Box Type')
                             ->searchable()
                             ->options(fn (): array => CurrentBoxType::options())
                             ->nullable()
                             ->helperText('Used for disinfestation planning: Big Brown Box counts as 2 boxes in the 250-box cycle limit.')),
                         $g(Forms\Components\Select::make('custody_status')
                             ->searchable()
-                            ->label('Custody status')
+                            ->label('Custody Status')
                             // Options are derived from the const so they stay in
                             // sync with the model; the label map keeps them readable.
                             ->options(collect(Document::CUSTODY_STATUSES)
                                 ->mapWithKeys(fn (string $v): array => [$v => Document::custodyLabels()[$v] ?? Str::headline($v)])
                                 ->all())
                             ->default('in_box')
+                            ->required()
                             ->native(false)),
-                        // Wave D5 — barcode, nra_location and museum_location removed from
-                        // the form (NAf feedback: "can be removed"). The columns remain in the
-                        // DB and in $fillable for import compatibility. dates_precise does not
-                        // exist as a column anywhere (no-op note per Wave D spec).
+                        $g(SearchableSelects::location(
+                            'location_id',
+                            fn ($query) => $query
+                                ->active()
+                                ->forRepository(auth()->user()?->default_repository_id),
+                        )
+                            ->label('Location')
+                            ->nullable()
+                            ->helperText('Repository / room / shelf / showcase / temp-holding hierarchy.')),
+                        // Client 2026-11-05. Stored as a location code, the way
+                        // the importer and LocationBreadcrumbCache::forCode read it.
+                        $g(Forms\Components\Select::make('museum_location')
+                            ->label(ColumnLabels::get('document', 'museum_location'))
+                            ->searchable()
+                            ->nullable()
+                            ->options(fn (Get $get, ?Document $record): array => self::museumLocationOptions(self::formRepositoryId($get, $record), $record))),
                     ]),
 
                 Section::make('Disinfestation')
                     ->columnSpanFull()
                     ->columns(3)
                     ->schema([
-                        $g(Forms\Components\DatePicker::make('disinfestation_date')->label('Disinfestation (current)')),
+                        $g(Forms\Components\DatePicker::make('disinfestation_date')->label('Latest Disinfestation Date')),
                         $g(Forms\Components\Toggle::make('is_in_disinfestation')
-                            ->label('Currently in disinfestation')
+                            ->label('Currently in Disinfestation')
                             ->helperText("Set when the document is physically out for disinfestation. The 'Send to disinfestation' bulk action sets this automatically.")
                             ->columnSpanFull()),
-                        $g(Forms\Components\DatePicker::make('disinfestation_date_1')->label('Legacy disinfestation #1')),
-                        $g(Forms\Components\DatePicker::make('disinfestation_date_2')->label('Legacy disinfestation #2')),
-                        $g(Forms\Components\DatePicker::make('disinfestation_date_3')->label('Legacy disinfestation #3')),
+                        $g(Forms\Components\DatePicker::make('disinfestation_date_1')->label('History of Disinfestation #1')),
+                        $g(Forms\Components\DatePicker::make('disinfestation_date_2')->label('History of Disinfestation #2')),
+                        $g(Forms\Components\DatePicker::make('disinfestation_date_3')->label('History of Disinfestation #3')),
                     ]),
 
-                // Feedback1 gaps (misc) — formerly "Dates (precise)", which confused
-                // operators ("what is this?"). These ARE the Wave-F normalised date
-                // fields (dates_year_start/end, dates_start/end) — do NOT remove them;
-                // renamed + described + collapsed so they stay available without
-                // getting in the way.
-                Section::make('Normalised date range')
-                    ->description('Auto-derived from the Dates field for filtering and reporting. Edit only to correct the normalisation.')
-                    ->collapsed()
+                Section::make('Supporting Documents')
                     ->columnSpanFull()
                     ->columns(2)
-                    ->schema([
-                        $g(Forms\Components\TextInput::make('dates_year_start')->label('Year start')->numeric()),
-                        $g(Forms\Components\TextInput::make('dates_year_end')->label('Year end')->numeric()),
-                        $g(Forms\Components\DatePicker::make('dates_start')->label('Date start')),
-                        $g(Forms\Components\DatePicker::make('dates_end')->label('Date end')),
-                    ]),
-
-                Section::make('Cataloguing extras')
-                    ->columnSpanFull()
-                    ->collapsed()
-                    ->columns(2)
-                    ->schema([
-                        // Client 2026-10-29: "Add flag label rather than colour code".
-                        // The flags themselves, chosen by name; the legacy Colour code
-                        // (never filled in) is no longer offered.
-                        Forms\Components\Select::make('open_flag_types')
-                            ->searchable()
-                            ->label('Flags')
-                            ->multiple()
-                            ->options(fn (): array => DocumentFlag::typeOptions())
-                            ->afterStateHydrated(fn (Forms\Components\Select $component, ?Document $record) => $component->state(
-                                $record?->exists ? $record->openFlags()->pluck('type')->unique()->values()->all() : [],
-                            ))
-                            ->dehydrated(false)
-                            // Checked here too: a disabled field is only greyed out
-                            // in the browser.
-                            ->saveRelationshipsUsing(function (Document $record, ?array $state): void {
-                                if (auth()->user()?->can('create_document_flag') ?? false) {
-                                    $record->syncOpenFlagTypes($state ?? [], auth()->id());
-                                }
-                            })
-                            ->disabled(fn (): bool => ! (auth()->user()?->can('create_document_flag') ?? false))
-                            ->helperText('A flag removed here is marked resolved on the Document Flags page.')
-                            ->columnSpanFull(),
-                        $g(Forms\Components\Select::make('digitised')->label(ColumnLabels::get('document', 'digitised'))
-                            ->searchable()
-                            ->options(fn (): array => DigitisationStatus::options())
-                            ->nullable()
-                            ->helperText('Digitisation source per RFQ APP2-xiii.')),
-                        $g(Forms\Components\TextInput::make('digitised_url')->label('Digitised link')->url()->maxLength(500)),
-                        $g(Forms\Components\Toggle::make('torre')->label(ColumnLabels::get('document', 'torre'))->columnSpanFull()),
-                        $g(Forms\Components\TextInput::make('accession_code_legacy')->label(ColumnLabels::get('document', 'accession_code_legacy'))->maxLength(191)),
-                        // Client feedback 2026-08-18 #27: relabel to the client's
-                        // wording. This is NOT guaranteed unique (multiple documents
-                        // may share a conservation object), so it stays free-text.
-                        $g(Forms\Components\TextInput::make('object_reference_number')->label(ColumnLabels::get('document', 'object_reference_number'))->maxLength(500)),
-                        // Client feedback 2026-08-18 #26: a per-document temporary
-                        // identifier, unique across the archive (enforced by a DB
-                        // unique index + the importer's afterFill check).
-                        $g(Forms\Components\TextInput::make('temporary_identifier')
-                            ->label(ColumnLabels::get('document', 'temporary_identifier'))
-                            ->maxLength(191)
-                            ->unique(ignoreRecord: true)
-                            ->nullable()),
-                        // Client feedback 2026-08-18 #28: free-text citation reference.
-                        $g(Forms\Components\Textarea::make('citation_reference')->label(ColumnLabels::get('document', 'citation_reference'))->rows(2)->columnSpanFull()),
-                        // Client feedback 2026-08-04: a Tracking Note distinct
-                        // from the general note (this is the existing `tracking`
-                        // column, relabelled and promoted to a multi-line field).
-                        $g(Forms\Components\Textarea::make('tracking')->label(ColumnLabels::get('document', 'tracking'))->rows(3)->maxLength(500)->columnSpanFull()),
-                        $g(Forms\Components\TextInput::make('museum_reference')->label(ColumnLabels::get('document', 'museum_reference'))->maxLength(500)->columnSpanFull()),
-                    ]),
-
-                Section::make('Attachments')
-                    ->columnSpanFull()
-                    ->description('Scans of the document (PDF, JPG, PNG, TIFF). Files are stored in the spatie/medialibrary `attachments` collection on this document.')
                     ->schema([
                         $g(SpatieMediaLibraryFileUpload::make('attachments')
                             ->collection('attachments')
@@ -442,58 +510,14 @@ class DocumentResource extends Resource
                             ->openable()
                             ->reorderable()
                             ->preserveFilenames()
+                            ->helperText('Scans of the document (PDF, JPG, PNG, TIFF).')
                             ->columnSpanFull()),
-                    ]),
-
-                Section::make('Legacy box history (RAS / In Situ)')
-                    ->columnSpanFull()
-                    ->collapsed()
-                    ->columns(2)
-                    ->schema([
-                        $g(Forms\Components\TextInput::make('ras_batch_1')->label('RAS Batch 1')->maxLength(50)),
-                        $g(Forms\Components\TextInput::make('ras_box_1')->label('RAS Box 1')->maxLength(50)),
-                        $g(Forms\Components\TextInput::make('ras_1_box_destroyed')->label('RAS 1 Destroyed?')->maxLength(10)),
-                        $g(Forms\Components\TextInput::make('in_situ_box_1')->label(ColumnLabels::get('document', 'in_situ_box_1'))->maxLength(50)),
-                        $g(Forms\Components\TextInput::make('in_situ_box_1_destroyed')->label('In Situ 1 Destroyed?')->maxLength(10)),
-                        $g(Forms\Components\TextInput::make('ras_batch_2')->label(ColumnLabels::get('document', 'ras_batch_2'))->maxLength(50)),
-                        $g(Forms\Components\TextInput::make('ras_box_2')->label(ColumnLabels::get('document', 'ras_box_2'))->maxLength(50)),
-                        $g(Forms\Components\TextInput::make('ras_2_box_destroyed')->label('RAS 2 Destroyed?')->maxLength(10)),
-                        $g(Forms\Components\TextInput::make('in_situ_box_2')->label(ColumnLabels::get('document', 'in_situ_box_2'))->maxLength(50)),
-                        $g(Forms\Components\TextInput::make('in_situ_box_2_destroyed')->label('In Situ 2 Destroyed?')->maxLength(10)),
-                        $g(Forms\Components\TextInput::make('in_situ_box_3')->label(ColumnLabels::get('document', 'in_situ_box_3'))->maxLength(50)),
-                        $g(Forms\Components\TextInput::make('in_situ_box_3_destroyed')->label('In Situ 3 Destroyed?')->maxLength(10)),
-                    ]),
-
-                Section::make('Legacy barcodes & status')
-                    ->columnSpanFull()
-                    ->collapsed()
-                    ->columns(2)
-                    ->schema([
-                        $g(Forms\Components\TextInput::make('barcode_in')->label('Barcode (IN)')->maxLength(50)),
-                        $g(Forms\Components\TextInput::make('barcode_in_2')->label('Barcode (IN) #2')->maxLength(50)),
-                        $g(Forms\Components\TextInput::make('barcode_ras_1')->label('Barcode RAS 1')->maxLength(50)),
-                        $g(Forms\Components\TextInput::make('status_1')->label('Status 1')->maxLength(20)),
-                        $g(Forms\Components\TextInput::make('barcode_ras_2')->label('Barcode RAS 2')->maxLength(50)),
-                        $g(Forms\Components\TextInput::make('status_2')->label('Status 2')->maxLength(20)),
-                        $g(Forms\Components\TextInput::make('barcode_ras_3')->label(ColumnLabels::get('document', 'barcode_ras_3'))->maxLength(50)),
-                        $g(Forms\Components\TextInput::make('status_3')->label(ColumnLabels::get('document', 'status_3'))->maxLength(20)),
-                        $g(Forms\Components\TextInput::make('barcode_ras_4')->label(ColumnLabels::get('document', 'barcode_ras_4'))->maxLength(50)),
-                        $g(Forms\Components\TextInput::make('status_4')->label(ColumnLabels::get('document', 'status_4'))->maxLength(20)),
-                        $g(Forms\Components\TextInput::make('barcode_ras_2_alt')->label('Barcode RAS 2 alt')->maxLength(50)),
-                        $g(Forms\Components\TextInput::make('status_1_alt')->label('Status 1 alt')->maxLength(20)),
-                        $g(Forms\Components\TextInput::make('barcode_ras_2_alt2')->label('Barcode RAS 2 alt 2')->maxLength(50)),
-                        $g(Forms\Components\TextInput::make('status_2_alt')->label('Status 2 alt')->maxLength(20)),
-                    ]),
-
-                Section::make('Notes & custom fields')
-                    ->columnSpanFull()
-                    ->collapsed()
-                    ->columns(1)
-                    ->schema([
-                        $g(Forms\Components\Textarea::make('notes')->label(ColumnLabels::get('document', 'notes'))->columnSpanFull()->rows(3)),
-                        $g(Forms\Components\KeyValue::make('extra')->label('Extra (schemaless)')->columnSpanFull()),
-                        $g(Forms\Components\KeyValue::make('custom_fields')->label('Custom fields (POC json)')->columnSpanFull()),
-                        $g(Forms\Components\KeyValue::make('metadata')->label('Metadata (POC json)')->columnSpanFull()),
+                        $g(Forms\Components\Select::make('digitised')->label(ColumnLabels::get('document', 'digitised'))
+                            ->searchable()
+                            ->options(fn (): array => DigitisationStatus::options())
+                            ->nullable()
+                            ->helperText('Digitisation source per RFQ APP2-xiii.')),
+                        $g(Forms\Components\TextInput::make('digitised_url')->label('Digitised link')->url()->maxLength(500)),
                     ]),
 
                 // Custom fields (EAV, per-repository).
@@ -511,38 +535,15 @@ class DocumentResource extends Resource
                     ->columnSpanFull()
                     ->columns(2)
                     ->collapsed(false)
-                    ->schema(static function (Get $get, ?Document $record): array {
-                        $repositoryId = (int) $get('repository_id')
-                            ?: $record?->repository_id
-                            ?: auth()->user()?->default_repository_id;
-
-                        return CustomFieldSchema::for('document', $repositoryId !== null ? (int) $repositoryId : null);
-                    })
-                    ->visible(static function (Get $get, ?Document $record): bool {
-                        $repositoryId = (int) $get('repository_id')
-                            ?: $record?->repository_id
-                            ?: auth()->user()?->default_repository_id;
-
-                        return CustomFieldSchema::for('document', $repositoryId !== null ? (int) $repositoryId : null) !== [];
-                    }),
+                    ->schema(static fn (Get $get, ?Document $record): array => self::customFieldComponents(self::formRepositoryId($get, $record)))
+                    ->visible(static fn (Get $get, ?Document $record): bool => self::customFieldComponents(self::formRepositoryId($get, $record)) !== []),
             ]);
     }
 
     /**
-     * Filament 5 Infolist schema for the View Document page (RFQ UX brief
-     * — feat/view-document-redesign).
-     *
-     * The previous `/admin/documents/{id}` rendered the *form* schema in
-     * read-only mode, which inherited the form's 2-column narrow inputs
-     * and left ~50% of a wide screen empty. The Infolist API ships
-     * read-only entries (`TextEntry`, `IconEntry`, `RepeatableEntry`)
-     * with a layout grammar designed for dense scanning, plus first-class
-     * support for badges, relationship-driven repeaters and inline links.
-     *
-     * Hero card → 5-column summary the operator sees first glance.
-     * Then sections drilling into: document, authorities, storage,
-     * disinfestation timeline, identifiers, legacy box/barcode history,
-     * notes, audit info.
+     * View Document page, section by section the same as form() (client
+     * 2026-11-05: "should follow the same layout and sections"), followed by
+     * the History tabs.
      */
     public static function infolist(Schema $schema): Schema
     {
@@ -563,213 +564,129 @@ class DocumentResource extends Resource
         return $schema
             ->columns(1)
             ->components([
-                Section::make('Summary')
-                    ->columns($twoCols)
-                    ->extraAttributes(['class' => 'fi-section-hero'])
-                    ->schema([
-                        TextEntry::make('identifier')
-                            ->label('Identifier')
-                            ->badge()
-                            ->color('primary')
-                            ->size(TextSize::Large)
-                            ->weight(FontWeight::Bold)
-                            ->copyable()
-                            // RFQ Appendix-2 §xv — display the best-available
-                            // identifier: catalogue_identifier first, then
-                            // object_reference_number, then the legacy
-                            // identifier column.
-                            ->state(fn (?Document $record): ?string => $record?->display_identifier)
-                            ->placeholder('—'),
-                        self::flagsEntry('flags_summary'),
-
-                        TextEntry::make('primary_author_display')
-                            ->label('Primary author')
-                            ->state(function (?Document $record): string {
-                                if (! $record instanceof Document) {
-                                    return '—';
-                                }
-                                $authors = $record->authorities;
-                                $primary = $authors->firstWhere('pivot.is_primary', 1)
-                                    ?? $authors->firstWhere('pivot.is_primary', true)
-                                    ?? $authors->first();
-                                if (! $primary) {
-                                    return '—';
-                                }
-                                $parts = array_filter([
-                                    trim((string) ($primary->surname ?? '')),
-                                    trim((string) ($primary->given_names ?? '')),
-                                ]);
-                                $name = implode(' ', $parts);
-                                $ident = trim((string) ($primary->identifier ?? ''));
-
-                                return $ident !== '' && $name !== ''
-                                    ? "{$ident} — {$name}"
-                                    : ($name !== '' ? $name : $ident);
-                            })
-                            ->placeholder('No author attached')
-                            ->weight(FontWeight::SemiBold)
-                            ->url(function (?Document $record): ?string {
-                                $primary = $record?->authorities->firstWhere('pivot.is_primary', 1)
-                                    ?? $record?->authorities->firstWhere('pivot.is_primary', true)
-                                    ?? $record?->authorities->first();
-
-                                return $primary
-                                    ? route('filament.admin.resources.authorities.view', ['record' => $primary->id])
-                                    : null;
-                            })
-                            ->openUrlInNewTab(false),
-
-                        TextEntry::make('current_box_display')
-                            ->label('Current box')
-                            ->state(function (?Document $record): string {
-                                $box = $record?->currentBox;
-                                if (! $box) {
-                                    return '—';
-                                }
-                                $batchNo = $box->batch?->batch_number;
-                                $boxNo = $box->box_number;
-
-                                return $batchNo !== null && $boxNo !== null
-                                    ? "Batch {$batchNo} / Box {$boxNo}"
-                                    : (string) ($boxNo ?? '—');
-                            })
-                            ->placeholder('Unboxed')
-                            ->url(fn (?Document $record): ?string => $record?->current_box_id
-                                ? route('filament.admin.resources.boxes.view', ['record' => $record->current_box_id])
-                                : null)
-                            ->openUrlInNewTab(false),
-
-                        TextEntry::make('barcode_status')
-                            ->label('Status')
-                            ->badge()
-                            ->color(fn (?string $state): string => match ($state) {
-                                'IN' => 'success',
-                                'OUT' => 'warning',
-                                'PERM_OUT' => 'danger',
-                                default => 'gray',
-                            })
-                            ->placeholder('—'),
-
-                        // Effective disinfestation date: the document's own if
-                        // set, else inherited from its box — same two-level rule
-                        // as the list column, so the view doesn't show "Pending"
-                        // for a record the list shows a "from box" date for.
-                        TextEntry::make('effective_disinfestation_date')
-                            ->label('Disinfestation')
-                            ->state(fn (?Document $record): ?\Carbon\Carbon => $record?->effectiveDisinfestationDate())
-                            ->date()
-                            ->badge()
-                            ->color(fn ($state): string => $state ? 'success' : 'warning')
-                            ->placeholder('Pending')
-                            ->helperText(fn (?Document $record): ?string => $record?->disinfestationDateIsInherited()
-                                ? 'Inherited from the current box — set a disinfestation date on this document to override it.'
-                                : null)
-                            ->columnSpanFull(),
-                    ]),
-
-                Section::make('Document')
+                Section::make('Identification')
                     ->columns($twoCols)
                     ->schema([
+                        TextEntry::make('identifier')->label('Identifier')->copyable()->color('gray')->placeholder('—'),
+                        self::flagsEntry('flags_summary')->label('Flag'),
+                        self::disinfestationIndicatorEntry(),
+                        TextEntry::make('repository.code')
+                            ->label('Repository')
+                            ->badge()
+                            ->color('info')
+                            ->url(fn (?Document $record): ?string => $record?->repository_id
+                                ? route('filament.admin.resources.repositories.view', ['record' => $record->repository_id])
+                                : null)
+                            ->openUrlInNewTab(false)
+                            ->placeholder('—'),
                         TextEntry::make('catalogue_identifier')->label(ColumnLabels::get('document', 'catalogue_identifier'))->copyable()->placeholder('—'),
+                        TextEntry::make('temporary_identifier')->label(ColumnLabels::get('document', 'temporary_identifier'))->copyable()->placeholder('—'),
+                        // Each authority by its id, so each links to its own
+                        // page; the primary one first.
+                        TextEntry::make('authority_reference_codes')
+                            ->label('Authority Reference Code')
+                            ->state(fn (?Document $record): array => $record === null ? [] : $record->authorities
+                                ->sortByDesc(fn (Authority $authority): int => (int) $authority->getRelationValue('pivot')?->getAttribute('is_primary'))
+                                ->map(fn (Authority $authority): int => (int) $authority->getKey())
+                                ->values()
+                                ->all())
+                            ->formatStateUsing(fn (mixed $state, Document $record): ?string => $record->authorities->firstWhere('id', (int) $state)?->citingLabel())
+                            ->url(fn (mixed $state): string => route('filament.admin.resources.authorities.view', ['record' => (int) $state]))
+                            ->color('primary')
+                            ->listWithLineBreaks()
+                            ->placeholder('—')
+                            ->columnSpanFull(),
+                        TextEntry::make('volume_number')->label(ColumnLabels::get('document', 'volume_number'))->placeholder('—'),
+                        TextEntry::make('dates_display')
+                            ->label(ColumnLabels::get('document', 'dates'))
+                            ->state(fn (?Document $record): ?string => filled($record?->dates)
+                                ? $record->dates
+                                : DocumentDates::yearText($record?->dates_year_start, $record?->dates_year_end))
+                            ->placeholder('—'),
+                        TextEntry::make('part_number')->label(ColumnLabels::get('document', 'part_number'))->placeholder('—'),
+                        TextEntry::make('practice')->label(ColumnLabels::get('document', 'practice'))->placeholder('—'),
+                        TextEntry::make('deeds')->label(ColumnLabels::get('document', 'deeds'))->placeholder('—')->columnSpanFull(),
                         TextEntry::make('document_type')->label(ColumnLabels::get('document', 'document_type'))
                             ->formatStateUsing(fn (?string $state, Document $record): ?string => $record->documentTypeRef?->name ?? $state)->placeholder('—'),
                         TextEntry::make('series.code')
-                            ->label('Series')
-                            ->badge()
+                            ->label(ColumnLabels::get('document', 'series'))
+                            ->formatStateUsing(fn (?string $state, Document $record): ?string => $record->series?->title ? $state . ': ' . $record->series->title : $state)
                             ->url(fn (?Document $record): ?string => $record?->series_id
                                 ? route('filament.admin.resources.series.view', ['record' => $record->series_id])
                                 : null)
                             ->openUrlInNewTab(false)
                             ->placeholder('—'),
-                        TextEntry::make('practice')->label(ColumnLabels::get('document', 'practice'))->placeholder('—'),
-                        TextEntry::make('volume_number')->label(ColumnLabels::get('document', 'volume_number'))->placeholder('—'),
-                        TextEntry::make('number_of_acts')->label('No of Acts')->placeholder('—'),
-                        TextEntry::make('dates')->label(ColumnLabels::get('document', 'dates'))->placeholder('—'),
-                        TextEntry::make('year_range_display')
-                            ->label('Year range')
-                            ->state(function (?Document $record): string {
-                                $from = $record?->dates_year_start;
-                                $to = $record?->dates_year_end;
-                                if ($from && $to) {
-                                    return "{$from} – {$to}";
-                                }
-                                if ($from) {
-                                    return "from {$from}";
-                                }
-                                if ($to) {
-                                    return "to {$to}";
-                                }
-
-                                return '—';
-                            }),
-                        TextEntry::make('dates_start')->label('Date start')->date()->placeholder('—'),
-                        TextEntry::make('dates_end')->label('Date end')->date()->placeholder('—'),
-                        TextEntry::make('deeds')->label(ColumnLabels::get('document', 'deeds'))->placeholder('—')->columnSpanFull(),
+                        IconEntry::make('torre')->label(ColumnLabels::get('document', 'torre'))->boolean(),
+                        TextEntry::make('accession_display')
+                            ->label('Accession')
+                            ->state(fn (?Document $record): ?string => $record?->accession instanceof Accession ? self::accessionLabel($record->accession) : null)
+                            ->url(fn (?Document $record): ?string => $record?->accession_id
+                                ? route('filament.admin.resources.accessions.view', ['record' => $record->accession_id])
+                                : null)
+                            ->openUrlInNewTab(false)
+                            ->placeholder('—'),
+                        TextEntry::make('notes')->label(ColumnLabels::get('document', 'notes'))->prose()->placeholder('—')->columnSpanFull(),
+                        TextEntry::make('tracking')->label(ColumnLabels::get('document', 'tracking'))->placeholder('—')->columnSpanFull(),
                     ]),
 
-                Section::make('Authorities (Creators)')
-                    ->columns(1)
-                    ->description(fn (?Document $record): ?string => ($record && $record->authorities->isEmpty())
-                        ? 'No authorities assigned to this document.'
-                        : null)
+                Section::make('Alternate Identification')
+                    ->description('Multiple of each may exist.')
+                    ->columns($twoCols)
                     ->schema([
-                        RepeatableEntry::make('authorities')
-                            ->hiddenLabel()
-                            ->columns(1)
-                            ->columnSpanFull()
-                            ->schema([
-                                TextEntry::make('identifier')
-                                    ->badge()
-                                    ->color('primary')
-                                    ->weight(FontWeight::Bold)
-                                    ->placeholder('—')
-                                    ->url(fn (Model $record): ?string => route(
-                                        'filament.admin.resources.authorities.view',
-                                        ['record' => $record->id]
-                                    ))
-                                    ->openUrlInNewTab(false)
-                                    ->columnSpanFull(),
-                                IconEntry::make('pivot.is_primary')
-                                    ->label('Primary')
-                                    ->boolean()
-                                    ->trueColor('success')
-                                    ->falseColor('gray')
-                                    ->columnSpanFull(),
-                                TextEntry::make('surname')
-                                    ->weight(FontWeight::SemiBold)
-                                    ->placeholder('—')
-                                    ->url(fn (Model $record): ?string => route(
-                                        'filament.admin.resources.authorities.view',
-                                        ['record' => $record->id]
-                                    ))
-                                    ->openUrlInNewTab(false)
-                                    ->columnSpanFull(),
-                                TextEntry::make('given_names')
-                                    ->label('Given names')
-                                    ->placeholder('—')
-                                    ->columnSpanFull(),
-                                TextEntry::make('practice_dates_display')
-                                    ->label('Practice dates')
-                                    ->state(function (Model $record): string {
-                                        $start = $record->practice_dates_start;
-                                        $end = $record->practice_dates_end;
-                                        if ($start && $end) {
-                                            return "{$start} – {$end}";
-                                        }
-                                        if ($start) {
-                                            return "from {$start}";
-                                        }
-                                        if ($end) {
-                                            return "to {$end}";
-                                        }
+                        TextEntry::make('object_reference_numbers')
+                            ->label(ColumnLabels::get('document', 'object_reference_number'))
+                            ->state(fn (?Document $record): array => MultiValue::split($record?->object_reference_number))
+                            ->url(fn (mixed $state): ?string => Document::driveSearchUrl((string) $state), shouldOpenInNewTab: true)
+                            ->listWithLineBreaks()
+                            ->placeholder('—'),
+                        TextEntry::make('past_volumes_display')
+                            ->label('Past volume numbers')
+                            ->state(fn (?Document $record): array => $record === null ? [] : $record->pastVolumes
+                                ->map(fn (DocumentIdentifierHistory $row): string => self::historyLine((string) $row->previous_volume, $row))
+                                ->values()
+                                ->all())
+                            ->listWithLineBreaks()
+                            ->placeholder('—'),
+                        // By history row, so each past authority links to its own page.
+                        TextEntry::make('past_authorities_display')
+                            ->label('Past authorities')
+                            ->state(fn (?Document $record): array => $record === null ? [] : $record->pastAuthorities->modelKeys())
+                            ->formatStateUsing(function (mixed $state, Document $record): ?string {
+                                $row = $record->pastAuthorities->find($state);
 
-                                        return '—';
-                                    })
-                                    ->columnSpanFull(),
-                            ]),
+                                return $row instanceof DocumentIdentifierHistory
+                                    ? self::historyLine($row->previousAuthority?->citingLabel() ?? '(deleted authority)', $row)
+                                    : null;
+                            })
+                            ->url(function (mixed $state, Document $record): ?string {
+                                $authorityId = $record->pastAuthorities->find($state)?->previous_authority_id;
+
+                                return $authorityId !== null ? route('filament.admin.resources.authorities.view', ['record' => $authorityId]) : null;
+                            })
+                            ->color('primary')
+                            ->listWithLineBreaks()
+                            ->placeholder('—')
+                            ->columnSpanFull(),
+                        self::previouslyAttributedEntry()->columnSpanFull(),
+                        TextEntry::make('past_reference_codes')
+                            ->label(fn (?Document $record): string => self::pastReferenceDefinition($record?->repository_id)?->label ?? 'Past Reference Code')
+                            ->state(fn (?Document $record): array => MultiValue::split($record?->getCustomFieldData()[self::PAST_REFERENCE_CODE_KEY] ?? null))
+                            ->listWithLineBreaks()
+                            ->placeholder('—')
+                            ->visible(fn (?Document $record): bool => self::pastReferenceDefinition($record?->repository_id) !== null),
+                        TextEntry::make('citation_references')
+                            ->label(ColumnLabels::get('document', 'citation_reference'))
+                            ->state(fn (?Document $record): array => MultiValue::split($record?->citation_reference))
+                            ->listWithLineBreaks()
+                            ->placeholder('—'),
+                        TextEntry::make('museum_references')
+                            ->label(ColumnLabels::get('document', 'museum_reference'))
+                            ->state(fn (?Document $record): array => MultiValue::split($record?->museum_reference))
+                            ->listWithLineBreaks()
+                            ->placeholder('—'),
                     ]),
 
-                Section::make('Storage location')
+                Section::make('Logistics')
                     ->columns($twoCols)
                     ->schema([
                         TextEntry::make('batch.batch_number')
@@ -781,24 +698,19 @@ class DocumentResource extends Resource
                                 : null)
                             ->openUrlInNewTab(false)
                             ->placeholder('—'),
-                        TextEntry::make('currentBox.box_number')
-                            ->label('Current box')
-                            ->badge()
-                            ->color('gray')
-                            ->url(fn (?Document $record): ?string => $record?->current_box_id
-                                ? route('filament.admin.resources.boxes.view', ['record' => $record->current_box_id])
-                                : null)
+                        // Client 2026-11-05: "when we click the current box it
+                        // should take us to the Box View which contains all the details".
+                        TextEntry::make('current_box_display')
+                            ->label('Current Box')
+                            ->state(fn (?Document $record): ?string => $record?->currentBox?->shortLabel())
+                            ->url(fn (?Document $record): ?string => self::currentBoxUrl($record))
                             ->openUrlInNewTab(false)
+                            ->color('primary')
                             ->placeholder('—'),
-                        TextEntry::make('current_box_type')->label('Box type')->badge()->placeholder('—'),
-                        TextEntry::make('repository.code')
-                            ->label('Repository')
-                            ->badge()
-                            ->color('info')
-                            ->url(fn (?Document $record): ?string => $record?->repository_id
-                                ? route('filament.admin.resources.repositories.view', ['record' => $record->repository_id])
-                                : null)
-                            ->openUrlInNewTab(false)
+                        TextEntry::make('current_box_type')->label('Current Box Type')->badge()->placeholder('—'),
+                        TextEntry::make('custody_status')
+                            ->label('Custody Status')
+                            ->formatStateUsing(fn (?string $state): ?string => $state === null ? null : (Document::custodyLabels()[$state] ?? Str::headline($state)))
                             ->placeholder('—'),
                         // Two-level location: show the effective location (the
                         // document's own if set, else inherited from its box) and
@@ -814,74 +726,52 @@ class DocumentResource extends Resource
                             ->url(fn (?Document $record): ?string => ($loc = $record?->effectiveLocation())
                                 ? route('filament.admin.resources.locations.view', ['record' => $loc->getKey()])
                                 : null)
-                            ->openUrlInNewTab(false)
-                            ->columnSpanFull(),
-                        TextEntry::make('accession.code')
-                            ->label('Accession')
-                            ->badge()
-                            ->color('gray')
-                            ->url(fn (?Document $record): ?string => $record?->accession_id
-                                ? route('filament.admin.resources.accessions.view', ['record' => $record->accession_id])
-                                : null)
-                            ->openUrlInNewTab(false)
-                            ->placeholder('—'),
-                        TextEntry::make('nra_location')
-                            ->label('NRA location (legacy)')
-                            ->placeholder('—')
-                            ->columnSpanFull()
-                            ->visible(fn (?Document $record): bool => filled($record?->nra_location)),
+                            ->openUrlInNewTab(false),
                         TextEntry::make('museum_location')
                             ->label(ColumnLabels::get('document', 'museum_location'))
                             ->formatStateUsing(fn (?string $state, Document $record): ?string => LocationBreadcrumbCache::forCode($state, $record->repository_id))
-                            ->placeholder('—')
-                            ->columnSpanFull()
-                            ->visible(fn (?Document $record): bool => filled($record?->museum_location)),
+                            ->placeholder('—'),
                     ]),
 
-                // NAF Feedback-1 (Documents page) — "we have no history of
-                // locations, just the current location". A document's physical
-                // location follows its box, and box moves are already logged in
-                // box_movements (Document::movements()). Surface that log here as
-                // a read-only location history instead of only the current box.
-                Section::make('Location history')
-                    ->description(fn (?Document $record): ?string => ($record && $record->locationHistory()->exists())
-                        ? 'Every recorded change of this document’s location, most recent first.'
-                        : 'No location changes recorded yet — only the current location above.')
-                    ->collapsed()
-                    ->schema([
-                        RepeatableEntry::make('locationHistory')
-                            ->hiddenLabel()
-                            ->columns(4)
-                            ->columnSpanFull()
-                            ->schema([
-                                TextEntry::make('changed_at')->label('When')->dateTime()->badge()->color('gray'),
-                                TextEntry::make('from_location_label')->label('From')->placeholder('—'),
-                                TextEntry::make('to_location_label')->label('To')->placeholder('—'),
-                                TextEntry::make('changedBy.name')->label('By')->placeholder('—'),
-                            ])
-                            ->visible(fn (?Document $record): bool => $record instanceof Document && $record->locationHistory()->exists()),
-                    ]),
-
-                Section::make('Disinfestation timeline')
+                Section::make('Disinfestation')
                     ->columns($twoCols)
-                    ->description(fn (?Document $record): ?string => ($record && $record->disinfestationTimeline()->isEmpty())
+                    ->description(fn (?Document $record): ?string => ($record && ! $record->is_in_disinfestation && $record->disinfestationTimeline()->isEmpty())
                         ? 'Document has never been disinfested — pending.'
                         : null)
                     ->schema([
-                        TextEntry::make('disinfestation_date')
-                            ->label('Canonical (current)')
+                        // Client 2026-11-05 (issue 10): "If Item is in disinfestation
+                        // instead of the disinfestation date can we show that it is
+                        // currently in disinfestation?"
+                        TextEntry::make('current_cycle')
+                            ->hiddenLabel()
+                            ->state(self::CURRENT_CYCLE)
+                            ->badge()
+                            ->color('warning')
+                            ->size(TextSize::Large)
+                            ->weight(FontWeight::Bold)
+                            ->columnSpanFull()
+                            ->visible(fn (?Document $record): bool => (bool) $record?->is_in_disinfestation),
+                        // Effective disinfestation date: the document's own if
+                        // set, else inherited from its box — same two-level rule
+                        // as the list column, so the view doesn't show "Pending"
+                        // for a record the list shows a "from box" date for.
+                        TextEntry::make('effective_disinfestation_date')
+                            ->label('Latest Disinfestation Date')
+                            ->state(fn (?Document $record): ?\Carbon\Carbon => $record?->effectiveDisinfestationDate())
                             ->date()
                             ->badge()
-                            ->color(fn (?string $state): string => $state ? 'success' : 'warning')
-                            ->placeholder('Pending'),
+                            ->color(fn ($state): string => $state ? 'success' : 'warning')
+                            ->placeholder('Pending')
+                            ->helperText(fn (?Document $record): ?string => $record?->disinfestationDateIsInherited()
+                                ? 'Inherited from the current box — set a disinfestation date on this document to override it.'
+                                : null),
                         TextEntry::make('is_in_disinfestation')
-                            ->label('Currently in disinfestation')
+                            ->label('Currently in Disinfestation')
                             ->badge()
                             ->formatStateUsing(fn ($state): string => $state ? 'Yes' : 'No')
-                            ->color(fn ($state): string => $state ? 'warning' : 'gray')
-                            ->columnSpanFull(),
+                            ->color(fn ($state): string => $state ? 'warning' : 'gray'),
                         RepeatableEntry::make('disinfestation_timeline_rows')
-                            ->label('History')
+                            ->label('History of Disinfestation')
                             ->state(fn (?Document $record): array => $record instanceof Document
                                 ? $record->disinfestationTimeline()
                                     ->map(fn (array $row) => [
@@ -900,90 +790,29 @@ class DocumentResource extends Resource
                                 && $record->disinfestationTimeline()->isNotEmpty()),
                     ]),
 
-                Section::make('Identifiers')
+                Section::make('Supporting Documents')
                     ->columns($twoCols)
                     ->schema([
-                        TextEntry::make('identifier')->badge()->color('primary')->copyable()->placeholder('—'),
-                        TextEntry::make('catalogue_identifier')->label(ColumnLabels::get('document', 'catalogue_identifier'))->copyable()->placeholder('—'),
-                        // U1 — document barcode visible in read mode (was edit-only before).
-                        // Custody status is authoritative from the box, not from this field.
-                        TextEntry::make('barcode')
-                            ->label('Document barcode (individual label)')
-                            ->copyable()
+                        // By media id: each opens through the authenticated,
+                        // policy-checked download route, never a public URL.
+                        TextEntry::make('attachments_display')
+                            ->label('Attachments')
+                            ->state(fn (?Document $record): array => $record === null ? [] : $record->getMedia('attachments')->modelKeys())
+                            ->formatStateUsing(fn (mixed $state, Document $record): ?string => $record->getMedia('attachments')->find($state)?->file_name)
+                            ->url(fn (mixed $state): string => route('attachments.download', ['media' => $state]), shouldOpenInNewTab: true)
+                            ->color('primary')
+                            ->listWithLineBreaks()
                             ->placeholder('—')
-                            ->helperText('Individual label barcode. Custody status is authoritative from the box.'),
-                        TextEntry::make('barcode_in')->label('Barcode (IN)')->copyable()->placeholder('—'),
-                    ]),
-
-                Section::make('Legacy box history (RAS / In Situ)')
-                    ->columns($twoCols)
-                    ->collapsed()
-                    ->schema([
-                        TextEntry::make('ras_batch_1')->label('RAS Batch 1')->placeholder('—'),
-                        TextEntry::make('ras_box_1')->label('RAS Box 1')->placeholder('—'),
-                        TextEntry::make('ras_1_box_destroyed')->label('RAS 1 destroyed?')->placeholder('—'),
-                        TextEntry::make('in_situ_box_1')->label(ColumnLabels::get('document', 'in_situ_box_1'))->placeholder('—'),
-                        TextEntry::make('in_situ_box_1_destroyed')->label('In Situ 1 destroyed?')->placeholder('—'),
-                        TextEntry::make('ras_batch_2')->label(ColumnLabels::get('document', 'ras_batch_2'))->placeholder('—'),
-                        TextEntry::make('ras_box_2')->label(ColumnLabels::get('document', 'ras_box_2'))->placeholder('—'),
-                        TextEntry::make('ras_2_box_destroyed')->label('RAS 2 destroyed?')->placeholder('—'),
-                        TextEntry::make('in_situ_box_2')->label(ColumnLabels::get('document', 'in_situ_box_2'))->placeholder('—'),
-                        TextEntry::make('in_situ_box_2_destroyed')->label('In Situ 2 destroyed?')->placeholder('—'),
-                        TextEntry::make('in_situ_box_3')->label(ColumnLabels::get('document', 'in_situ_box_3'))->placeholder('—'),
-                        TextEntry::make('in_situ_box_3_destroyed')->label('In Situ 3 destroyed?')->placeholder('—'),
-                    ]),
-
-                Section::make('Legacy barcodes & status')
-                    ->columns($twoCols)
-                    ->collapsed()
-                    ->schema([
-                        TextEntry::make('barcode_in')->label('Barcode (IN)')->placeholder('—'),
-                        TextEntry::make('barcode_in_2')->label('Barcode (IN) #2')->placeholder('—'),
-                        TextEntry::make('barcode_ras_1')->label('Barcode RAS 1')->placeholder('—'),
-                        TextEntry::make('status_1')->label('Status 1')->placeholder('—'),
-                        TextEntry::make('barcode_ras_2')->label('Barcode RAS 2')->placeholder('—'),
-                        TextEntry::make('status_2')->label('Status 2')->placeholder('—'),
-                        TextEntry::make('barcode_ras_3')->label(ColumnLabels::get('document', 'barcode_ras_3'))->placeholder('—'),
-                        TextEntry::make('status_3')->label(ColumnLabels::get('document', 'status_3'))->placeholder('—'),
-                        TextEntry::make('barcode_ras_4')->label(ColumnLabels::get('document', 'barcode_ras_4'))->placeholder('—'),
-                        TextEntry::make('status_4')->label(ColumnLabels::get('document', 'status_4'))->placeholder('—'),
-                        TextEntry::make('barcode_ras_2_alt')->label('Barcode RAS 2 alt')->placeholder('—'),
-                        TextEntry::make('status_1_alt')->label('Status 1 alt')->placeholder('—'),
-                        TextEntry::make('barcode_ras_2_alt2')->label('Barcode RAS 2 alt 2')->placeholder('—'),
-                        TextEntry::make('status_2_alt')->label('Status 2 alt')->placeholder('—'),
-                    ]),
-
-                Section::make('Cataloguing extras')
-                    ->columns($twoCols)
-                    ->collapsed()
-                    ->schema([
-                        self::flagsEntry('flags_extras'),
+                            ->columnSpanFull(),
                         TextEntry::make('digitised')->label(ColumnLabels::get('document', 'digitised'))->placeholder('—'),
                         TextEntry::make('digitised_url')->label('Digitised link')->url(fn (?string $state): ?string => $state, shouldOpenInNewTab: true)->placeholder('—'),
-                        IconEntry::make('torre')->label(ColumnLabels::get('document', 'torre'))->boolean(),
-                        TextEntry::make('accession_code_legacy')->label(ColumnLabels::get('document', 'accession_code_legacy'))->placeholder('—'),
-                        TextEntry::make('object_reference_number')->label(ColumnLabels::get('document', 'object_reference_number'))->url(fn (?string $state): ?string => Document::driveSearchUrl($state), shouldOpenInNewTab: true)->placeholder('—'),
-                        TextEntry::make('temporary_identifier')->label(ColumnLabels::get('document', 'temporary_identifier'))->copyable()->placeholder('—'),
-                        TextEntry::make('citation_reference')->label(ColumnLabels::get('document', 'citation_reference'))->placeholder('—')->columnSpanFull(),
-                        TextEntry::make('tracking')->label(ColumnLabels::get('document', 'tracking'))->placeholder('—')->columnSpanFull(),
-                        TextEntry::make('museum_reference')->label(ColumnLabels::get('document', 'museum_reference'))->placeholder('—')->columnSpanFull(),
-                    ]),
-
-                Section::make('Notes')
-                    ->columns(1)
-                    ->collapsed()
-                    ->schema([
-                        TextEntry::make('notes')->label(ColumnLabels::get('document', 'notes'))
-                            ->hiddenLabel()
-                            ->prose()
-                            ->placeholder('No notes.')
-                            ->columnSpanFull(),
                     ]),
 
                 // Custom fields (EAV, per-repository) — view/infolist section.
                 // Shows label → formatted value for every active definition that
                 // has a stored value on this record. Hidden when the record has no
                 // active definitions or no stored values (no empty section shown).
+                // The Past Reference Code is under Alternate Identification.
                 Section::make('Custom fields')
                     ->columns($twoCols)
                     ->schema(static function (?Document $record): array {
@@ -997,7 +826,7 @@ class DocumentResource extends Resource
                         $entries = [];
                         foreach ($record->customFieldDefinitions()->get() as $def) {
                             $value = $data[$def->key] ?? null;
-                            if ($value === null) {
+                            if ($value === null || $def->key === self::PAST_REFERENCE_CODE_KEY) {
                                 continue;
                             }
                             $displayValue = match ($def->type) {
@@ -1019,6 +848,7 @@ class DocumentResource extends Resource
                             return false;
                         }
                         $data = $record->getCustomFieldData();
+                        unset($data[self::PAST_REFERENCE_CODE_KEY]);
 
                         return ! empty(array_filter($data, fn ($v) => $v !== null));
                     }),
@@ -1872,6 +1702,245 @@ class DocumentResource extends Resource
         // pagination-friendly (no count() rewrite quirks) and lets MySQL
         // reuse the existing index on `documents.identifier` for the
         // outer ORDER BY.
+    }
+
+    /**
+     * The custom fields of the Custom fields section: all of them but the Past
+     * Reference Code, which has its place under Alternate Identification.
+     *
+     * @return array<int, Schemas\Components\Component>
+     */
+    private static function customFieldComponents(?int $repositoryId): array
+    {
+        return array_values(array_filter(
+            CustomFieldSchema::for('document', $repositoryId),
+            static fn (Schemas\Components\Component $field): bool => ! ($field instanceof Forms\Components\Field) || $field->getName() !== 'custom.' . self::PAST_REFERENCE_CODE_KEY,
+        ));
+    }
+
+    private static function pastReferenceDefinition(?int $repositoryId): ?CustomFieldDefinition
+    {
+        return $repositoryId === null ? null : CustomFieldDefinition::query()
+            ->where('repository_id', $repositoryId)
+            ->where('entity_type', 'document')
+            ->where('key', self::PAST_REFERENCE_CODE_KEY)
+            ->where('is_active', true)
+            ->first();
+    }
+
+    private static function formRepositoryId(Get $get, ?Document $record): ?int
+    {
+        $repositoryId = (int) $get('repository_id') ?: $record?->repository_id ?: auth()->user()?->default_repository_id;
+
+        return $repositoryId !== null ? (int) $repositoryId : null;
+    }
+
+    /**
+     * Several values in one text column (see {@see MultiValue}), read and
+     * written as tags.
+     */
+    private static function multiValueInput(string $name, string $label, int $maxLength): Forms\Components\TagsInput
+    {
+        return Forms\Components\TagsInput::make($name)
+            ->label($label)
+            ->placeholder('Type a value and press Enter')
+            ->splitKeys([';'])
+            ->columnSpanFull()
+            ->afterStateHydrated(fn (Forms\Components\TagsInput $component, mixed $state) => $component->state(MultiValue::split($state)))
+            ->dehydrateStateUsing(fn (mixed $state): ?string => MultiValue::join($state))
+            ->rule(static fn (): \Closure => static function (string $attribute, mixed $value, \Closure $fail) use ($label, $maxLength): void {
+                if (mb_strlen((string) MultiValue::join($value)) > $maxLength) {
+                    $fail("{$label} may hold at most {$maxLength} characters in all.");
+                }
+            });
+    }
+
+    /**
+     * The date and reason of a past volume or past authority row.
+     *
+     * @return array<int, Schemas\Components\Component>
+     */
+    private static function historyRowDetails(): array
+    {
+        return [
+            Forms\Components\DatePicker::make('changed_at')->label('Changed date')->default(fn (): string => now()->toDateString()),
+            Forms\Components\TextInput::make('reason')
+                ->label('Reason')
+                ->maxLength(255)
+                // Document::previousAttribution() finds an imported row by this text.
+                ->disabled(fn (?string $state): bool => $state === 'Imported — previously attributed'),
+        ];
+    }
+
+    /**
+     * What a row typed on the form cannot say for itself. The identifier did
+     * not change, so it stands on both sides; the repository comes from the
+     * document, never from the post.
+     *
+     * @param array<string, mixed> $data
+     * @return array<string, mixed>
+     */
+    private static function newHistoryRow(array $data, Document $document): array
+    {
+        return [
+            ...$data,
+            'previous_identifier' => (string) $document->identifier,
+            'new_identifier' => $document->identifier,
+            'changed_at' => $data['changed_at'] ?? now(),
+            'changed_by_user_id' => auth()->id(),
+            'repository_id' => $document->repository_id,
+        ];
+    }
+
+    /**
+     * The form edits the day: a row whose day did not change keeps its time, or
+     * every save of the document would rewrite (and audit) every history row.
+     *
+     * @param array<string, mixed> $data
+     * @return array<string, mixed>
+     */
+    private static function keepHistoryTime(array $data, DocumentIdentifierHistory $row): array
+    {
+        if (DisplayDate::date($data['changed_at'] ?? null) === DisplayDate::date($row->changed_at)) {
+            unset($data['changed_at']);
+        }
+
+        return $data;
+    }
+
+    /**
+     * @return array<int|string, string>
+     */
+    private static function citingAuthorityOptions(string $search): array
+    {
+        $needle = '%' . trim($search) . '%';
+
+        return Authority::query()
+            ->when(trim($search) !== '', fn (Builder $query): Builder => $query->where(fn (Builder $q): Builder => $q
+                ->where('alternative_identifier', 'like', $needle)
+                ->orWhere('authorised_form_of_name', 'like', $needle)
+                ->orWhere('identifier', 'like', $needle)
+                ->orWhere('surname', 'like', $needle)
+                ->orWhere('given_names', 'like', $needle)))
+            ->orderBy('surname')
+            ->limit(SearchableSelects::MAX_RESULTS)
+            ->get()
+            ->mapWithKeys(fn (Authority $authority): array => [$authority->getKey() => $authority->citingLabel()])
+            ->all();
+    }
+
+    private static function accessionLabel(Accession $accession): string
+    {
+        return trim($accession->accession_number . ' ' . $accession->code);
+    }
+
+    /**
+     * @return array<int|string, string>
+     */
+    private static function accessionOptions(string $search): array
+    {
+        $needle = '%' . trim($search) . '%';
+
+        return Accession::query()
+            ->when(trim($search) !== '', fn (Builder $query): Builder => $query->where(fn (Builder $q): Builder => $q
+                ->where('code', 'like', $needle)
+                ->orWhere('accession_number', 'like', $needle)))
+            ->orderBy('code')
+            ->limit(SearchableSelects::MAX_RESULTS)
+            ->get()
+            ->mapWithKeys(fn (Accession $accession): array => [$accession->getKey() => self::accessionLabel($accession)])
+            ->all();
+    }
+
+    /**
+     * The museum locations of the document's repository, by code. Codes are
+     * unique only within a repository, so the list is that repository's alone;
+     * Location's global scope leaves a repository the user has no access to
+     * empty. A value already stored stays selectable, in or out of the list.
+     *
+     * @return array<string, string>
+     */
+    private static function museumLocationOptions(?int $repositoryId, ?Document $record): array
+    {
+        $options = $repositoryId === null ? [] : Location::query()
+            ->active()
+            ->where('repository_id', $repositoryId)
+            ->whereIn('type', ['museum', 'showcase'])
+            ->whereNotNull('code')
+            ->orderBy('path')
+            ->get()
+            ->mapWithKeys(fn (Location $location): array => [(string) $location->code => $location->breadcrumb()])
+            ->all();
+
+        $stored = trim((string) $record?->museum_location);
+        if ($stored !== '' && ! array_key_exists($stored, $options)) {
+            $options[$stored] = LocationBreadcrumbCache::forCode($stored, $record?->repository_id) ?? $stored;
+        }
+
+        return $options;
+    }
+
+    private static function currentBoxUrl(?Document $record): ?string
+    {
+        return $record?->current_box_id !== null
+            ? route('filament.admin.resources.boxes.view', ['record' => $record->current_box_id])
+            : null;
+    }
+
+    /**
+     * Client 2026-11-05: "If not disinfested can we have an indication here?"
+     * On the form and on the view page; a document being created has no state
+     * to show.
+     */
+    private static function disinfestationIndicatorEntry(): TextEntry
+    {
+        return TextEntry::make('disinfestation_indicator')
+            ->label('Disinfestation')
+            ->state(function (?Document $record): ?string {
+                if (! $record instanceof Document) {
+                    return null;
+                }
+                if ($record->is_in_disinfestation) {
+                    return self::CURRENT_CYCLE;
+                }
+
+                return DisplayDate::date($record->effectiveDisinfestationDate()) ?? self::NOT_DISINFESTED;
+            })
+            ->badge()
+            ->color(fn (?string $state): string => match ($state) {
+                self::NOT_DISINFESTED => 'danger',
+                self::CURRENT_CYCLE => 'warning',
+                default => 'success',
+            })
+            ->hiddenOn('create');
+    }
+
+    private static function previouslyAttributedEntry(): TextEntry
+    {
+        return TextEntry::make('previously_attributed')
+            ->label(ColumnLabels::get('document', 'prev_attributed_identifier'))
+            ->state(fn (?Document $record): ?string => self::previouslyAttributed($record))
+            ->visible(fn (?Document $record): bool => self::previouslyAttributed($record) !== null);
+    }
+
+    private static function previouslyAttributed(?Document $record): ?string
+    {
+        $previous = $record?->exists ? $record->previousAttribution()?->previous_identifier : null;
+
+        return $previous !== $record?->identifier ? $previous : null;
+    }
+
+    /**
+     * "5 (changed 05-11-2026; wrongly attributed)".
+     */
+    private static function historyLine(string $value, DocumentIdentifierHistory $row): string
+    {
+        $details = array_filter([
+            ($date = DisplayDate::date($row->changed_at)) !== null ? 'changed ' . $date : null,
+            $row->reason,
+        ]);
+
+        return $details === [] ? $value : $value . ' (' . implode('; ', $details) . ')';
     }
 
     /**

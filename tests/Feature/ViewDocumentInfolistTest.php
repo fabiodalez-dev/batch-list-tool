@@ -6,7 +6,6 @@ use App\Filament\Resources\DocumentResource;
 use App\Filament\Resources\DocumentResource\Pages\ViewDocument;
 use App\Models\Authority;
 use App\Models\Batch;
-use App\Models\Box;
 use App\Models\Document;
 use App\Models\Location;
 use App\Models\Repository;
@@ -25,7 +24,7 @@ use Spatie\Permission\Models\Permission;
  * These tests pin the UX brief deliverables:
  *
  *  1. Page heading is parlante: `"R45 — Abela Antonio"` instead of `"View 42"`.
- *  2. Hero summary card surfaces the 5 most important facts at a glance.
+ *  2. The sections surface the important facts (the hero card went, client 2026-11-05).
  *  3. Authorities are rendered through a `RepeatableEntry`, not a `<select>`.
  *  4. Disinfestation timeline gathers all four date columns.
  *  5. Location breadcrumb walks the parent chain.
@@ -182,7 +181,10 @@ it('ViewDocument page title falls back to "Document #<id>" when both identifier 
 
     $repo = vdt_makeRepo();
     $series = vdt_makeSeries();
-    $doc = vdt_makeDoc($repo->id, $series->id, ['identifier' => '']);
+    // A new document always gets an identifier now (client 2026-11-05); a blank
+    // one can only be an old row.
+    $doc = vdt_makeDoc($repo->id, $series->id);
+    $doc->forceFill(['identifier' => ''])->saveQuietly();
     $doc = Document::withoutGlobalScope(RepositoryScope::class)->with('authorities')->find($doc->id);
 
     $page = new ViewDocument;
@@ -192,10 +194,10 @@ it('ViewDocument page title falls back to "Document #<id>" when both identifier 
 });
 
 /* ---------------------------------------------------------------------------
- |  2. Hero card — surfaces identifier badge + primary author + box + status
+ |  2. Sections — surface identifier + primary author
  * -------------------------------------------------------------------------*/
 
-it('ViewDocument page renders the document identifier in the hero card', function () {
+it('ViewDocument page renders the document identifier', function () {
     $this->actingAs(vdt_actAsSuperAdmin());
 
     $repo = vdt_makeRepo();
@@ -207,7 +209,7 @@ it('ViewDocument page renders the document identifier in the hero card', functio
         ->assertSee('HERO-IDENT-123');
 });
 
-it('ViewDocument hero card shows the primary author surname and given names', function () {
+it('ViewDocument page shows the primary author surname and given names', function () {
     $this->actingAs(vdt_actAsSuperAdmin());
 
     $repo = vdt_makeRepo();
@@ -289,7 +291,7 @@ it('Document::disinfestationTimeline() skips null dates and stays empty for a ne
     expect($doc->disinfestationTimeline())->toHaveCount(0);
 });
 
-it('ViewDocument page shows the disinfestation_date in the hero card when set', function () {
+it('ViewDocument page shows the disinfestation_date when set', function () {
     $this->actingAs(vdt_actAsSuperAdmin());
 
     $repo = vdt_makeRepo();
@@ -383,7 +385,8 @@ it('DocumentResource::infolist() schema is populated (regression: not the form s
     $built = DocumentResource::infolist($schema);
 
     expect($built->getComponents())->not->toBeEmpty();
-    expect(count($built->getComponents()))->toBeGreaterThanOrEqual(8);
+    // The sections of the form (client 2026-11-05); Custom fields and Audit info show when they apply.
+    expect(count($built->getComponents()))->toBeGreaterThanOrEqual(5);
 });
 
 /* ---------------------------------------------------------------------------

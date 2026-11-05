@@ -19,6 +19,7 @@ use Illuminate\Database\Eloquent\Relations\HasMany;
 use Illuminate\Database\Eloquent\SoftDeletes;
 use Illuminate\Support\Collection;
 use Illuminate\Support\Facades\Auth;
+use Illuminate\Support\Str;
 use Illuminate\Validation\ValidationException;
 use Laravel\Scout\Searchable;
 use OwenIt\Auditing\Auditable;
@@ -876,6 +877,14 @@ class Document extends Model implements AuditableContract, HasMedia, Sortable
 
     protected static function booted(): void
     {
+        // Runs after BelongsToRepository's creating hook, which settles the
+        // repository. The importers set their own identifier first.
+        static::creating(function (self $document): void {
+            if (blank($document->identifier)) {
+                $document->identifier = self::generateIdentifier($document);
+            }
+        });
+
         // A box with no location of its own takes the one its documents share
         // (Box::syncLocationFromDocuments). Re-checked for the box a document
         // is in, and the box it left, whenever its location or box changes.
@@ -1142,6 +1151,28 @@ class Document extends Model implements AuditableContract, HasMedia, Sortable
         } finally {
             self::$bypassAuditGuard = $previous;
         }
+    }
+
+    /**
+     * Client 2026-11-05: "When creating a new document this should be filled up
+     * automatically". Reads like the importer's auto identifier (see
+     * DocumentImporter::buildAutoIdentifier): REPO-SERIES-TYP-<12 hex>.
+     */
+    private static function generateIdentifier(self $document): string
+    {
+        $type = DocumentType::forStoredValue($document->document_type)->name ?? (string) $document->document_type;
+        $prefix = implode('-', array_filter([
+            Repository::withoutGlobalScopes()->whereKey($document->repository_id)->value('code'),
+            Series::withoutGlobalScopes()->whereKey($document->series_id)->value('code'),
+            strtoupper(substr((string) preg_replace('/[^A-Za-z0-9]/', '', $type), 0, 3)),
+        ])) ?: 'DOC';
+
+        do {
+            // The column holds 64 characters; soft-deleted documents keep theirs.
+            $identifier = substr($prefix, 0, 51) . '-' . strtoupper(substr(sha1(Str::random(40)), 0, 12));
+        } while (self::withoutGlobalScopes()->where('identifier', $identifier)->exists());
+
+        return $identifier;
     }
 
     /**

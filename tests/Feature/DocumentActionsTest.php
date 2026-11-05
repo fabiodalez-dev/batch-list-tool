@@ -19,7 +19,6 @@ use App\Filament\Actions\Documents\ReplaceAuthorityAction;
 use App\Filament\Actions\Documents\SetLocationAction;
 use App\Filament\Actions\Documents\SetSeriesAction;
 use App\Filament\Actions\Documents\UpdateDocumentTypeAction;
-use App\Filament\Actions\Documents\UpdateIdentifierAction;
 use App\Filament\Resources\DocumentResource\Pages\EditDocument;
 use App\Filament\Resources\DocumentResource\Pages\ListDocuments;
 use App\Models\Authority;
@@ -733,47 +732,6 @@ test('Move to wills assigns Batch 50 (auto-created when missing)', function () {
 });
 
 /* -------------------------------------------------------------------------
- |  Action #14 — Update Identifier (single only)
- * ------------------------------------------------------------------------- */
-
-test('Update identifier writes new identifier on a single document', function () {
-    $this->actingAs(actAs_role('super_admin'));
-
-    $repo = repo_();
-    $series = series_();
-    $doc = doc_($repo->id, $series->id, ['identifier' => 'R7-old']);
-
-    runAction(UpdateIdentifierAction::make(), [
-        'record' => $doc,
-        'data' => ['identifier' => 'R7-new'],
-    ]);
-
-    $doc->refresh();
-    expect($doc->identifier)->toBe('R7-new');
-});
-
-test('Update identifier rejects duplicates within the same repository', function () {
-    $this->actingAs(actAs_role('super_admin'));
-
-    $repo = repo_();
-    $series = series_();
-    $existing = doc_($repo->id, $series->id, ['identifier' => 'R10']);
-    $target = doc_($repo->id, $series->id, ['identifier' => 'R11']);
-
-    runAction(UpdateIdentifierAction::make(), [
-        'record' => $target,
-        'data' => ['identifier' => 'R10'],
-    ]);
-
-    $target->refresh();
-    expect($target->identifier)->toBe('R11');
-});
-
-test('UpdateIdentifierAction has no bulk variant', function () {
-    expect(method_exists(UpdateIdentifierAction::class, 'bulk'))->toBeFalse();
-});
-
-/* -------------------------------------------------------------------------
  |  Action #15 — Export Selected
  * ------------------------------------------------------------------------- */
 
@@ -844,14 +802,14 @@ test('Audit metadata captures user_id and event', function () {
  |  Wiring on the resource pages
  * ------------------------------------------------------------------------- */
 
-test('DocumentActionGroup exposes 15 single-record header actions and 16 bulk actions', function () {
+test('DocumentActionGroup exposes 14 single-record header actions and 16 bulk actions', function () {
     // +1 single / +1 bulk after SetMuseumLocationAction was added in
     // PR #85 (APP2-vi). Bump these counts whenever an action joins the
     // group so a future regression that DROPS an action surfaces here.
     $single = DocumentActionGroup::singleHeaderActions();
     $bulk = DocumentActionGroup::bulkActions();
 
-    expect($single)->toHaveCount(15);
+    expect($single)->toHaveCount(14);
     expect($bulk)->toHaveCount(16);
 });
 
@@ -1121,28 +1079,6 @@ test('H-3 regression: cross-tenant transfer cascades repository_id onto document
     $doc->refresh();
     expect((int) $doc->repository_id)->toBe($repoB->id);
     expect((int) $flag->repository_id)->toBe($repoB->id);
-});
-
-/* ---- H-4: UpdateIdentifierAction includes soft-deleted in uniqueness check ---- */
-
-test('H-4 regression: Update identifier rejects an identifier that is held by a soft-deleted document', function () {
-    $this->actingAs(actAs_role('super_admin'));
-
-    $repo = repo_();
-    $series = series_();
-    $trashed = doc_($repo->id, $series->id, ['identifier' => 'R99-archived']);
-    $trashed->delete(); // soft delete
-    expect($trashed->fresh()->trashed())->toBeTrue();
-
-    $target = doc_($repo->id, $series->id, ['identifier' => 'R100']);
-
-    runAction(UpdateIdentifierAction::make(), [
-        'record' => $target,
-        'data' => ['identifier' => 'R99-archived'],
-    ]);
-
-    $target->refresh();
-    expect($target->identifier)->toBe('R100');
 });
 
 /* ---- H-5: MoveToBoxAction refuses orphan target boxes (batch_id null) ---- */

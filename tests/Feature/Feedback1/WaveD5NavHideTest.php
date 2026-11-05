@@ -89,12 +89,13 @@ it('D5-Form.2: DocumentResource create form does NOT contain nra_location field'
         ->assertFormFieldDoesNotExist('nra_location');
 });
 
-it('D5-Form.3: DocumentResource create form does NOT contain museum_location field', function (): void {
+// Client 2026-11-05 asks for Museum Location back in Logistics, as a picker.
+it('D5-Form.3: DocumentResource create form contains the museum_location field', function (): void {
     $user = wd5_sa();
     $this->actingAs($user);
 
     Livewire::test(CreateDocument::class)
-        ->assertFormFieldDoesNotExist('museum_location');
+        ->assertFormFieldExists('museum_location');
 });
 
 it('D5-Form.4: DocumentResource create form still has location_id (canonical location)', function (): void {

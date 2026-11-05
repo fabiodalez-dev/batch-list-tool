@@ -43,7 +43,6 @@ final class DocumentActionGroup
             DetachAuthorityAction::make(),
             AddFlagAction::make(),
             MoveToWillsAction::make(),
-            UpdateIdentifierAction::make(),
             MarkPermOutAction::make(),
         ];
     }
