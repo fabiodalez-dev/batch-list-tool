@@ -6,6 +6,7 @@ use App\Filament\Actions\Documents\DocumentActionGroup;
 use App\Filament\Resources\BoxResource\Pages\ViewBox;
 use App\Filament\Resources\DocumentResource\Pages\CreateDocument;
 use App\Filament\Resources\DocumentResource\Pages\EditDocument;
+use App\Filament\Resources\DocumentResource\Pages\ListDocuments;
 use App\Filament\Resources\DocumentResource\Pages\ViewDocument;
 use App\Models\Accession;
 use App\Models\Authority;
@@ -507,6 +508,19 @@ it('keeps the old volume when the volume changes (her image 3)', function (): vo
     expect($row->previous_volume)->toBe('5')
         ->and($row->new_volume)->toBe('4')
         ->and($row->repository_id)->toBe($this->repo->id);
+});
+
+it('shows a volume changed on Edit in the Prev Attributed Volume column', function (): void {
+    $document = dl_doc(['volume_number' => '5']);
+
+    Livewire::test(EditDocument::class, ['record' => $document->getRouteKey()])
+        ->fillForm(['volume_number' => '4'])
+        ->call('save')
+        ->assertHasNoFormErrors();
+
+    expect($document->fresh()->latestPastVolume())->toBe('5');
+    Livewire::test(ListDocuments::class)
+        ->assertTableColumnStateSet('prev_attributed_volume', '5', $document);
 });
 
 it('records nothing when the volume stays, or when there was none', function (): void {

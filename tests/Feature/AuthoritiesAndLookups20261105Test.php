@@ -135,8 +135,7 @@ it('leaves no real column of the Authorities list unsortable', function (): void
         ->keys()
         ->all();
 
-    // Inputter comes from the audits table, it is not a column of authorities.
-    expect($unsortable)->toBe(['inputter']);
+    expect($unsortable)->toBe([]);
 });
 
 // ─── Issue 5: sections and fields ──────────────────────────────────────────

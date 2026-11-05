@@ -412,6 +412,21 @@ class Document extends Model implements AuditableContract, HasMedia, Sortable
     }
 
     /**
+     * Client 2026-11-05: "From volume 5 I want to change it to volume 4 but I
+     * want to keep track of the old volume (Prev Attributed Volume)". The latest
+     * volume the document left, whether imported or changed on its Edit page.
+     */
+    public function latestPastVolume(): ?string
+    {
+        $row = $this->identifierHistory
+            ->filter(fn (DocumentIdentifierHistory $row): bool => filled($row->previous_volume))
+            ->sortByDesc('id')
+            ->first();
+
+        return $row instanceof DocumentIdentifierHistory ? $row->previous_volume : null;
+    }
+
+    /**
      * Append-only log of per-document barcode value changes (Task 7b).
      *
      * The document's custody STATUS comes from its box (Task 7 mirror).

@@ -436,7 +436,7 @@ it('offers every custody status but In box, and requires both fields of Move out
     $doc = pa05_doc();
     $lw = pa05_list()->mountTableBulkAction('bulkSetCustodyStatus', [$doc]);
 
-    expect(pa05_field($lw, 'custody_status')->getOptions())->toBe(['not_in_box' => 'Not in box', 'mounted_no_box' => 'Mounted; no box', 'conservation_box' => 'Conservation Box']);
+    expect(pa05_field($lw, 'custody_status')->getOptions())->toBe(['not_in_box' => 'Not in Box', 'mounted_no_box' => 'Mounted; no box', 'conservation_box' => 'Conservation Box']);
 
     $lw->callMountedTableBulkAction()->assertHasFormErrors(['custody_status' => 'required', 'to_location_id' => 'required']);
 });

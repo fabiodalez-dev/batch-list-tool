@@ -413,7 +413,7 @@ final class EntityExport
                 // The free-text Creator cell as it arrived, kept by the importer.
                 'creator_legacy_text' => static fn (Model $r): mixed => $r instanceof Document ? $r->extra->get('legacy_creator_text') : null,
                 'prev_attributed_identifier' => static fn (Model $r): mixed => self::previousAttribution($r)?->getAttribute('previous_identifier'),
-                'prev_attributed_volume' => static fn (Model $r): mixed => self::previousAttribution($r)?->getAttribute('previous_volume'),
+                'prev_attributed_volume' => static fn (Model $r): mixed => $r instanceof Document ? $r->latestPastVolume() : null,
                 // The sheet's "RAS 1/2 Box Destroyed" cells, as the document keeps them.
                 'ras_box_1_destroyed' => static fn (Model $r): mixed => $r->getAttribute('ras_1_box_destroyed'),
                 'ras_box_2_destroyed' => static fn (Model $r): mixed => $r->getAttribute('ras_2_box_destroyed'),

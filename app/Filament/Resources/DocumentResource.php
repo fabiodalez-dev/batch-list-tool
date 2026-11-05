@@ -973,9 +973,11 @@ class DocumentResource extends Resource
                     ->toggleable(isToggledHiddenByDefault: true), 'authorities'),
                 $gc(Tables\Columns\TextColumn::make('prev_attributed_volume')
                     ->label(ColumnLabels::get('document', 'prev_attributed_volume'))
-                    ->state(fn (Document $record): ?string => $record->previousAttribution()?->previous_volume)
+                    ->state(fn (Document $record): ?string => $record->latestPastVolume())
                     ->placeholder('—')
-                    ->sortable(query: fn (Builder $query, string $direction): Builder => self::orderByPreviousAttribution($query, 'previous_volume', $direction))
+                    ->sortable(query: fn (Builder $query, string $direction): Builder => TableSorts::blanksLast($query, "(SELECT NULLIF(sort_hist.previous_volume, '') FROM document_identifier_history sort_hist
+                        WHERE sort_hist.document_id = documents.id AND sort_hist.previous_volume IS NOT NULL AND sort_hist.previous_volume <> ''
+                        ORDER BY sort_hist.id DESC LIMIT 1)", $direction))
                     ->toggleable(isToggledHiddenByDefault: true), 'volume_number'),
                 // Client 2026-10-18: the type's name, not its DT code.
                 $gc(Tables\Columns\TextColumn::make('document_type')->label(ColumnLabels::get('document', 'document_type'))
@@ -1053,7 +1055,8 @@ class DocumentResource extends Resource
                         ->unique()
                         ->implode(', ') ?: null))
                     ->sortable(query: fn (Builder $query, string $direction): Builder => TableSorts::documentDisinfestation($query, $direction))
-                    ->toggleable(isToggledHiddenByDefault: true)),
+                    // On by default: "Currently no indication on the Document Page".
+                    ->toggleable()),
                 $gc(Tables\Columns\IconColumn::make('torre')->label(ColumnLabels::get('document', 'torre'))->boolean()->sortable()->toggleable(isToggledHiddenByDefault: true)),
                 // Client 2026-10-18: every column of the documents sheet can be
                 // shown here (hidden until picked in the column list).
