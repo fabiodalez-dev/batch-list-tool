@@ -281,8 +281,9 @@ it('B4: the generator version was bumped for the template contract change', func
     // stopped being raw field names and became the readable name the form and
     // the table already used; to 1.21.0 on 2026-10-12 when the document
     // template gained Custody Status; to 1.22.0 on 2026-10-28 when it gained
-    // Flags.
-    expect(TemplateGenerator::GENERATOR_VERSION)->toBe('1.22.0');
+    // Flags; to 1.23.0 on 2026-11-05 when the authority template took her
+    // spellings of three labels.
+    expect(TemplateGenerator::GENERATOR_VERSION)->toBe('1.23.0');
 });
 
 it('B5: every generated box header still maps to a BoxImporter column (round-trip)', function () {

@@ -7,6 +7,7 @@ namespace App\Support\BulkImport;
 use App\Console\Commands\ImportSampleData;
 use App\Models\Authority;
 use App\Models\Document;
+use App\Models\Lookup\EntityType;
 use Illuminate\Support\Carbon;
 use PhpOffice\PhpSpreadsheet\Shared\Date as ExcelDate;
 
@@ -35,19 +36,6 @@ final class SpreadsheetParsers
      * error, so the row saves a wrong date and nothing complains.
      */
     public const int MAX_DATE_SERIAL = 73415;
-
-    /**
-     * Every "Type of Entity" the system accepts, in its stored spelling.
-     *
-     * Two vocabularies are live and both stay valid: PERSON / INSTITUTION, which
-     * the client's own authority sheets carry ("Person" on all 676 production
-     * rows), and Notary / Interventor, which the Creator form offers because the
-     * client asked for Notary as the default (feedback 1, 2026-06-06). Which one
-     * becomes THE vocabulary is the client's decision, not the importer's.
-     *
-     * @var list<string>
-     */
-    public const array ENTITY_TYPES = ['PERSON', 'INSTITUTION', 'Notary', 'Interventor'];
 
     /**
      * Parse a free-text date string into a (start, end) integer-year pair.
@@ -261,9 +249,11 @@ final class SpreadsheetParsers
     }
 
     /**
-     * Map a "Type of Entity" cell onto its stored spelling, case-insensitively.
+     * Map a "Type of Entity" cell onto the code of the Entity Types page, by code
+     * or label, case-insensitively: the client's sheets say "Person", older ones
+     * and exports "PERSON".
      *
-     * Blank stays PERSON, as before. An UNKNOWN value is returned as written so
+     * Blank stays Person, as before. An UNKNOWN value is returned as written so
      * the column's `in:` rule rejects the row with a message the operator can
      * act on. It used to become INSTITUTION without a word: a typo, an ISAAR
      * "Family", or the form's own "Notary" all turned a creator into an
@@ -274,12 +264,12 @@ final class SpreadsheetParsers
     {
         $trimmed = trim((string) $value);
         if ($trimmed === '') {
-            return 'PERSON';
+            return 'Person';
         }
 
-        foreach (self::ENTITY_TYPES as $type) {
-            if (strcasecmp($type, $trimmed) === 0) {
-                return $type;
+        foreach (EntityType::labels() as $code => $label) {
+            if (strcasecmp($code, $trimmed) === 0 || strcasecmp($label, $trimmed) === 0) {
+                return $code;
             }
         }
 

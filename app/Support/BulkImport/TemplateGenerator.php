@@ -79,9 +79,9 @@ final class TemplateGenerator
         // Descriptive fields. "Notes" existed on the form and in the database
         // all along but had no column here, so it could be typed and never
         // imported.
-        'Authorised form of name', 'Functions, occupations and activities',
+        'Authorised Form of Name', 'Functions, Occupations and Activities',
         'Level of detail', 'Status', 'Rules and/or conventions',
-        'Date of creation', 'Creator of record', 'Notes',
+        'Date of creation', 'Creator of record', 'Note',
     ];
 
     /** @var array<int, string> */
@@ -176,7 +176,7 @@ final class TemplateGenerator
      * version tells you whether the operator is working from a stale
      * download. Bump on any change to the header contract.
      */
-    public const string GENERATOR_VERSION = '1.22.0';
+    public const string GENERATOR_VERSION = '1.23.0';
 
     /**
      * Supported template entities. Headers come from the in-repo constants

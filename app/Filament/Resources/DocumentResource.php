@@ -26,6 +26,7 @@ use App\Models\DocumentType;
 use App\Models\Location;
 use App\Models\Lookup\BoxType;
 use App\Models\Lookup\CurrentBoxType;
+use App\Models\Lookup\CustodyStatusType;
 use App\Models\Lookup\DigitisationStatus;
 use App\Models\Lookup\FlagType;
 use App\Models\Practice;
@@ -73,7 +74,6 @@ use Filament\Tables\Table;
 use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\SoftDeletingScope;
-use Illuminate\Support\Str;
 
 class DocumentResource extends Resource
 {
@@ -457,11 +457,9 @@ class DocumentResource extends Resource
                         $g(Forms\Components\Select::make('custody_status')
                             ->searchable()
                             ->label('Custody Status')
-                            // Options are derived from the const so they stay in
-                            // sync with the model; the label map keeps them readable.
-                            ->options(collect(Document::CUSTODY_STATUSES)
-                                ->mapWithKeys(fn (string $v): array => [$v => Document::custodyLabels()[$v] ?? Str::headline($v)])
-                                ->all())
+                            // Client 2026-11-05: from the Custody Status Types page;
+                            // a deactivated status a document holds stays selectable.
+                            ->options(fn (?Document $record): array => CustodyStatusType::optionsWith($record?->custody_status))
                             ->default('in_box')
                             ->required()
                             ->native(false)),
@@ -1016,7 +1014,7 @@ class DocumentResource extends Resource
                 // Client 2026-10-19: Deeds was missing; No of Acts is not in her
                 // sheet and holds nothing, so it is no longer offered here.
                 $gc(Tables\Columns\TextColumn::make('deeds')->label(ColumnLabels::get('document', 'deeds'))->limit(40)->tooltip(fn (?string $state): ?string => $state)->placeholder('—')->sortable()->toggleable()),
-                $gc(Tables\Columns\TextColumn::make('custody_status')->label('Custody Status')->formatStateUsing(fn (?string $state): ?string => $state === null ? null : (Document::custodyLabels()[$state] ?? $state))->sortable()->toggleable(isToggledHiddenByDefault: true)),
+                $gc(Tables\Columns\TextColumn::make('custody_status')->label('Custody Status')->formatStateUsing(fn (?string $state): ?string => $state === null ? null : (CustodyStatusType::labels()[$state] ?? $state))->sortable()->toggleable(isToggledHiddenByDefault: true)),
                 $gc(Tables\Columns\TextColumn::make('catalogue_identifier')->label(ColumnLabels::get('document', 'catalogue_identifier'))->sortable()->toggleable(isToggledHiddenByDefault: true)),
                 $gc(Tables\Columns\TextColumn::make('temporary_identifier')->label(ColumnLabels::get('document', 'temporary_identifier'))->searchable()->sortable()->toggleable(isToggledHiddenByDefault: true)),
                 // Bug #31 — Notes visible by default: some documents can only be

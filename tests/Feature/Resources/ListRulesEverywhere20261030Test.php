@@ -19,7 +19,9 @@ use App\Filament\Resources\Lookups\BarcodeStatusResource\Pages\ListBarcodeStatus
 use App\Filament\Resources\Lookups\BatchTypeResource\Pages\ListBatchTypes;
 use App\Filament\Resources\Lookups\BoxTypeResource\Pages\ListBoxTypes;
 use App\Filament\Resources\Lookups\CurrentBoxTypeResource\Pages\ListCurrentBoxTypes;
+use App\Filament\Resources\Lookups\CustodyStatusTypeResource\Pages\ListCustodyStatusTypes;
 use App\Filament\Resources\Lookups\DigitisationStatusResource\Pages\ListDigitisationStatuses;
+use App\Filament\Resources\Lookups\EntityTypeResource\Pages\ListEntityTypes;
 use App\Filament\Resources\Lookups\FlagTypeResource\Pages\ListFlagTypes;
 use App\Filament\Resources\Lookups\LocationTypeResource\Pages\ListLocationTypes;
 use App\Filament\Resources\PracticeResource\Pages\ListPractices;
@@ -116,6 +118,7 @@ function lre_lists(): array
         ListAudits::class, ListBackupDestinations::class,
         ListBarcodeStatuses::class, ListBatchTypes::class, ListBoxTypes::class, ListCurrentBoxTypes::class,
         ListDigitisationStatuses::class, ListFlagTypes::class, ListLocationTypes::class,
+        ListEntityTypes::class, ListCustodyStatusTypes::class,
     ];
 
     return collect($lists)->mapWithKeys(fn (string $page): array => [class_basename($page) => [$page]])->all();

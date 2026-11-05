@@ -8,6 +8,7 @@ use App\Models\Box;
 use App\Models\Document;
 use App\Models\DocumentFlag;
 use App\Models\Location;
+use App\Models\Lookup\CustodyStatusType;
 use App\Support\LocationBreadcrumbCache;
 use Filament\Tables\Filters\QueryBuilder\Constraints\Constraint;
 use Filament\Tables\Filters\QueryBuilder\Constraints\Operators\Operator;
@@ -109,7 +110,7 @@ final class DocumentRules
     {
         return SelectConstraint::make('custody_status')
             ->label('Custody Status')
-            ->options(Document::custodyLabels())
+            ->options(CustodyStatusType::labels())
             ->multiple();
     }
 

@@ -254,7 +254,7 @@ test('AuthorityImporter creates a new Authority with parsed year range', functio
     expect($a)->not->toBeNull()
         ->and($a->surname)->toBe('Abela')
         ->and($a->given_names)->toBe('Antonio')
-        ->and($a->entity_type)->toBe('PERSON')
+        ->and($a->entity_type)->toBe('Person')
         ->and($a->practice_dates_start)->toBe(1607)
         ->and($a->practice_dates_end)->toBe(1629);
 });

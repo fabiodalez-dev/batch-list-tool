@@ -20,6 +20,7 @@ use App\Models\DocumentFlag;
 use App\Models\DocumentIdentifierHistory;
 use App\Models\Lookup\BoxType;
 use App\Models\Lookup\CurrentBoxType;
+use App\Models\Lookup\CustodyStatusType;
 use App\Models\Repository;
 use App\Models\Scopes\RepositoryScope;
 use App\Models\User;
@@ -832,19 +833,26 @@ class DocumentImporter extends Importer
     }
 
     /**
-     * Map a Custody Status cell to its stored code: the labels shown on the
-     * document form ("Not in box"), the codes themselves ("not_in_box") and
-     * the obvious short form "Mounted". Case and spacing do not matter.
+     * Map a Custody Status cell to its stored code: the labels and codes of the
+     * Custody Status Types page ("Not in Box", "not_in_box") and the obvious
+     * short forms ("Mounted"). Case and spacing do not matter. A deactivated
+     * status is returned too: the Document guard fails the row and says why.
      */
     public static function custodyCode(string $value): ?string
     {
-        $norm = strtolower(trim((string) preg_replace('/[\s_;,\-]+/', ' ', $value)));
+        $normalise = static fn (string $v): string => strtolower(trim((string) preg_replace('/[\s_;,\-]+/', ' ', $v)));
+        $norm = $normalise($value);
+
+        foreach (CustodyStatusType::labels() as $code => $label) {
+            if ($norm === $normalise($code) || $norm === $normalise($label)) {
+                return $code;
+            }
+        }
 
         return match ($norm) {
-            'in box' => 'in_box',
-            'not in box', 'no box', 'not boxed' => 'not_in_box',
-            'mounted no box', 'mounted' => 'mounted_no_box',
-            'conservation box', 'in conservation box' => 'conservation_box',
+            'no box', 'not boxed' => 'not_in_box',
+            'mounted' => 'mounted_no_box',
+            'in conservation box' => 'conservation_box',
             default => null,
         };
     }
@@ -1791,7 +1799,7 @@ class DocumentImporter extends Importer
             // cell lets the import decide from the
             // box columns (see syncCustodyWithBox()).
             ImportColumn::make('custody_status')
-                ->label('Custody Status (In box / Not in box / Mounted; no box / Conservation Box)')
+                ->label('Custody Status (' . implode(' / ', Document::custodyLabels()) . ')')
                 ->guess(['Custody Status', 'custody_status', 'Custody'])
                 ->fillRecordUsing(function (Document $record, ?string $state): void {
                     $v = trim((string) ($state ?? ''));
@@ -1801,7 +1809,7 @@ class DocumentImporter extends Importer
                     $code = self::custodyCode($v);
                     if ($code === null) {
                         throw ValidationException::withMessages([
-                            'custody_status' => "Custody Status '{$v}' is not one of: In box, Not in box, Mounted; no box, Conservation Box.",
+                            'custody_status' => "Custody Status '{$v}' is not one of: " . implode(', ', Document::custodyLabels()) . '.',
                         ]);
                     }
                     $record->custody_status = $code;
@@ -2487,12 +2495,17 @@ class DocumentImporter extends Importer
         $explicit = isset(self::$rowCustodyExplicitStash[$key]);
         unset(self::$rowCustodyExplicitStash[$key]);
 
-        if ($explicit || $record->custody_status === 'mounted_no_box') {
+        // Only in or out of a box follows the box columns: any other status
+        // (Mounted, Conservation Box, one added on the Custody Status Types
+        // page) was somebody's choice. Null is a new row before its default.
+        if ($explicit || ! in_array($record->custody_status, ['in_box', 'not_in_box', null], true)) {
             return;
         }
 
         $custody = $record->current_box_id === null ? 'not_in_box' : 'in_box';
-        if ($record->custody_status !== $custody) {
+        // saveQuietly skips the Document guard, and not_in_box can be deactivated
+        // or deleted on that page: never write a status it no longer offers.
+        if ($record->custody_status !== $custody && array_key_exists($custody, Document::custodyLabels())) {
             $record->custody_status = $custody;
             $record->saveQuietly();
         }

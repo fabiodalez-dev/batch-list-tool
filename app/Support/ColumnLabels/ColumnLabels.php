@@ -59,14 +59,15 @@ final class ColumnLabels
             'maiden_surname' => 'Maiden Surname',
             'surname' => 'Creator Surname',
             'given_names' => 'Creator Name',
-            'authorised_form_of_name' => 'Authorised form of name',
-            'functions_occupations_activities' => 'Functions, occupations and activities',
+            // Client 2026-11-05 wrote these two and Note this way.
+            'authorised_form_of_name' => 'Authorised Form of Name',
+            'functions_occupations_activities' => 'Functions, Occupations and Activities',
             'level_of_detail' => 'Level of detail',
             'status' => 'Status',
             'rules_and_conventions' => 'Rules and/or conventions',
             'date_of_creation' => 'Date of creation',
             'creator_of_record' => 'Creator of record',
-            'notes' => 'Notes',
+            'notes' => 'Note',
         ],
         'series' => [
             'code' => 'Identifier',

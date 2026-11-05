@@ -6,6 +6,7 @@ use App\Models\Builders\DocumentBuilder;
 use App\Models\Concerns\BelongsToRepository;
 use App\Models\Concerns\HasCustomFields;
 use App\Models\Lookup\CurrentBoxType;
+use App\Models\Lookup\CustodyStatusType;
 use App\Models\Lookup\DigitisationStatus;
 use App\Observers\DocumentObserver;
 use App\Support\Lookups;
@@ -100,6 +101,10 @@ class Document extends Model implements AuditableContract, HasMedia, Sortable
      * - `mounted_no_box`— framed / mounted; no box applicable
      * - `conservation_box` — in a conservation box (client 2026-10-19)
      *
+     * Client 2026-11-05: these are only the seeded statuses now. The list lives
+     * on the Custody Status Types page: read {@see custodyLabels()} or
+     * {@see CustodyStatusType}, not this.
+     *
      * @var array<int,string>
      */
     public const CUSTODY_STATUSES = ['in_box', 'not_in_box', 'mounted_no_box', 'conservation_box'];
@@ -188,18 +193,15 @@ class Document extends Model implements AuditableContract, HasMedia, Sortable
     }
 
     /**
-     * How each custody status reads on screen and in the sheet.
+     * The custody statuses a document can be given, code => label, from the
+     * Custody Status Types page (client 2026-11-05). To read a stored code that
+     * may since have been deactivated, use {@see CustodyStatusType::labels()}.
      *
      * @return array<string, string>
      */
     public static function custodyLabels(): array
     {
-        return [
-            'in_box' => 'In box',
-            'not_in_box' => 'Not in box',
-            'mounted_no_box' => 'Mounted; no box',
-            'conservation_box' => 'Conservation Box',
-        ];
+        return CustodyStatusType::options();
     }
 
     /**
@@ -953,16 +955,25 @@ class Document extends Model implements AuditableContract, HasMedia, Sortable
             // Gate `custody_status` in PHP too: the MySQL CHECK does not run on
             // SQLite, so mirror the digitised / current_box_type guards above.
             // Normalise case-insensitively (consistency with the siblings),
-            // then reject anything outside the enum.
+            // then reject a newly written value the Custody Status Types page
+            // does not offer. Dirty-check so a document holding a value that
+            // was LATER deactivated still re-saves.
             if ($document->custody_status !== null) {
-                $normalized = self::canonicalEnumValue($document->custody_status, self::CUSTODY_STATUSES);
-                if ($normalized === null) {
-                    throw ValidationException::withMessages([
-                        'custody_status' => "Invalid custody_status '{$document->custody_status}'. Allowed: "
-                            . implode(', ', self::CUSTODY_STATUSES),
-                    ]);
+                $allowedCustody = CustodyStatusType::codes();
+                $normalized = self::canonicalEnumValue($document->custody_status, $allowedCustody);
+                if ($normalized !== null) {
+                    $document->custody_status = $normalized;
                 }
-                $document->custody_status = $normalized;
+
+                if ($document->isDirty('custody_status')) {
+                    if ($normalized === null) {
+                        throw ValidationException::withMessages([
+                            'custody_status' => "Invalid custody_status '{$document->custody_status}'. Allowed: "
+                                . implode(', ', $allowedCustody),
+                        ]);
+                    }
+                    Lookups::assertActive(CustodyStatusType::class, 'custody_status', $normalized);
+                }
             }
 
             // F1 (review finding) — when current_box_id is being set/changed
