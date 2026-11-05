@@ -103,6 +103,41 @@ class Authority extends Model implements AuditableContract
         return $this->hasMany(Accession::class);
     }
 
+    /**
+     * Client 2026-11-05: "Concatenate Surname + neè + Maiden Surname, Name,
+     * Suffix, oldest start date - most recent end date", across the practice
+     * and NTG dates. A part that is empty is left out with its separator:
+     * "Psaila, Giuseppe Raimondo, 1831-1878".
+     */
+    public function computedAuthorisedForm(): string
+    {
+        $surname = trim((string) $this->surname);
+        $maiden = trim((string) $this->maiden_surname);
+        $starts = array_filter([$this->practice_dates_start, $this->ntg_dates_start]);
+        $ends = array_filter([$this->practice_dates_end, $this->ntg_dates_end]);
+        $years = trim(($starts !== [] ? min($starts) : '') . '-' . ($ends !== [] ? max($ends) : ''), '-');
+
+        return implode(', ', array_filter([
+            $maiden !== '' ? trim($surname . ' neè ' . $maiden) : $surname,
+            trim((string) $this->given_names),
+            trim((string) $this->name_suffix),
+            $years,
+        ], static fn (string $part): bool => $part !== ''));
+    }
+
+    /**
+     * How an authority reads wherever one is picked or shown on a document
+     * (client 2026-11-05): "Citing Reference Code: Authorised form of name".
+     */
+    public function citingLabel(): string
+    {
+        $form = trim((string) $this->authorised_form_of_name);
+        $form = $form !== '' ? $form : $this->computedAuthorisedForm();
+        $code = trim((string) $this->alternative_identifier);
+
+        return $code !== '' ? $code . ': ' . $form : $form;
+    }
+
     public function toSearchableArray(): array
     {
         return [

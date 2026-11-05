@@ -382,6 +382,18 @@ class Document extends Model implements AuditableContract, HasMedia, Sortable
         return $this->hasMany(DocumentIdentifierHistory::class)->latest('changed_at');
     }
 
+    /** The volume numbers this document was known by before (client 2026-11-05). */
+    public function pastVolumes(): HasMany
+    {
+        return $this->identifierHistory()->whereNotNull('previous_volume')->where('previous_volume', '!=', '');
+    }
+
+    /** The authorities this document used to be attributed to (client 2026-11-05). */
+    public function pastAuthorities(): HasMany
+    {
+        return $this->identifierHistory()->whereNotNull('previous_authority_id');
+    }
+
     /**
      * The attribution the document had before ("Prev Attributed Identifier /
      * Volume" on the documents sheet), recorded on import as a history row.
