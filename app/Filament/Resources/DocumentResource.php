@@ -15,8 +15,8 @@ use App\Filament\Support\ListRules;
 use App\Filament\Support\MatchQueryBuilder;
 use App\Filament\Support\MultiValue;
 use App\Filament\Support\SearchableSelects;
-use App\Models\Accession;
 use App\Filament\Support\TableSorts;
+use App\Models\Accession;
 use App\Models\Authority;
 use App\Models\Box;
 use App\Models\CustomFieldDefinition;
@@ -104,8 +104,6 @@ class DocumentResource extends Resource
     private const string PAST_REFERENCE_CODE_KEY = 'past_reference_code';
 
     private const string NOT_DISINFESTED = 'Not disinfested';
-
-    private const string CURRENT_CYCLE = 'Current Cycle';
 
     /**
      * Canonical list of Document direct columns the omni-search bar covers.
