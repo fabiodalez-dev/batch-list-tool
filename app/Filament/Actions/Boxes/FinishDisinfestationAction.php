@@ -115,7 +115,8 @@ final class FinishDisinfestationAction
             self::finish($box, $date, $archive ?? $rasTargets[(int) $box->effectiveRepositoryId()], $archive !== null);
         });
 
-        BoxBulkSupport::notify($result, "finished disinfestation on {$date}", $failed);
+        // Client 2026-10-30: dates read dd-mm-yyyy throughout the system.
+        BoxBulkSupport::notify($result, 'finished disinfestation on ' . Carbon::parse($date)->format('d-m-Y'), $failed);
     }
 
     private static function finish(Box $box, string $date, Location $target, bool $toArchive): void

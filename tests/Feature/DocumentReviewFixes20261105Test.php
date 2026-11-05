@@ -141,6 +141,12 @@ it('keeps a box out until the last of its documents in disinfestation is marked'
         ->and($box->fresh()->location->name)->toBe('RAS');
 });
 
+it('names the disinfestation date as dd-mm-yyyy when documents are marked', function (): void {
+    Livewire::test(ListDocuments::class)
+        ->callTableBulkAction('bulkMarkDisinfested', [$this->doc], ['disinfestation_date' => '2026-10-01'])
+        ->assertNotified('1 document(s) marked disinfested on 01-10-2026');
+});
+
 it('does not let an entity type that authorities hold be re-coded or deleted', function (): void {
     $person = EntityType::query()->where('code', 'Person')->firstOrFail();
     Authority::query()->create(['alternative_identifier' => 'R7', 'surname' => 'Abela', 'given_names' => 'N', 'entity_type' => 'Person']);

@@ -161,7 +161,8 @@ final class MarkDisinfestedAction
 
         ActionSupport::notifyBulkResult(
             $result,
-            successVerb: "marked disinfested on {$date}",
+            // Client 2026-10-30: dates read dd-mm-yyyy throughout the system.
+            successVerb: 'marked disinfested on ' . Carbon::parse($date)->format('d-m-Y'),
             failedTitle: 'Failed to mark disinfested',
         );
     }
