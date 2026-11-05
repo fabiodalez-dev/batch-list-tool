@@ -9,9 +9,13 @@ use App\Models\Document;
 use App\Models\DocumentFlag;
 use App\Models\Location;
 use App\Models\Lookup\CustodyStatusType;
+use App\Models\Series;
+use App\Support\ColumnLabels\ColumnLabels;
 use App\Support\LocationBreadcrumbCache;
 use Filament\Tables\Filters\QueryBuilder\Constraints\Constraint;
 use Filament\Tables\Filters\QueryBuilder\Constraints\Operators\Operator;
+use Filament\Tables\Filters\QueryBuilder\Constraints\RelationshipConstraint;
+use Filament\Tables\Filters\QueryBuilder\Constraints\RelationshipConstraint\Operators\IsRelatedToOperator;
 use Filament\Tables\Filters\QueryBuilder\Constraints\SelectConstraint;
 use Filament\Tables\Filters\QueryBuilder\Constraints\SelectConstraint\Operators\IsOperator;
 use Illuminate\Database\Eloquent\Builder;
@@ -26,6 +30,24 @@ use Illuminate\Database\Eloquent\Builder;
  */
 final class DocumentRules
 {
+    /**
+     * Client 2026-11-05 (bare codes M, MDV, MRT in the list): "Can I see the
+     * code and the title?". Reads as the list column, searched on both.
+     */
+    public static function series(): RelationshipConstraint
+    {
+        return RelationshipConstraint::make('series')
+            ->label(ColumnLabels::get('document', 'series'))
+            ->selectable(
+                IsRelatedToOperator::make()
+                    ->titleAttribute('code')
+                    ->searchable()
+                    ->multiple()
+                    ->getOptionLabelFromRecordUsing(fn (Series $series): string => SearchableSelects::seriesLabel($series))
+                    ->getSearchResultsUsing(fn (string $search): array => SearchableSelects::seriesSearchResults($search)),
+            );
+    }
+
     /**
      * Documents with an open flag of the chosen types; or with any open flag.
      */

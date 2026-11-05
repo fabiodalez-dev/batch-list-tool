@@ -258,9 +258,11 @@ it('Authority search matches by identifier OR surname', function () {
     expect(array_keys($bySurname))->toContain($a->id);
 });
 
-it('Authority label includes practice dates when present', function () {
+it('Authority label reads Citing Reference Code: Authorised form of name', function () {
     $a = Authority::create([
         'identifier' => 'R110',
+        'alternative_identifier' => 'MS110',
+        'authorised_form_of_name' => 'Buttigieg, Antonio, 1759-1798',
         'surname' => 'Buttigieg',
         'given_names' => 'Antonio',
         'entity_type' => 'PERSON',
@@ -270,11 +272,11 @@ it('Authority label includes practice dates when present', function () {
 
     $label = SearchableSelects::authorityLabel($a->fresh());
 
-    // Feedback1 — label now reads "identifier – firstname lastname (dates)".
-    expect($label)->toBe('R110 – Antonio Buttigieg (1759-1798)');
+    // Client 2026-11-05: was "identifier – firstname lastname (dates)".
+    expect($label)->toBe('MS110: Buttigieg, Antonio, 1759-1798');
 });
 
-it('Authority label omits dates when both endpoints are null', function () {
+it('Authority label builds the form of name when there is none', function () {
     $a = Authority::create([
         'identifier' => 'R-NODATES',
         'surname' => 'NoDates',
@@ -283,7 +285,7 @@ it('Authority label omits dates when both endpoints are null', function () {
 
     $label = SearchableSelects::authorityLabel($a->fresh());
 
-    expect($label)->toBe('R-NODATES – NoDates');
+    expect($label)->toBe('NoDates');
 });
 
 /* =============================================================================
@@ -293,6 +295,7 @@ it('Authority label omits dates when both endpoints are null', function () {
 it('Authority option-label appends (deleted) for soft-deleted records', function () {
     $a = Authority::create([
         'identifier' => 'R-DEL',
+        'alternative_identifier' => 'CODE-DEL',
         'surname' => 'Deleted',
         'entity_type' => 'PERSON',
     ]);
@@ -306,7 +309,7 @@ it('Authority option-label appends (deleted) for soft-deleted records', function
 
     expect($label)->toBeString();
     expect($label)->toContain('(deleted)');
-    expect($label)->toContain('R-DEL');
+    expect($label)->toContain('CODE-DEL: Deleted');
 });
 
 it('Document option-label appends (deleted) for soft-deleted records', function () {
@@ -340,7 +343,7 @@ it('Batch label is "Batch <N> — <type>"', function () {
     expect($label)->toBe("Batch {$batch->batch_number} — NOTARY_ACCESSION");
 });
 
-it('Series label is "<code> — <title>"', function () {
+it('Series label is "<code>: <title>", as the list column reads', function () {
     $s = Series::create([
         'code' => 'RWL',
         'title' => 'Registers Private Practice Public Wills',
@@ -349,7 +352,7 @@ it('Series label is "<code> — <title>"', function () {
 
     $label = SearchableSelects::seriesLabel($s->fresh());
 
-    expect($label)->toBe('RWL — Registers Private Practice Public Wills');
+    expect($label)->toBe('RWL: Registers Private Practice Public Wills');
 });
 
 /* =============================================================================

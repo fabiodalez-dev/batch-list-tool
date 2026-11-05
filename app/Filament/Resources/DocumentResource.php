@@ -1070,14 +1070,7 @@ class DocumentResource extends Resource
                 MatchQueryBuilder::make()
                     ->constraints([
                         EqualsFirst::text('identifier', 'Document identifier'),
-                        RelationshipConstraint::make('series')
-                            ->label(ColumnLabels::get('document', 'series'))
-                            ->selectable(
-                                IsRelatedToOperator::make()
-                                    ->titleAttribute('code')
-                                    ->searchable()
-                                    ->multiple(),
-                            ),
+                        DocumentRules::series(),
                         RelationshipConstraint::make('batch')
                             ->label('Batch')
                             ->selectable(

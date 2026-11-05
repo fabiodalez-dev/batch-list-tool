@@ -345,19 +345,27 @@ class Box extends Model implements AuditableContract, Sortable
      * 2026-10-28: a contains-search on the number filled the list with Batch
      * 19 and never reached Batch 30 / Box 8, and "MAV 1" found nothing).
      *
-     * @return array<int, string> id => shortLabel()
+     * $narrow limits every search to some boxes, and with it the empty search
+     * lists the first of them, so a picker can open on its options. A plain
+     * number or text that matches no box number is tried on the barcode.
+     *
+     * @param ?\Closure(Builder): mixed $narrow
+     * @param ?\Closure(self): string $label instead of shortLabel()
+     * @return array<int, string> id => label
      */
-    public static function searchOptions(string $search, int $limit = 50): array
+    public static function searchOptions(string $search, int $limit = 50, ?\Closure $narrow = null, ?\Closure $label = null): array
     {
         $search = trim((string) preg_replace('/\s+/u', ' ', $search));
-        if ($search === '') {
+        if ($search === '' && $narrow === null) {
             return [];
         }
 
         // The searches to run, best match first; each narrows the query it is given.
         $steps = [];
-        $type = self::splitTypeAndNumber($search);
-        if ($type !== null) {
+        $type = $search === '' ? null : self::splitTypeAndNumber($search);
+        if ($search === '') {
+            $steps[] = fn (Builder $q): Builder => $q;
+        } elseif ($type !== null) {
             [$code, $number] = $type;
             $byType = fn (Builder $q): Builder => $q->where('box_type', $code);
             $steps[] = $number === ''
@@ -378,6 +386,7 @@ class Box extends Model implements AuditableContract, Sortable
             $steps[] = fn (Builder $q): Builder => $q->where('box_number', $number);
             $steps[] = fn (Builder $q): Builder => $q->where('box_number', 'like', $number . '%');
             $steps[] = fn (Builder $q): Builder => $q->where('box_number', 'like', '%' . $number . '%');
+            $steps[] = fn (Builder $q): Builder => $q->where('barcode', 'like', '%' . $number . '%');
         }
 
         $batchNumber = '(select search_batch.batch_number from batches search_batch where search_batch.id = boxes.batch_id)';
@@ -389,6 +398,9 @@ class Box extends Model implements AuditableContract, Sortable
             }
             $query = self::query()->with('batch');
             $step($query);
+            if ($narrow !== null) {
+                $narrow($query);
+            }
             $query->whereNotIn('id', array_keys($options))
                 ->orderByRaw("CAST({$batchNumber} AS UNSIGNED)")
                 ->orderByRaw($batchNumber)
@@ -396,8 +408,8 @@ class Box extends Model implements AuditableContract, Sortable
                 ->orderBy('box_number')
                 ->limit($left)
                 ->get()
-                ->each(function (self $box) use (&$options): void {
-                    $options[$box->getKey()] = $box->shortLabel();
+                ->each(function (self $box) use (&$options, $label): void {
+                    $options[$box->getKey()] = $label !== null ? $label($box) : $box->shortLabel();
                 });
         }
 
@@ -511,6 +523,20 @@ class Box extends Model implements AuditableContract, Sortable
     public function scopeNotDestroyed(Builder $q): Builder
     {
         return $q->whereNull('destroyed_at');
+    }
+
+    /**
+     * Narrow a query to the boxes a document can be moved into: not destroyed, not
+     * permanently out. Only RAS boxes carry a meaningful barcode status, the
+     * others hold the column default; NULL has to stay in (NULL != x is not
+     * true in SQL).
+     */
+    public static function whereAssignable(Builder $q): Builder
+    {
+        return $q->whereNull($q->qualifyColumn('destroyed_at'))
+            ->where(fn (Builder $q): Builder => $q
+                ->whereNull($q->qualifyColumn('barcode_status'))
+                ->orWhere($q->qualifyColumn('barcode_status'), '!=', 'PERM_OUT'));
     }
 
     /**

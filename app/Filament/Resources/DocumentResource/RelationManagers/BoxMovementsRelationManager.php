@@ -61,7 +61,8 @@ class BoxMovementsRelationManager extends RelationManager
                 Tables\Columns\TextColumn::make('to_box')
                     ->label('To box')
                     ->state(fn (BoxMovement $record): ?string => self::boxLabel($record->toBox))
-                    ->placeholder('—'),
+                    // A document moved out of its box, or sent to the museum.
+                    ->placeholder('Out of box'),
 
                 Tables\Columns\TextColumn::make('from_box')
                     ->label('From box')

@@ -5,24 +5,29 @@ declare(strict_types=1);
 namespace App\Filament\Actions\Documents;
 
 use App\Filament\Support\SearchableSelects;
-use App\Models\Batch;
 use App\Models\Box;
 use App\Models\BoxMovement;
 use App\Models\Document;
+use App\Models\Location;
 use Filament\Actions\Action;
 use Filament\Actions\BulkAction;
+use Filament\Forms\Components\Select;
 use Filament\Forms\Components\Textarea;
 use Filament\Notifications\Notification;
 use Filament\Schemas\Components\Component;
 use Illuminate\Database\Eloquent\Collection as EloquentCollection;
-use Illuminate\Support\Facades\DB;
 
 /**
  * Action #1 — Move document(s) to a target Box.
  *
- * Validates that the target Box is assignable (not soft-deleted, not
- * PERM_OUT) and writes a {@see BoxMovement} row for each document so the
+ * Validates that the target Box is assignable (not soft-deleted, not destroyed,
+ * not PERM_OUT) and writes a {@see BoxMovement} row for each document so the
  * physical chain of custody is preserved (RFQ §3.1.5).
+ *
+ * Client 2026-11-05: moving into a box makes the document "In box" whatever it
+ * was before (not in box, mounted, conservation box), and changes its Location:
+ * the one chosen, else the target box's (its own, or the one its documents
+ * share), else none, so the document stops showing where it was before.
  *
  * Per-row atomicity (review C-2): each row runs inside its own
  * `DB::transaction()` via {@see ActionSupport::performBulk()}; a failure
@@ -30,22 +35,21 @@ use Illuminate\Support\Facades\DB;
  * back that row only — previously-successful rows are preserved. The
  * operator gets a partial-success notification listing the failures.
  *
- * Multi-tenant safety (review C-3): the target box must belong to a Batch
- * in the same repository as the document. Otherwise the action refuses
- * the row (no cross-tenant writes from privileged users picking a foreign
- * target via the Select).
+ * Multi-tenant safety (review C-3): the target box must be in the same
+ * repository as the document, by {@see Box::effectiveRepositoryId()}: its
+ * batch's, or its own for a batch-less box. Otherwise the action refuses the
+ * row (no cross-tenant writes from privileged users picking a foreign target
+ * via the Select).
  *
- * Invariant safety (review H-5): the target box must have a non-null
- * `batch_id`. This is a guard for the interactive move action specifically;
- * it is NOT a universal invariant. The importer may legitimately leave
- * `documents.batch_id` (the archival RAS batch) diverging from the
- * current box's batch when it repoints `current_box_id` onto a batch-less
- * In-Situ box of the movement timeline (see DocumentImporter). Tenancy of
- * such a box resolves via its own `repository_id`, so the divergence is safe.
+ * A batched box gives the document its batch. A batch-less box (672 NRA boxes,
+ * client 2026-11-05: "can't find it") leaves `documents.batch_id` as it is: the
+ * archival RAS batch may legitimately diverge from the current box's, as when
+ * the importer repoints `current_box_id` onto a batch-less In-Situ box of the
+ * movement timeline (see DocumentImporter).
  *
- * Both the single-record and bulk variants share the same form (target box
- * + optional reason) and the same writer body — only the way `records` is
- * sourced differs.
+ * Both the single-record and bulk variants share the same form (target box,
+ * optional location, optional reason) and the same writer body — only the way
+ * `records` is sourced differs.
  */
 final class MoveToBoxAction
 {
@@ -83,36 +87,45 @@ final class MoveToBoxAction
      */
     private static function form(): array
     {
-        $assignable = fn ($q) => $q->whereNull('destroyed_at')->where('barcode_status', '!=', 'PERM_OUT');
-
         return [
-            SearchableSelects::boxFiltered(
-                'to_box_id',
-                'currentBox',
-                $assignable,
-            )
+            // Client 2026-11-05: "NRA 5 … can't find it". Searched the way boxes
+            // read ({@see Box::searchOptions()}), not by the digits of a label
+            // every box of a batch shares.
+            Select::make('to_box_id')
                 ->label('Target box')
-                // Bug #34 — the batch is already shown on the document, so the
-                // picker shows just the box number ("Box N — TYPE — STATUS"),
-                // not "Batch X/Box N — …".
-                ->getOptionLabelFromRecordUsing(fn (Box $r): string => SearchableSelects::boxShortLabel($r))
-                ->getSearchResultsUsing(fn (string $search): array => SearchableSelects::boxSearchResults(
-                    $search,
-                    $assignable,
-                    fn (Box $r): string => SearchableSelects::boxShortLabel($r),
-                ))
+                ->searchable()
+                ->preload()
+                ->searchPrompt('Type "NRA 5", "Batch 4 / Box 192", "4/192" or a number')
+                ->options(fn (): array => self::boxOptions(''))
+                ->getSearchResultsUsing(fn (string $search): array => self::boxOptions($search))
                 ->getOptionLabelUsing(function ($value): ?string {
-                    $box = Box::query()->find($value);
+                    $box = Box::query()->with('batch')->find($value);
 
-                    return $box instanceof Box ? SearchableSelects::boxShortLabel($box) : null;
+                    return $box instanceof Box ? SearchableSelects::boxPickLabel($box) : null;
                 })
                 ->required(),
+            SearchableSelects::locationPicker('to_location_id', fn ($q) => $q->where('is_active', true))
+                ->label('Location (optional)')
+                ->helperText('Leave empty for the location of the target box.'),
             Textarea::make('reason')
                 ->label('Reason (optional)')
                 ->maxLength(255)
                 ->rows(2)
                 ->placeholder('Why is this document being moved?'),
         ];
+    }
+
+    /**
+     * @return array<int, string>
+     */
+    private static function boxOptions(string $search): array
+    {
+        return Box::searchOptions(
+            $search,
+            SearchableSelects::MAX_RESULTS,
+            Box::whereAssignable(...),
+            fn (Box $box): string => SearchableSelects::boxPickLabel($box),
+        );
     }
 
     /**
@@ -125,7 +138,7 @@ final class MoveToBoxAction
         $reason = $data['reason'] ?? null;
 
         /** @var Box|null $targetBox */
-        $targetBox = Box::query()->find($targetBoxId);
+        $targetBox = Box::query()->with('batch')->find($targetBoxId);
         if ($targetBox === null) {
             Notification::make()
                 ->title('Cannot move — target box not found')
@@ -136,7 +149,7 @@ final class MoveToBoxAction
             return;
         }
 
-        if ($targetBox->trashed() || $targetBox->barcode_status === 'PERM_OUT') {
+        if ($targetBox->trashed() || $targetBox->isDestroyed() || $targetBox->barcode_status === 'PERM_OUT') {
             Notification::make()
                 ->title('Cannot move — target box is not assignable')
                 ->body('The selected box is destroyed or permanently transferred out.')
@@ -146,43 +159,43 @@ final class MoveToBoxAction
             return;
         }
 
-        // H-5: an orphan box (no batch) would silently break the
-        // documents.batch_id ↔ boxes.batch_id invariant. Refuse explicitly.
-        if ($targetBox->batch_id === null) {
+        $chosenLocationId = (int) ($data['to_location_id'] ?? 0);
+        $location = $chosenLocationId !== 0
+            ? ActionSupport::findActiveLocation($chosenLocationId)
+            : self::locationOfBox($targetBox);
+        if ($chosenLocationId !== 0 && $location === null) {
             Notification::make()
-                ->title('Cannot move — target box has no batch assignment')
-                ->body("Assign a batch to the box first, then retry. Documents must always inherit the box's batch.")
+                ->title('Cannot move — location not found or not active')
                 ->danger()
                 ->send();
 
             return;
         }
 
-        // Resolve the box's owning batch via the typed Batch model so
-        // PHPStan can see the `repository_id` attribute (the BelongsTo
-        // accessor returns Model|null, which level-6 rejects).
-        $targetBoxBatch = Batch::withoutGlobalScopes()->find($targetBox->batch_id);
-        $targetBoxRepoId = $targetBoxBatch?->repository_id;
+        $targetBoxRepoId = $targetBox->effectiveRepositoryId();
 
         $result = ActionSupport::performBulk(
             $records,
-            function (Document $doc) use ($targetBox, $targetBoxRepoId, $reason): void {
+            function (Document $doc) use ($targetBox, $targetBoxRepoId, $location, $reason): void {
                 // C-3: per-row tenant gate. Privileged users (super_admin,
                 // admin) bypass the Box Select's RepositoryScope, so we MUST
-                // re-check here. SetLocationAction / MoveToWillsAction
-                // enforce the same invariant.
-                if ($targetBoxRepoId !== null
-                    && (int) $targetBoxRepoId !== (int) $doc->repository_id) {
+                // re-check here. A box of no repository cannot be vouched for.
+                if ($targetBoxRepoId === null || $targetBoxRepoId !== (int) $doc->repository_id) {
                     throw new \DomainException(
                         'target box belongs to a different repository'
                     );
                 }
+                if ($location !== null) {
+                    ActionSupport::assertLocationFits($location, $doc);
+                }
 
                 $from = $doc->current_box_id;
                 $doc->current_box_id = $targetBox->getKey();
-                // H-5 (covered above): targetBox->batch_id is guaranteed
-                // non-null at this point.
-                $doc->batch_id = $targetBox->batch_id;
+                if ($targetBox->batch_id !== null) {
+                    $doc->batch_id = $targetBox->batch_id;
+                }
+                $doc->custody_status = 'in_box';
+                $doc->location_id = $location?->getKey();
                 $doc->save();
 
                 BoxMovement::create([
@@ -199,8 +212,21 @@ final class MoveToBoxAction
 
         ActionSupport::notifyBulkResult(
             $result,
-            successVerb: "moved to Box {$targetBox->box_number}",
+            successVerb: 'moved to ' . $targetBox->shortLabel(),
             failedTitle: 'Move failed',
         );
+    }
+
+    /**
+     * The target box's own location, else the one its documents share. Read
+     * before any document moves in, so that what they bring cannot decide it.
+     */
+    private static function locationOfBox(Box $box): ?Location
+    {
+        $location = $box->location_id !== null
+            ? Location::withoutGlobalScopes()->find($box->location_id)
+            : $box->sharedDocumentLocation();
+
+        return $location instanceof Location && ! $location->trashed() ? $location : null;
     }
 }

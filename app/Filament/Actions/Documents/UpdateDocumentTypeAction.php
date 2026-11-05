@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace App\Filament\Actions\Documents;
 
 use App\Models\Document;
+use App\Models\DocumentType;
 use Filament\Actions\Action;
 use Filament\Actions\BulkAction;
 use Filament\Forms\Components\Select;
@@ -13,12 +14,12 @@ use Filament\Schemas\Components\Component;
 use Illuminate\Database\Eloquent\Collection as EloquentCollection;
 
 /**
- * Action #12 — Set `documents.document_type` (free text).
+ * Action #12 — Set `documents.document_type`.
  *
- * The form Select is `searchable` + `createOptionForm` is off — operators
- * can pick from existing distinct values OR type a new one. The autocomplete
- * is sourced from `Document::distinct()->pluck('document_type')` so it
- * naturally surfaces the existing vocabulary; entering a new value extends it.
+ * Client 2026-11-05: "The Label should be shown here not the identifier". The
+ * options are the active Document Types, by name, and hold what a document
+ * stores: {@see DocumentType::storedValue()}. The Document saving hook links
+ * `document_type_id` from it. No new values from here: a type has its own page.
  */
 final class UpdateDocumentTypeAction
 {
@@ -59,55 +60,24 @@ final class UpdateDocumentTypeAction
         return [
             Select::make('document_type')
                 ->label('Document type')
-                ->options(fn (): array => self::existingTypes())
+                ->options(fn (): array => self::types())
                 ->searchable()
-                ->allowHtml(false)
                 ->required()
-                ->native(false)
-                // Allow the operator to enter a brand-new value not yet in
-                // the dataset — Filament's getSearchResultsUsing always
-                // appends the typed query as a valid selection.
-                ->getSearchResultsUsing(function (string $search): array {
-                    $existing = self::existingTypes();
-                    $search = trim($search);
-                    if ($search === '') {
-                        return $existing;
-                    }
-                    $filtered = collect($existing)
-                        ->filter(fn ($v) => stripos((string) $v, $search) !== false)
-                        ->all();
-                    if (! array_key_exists($search, $filtered)) {
-                        $filtered[$search] = $search . '  (new)';
-                    }
-
-                    return $filtered;
-                })
-                ->getOptionLabelUsing(fn ($value) => (string) $value),
+                ->native(false),
         ];
     }
 
     /**
-     * @return array<string, string>
+     * @return array<string, string> stored value => name
      */
-    private static function existingTypes(): array
+    private static function types(): array
     {
-        $types = Document::query()
-            ->withoutGlobalScopes()
-            ->select('document_type')
-            ->whereNotNull('document_type')
-            ->where('document_type', '!=', '')
-            ->distinct()
-            ->orderBy('document_type')
-            ->limit(200)
-            ->pluck('document_type')
+        return DocumentType::query()
+            ->where('is_active', true)
+            ->orderBy('name')
+            ->get()
+            ->mapWithKeys(fn (DocumentType $type): array => [$type->storedValue() => (string) $type->name])
             ->all();
-
-        $out = [];
-        foreach ($types as $t) {
-            $out[(string) $t] = (string) $t;
-        }
-
-        return $out;
     }
 
     /**
@@ -117,9 +87,10 @@ final class UpdateDocumentTypeAction
     private static function perform(EloquentCollection $records, array $data): void
     {
         $type = trim((string) ($data['document_type'] ?? ''));
-        if ($type === '') {
+        $name = self::types()[$type] ?? null;
+        if ($name === null) {
             Notification::make()
-                ->title('Document type cannot be blank')
+                ->title('Choose one of the active document types')
                 ->danger()->send();
 
             return;
@@ -135,7 +106,7 @@ final class UpdateDocumentTypeAction
 
         ActionSupport::notifyBulkResult(
             $result,
-            successVerb: "updated to document_type='{$type}'",
+            successVerb: "updated to document type '{$name}'",
             failedTitle: 'Update failed',
         );
     }

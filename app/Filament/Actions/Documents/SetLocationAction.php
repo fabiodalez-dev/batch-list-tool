@@ -87,15 +87,7 @@ final class SetLocationAction
         $result = ActionSupport::performBulk(
             $records,
             function (Document $doc) use ($location): void {
-                // Tenant safety: a repository-scoped location can only be
-                // assigned to documents in the same repository. A global
-                // location (repository_id=null) can be assigned to any doc.
-                if ($location->repository_id !== null
-                    && (int) $location->repository_id !== (int) $doc->repository_id) {
-                    throw new \DomainException(
-                        'location belongs to a different repository'
-                    );
-                }
+                ActionSupport::assertLocationFits($location, $doc);
 
                 $doc->location_id = $location->getKey();
                 $doc->save();

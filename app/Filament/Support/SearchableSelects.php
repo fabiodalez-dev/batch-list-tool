@@ -17,6 +17,7 @@ use App\Models\User;
 use App\Support\ActiveRepository;
 use Filament\Forms\Components\Select;
 use Filament\Schemas\Components\Utilities\Get;
+use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Database\Eloquent\Model;
 
 /**
@@ -242,6 +243,17 @@ final class SearchableSelects
         return "Box {$r->box_number} — {$type} — {$status}";
     }
 
+    /**
+     * How a box reads when documents are moved into it: "NRA 5", or "Batch 4 /
+     * Box 192 — IN". Only RAS boxes have a barcode status (client 2026-11-05).
+     */
+    public static function boxPickLabel(Box $r): string
+    {
+        $status = ($r->box_type ?? 'RAS') === 'RAS' ? $r->barcode_status : null;
+
+        return $r->shortLabel() . (filled($status) ? ' — ' . $status : '');
+    }
+
     /* =========================================================================
      |  Authority
      |========================================================================*/
@@ -249,17 +261,15 @@ final class SearchableSelects
     /**
      * Build a Select bound to an Authority FK column.
      *
-     * Label format: `<identifier> — <surname> <given_names> (<practice_dates>)`.
+     * Label format: `<citing code>: <authorised form of name>`.
      */
-    public static function authority(
-        string $name = 'authority_id',
-        string $relationship = 'authority',
-    ): Select {
+    public static function authority(string $name = 'authority_id'): Select
+    {
+        // Not bound to a relationship: a document has no single authority (it
+        // threw on the document pages), and an action form saves nothing itself.
         return Select::make($name)
-            ->relationship($relationship, 'surname')
-            ->searchable(['identifier', 'surname', 'given_names', 'alternative_identifier'])
+            ->searchable()
             ->preload()
-            ->getOptionLabelFromRecordUsing(fn (Authority $r): string => self::authorityLabel($r))
             ->options(fn (): array => self::authoritySearchResults(''))
             ->getSearchResultsUsing(fn (string $search): array => self::authoritySearchResults($search))
             ->getOptionLabelUsing(fn ($value): ?string => self::authorityOptionLabel($value));
@@ -274,7 +284,7 @@ final class SearchableSelects
         return Select::make($name)
             ->multiple()
             ->relationship('authorities', 'surname')
-            ->searchable(['identifier', 'surname', 'given_names', 'alternative_identifier'])
+            ->searchable(['identifier', 'surname', 'given_names', 'alternative_identifier', 'authorised_form_of_name'])
             ->preload()
             ->getOptionLabelFromRecordUsing(fn (Authority $r): string => self::authorityLabel($r))
             ->options(fn (): array => self::authoritySearchResults(''))
@@ -299,7 +309,8 @@ final class SearchableSelects
                 $q->where('identifier', 'like', $needle)
                     ->orWhere('alternative_identifier', 'like', $needle)
                     ->orWhere('surname', 'like', $needle)
-                    ->orWhere('given_names', 'like', $needle);
+                    ->orWhere('given_names', 'like', $needle)
+                    ->orWhere('authorised_form_of_name', 'like', $needle);
             })->orderBy('surname');
         }
 
@@ -313,29 +324,13 @@ final class SearchableSelects
         return $out;
     }
 
+    /**
+     * Client 2026-11-05: "This should show the Citing Reference Code: Authorised
+     * form of name".
+     */
     public static function authorityLabel(Authority $r): string
     {
-        // Feedback1 — creator dropdown label reads "identifier – firstname
-        // lastname" (given name before surname). Search still works on
-        // identifier + name because the underlying query targets all of
-        // identifier/surname/given_names/alternative_identifier.
-        $identifier = $r->identifier ?? '—';
-        $name = trim(implode(' ', array_filter([
-            $r->given_names !== null && $r->given_names !== '' ? $r->given_names : null,
-            $r->surname !== null && $r->surname !== '' ? $r->surname : null,
-        ])));
-        if ($name === '') {
-            $name = '—';
-        }
-
-        $start = $r->practice_dates_start;
-        $end = $r->practice_dates_end;
-        $dates = '';
-        if ($start !== null || $end !== null) {
-            $dates = ' (' . ($start ?? '?') . '-' . ($end ?? '?') . ')';
-        }
-
-        return "{$identifier} – {$name}{$dates}";
+        return $r->citingLabel();
     }
 
     /* =========================================================================
@@ -422,7 +417,7 @@ final class SearchableSelects
     /**
      * Build a Select bound to a Series FK column.
      *
-     * Label format: `<code> — <title>`.
+     * Label format: `<code>: <title>`, as the list column reads.
      */
     public static function series(string $name = 'series_id'): Select
     {
@@ -467,9 +462,7 @@ final class SearchableSelects
 
     public static function seriesLabel(Series $r): string
     {
-        $title = $r->title !== null && $r->title !== '' ? $r->title : '—';
-
-        return "{$r->code} — {$title}";
+        return filled($r->title) ? "{$r->code}: {$r->title}" : (string) $r->code;
     }
 
     /* =========================================================================
@@ -687,30 +680,28 @@ final class SearchableSelects
     }
 
     /**
+     * The same picker for an action form on a document: bound to a relationship
+     * it would open on the location the document has now, not on the empty field
+     * "the location of the target box" or a museum location needs.
+     */
+    public static function locationPicker(string $name, ?\Closure $queryModifier = null): Select
+    {
+        return Select::make($name)
+            ->searchable()
+            ->preload()
+            ->options(fn (): array => self::locationSearchResults('', $queryModifier))
+            ->getSearchResultsUsing(fn (string $search): array => self::locationSearchResults($search, $queryModifier))
+            ->getOptionLabelUsing(fn ($value): ?string => self::locationOptionLabel($value));
+    }
+
+    /**
      * @return array<int|string, string>
      */
     public static function locationSearchResults(string $search, ?\Closure $queryModifier = null): array
     {
         $search = trim($search);
 
-        // Bug #33 wanted GLOBAL locations (repository_id IS NULL) to show —
-        // RepositoryScope's `whereIn(repository_id, allowed)` silently drops
-        // NULLs. Review finding: dropping the scope entirely leaked OTHER
-        // tenants' locations into the picker. Correct scope = the user's own
-        // repositories PLUS global, never a different tenant's. Reuses
-        // ActiveRepository (RepositoryScope's own source of truth) so the two
-        // can never diverge; privileged users (allowed === null) stay
-        // unrestricted, matching RepositoryScope.
-        $query = Location::query()->withoutGlobalScope(RepositoryScope::class);
-        $allowed = ActiveRepository::allowedRepositoryIdsFor(auth()->user());
-        if (auth()->check() && $allowed !== null) {
-            $query->where(function ($q) use ($allowed) {
-                $q->whereNull('repository_id');
-                if ($allowed !== []) {
-                    $q->orWhereIn('repository_id', $allowed);
-                }
-            });
-        }
+        $query = self::visibleLocations(Location::query());
         if ($queryModifier instanceof \Closure) {
             $queryModifier($query);
         }
@@ -809,6 +800,35 @@ final class SearchableSelects
         }
 
         return $label;
+    }
+
+    /**
+     * Bug #33 wanted GLOBAL locations (repository_id IS NULL) to show —
+     * RepositoryScope's `whereIn(repository_id, allowed)` silently drops
+     * NULLs. Review finding: dropping the scope entirely leaked OTHER
+     * tenants' locations into the picker. Correct scope = the user's own
+     * repositories PLUS global, never a different tenant's. Reuses
+     * ActiveRepository (RepositoryScope's own source of truth) so the two
+     * can never diverge; privileged users (allowed === null) stay
+     * unrestricted, matching RepositoryScope.
+     *
+     * @param Builder<Location> $query
+     * @return Builder<Location>
+     */
+    private static function visibleLocations(Builder $query): Builder
+    {
+        $query->withoutGlobalScope(RepositoryScope::class);
+        $allowed = ActiveRepository::allowedRepositoryIdsFor(auth()->user());
+        if (auth()->check() && $allowed !== null) {
+            $query->where(function ($q) use ($allowed) {
+                $q->whereNull('repository_id');
+                if ($allowed !== []) {
+                    $q->orWhereIn('repository_id', $allowed);
+                }
+            });
+        }
+
+        return $query;
     }
 
     /**
@@ -1042,7 +1062,9 @@ final class SearchableSelects
             return null;
         }
 
-        $record = Location::withTrashed()->find($value);
+        // The picker lists global locations: one picked must have a label too,
+        // a Select without one refuses the value as invalid.
+        $record = self::visibleLocations(Location::withTrashed())->find($value);
 
         if ($record === null) {
             return null;
