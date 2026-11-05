@@ -679,6 +679,9 @@ class BoxImporter extends Importer
                         ]);
                     }
                     $record->location_id = $res['location_id'];
+                    // Client 2026-11-05: a box at IN goes to the location RAS,
+                    // unless the sheet says where it is.
+                    $record->keepLocationWhenIn = true;
                 }),
 
             // Client feedback 2026-08-01: 905 boxes were already destroyed during

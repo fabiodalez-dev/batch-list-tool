@@ -135,7 +135,6 @@ describe('APP2-x Disinfestation', function () {
     it('SendToDisinfestationAction stamps is_in_disinfestation=true')->todo('Feature\\DocumentActionsTest');
     it('MarkDisinfestedAction stamps disinfestation_date=now()')->todo('Feature\\DocumentActionsTest');
     it('Currently in disinfestation TernaryFilter shows only is_in_disinfestation=true')->todo('Feature\\Resources\\DocumentResource — TernaryFilter');
-    it('MarkPermOutAction refuses doc without disinfestation_date')->todo('Feature\\DocumentActionsTest');
 })->group('rfq:app2-x');
 
 /* ─── APP2-xi Creator (multi-creator import) ─────────────────────── */

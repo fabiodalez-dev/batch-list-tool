@@ -78,6 +78,18 @@ class Location extends Model implements AuditableContract
     ];
 
     /**
+     * Client 2026-11-05: where a box can be relocated to in the archive
+     * (Archive 1, Archive 2… and the rooms), unlike a showcase or Disinfestation.
+     */
+    public const array ARCHIVE_TYPES = ['repository', 'room'];
+
+    /** The location a box at barcode status IN is at (client 2026-11-05). */
+    public const string NAME_RAS = 'RAS';
+
+    /** The location boxes go to when sent to disinfestation (client 2026-11-05). */
+    public const string NAME_DISINFESTATION = 'Disinfestation';
+
+    /**
      * Cap on tree depth. Hierarchies deeper than this are rejected by the
      * model boot hook and treated as a configuration error (a 6-level path
      * already covers repository / room / sub-room / shelf-section / shelf /
@@ -171,6 +183,36 @@ class Location extends Model implements AuditableContract
     public function scopeActive(Builder $query): Builder
     {
         return $query->where('is_active', true);
+    }
+
+    /** Locations of type Repository or Room ({@see self::ARCHIVE_TYPES}). */
+    public function scopeArchive(Builder $query): Builder
+    {
+        return $query->whereIn('type', self::ARCHIVE_TYPES);
+    }
+
+    public function isArchive(): bool
+    {
+        return in_array($this->type, self::ARCHIVE_TYPES, true);
+    }
+
+    /**
+     * The active location called exactly this for a repository: its own, else a
+     * global one. Scope-free, because the box being saved decides the repository,
+     * not who is looking; PHP compares the name, as MySQL's collation would also
+     * answer to "ras".
+     */
+    public static function namedFor(string $name, ?int $repositoryId): ?self
+    {
+        return static::withoutGlobalScopes()
+            ->whereNull('deleted_at')
+            ->where('is_active', true)
+            ->where('name', $name)
+            ->forRepository($repositoryId)
+            ->get()
+            ->filter(static fn (self $location): bool => $location->name === $name)
+            ->sortBy(static fn (self $location): int => $location->repository_id === null ? 1 : 0)
+            ->first();
     }
 
     /**

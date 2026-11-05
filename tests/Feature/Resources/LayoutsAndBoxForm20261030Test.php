@@ -188,7 +188,7 @@ it('condenses the Box view into one Details section with Audit info on its own (
     $view = Livewire::test(ViewBox::class, ['record' => $box->getKey()]);
     expect(l30_sections($view, 'infolist'))->toBe(['Details' => false, 'Audit info' => true]);
     $names = l30_names($view, 'infolist', 'Details');
-    expect(array_slice($names, 0, 4))->toBe(['box_type', 'box_number', 'batch.batch_number', 'current_box_type'])
+    expect(array_slice($names, 0, 4))->toBe(['box_type', 'current_box_type', 'batch.batch_number', 'box_number'])
         ->and($names)->toContain('barcode', 'seal_number', 'barcode_status', 'location.full_path', 'documents_count', 'notes', 'tracking_note')
         ->and($names)->not->toContain('destroyed_at');
     $view->assertSeeText('RAS Box')->assertDontSeeText('Barcode & status');
@@ -204,7 +204,7 @@ it('lays the Box edit out like its view, with the legacy histories after it (gen
     $edit = Livewire::test(EditBox::class, ['record' => $box->getKey()]);
     expect(l30_sections($edit, 'form'))->toBe(['Details' => false, 'Barcode legacy / history' => true, 'Seal legacy / history' => true]);
     $names = l30_names($edit, 'form', 'Details');
-    expect(array_slice($names, 0, 4))->toBe(['box_type', 'box_number', 'batch_id', 'current_box_type'])
+    expect(array_slice($names, 0, 4))->toBe(['box_type', 'current_box_type', 'batch_id', 'box_number'])
         ->and($names)->toContain('barcode', 'seal_number', 'barcode_status', 'location_id', 'notes', 'tracking_note', 'destroyed_at', 'destroyed_reason');
 });
 
@@ -235,9 +235,9 @@ it('offers the Physical Box Type lookup as the Current Box Type dropdown, on cre
     expect(Box::query()->where('box_number', '9')->value('current_box_type'))->toBe('Conservation Box');
 });
 
-it('puts Box type and Box identifier side by side (issue 15)', function (): void {
+it('opens the form on Box type, then Current Box Type; Box identifier follows Batch (client 2026-11-05, issue 2)', function (): void {
     $lw = Livewire::test(CreateBox::class)->fillForm(['box_type' => 'NRA']);
-    expect(array_slice(l30_names($lw, 'form', 'Details'), 0, 2))->toBe(['box_type', 'box_number']);
+    expect(array_slice(l30_names($lw, 'form', 'Details'), 0, 4))->toBe(['box_type', 'current_box_type', 'batch_id', 'box_number']);
     $lw->assertSeeText('Box identifier');
 });
 

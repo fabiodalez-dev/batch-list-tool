@@ -42,7 +42,6 @@ final class DocumentActionGroup
             ReplaceAuthorityAction::make(),
             DetachAuthorityAction::make(),
             AddFlagAction::make(),
-            MarkPermOutAction::make(),
         ];
     }
 
@@ -66,7 +65,6 @@ final class DocumentActionGroup
             ReplaceAuthorityAction::bulk(),
             DetachAuthorityAction::bulk(),
             AddFlagAction::bulk(),
-            MarkPermOutAction::bulk(),
             ExportSelectedAction::bulk(),
             MoveToRepositoryAction::bulk(),
         ];

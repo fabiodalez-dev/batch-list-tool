@@ -16,6 +16,7 @@ use App\Filament\Support\MatchQueryBuilder;
 use App\Filament\Support\MultiValue;
 use App\Filament\Support\SearchableSelects;
 use App\Models\Accession;
+use App\Filament\Support\TableSorts;
 use App\Models\Authority;
 use App\Models\Box;
 use App\Models\CustomFieldDefinition;
@@ -89,6 +90,9 @@ class DocumentResource extends Resource
         'DATE(COALESCE(documents.disinfestation_date, '
         . '(SELECT b.disinfestation_date FROM boxes b '
         . 'WHERE b.id = documents.current_box_id AND b.deleted_at IS NULL)))';
+
+    /** What the Disinfested Date column shows while a document is in the chamber. */
+    public const string CURRENT_CYCLE = 'Current Cycle';
 
     /**
      * Config key used by App\Support\FieldPermissions to look up
@@ -930,6 +934,7 @@ class DocumentResource extends Resource
                     ->label('Actual Authority Reference Code')
                     ->listWithLineBreaks()
                     ->placeholder('—')
+                    ->sortable(query: fn (Builder $query, string $direction): Builder => TableSorts::authorityField($query, "NULLIF(sort_a.alternative_identifier, '')", $direction))
                     ->toggleable(), 'authorities'),
                 $gc(Tables\Columns\TextColumn::make('creator_names')
                     ->label('Creator')
@@ -940,6 +945,8 @@ class DocumentResource extends Resource
                         ->all())
                     ->listWithLineBreaks()
                     ->placeholder('—')
+                    // As the cell reads: given names first, a surname alone otherwise.
+                    ->sortable(query: fn (Builder $query, string $direction): Builder => TableSorts::authorityField($query, "COALESCE(NULLIF(sort_a.given_names, ''), NULLIF(sort_a.surname, ''))", $direction))
                     ->toggleable(), 'authorities'),
                 // Client 2026-10-29: "another column in the Documents to show the
                 // Flag along with the document — highlighting it with the chosen
@@ -950,6 +957,7 @@ class DocumentResource extends Resource
                     ->badge()
                     ->color(fn (string $state): array|string => self::flagBadgeColour($state))
                     ->placeholder('—')
+                    ->sortable(query: fn (Builder $query, string $direction): Builder => TableSorts::documentFlags($query, $direction))
                     ->toggleable(),
                 // Pairs with "Prev Attributed Authority Identifier", which holds
                 // the same kind of number (the authority's Alternate Reference Code).
@@ -957,21 +965,26 @@ class DocumentResource extends Resource
                     ->label('Alternate Reference Code (MS)')
                     ->listWithLineBreaks()
                     ->placeholder('—')
+                    ->sortable(query: fn (Builder $query, string $direction): Builder => TableSorts::authorityField($query, "NULLIF(sort_a.alternative_identifier_warrant, '')", $direction))
                     ->toggleable(isToggledHiddenByDefault: true), 'authorities'),
                 $gc(Tables\Columns\TextColumn::make('prev_attributed_identifier')
                     ->label(ColumnLabels::get('document', 'prev_attributed_identifier'))
                     ->state(fn (Document $record): ?string => $record->previousAttribution()?->previous_identifier !== $record->identifier ? $record->previousAttribution()?->previous_identifier : null)
                     ->placeholder('—')
+                    ->sortable(query: fn (Builder $query, string $direction): Builder => self::orderByPreviousAttribution($query, 'previous_identifier', $direction))
                     ->toggleable(isToggledHiddenByDefault: true), 'authorities'),
                 $gc(Tables\Columns\TextColumn::make('prev_attributed_volume')
                     ->label(ColumnLabels::get('document', 'prev_attributed_volume'))
                     ->state(fn (Document $record): ?string => $record->previousAttribution()?->previous_volume)
                     ->placeholder('—')
+                    ->sortable(query: fn (Builder $query, string $direction): Builder => self::orderByPreviousAttribution($query, 'previous_volume', $direction))
                     ->toggleable(isToggledHiddenByDefault: true), 'volume_number'),
                 // Client 2026-10-18: the type's name, not its DT code.
                 $gc(Tables\Columns\TextColumn::make('document_type')->label(ColumnLabels::get('document', 'document_type'))
                     ->formatStateUsing(fn (?string $state, Document $record): ?string => $record->documentTypeRef?->name ?? $state)
-                    ->sortable()->toggleable()),
+                    // Sorted by the name the cell shows, not the code in the column.
+                    ->sortable(query: fn (Builder $query, string $direction): Builder => TableSorts::blanksLast($query, "COALESCE((SELECT sort_type.name FROM document_types sort_type WHERE sort_type.id = documents.document_type_id), NULLIF(documents.document_type, ''))", $direction))
+                    ->toggleable()),
                 $gc(Tables\Columns\TextColumn::make('series.code')->label('Series')
                     ->formatStateUsing(fn (?string $state, Document $record): ?string => $record->series?->title ? $state . ': ' . $record->series->title : $state)
                     ->sortable()->toggleable(), 'series_id'),
@@ -991,8 +1004,8 @@ class DocumentResource extends Resource
                 // NAF (2026-07-30) two-level location: a document shows its OWN
                 // location if set, otherwise it inherits its box's ("from box").
                 // Setting a location on the document overrides the box for that
-                // document only. Not sortable — effectiveLocation() is a resolved
-                // accessor, not a DB column. Gated on the document's location_id.
+                // document only. Client 2026-11-05: sorted by what the cell shows,
+                // the resolved location. Gated on the document's location_id.
                 $gc(Tables\Columns\TextColumn::make('effective_location')
                     ->label('Location')
                     // Memoise the breadcrumb by location id — the accessor runs
@@ -1004,6 +1017,7 @@ class DocumentResource extends Resource
                     ->url(fn (?Document $record): ?string => ($loc = $record?->effectiveLocation())
                         ? route('filament.admin.resources.locations.view', ['record' => $loc->getKey()])
                         : null)
+                    ->sortable(query: fn (Builder $query, string $direction): Builder => TableSorts::documentLocation($query, $direction))
                     ->toggleable(), 'location_id'),
                 $gc(Tables\Columns\TextColumn::make('practice')->label(ColumnLabels::get('document', 'practice'))->sortable()->toggleable()),
                 $gc(Tables\Columns\TextColumn::make('volume_number')->label(ColumnLabels::get('document', 'volume_number'))->sortable()->toggleable()),
@@ -1024,25 +1038,31 @@ class DocumentResource extends Resource
                 $gc(Tables\Columns\TextColumn::make('repository.code')->label('Repo')->badge()->color('gray')->sortable()->toggleable(), 'repository_id'),
                 // Two-level disinfestation: show the effective date — the
                 // document's own if set, otherwise inherited from its box
-                // ("from box"). Not sortable (resolved accessor, not a column).
+                // ("from box"). Client 2026-11-05: "If Item is in disinfestation
+                // instead of the disinfestation date can we show that it is
+                // currently in disinfestation?", the "Current Cycle" badge.
                 $gc(Tables\Columns\TextColumn::make('disinfestation_date')->label('Disinfested Date')
-                    ->state(fn (?Document $record): ?\Carbon\Carbon => $record?->effectiveDisinfestationDate())
-                    ->date()
-                    ->description(fn (?Document $record): ?string => $record?->disinfestationDateIsInherited() ? 'from box' : null)
+                    ->state(fn (?Document $record): ?string => $record?->is_in_disinfestation
+                        ? self::CURRENT_CYCLE
+                        : DisplayDate::date($record?->effectiveDisinfestationDate()))
+                    ->badge(fn (?string $state): bool => $state === self::CURRENT_CYCLE)
+                    ->color(fn (?string $state): ?string => $state === self::CURRENT_CYCLE ? 'warning' : null)
+                    ->description(fn (?Document $record): ?string => ! $record?->is_in_disinfestation && $record?->disinfestationDateIsInherited() ? 'from box' : null)
                     // The latest date is shown; the earlier ones on hover.
                     ->tooltip(fn (?Document $record): ?string => $record === null ? null : (collect([$record->disinfestation_date_1, $record->disinfestation_date_2, $record->disinfestation_date_3])
                         ->filter()
                         ->map(fn (mixed $d): string => Carbon::parse($d)->format(DisplayDate::DATE))
                         ->unique()
                         ->implode(', ') ?: null))
+                    ->sortable(query: fn (Builder $query, string $direction): Builder => TableSorts::documentDisinfestation($query, $direction))
                     ->toggleable(isToggledHiddenByDefault: true)),
                 $gc(Tables\Columns\IconColumn::make('torre')->label(ColumnLabels::get('document', 'torre'))->boolean()->sortable()->toggleable(isToggledHiddenByDefault: true)),
                 // Client 2026-10-18: every column of the documents sheet can be
                 // shown here (hidden until picked in the column list).
                 $gc(Tables\Columns\TextColumn::make('tracking')->label(ColumnLabels::get('document', 'tracking'))->limit(60)->tooltip(fn (?string $state): ?string => $state)->placeholder('—')->sortable()->toggleable(isToggledHiddenByDefault: true)),
-                $gc(Tables\Columns\TextColumn::make('museum_location')->label(ColumnLabels::get('document', 'museum_location'))->formatStateUsing(fn (?string $state, Document $record): ?string => LocationBreadcrumbCache::forCode($state, $record->repository_id))->placeholder('—')->sortable()->toggleable(isToggledHiddenByDefault: true)),
-                $gc(Tables\Columns\TextColumn::make('digitised')->label(ColumnLabels::get('document', 'digitised'))->state(fn (Document $record): ?string => $record->digitised_url ?? $record->digitised)->url(fn (Document $record): ?string => $record->digitised_url, shouldOpenInNewTab: true)->tooltip(fn (Document $record): ?string => $record->digitised_url ? ($record->digitised ?? 'Digitised') : null)->limit(50)->placeholder('—')->sortable()->toggleable(isToggledHiddenByDefault: true)),
-                $gc(Tables\Columns\TextColumn::make('accession_code_legacy')->label(ColumnLabels::get('document', 'accession_code_legacy'))->state(fn (Document $record): ?string => $record->accession_code_legacy ?? $record->accession?->code)->placeholder('—')->sortable()->toggleable(isToggledHiddenByDefault: true), 'accession_id'),
+                $gc(Tables\Columns\TextColumn::make('museum_location')->label(ColumnLabels::get('document', 'museum_location'))->formatStateUsing(fn (?string $state, Document $record): ?string => LocationBreadcrumbCache::forCode($state, $record->repository_id))->placeholder('—')->sortable(query: fn (Builder $query, string $direction): Builder => TableSorts::documentMuseumLocation($query, $direction))->toggleable(isToggledHiddenByDefault: true)),
+                $gc(Tables\Columns\TextColumn::make('digitised')->label(ColumnLabels::get('document', 'digitised'))->state(fn (Document $record): ?string => $record->digitised_url ?? $record->digitised)->url(fn (Document $record): ?string => $record->digitised_url, shouldOpenInNewTab: true)->tooltip(fn (Document $record): ?string => $record->digitised_url ? ($record->digitised ?? 'Digitised') : null)->limit(50)->placeholder('—')->sortable(query: fn (Builder $query, string $direction): Builder => TableSorts::blanksLast($query, "COALESCE(NULLIF(documents.digitised_url, ''), NULLIF(documents.digitised, ''))", $direction))->toggleable(isToggledHiddenByDefault: true)),
+                $gc(Tables\Columns\TextColumn::make('accession_code_legacy')->label(ColumnLabels::get('document', 'accession_code_legacy'))->state(fn (Document $record): ?string => $record->accession_code_legacy ?? $record->accession?->code)->placeholder('—')->sortable(query: fn (Builder $query, string $direction): Builder => TableSorts::blanksLast($query, 'COALESCE(documents.accession_code_legacy, (SELECT sort_acc.code FROM accessions sort_acc WHERE sort_acc.id = documents.accession_id AND sort_acc.deleted_at IS NULL))', $direction))->toggleable(isToggledHiddenByDefault: true), 'accession_id'),
                 $gc(Tables\Columns\TextColumn::make('museum_reference')->label(ColumnLabels::get('document', 'museum_reference'))->placeholder('—')->sortable()->toggleable(isToggledHiddenByDefault: true)),
                 $gc(Tables\Columns\TextColumn::make('object_reference_number')->label(ColumnLabels::get('document', 'object_reference_number'))->url(fn (?string $state): ?string => Document::driveSearchUrl($state), shouldOpenInNewTab: true)->placeholder('—')->sortable()->toggleable(isToggledHiddenByDefault: true)),
                 $gc(Tables\Columns\TextColumn::make('citation_reference')->label(ColumnLabels::get('document', 'citation_reference'))->limit(60)->tooltip(fn (?string $state): ?string => $state)->placeholder('—')->sortable()->toggleable(isToggledHiddenByDefault: true)),
@@ -1426,6 +1446,8 @@ class DocumentResource extends Resource
                 ->label($def->label)
                 ->toggleable(isToggledHiddenByDefault: true)
                 ->placeholder('—')
+                // Client 2026-11-05: every column of the list sorts.
+                ->sortable(query: static fn (Builder $query, string $direction): Builder => TableSorts::customField($query, (int) $def->getKey(), (string) $def->type, $direction))
                 ->state(static function ($record) use ($def): ?string {
                     if (! method_exists($record, 'customFieldValues')) {
                         return null;
@@ -1932,6 +1954,17 @@ class DocumentResource extends Resource
         ]);
 
         return $details === [] ? $value : $value . ' (' . implode('; ', $details) . ')';
+    }
+
+    /**
+     * "Prev Attributed" columns: the same row {@see Document::previousAttribution()}
+     * reads, the latest one the import recorded.
+     */
+    private static function orderByPreviousAttribution(Builder $query, string $column, string $direction): Builder
+    {
+        return TableSorts::blanksLast($query, "(SELECT NULLIF(sort_hist.{$column}, '') FROM document_identifier_history sort_hist
+            WHERE sort_hist.document_id = documents.id AND sort_hist.reason = ?
+            ORDER BY sort_hist.id DESC LIMIT 1)", $direction, ['Imported — previously attributed']);
     }
 
     /**

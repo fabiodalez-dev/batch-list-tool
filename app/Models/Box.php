@@ -47,6 +47,8 @@ class Box extends Model implements AuditableContract, Sortable
     /** box_location_history.source of a location taken from the box's documents. */
     public const string LOCATION_SOURCE_DOCUMENTS = 'documents';
 
+    private const string TRACKING_NOTE_DELIMITER = '; ';
+
     /**
      * Boxes are ordered WITHIN their batch — sort_order is unique per batch_id,
      * not globally. The override below scopes the sort query so renumbering
@@ -81,6 +83,13 @@ class Box extends Model implements AuditableContract, Sortable
      * operator change never sets it, so the live audit hook keeps working.
      */
     public bool $suppressBarcodeHistory = false;
+
+    /**
+     * Transient flag for the next save: the location on this instance was given
+     * on purpose, so the status IN rule below leaves it. BoxImporter sets it when
+     * the sheet names a location for the box (client 2026-11-05).
+     */
+    public bool $keepLocationWhenIn = false;
 
     protected $fillable = [
         'sort_order',
@@ -307,6 +316,18 @@ class Box extends Model implements AuditableContract, Sortable
     public function canBePermOut(): bool
     {
         return $this->disinfestation_date !== null;
+    }
+
+    /**
+     * Client 2026-11-05: "Tracking Note is being concatenated to tracking note
+     * but we need some kind of delimeter ex: '; ' if a tracking note already
+     * exists". Not saved here: the caller saves with the rest of its change.
+     */
+    public function appendTrackingNote(string $note): void
+    {
+        // A literal "0" is a real note, so no empty().
+        $existing = trim((string) $this->tracking_note);
+        $this->tracking_note = $existing !== '' ? $existing . self::TRACKING_NOTE_DELIMITER . $note : $note;
     }
 
     /** RFQ rule #3: IN_SITU / NRA require parent RAS box */
@@ -1000,6 +1021,28 @@ class Box extends Model implements AuditableContract, Sortable
                 throw ValidationException::withMessages([
                     'barcode_status' => 'PERM OUT is a permanent transfer: a box cannot move from PERM OUT to OUT. It may only stay PERM OUT or re-enter with status IN (which requires a new barcode) (RFQ Feedback1 C2.2).',
                 ]);
+            }
+        });
+
+        // Client 2026-11-05: "If a Box has Barcode Status IN, we should
+        // automatically set Location as RAS". On the way INTO status IN only, so
+        // an unrelated save of a box already IN leaves a location set by hand,
+        // and only where the location exists: without one, nothing changes. A
+        // RAS box alone (only they have a barcode status), and not a destroyed
+        // one. A box created without a status gets IN from the column default.
+        static::saving(function (self $box): void {
+            if ($box->keepLocationWhenIn || $box->box_type !== 'RAS' || $box->destroyed_at !== null) {
+                return;
+            }
+            $isIn = $box->exists
+                ? $box->isDirty('barcode_status') && $box->barcode_status === 'IN'
+                : ($box->barcode_status ?? 'IN') === 'IN';
+            if (! $isIn) {
+                return;
+            }
+            $ras = Location::namedFor(Location::NAME_RAS, $box->effectiveRepositoryId());
+            if ($ras !== null) {
+                $box->location_id = $ras->getKey();
             }
         });
 

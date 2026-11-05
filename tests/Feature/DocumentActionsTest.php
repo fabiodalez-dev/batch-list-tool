@@ -10,7 +10,6 @@ use App\Filament\Actions\Documents\DetachAuthorityAction;
 use App\Filament\Actions\Documents\DocumentActionGroup;
 use App\Filament\Actions\Documents\ExportSelectedAction;
 use App\Filament\Actions\Documents\MarkDisinfestedAction;
-use App\Filament\Actions\Documents\MarkPermOutAction;
 use App\Filament\Actions\Documents\MoveToBoxAction;
 use App\Filament\Actions\Documents\MoveToRepositoryAction;
 use App\Filament\Actions\Documents\ReplaceAuthorityAction;
@@ -410,44 +409,6 @@ test('Mark disinfested (bulk) updates many at once', function () {
  |  Action #6 — Mark PERM_OUT (requires disinfestation_date — RFQ App.1 #5)
  * ------------------------------------------------------------------------- */
 
-test('Mark PERM_OUT refuses to mark a document without disinfestation_date', function () {
-    $this->actingAs(actAs_role('super_admin'));
-
-    $repo = repo_();
-    $series = series_();
-    $doc = doc_($repo->id, $series->id, ['disinfestation_date' => null]);
-
-    runAction(MarkPermOutAction::make(), [
-        'record' => $doc,
-    ]);
-
-    $audit = Audit::query()
-        ->where('auditable_type', Document::class)
-        ->where('auditable_id', $doc->id)
-        ->where('event', 'permout_marked')
-        ->first();
-    expect($audit)->toBeNull(); // no audit row → action was blocked
-});
-
-test('Mark PERM_OUT succeeds when disinfestation_date is set and writes audit row', function () {
-    $this->actingAs(actAs_role('super_admin'));
-
-    $repo = repo_();
-    $series = series_();
-    $doc = doc_($repo->id, $series->id, ['disinfestation_date' => now()->subDay()]);
-
-    runAction(MarkPermOutAction::make(), [
-        'record' => $doc,
-    ]);
-
-    $audit = Audit::query()
-        ->where('auditable_type', Document::class)
-        ->where('auditable_id', $doc->id)
-        ->where('event', 'permout_marked')
-        ->first();
-    expect($audit)->not->toBeNull();
-});
-
 /* -------------------------------------------------------------------------
  |  Action #7 — Assign Authority
  * ------------------------------------------------------------------------- */
@@ -727,7 +688,7 @@ test('Audit metadata captures user_id and event', function () {
  |  Wiring on the resource pages
  * ------------------------------------------------------------------------- */
 
-test('DocumentActionGroup exposes 13 single-record header actions and 15 bulk actions', function () {
+test('DocumentActionGroup exposes 12 single-record header actions and 14 bulk actions', function () {
     // +1 single / +1 bulk after SetMuseumLocationAction was added in
     // PR #85 (APP2-vi). Client 2026-11-05: Move to batch and Move to wills went,
     // Move out of box came. Bump these counts whenever an action joins the
@@ -735,8 +696,8 @@ test('DocumentActionGroup exposes 13 single-record header actions and 15 bulk ac
     $single = DocumentActionGroup::singleHeaderActions();
     $bulk = DocumentActionGroup::bulkActions();
 
-    expect($single)->toHaveCount(13);
-    expect($bulk)->toHaveCount(15);
+    expect($single)->toHaveCount(12);
+    expect($bulk)->toHaveCount(14);
 });
 
 test('Every single-record action exposes a Filament Action instance', function () {
@@ -893,46 +854,6 @@ test('C-3 regression: MoveToBoxAction refuses a target box from a different repo
     $docInA->refresh();
     expect($docInA->current_box_id)->toBeNull();
     expect(BoxMovement::query()->where('document_id', $docInA->id)->count())->toBe(0);
-});
-
-/* ---- H-1: MarkPermOutAction actually writes documents.barcode_status ---- */
-
-test('H-1 regression: Mark PERM_OUT writes documents.barcode_status (column now exists)', function () {
-    $this->actingAs(actAs_role('super_admin'));
-
-    $repo = repo_();
-    $series = series_();
-    $doc = doc_($repo->id, $series->id, ['disinfestation_date' => now()->subDay()]);
-
-    runAction(MarkPermOutAction::make(), ['record' => $doc]);
-
-    $doc->refresh();
-    expect($doc->getAttribute('barcode_status'))->toBe('PERM_OUT');
-});
-
-/* ---- H-2: MarkPermOutAction strict bulk semantics (abort if any row missing) ---- */
-
-test('H-2 regression: Mark PERM_OUT bulk aborts entirely if ANY row lacks disinfestation_date', function () {
-    $this->actingAs(actAs_role('super_admin'));
-
-    $repo = repo_();
-    $series = series_();
-
-    // 2 valid + 1 invalid → the whole bulk must be aborted, NO writes.
-    $valid1 = doc_($repo->id, $series->id, ['disinfestation_date' => now()->subDay()]);
-    $valid2 = doc_($repo->id, $series->id, ['disinfestation_date' => now()->subWeek()]);
-    $invalid = doc_($repo->id, $series->id, ['disinfestation_date' => null]);
-
-    runAction(MarkPermOutAction::bulk(), [
-        'records' => asColl($valid1, $invalid, $valid2),
-    ]);
-
-    foreach ([$valid1, $valid2, $invalid] as $d) {
-        $d->refresh();
-        expect($d->getAttribute('barcode_status'))->not->toBe('PERM_OUT');
-    }
-    // No audit row was written either.
-    expect(Audit::query()->where('event', 'permout_marked')->count())->toBe(0);
 });
 
 /* ---- H-3: MoveToRepositoryAction re-stamps repository_id on related rows ---- */
