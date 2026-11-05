@@ -303,6 +303,15 @@ final class SearchableSelects
 
         if ($search === '') {
             $query->orderBy('surname');
+        } elseif (preg_match('/^([^:]+):\s*(.*)$/', $search, $parts) === 1) {
+            // Client 2026-11-05: options read "R611: Muscat, Elizabeth Amalia",
+            // so what somebody types can read the same way.
+            $query->where('alternative_identifier', trim($parts[1]))
+                ->where(function ($q) use ($parts) {
+                    $q->where('authorised_form_of_name', 'like', '%' . $parts[2] . '%')
+                        ->when($parts[2] === '', fn ($any) => $any->orWhereNull('authorised_form_of_name'));
+                })
+                ->orderBy('surname');
         } else {
             $needle = '%' . $search . '%';
             $query->where(function ($q) use ($needle) {
@@ -385,9 +394,11 @@ final class SearchableSelects
         if ($search === '') {
             $query->orderByRaw('batch_number + 0');
         } else {
+            // Client 2026-11-05: options read "Batch 2", so "Batch 2" has to find it.
+            $number = (string) preg_replace('/^batch\s+/i', '', $search);
             $needle = '%' . $search . '%';
-            $query->where(function ($q) use ($needle) {
-                $q->where('batch_number', 'like', $needle)
+            $query->where(function ($q) use ($needle, $number) {
+                $q->where('batch_number', 'like', '%' . $number . '%')
                     ->orWhere('description', 'like', $needle)
                     ->orWhere('type', 'like', $needle);
             })->orderByRaw('batch_number + 0');
