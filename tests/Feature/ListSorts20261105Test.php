@@ -231,7 +231,7 @@ it('sorts documents by Disinfested Date: effective, Current Cycle grouped, blank
         ->and(array_slice($desc, 2))->toBe([$late->id, $viaBox->id, $early->id, $blank->id]);
 });
 
-it('sorts documents by authority columns: code, alternate code, creator as the cell reads', function (): void {
+it('sorts documents by authority columns: code, alternate code, creator by surname as the cell reads', function (): void {
     $auth = fn (array $a): Authority => Authority::create($a + ['identifier' => 'NAM-' . $a['alternative_identifier'], 'entity_type' => 'PERSON']);
     $zeta = $auth(['alternative_identifier' => 'R9', 'alternative_identifier_warrant' => 'M1', 'given_names' => 'Anna', 'surname' => 'Zeta']);
     $alpha = $auth(['alternative_identifier' => 'R1', 'alternative_identifier_warrant' => 'M9', 'given_names' => 'Zoe', 'surname' => 'Alpha']);
@@ -247,7 +247,7 @@ it('sorts documents by authority columns: code, alternate code, creator as the c
 
     ls_assertSort(ListDocuments::class, 'authorities.alternative_identifier', [$dAlpha->id, $dBorg->id, $dZeta->id, $dNone->id], [$dZeta->id, $dBorg->id, $dAlpha->id, $dNone->id]);
     ls_assertSort(ListDocuments::class, 'authorities.alternative_identifier_warrant', [$dZeta->id, $dBorg->id, $dAlpha->id, $dNone->id], [$dAlpha->id, $dBorg->id, $dZeta->id, $dNone->id]);
-    ls_assertSort(ListDocuments::class, 'creator_names', [$dZeta->id, $dBorg->id, $dAlpha->id, $dNone->id], [$dAlpha->id, $dBorg->id, $dZeta->id, $dNone->id]);
+    ls_assertSort(ListDocuments::class, 'creator_names', [$dAlpha->id, $dBorg->id, $dZeta->id, $dNone->id], [$dZeta->id, $dBorg->id, $dAlpha->id, $dNone->id]);
 });
 
 it('sorts documents by the Prev Attributed columns, from the same history row the cell reads', function (): void {

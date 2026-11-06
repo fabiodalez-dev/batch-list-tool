@@ -510,6 +510,10 @@ class Document extends Model implements AuditableContract, HasMedia, Sortable
             ['date' => $this->disinfestation_date, 'label' => 'Current'],
         ])
             ->filter(fn (array $row) => $row['date'] !== null)
+            // Client 2026-11-06: the import copies the latest legacy round into
+            // the canonical column, so the same date showed as two rounds. One
+            // date is one round; the first label for it (the legacy one) stays.
+            ->unique(fn (array $row) => Carbon::parse($row['date'])->toDateString())
             ->sortBy(fn (array $row) => $row['date'])
             ->values();
 

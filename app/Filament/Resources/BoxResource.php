@@ -1060,6 +1060,9 @@ class BoxResource extends Resource
                                         $record->update($update);
                                         $changed++;
                                     }
+                                    if (isset($update['location_id'])) {
+                                        BoxBulkSupport::documentsFollowBox($record);
+                                    }
                                 });
 
                                 if ($changed === 0) {

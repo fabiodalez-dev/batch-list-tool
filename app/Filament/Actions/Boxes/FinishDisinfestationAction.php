@@ -142,6 +142,7 @@ final class FinishDisinfestationAction
             $box->barcode_status = $toArchive ? 'PERM_OUT' : 'IN';
         }
         $box->save();
+        BoxBulkSupport::documentsFollowBox($box);
     }
 
     /**
@@ -150,7 +151,10 @@ final class FinishDisinfestationAction
      */
     private static function stampDocuments(Box $box, string $date, ?string $status): void
     {
+        // What went with the box comes back with it: the documents physically
+        // in it, and any still marked as out with it from before 2026-11-06.
         $rows = BoxBulkSupport::documentsIn($box)
+            ->where(static fn ($q) => $q->where('custody_status', 'in_box')->orWhere('is_in_disinfestation', true))
             ->toBase()
             ->get(['id', 'identifier', 'catalogue_identifier', 'disinfestation_date', 'is_in_disinfestation', 'barcode_status', ...self::HISTORY_SLOTS]);
 
