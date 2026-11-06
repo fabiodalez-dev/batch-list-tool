@@ -18,6 +18,10 @@ class ListAudits extends ListRecords
 
     protected static string $resource = AuditResource::class;
 
+    // The sidebar says "Audit log"; without this the heading is the plural
+    // model label, "Audits".
+    protected static ?string $title = 'Audit log';
+
     /**
      * The audit rows the table is showing — its filters and search — one CSV
      * row per changed field (RFQ §3.1.5: old value, new value, user, time).

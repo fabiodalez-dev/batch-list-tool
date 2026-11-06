@@ -33,9 +33,8 @@ class ListBoxes extends ListRecords
      *  - #3 IN_SITU / NRA boxes require a parent RAS box (rejected with a
      *    per-row validation error otherwise).
      *  - #4 MAV / STVC types force `is_legacy = true` on save.
-     *  - #5 PERM_OUT requires `disinfestation_date` (validation error
-     *    otherwise — MySQL would also refuse the insert, but we want a
-     *    clean message for the operator).
+     *  - #5 (PERM_OUT requires `disinfestation_date`) was removed on the
+     *    client's 2026-08-01 feedback: a PERM_OUT box imports without one.
      */
     protected function getHeaderActions(): array
     {

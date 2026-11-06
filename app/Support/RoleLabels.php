@@ -25,7 +25,7 @@ final class RoleLabels
      * @var array<string, string>
      */
     public const array MAP = [
-        'super_admin' => 'Administrator',
+        'super_admin' => 'Super administrator',
         'admin' => 'Administrator',
         'editor' => 'ReadingRoom',
         'viewer' => 'General',

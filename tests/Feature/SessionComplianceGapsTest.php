@@ -33,8 +33,10 @@ uses(RefreshDatabase::class);
 
 /* ───────────────────────── RoleLabels (4) ───────────────────────── */
 
-it('maps super_admin and admin to the RFQ Administrator label', function () {
-    expect(RoleLabels::for('super_admin'))->toBe('Administrator')
+it('maps super_admin and admin to two distinct administrator labels', function () {
+    // Both used to read "Administrator": two identical choices in the Role
+    // select and two identical columns in the Field permissions matrix.
+    expect(RoleLabels::for('super_admin'))->toBe('Super administrator')
         ->and(RoleLabels::for('admin'))->toBe('Administrator');
 });
 
