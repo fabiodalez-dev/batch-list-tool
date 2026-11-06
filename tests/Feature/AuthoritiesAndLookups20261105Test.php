@@ -176,16 +176,17 @@ it('still gates the fields by field permissions', function (): void {
     Livewire::test(CreateAuthority::class)->assertFormFieldDoesNotExist('notes');
 });
 
-it('offers the years newest first, from 1400 to this year, as Select Year', function (): void {
+it('offers the years newest first, from 1400 to 50 years ahead, as Select Year', function (): void {
     foreach (['practice_dates_start', 'practice_dates_end', 'ntg_dates_start', 'ntg_dates_end'] as $field) {
         Livewire::test(CreateAuthority::class)->assertFormFieldExists($field, function (Select $select): bool {
             $years = array_keys($select->getOptions());
 
             return $select->isSearchable()
                 && $select->getPlaceholder() === 'Select Year'
-                && $years[0] === (int) now()->year
+                // Client 2026-11-06: a notary may start practising next year.
+                && $years[0] === (int) now()->year + 50
                 && end($years) === 1400
-                && count($years) === (int) now()->year - 1400 + 1;
+                && count($years) === (int) now()->year + 50 - 1400 + 1;
         });
     }
 });

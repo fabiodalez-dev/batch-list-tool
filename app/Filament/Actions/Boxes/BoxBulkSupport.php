@@ -196,6 +196,46 @@ final class BoxBulkSupport
     }
 
     /**
+     * Client 2026-11-06: "All the items in the box should follow ... ie: custody
+     * status in box. The rest no." A document still linked to the box but kept
+     * elsewhere (Not in Box, Mounted, a conservation box) stays where it is
+     * until it is moved back into the box.
+     */
+    public static function documentsPhysicallyIn(Box $box): DocumentBuilder
+    {
+        return self::documentsIn($box)->where('custody_status', 'in_box');
+    }
+
+    /**
+     * When a box moves, the documents physically in it move too: a location of
+     * their own (8,000 imported documents carry one) is cleared, so they show
+     * the box's location from now on. Audited as one row per document.
+     */
+    public static function documentsFollowBox(Box $box): int
+    {
+        $rows = self::documentsPhysicallyIn($box)
+            ->whereNotNull('location_id')
+            ->toBase()
+            ->get(['id', 'location_id']);
+
+        foreach (array_chunk($rows->pluck('id')->all(), 500) as $chunk) {
+            self::documentsIn($box)->whereKey($chunk)->update(['location_id' => null]);
+        }
+
+        self::auditDocuments(
+            $rows->map(static fn (object $row): array => [
+                'id' => (int) $row->id,
+                'old' => ['location_id' => (int) $row->location_id],
+                'new' => ['location_id' => null, 'follows_box_id' => (int) $box->getKey()],
+            ])->all(),
+            'document.followed_box',
+            'location,document',
+        );
+
+        return $rows->count();
+    }
+
+    /**
      * Audit rows for documents written by a bulk update, which the Auditable
      * trait does not see. One insert per 200 rows, not one query per document.
      *

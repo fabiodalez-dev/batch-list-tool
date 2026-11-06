@@ -180,29 +180,43 @@ it('paints an open flag badge in its Flag Types colour, not the theme cream (cli
         ->and((float) $m[3])->toBeGreaterThan(15.0)->toBeLessThan(40.0);
 });
 
-it('adds a rule inside an OR group of the filters without a Livewire error (client 2026-10-30)', function () {
+it('joins two rules with OR from the rule itself, in a scrolling list of rule types (client 2026-11-06)', function () {
     $admin = bl_actor('super_admin');
     bl_seedDocument($admin->repositories()->first());
 
     $page = bl_login($admin)->navigate('/admin/documents');
     $page->script("document.querySelector('button[title=Filter], .fi-ta-filters-trigger-action-ctn button').click()");
-    $page->wait(1)
-        ->click('Add rule')
-        ->wait(1);
-    $page->script("[...document.querySelectorAll('button, li, [role=menuitem]')].find(e => e.textContent.trim() === 'OR group (any of)').click()");
-    $page->wait(2)
-        ->assertSee('OR');
+    $page->wait(1)->click('Add rule')->wait(1);
 
-    // The first alternative's "Add rule" → Document identifier.
-    $page->script(<<<'JS'
-        [...document.querySelectorAll('button[wire\\:click]')].find(b => b.getAttribute('wire:click').includes('identifier') && b.getAttribute('wire:click').includes('.groups.')).click()
+    // The list of rule types scrolls inside its panel and can be searched.
+    $panel = $page->script(<<<'JS'
+        (() => { const p = [...document.querySelectorAll('.fi-fo-builder-block-picker .fi-dropdown-panel')].find(e => e.offsetParent !== null);
+          return p ? [getComputedStyle(p).overflowY, p.scrollHeight > p.clientHeight, !!p.querySelector('input[type=text]')] : null; })()
     JS);
+    expect($panel)->toBe(['auto', true, true]);
+
+    $pick = <<<'JS'
+        [...document.querySelectorAll('.fi-fo-builder-block-picker .fi-dropdown-list-item')].filter(e => e.offsetParent !== null).find(e => e.textContent.trim() === 'Document identifier').click()
+    JS;
+    $page->script($pick);
+    $page->wait(2)->click('Add rule')->wait(1);
+    $page->script($pick);
     $page->wait(2);
+
+    // One join, on the second rule only.
+    expect($page->script("[...document.querySelectorAll('.nra-rule-connector')].filter(e => e.offsetParent !== null).length"))->toBe(1);
+
     $page->script(<<<'JS'
-        (() => { const i = [...document.querySelectorAll('.fi-ta-filters input[type=text], .fi-modal input[type=text]')].filter(e => e.offsetParent !== null).pop(); i.value = 'R-DOC-001'; i.dispatchEvent(new Event('input', { bubbles: true })); })()
+        (() => { const inputs = [...document.querySelectorAll('.fi-modal input[type=text], .fi-ta-filters input[type=text]')].filter(e => e.offsetParent !== null && !e.closest('.fi-fo-builder-block-picker') && !e.closest('.nra-rule-connector'));
+          const set = (i, v) => { i.value = v; i.dispatchEvent(new Event('input', { bubbles: true })); };
+          set(inputs[inputs.length - 2], 'R-DOC-001'); set(inputs[inputs.length - 1], 'NOPE-1'); })()
     JS);
+    $page->wait(1);
+    $page->script("document.querySelector('.nra-rule-connector button, .nra-rule-connector [role=combobox]').click()");
+    $page->wait(1);
+    $page->script("[...document.querySelectorAll('.fi-select-input-option, [role=option]')].filter(e => e.offsetParent !== null).find(e => e.textContent.trim() === 'OR').click()");
     $page->wait(2)->click('Apply filters')->wait(2)
-        ->assertSee('equals R-DOC-001')
-        ->assertDontSee('Maximum nesting depth')
+        ->assertSee('equals R-DOC-001 OR')
+        ->assertSee('R-DOC-001')
         ->assertNoJavascriptErrors();
 });

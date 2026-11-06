@@ -1133,3 +1133,15 @@ body:has(.fi-simple-main),
     height: 3.5rem !important;
     width: auto;
 }
+
+/* Client 2026-11-06: "Add rule" lists every field, which ran off the screen.
+   The list scrolls inside a panel of a fixed height instead. */
+.fi-fo-builder-block-picker .fi-dropdown-panel {
+    max-height: min(22rem, 60vh);
+    overflow-y: auto;
+}
+
+/* Each rule's AND / OR / AND NOT, kept narrow above the rule it joins. */
+.nra-connector-rules .nra-rule-connector {
+    max-width: 9rem;
+}

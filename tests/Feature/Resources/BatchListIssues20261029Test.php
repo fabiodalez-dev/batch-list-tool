@@ -158,7 +158,7 @@ it('leaves the flags alone when the user may not flag documents', function (): v
         ->toBe(['entry_issue' => 'open']);
 });
 
-it('holds only "Add rule" on the filter panel, with AND / OR above the rules and NOT on each', function (): void {
+it('holds only "Add rule" on the filter panel; links with the list-wide AND / OR still work, and NOT on each', function (): void {
     $table = Livewire::test(ListDocuments::class)->instance()->getTable();
     expect(collect($table->getFilters())->map(fn ($f) => $f::class)->values()->all())
         ->toBe([MatchQueryBuilder::class, TrashedFilter::class]);
@@ -171,7 +171,7 @@ it('holds only "Add rule" on the filter panel, with AND / OR above the rules and
         'two' => b29_rule('volume_number', 'equals', ['text' => '2']),
     ];
 
-    b29_list($rules, 'any')->assertCanSeeTableRecords([$a, $b])->assertCanNotSeeTableRecords([$c])->assertSee('Any of:');
+    b29_list($rules, 'any')->assertCanSeeTableRecords([$a, $b])->assertCanNotSeeTableRecords([$c])->assertSee(' OR ');
     b29_list($rules, 'all')->assertCanNotSeeTableRecords([$a, $b, $c]);
     b29_list(['not' => b29_rule('volume_number', 'equals.inverse', ['text' => '1'])])
         ->assertCanSeeTableRecords([$b, $c])->assertCanNotSeeTableRecords([$a]);

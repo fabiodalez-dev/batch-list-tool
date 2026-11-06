@@ -53,6 +53,8 @@ class AuthorityResource extends Resource
 
     private const int FIRST_YEAR = 1400;
 
+    private const int FUTURE_YEARS = 50;
+
     protected static ?string $model = Authority::class;
 
     protected static string|\BackedEnum|null $navigationIcon = 'heroicon-o-user-circle';
@@ -602,7 +604,9 @@ class AuthorityResource extends Resource
     }
 
     /**
-     * Client 2026-11-05: "(Select Year)". Newest first, from 1400 to this year.
+     * Client 2026-11-05: "(Select Year)". Newest first, from 1400. Client
+     * 2026-11-06: a notary may start practising next year and hand the
+     * collection over straight away, so the list runs FUTURE_YEARS ahead.
      * A year already stored outside that range stays selectable (the Select only
      * accepts its own options), and the 4-digit and end >= start rules stay on
      * the server.
@@ -615,7 +619,7 @@ class AuthorityResource extends Resource
             ->searchable()
             ->native(false)
             ->options(function (?Authority $record) use ($field): array {
-                $years = range((int) now()->year, self::FIRST_YEAR);
+                $years = range((int) now()->year + self::FUTURE_YEARS, self::FIRST_YEAR);
                 $stored = $record?->getAttribute($field);
                 if ($stored !== null && ! in_array((int) $stored, $years, true)) {
                     $years[] = (int) $stored;

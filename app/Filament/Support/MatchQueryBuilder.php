@@ -4,21 +4,19 @@ declare(strict_types=1);
 
 namespace App\Filament\Support;
 
-use Filament\Forms\Components\Select;
+use Filament\Forms\Components\Hidden;
 use Filament\QueryBuilder\Forms\Components\RuleBuilder;
 use Filament\Tables\Filters\QueryBuilder;
 use Illuminate\Database\Eloquent\Builder;
 
 /**
- * "Add rule" with one choice above the rules: match all of them (AND) or
- * any of them (OR).
+ * "Add rule", each rule after the first joined to the rules above it by AND,
+ * OR or AND NOT (client 2026-11-06, see ConnectorRuleBuilder).
  *
- * Client 2026-10-29: "OR condition is not working — can we have the AND/OR
- * higher up as an option rather than as condition?" Filament's OR is a
- * nested "OR condition" rule whose groups were easy to leave empty (an
- * empty group matches everything) and, nested again, exceeded Livewire's
- * payload depth and failed. Each rule's operator already offers its NOT
- * ("Does not equal", "Is not"), so AND / OR / NOT read top to bottom.
+ * Client 2026-10-29 had asked for the AND/OR "higher up as an option rather
+ * than as condition": Filament's nested "OR condition" was easy to leave
+ * empty (an empty group matches everything) and, nested again, exceeded
+ * Livewire's payload depth. Per-rule joins keep the list flat.
  */
 class MatchQueryBuilder extends QueryBuilder
 {
@@ -46,23 +44,16 @@ class MatchQueryBuilder extends QueryBuilder
     {
         parent::setUp();
 
-        // Client 2026-10-30: one level of "OR group" inside the rules, to
-        // mix the two ("R16 OR R12", AND "Bastardello"). Deeper groups stay
-        // out: they are hard to read, and every level lengthens the Livewire
-        // property path (see config/livewire.php).
-        $this->maxNestingDepth(2);
+        // Client 2026-11-06: no more "OR group"; each rule carries its own
+        // AND / OR / NOT (ConnectorRuleBuilder). A link or saved filter with an
+        // OR group from before is not applied rather than half applied.
+        $this->maxNestingDepth(1);
 
         $this->schema(fn (QueryBuilder $filter): array => [
-            Select::make('match')
-                ->label('Show records that match')
-                ->options([
-                    self::MATCH_ALL => 'All of the rules (AND)',
-                    self::MATCH_ANY => 'Any of the rules (OR)',
-                ])
-                ->default(self::MATCH_ALL)
-                ->selectablePlaceholder(false)
-                ->native(false),
-            RuleBuilder::make('rules')
+            // Kept for links made with the list-wide choice: "any" makes the
+            // rules that name no join of their own OR.
+            Hidden::make('match')->default(self::MATCH_ALL),
+            ConnectorRuleBuilder::make('rules')
                 ->label($filter->getLabel())
                 ->hiddenLabel()
                 ->constraints($filter->getConstraints())
@@ -81,21 +72,16 @@ class MatchQueryBuilder extends QueryBuilder
                 return;
             }
 
-            if (! self::matchesAny($data) || count($rules) < 2) {
-                $this->applyRulesToQuery($query, $rules, $this->getRuleBuilder());
+            $joins = self::joins($rules, $data);
+            $ruleBuilder = $this->getRuleBuilder();
+
+            if (! in_array(ConnectorRuleBuilder::OR, $joins, true) && ! in_array(ConnectorRuleBuilder::NOT, $joins, true)) {
+                $this->applyRulesToQuery($query, $rules, $ruleBuilder);
 
                 return;
             }
 
-            // One OR branch per rule. A rule left incomplete adds nothing to
-            // its branch, and Laravel drops an empty branch, so it never turns
-            // the OR into "everything".
-            $ruleBuilder = $this->getRuleBuilder();
-            $query->where(function (Builder $any) use ($rules, $ruleBuilder): void {
-                foreach ($rules as $index => $rule) {
-                    $any->orWhere(fn (Builder $one): Builder => $this->applyRulesToQuery($one, [$index => $rule], $ruleBuilder));
-                }
-            });
+            $query->where(fn (Builder $all): Builder => $this->applyFromLeft($all, $rules, $joins, $ruleBuilder));
         });
 
         $this->indicateUsing(function (array $state): array {
@@ -105,11 +91,68 @@ class MatchQueryBuilder extends QueryBuilder
             }
 
             $summaries = $this->getTable()->withAppliedFiltersFormState(fn (): array => $this->getRuleSummaries($rules, $this->getRuleBuilder()));
+            $joins = self::joins($rules, $state);
 
-            return self::matchesAny($state) && count($summaries) > 1
-                ? ['Any of: ' . implode(' | ', $summaries)]
-                : $summaries;
+            if (! in_array(ConnectorRuleBuilder::OR, $joins, true) && ! in_array(ConnectorRuleBuilder::NOT, $joins, true)) {
+                return $summaries;
+            }
+
+            $text = '';
+            foreach ($summaries as $index => $summary) {
+                $join = $joins[$index] ?? ConnectorRuleBuilder::AND;
+                $text .= $text === '' ? ($join === ConnectorRuleBuilder::NOT ? 'NOT ' : '') : ' ' . strtoupper($join === ConnectorRuleBuilder::NOT ? 'and not' : $join) . ' ';
+                $text .= $summary;
+            }
+
+            return [$text];
         });
+    }
+
+    /**
+     * How each rule joins the ones above it; the first joins nothing.
+     *
+     * @param array<string, mixed> $rules
+     * @param array<string, mixed> $data
+     * @return array<string, string>
+     */
+    private static function joins(array $rules, array $data): array
+    {
+        $fallback = self::matchesAny($data) ? ConnectorRuleBuilder::OR : ConnectorRuleBuilder::AND;
+        $joins = [];
+        foreach ($rules as $index => $rule) {
+            $joins[$index] = $joins === [] ? ConnectorRuleBuilder::AND : ConnectorRuleBuilder::connectorOf((array) $rule, $fallback);
+        }
+
+        return $joins;
+    }
+
+    /**
+     * Left to right: each rule joins everything above it, so "A OR B AND C"
+     * is (A OR B) AND C, as it reads. A rule left incomplete adds nothing, and
+     * Laravel drops an empty group, so it never turns an OR into "everything".
+     *
+     * @param array<string, mixed> $rules
+     * @param array<string, string> $joins
+     */
+    private function applyFromLeft(Builder $query, array $rules, array $joins, RuleBuilder $ruleBuilder): Builder
+    {
+        $last = array_key_last($rules);
+        $rule = [$last => $rules[$last]];
+        $before = $rules;
+        unset($before[$last]);
+
+        if ($before === []) {
+            return $this->applyRulesToQuery($query, $rule, $ruleBuilder);
+        }
+
+        $query->where(fn (Builder $above): Builder => $this->applyFromLeft($above, $before, $joins, $ruleBuilder));
+        $one = fn (Builder $q): Builder => $this->applyRulesToQuery($q, $rule, $ruleBuilder);
+
+        return match ($joins[$last]) {
+            ConnectorRuleBuilder::OR => $query->orWhere($one),
+            ConnectorRuleBuilder::NOT => $query->whereNot($one),
+            default => $query->where($one),
+        };
     }
 
     /**

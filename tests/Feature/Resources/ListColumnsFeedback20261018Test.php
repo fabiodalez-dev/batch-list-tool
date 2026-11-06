@@ -64,7 +64,7 @@ it('shows the authority as Citing Reference Code and Creator, the type by name, 
     Livewire::test(ListDocuments::class)
         ->assertTableColumnFormattedStateSet('document_type', 'Index', $doc)
         ->assertTableColumnFormattedStateSet('series.code', 'REG: Registers', $doc)
-        ->assertTableColumnStateSet('creator_names', ['Giuseppe Abela'], $doc)
+        ->assertTableColumnStateSet('creator_names', ['Abela, Giuseppe'], $doc)
         ->assertTableColumnStateSet('authorities.alternative_identifier', ['R358/A'], $doc)
         ->assertTableColumnStateSet('authorities.alternative_identifier_warrant', ['631'], $doc)
         ->assertTableColumnFormattedStateSet('disinfestation_date', '05-08-2023', $doc) // dd-mm-yyyy everywhere (client 2026-10-30)

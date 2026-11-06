@@ -13,7 +13,6 @@ use App\Filament\Actions\Documents\MarkDisinfestedAction;
 use App\Filament\Actions\Documents\MoveToBoxAction;
 use App\Filament\Actions\Documents\MoveToRepositoryAction;
 use App\Filament\Actions\Documents\ReplaceAuthorityAction;
-use App\Filament\Actions\Documents\SetLocationAction;
 use App\Filament\Actions\Documents\SetSeriesAction;
 use App\Filament\Actions\Documents\UpdateDocumentTypeAction;
 use App\Filament\Resources\DocumentResource\Pages\EditDocument;
@@ -326,45 +325,6 @@ test('Cross-tenant transfer is blocked for non-super_admin users', function () {
 
     $doc->refresh();
     expect($doc->repository_id)->toBe($repoA->id);
-});
-
-/* -------------------------------------------------------------------------
- |  Action #4 — Set Location
- * ------------------------------------------------------------------------- */
-
-test('Set location pins document to a global location', function () {
-    $this->actingAs(actAs_role('super_admin'));
-
-    $repo = repo_();
-    $series = series_();
-    $loc = Location::factory()->create(['repository_id' => null, 'name' => 'Conservation Lab']);
-    $doc = doc_($repo->id, $series->id);
-
-    runAction(SetLocationAction::make(), [
-        'record' => $doc,
-        'data' => ['to_location_id' => $loc->id],
-    ]);
-
-    $doc->refresh();
-    expect($doc->location_id)->toBe($loc->id);
-});
-
-test('Set location refuses location from a different repository (tenant safety)', function () {
-    $this->actingAs(actAs_role('super_admin'));
-
-    $repoA = repo_('LA');
-    $repoB = repo_('LB');
-    $series = series_();
-    $locInB = Location::factory()->create(['repository_id' => $repoB->id, 'name' => 'B-only']);
-    $doc = doc_($repoA->id, $series->id);
-
-    runAction(SetLocationAction::make(), [
-        'record' => $doc,
-        'data' => ['to_location_id' => $locInB->id],
-    ]);
-
-    $doc->refresh();
-    expect($doc->location_id)->toBeNull();
 });
 
 /* -------------------------------------------------------------------------
@@ -688,16 +648,17 @@ test('Audit metadata captures user_id and event', function () {
  |  Wiring on the resource pages
  * ------------------------------------------------------------------------- */
 
-test('DocumentActionGroup exposes 12 single-record header actions and 14 bulk actions', function () {
+test('DocumentActionGroup exposes 11 single-record header actions and 13 bulk actions', function () {
     // +1 single / +1 bulk after SetMuseumLocationAction was added in
     // PR #85 (APP2-vi). Client 2026-11-05: Move to batch and Move to wills went,
-    // Move out of box came. Bump these counts whenever an action joins the
+    // Move out of box came. Client 2026-11-06: Set location went. Bump these counts whenever an action joins the
     // group so a future regression that DROPS an action surfaces here.
     $single = DocumentActionGroup::singleHeaderActions();
     $bulk = DocumentActionGroup::bulkActions();
 
-    expect($single)->toHaveCount(12);
-    expect($bulk)->toHaveCount(14);
+    expect($single)->toHaveCount(11);
+    expect($bulk)->toHaveCount(13)
+        ->and(collect($bulk)->map->getName()->all())->not->toContain('bulkSetLocation');
 });
 
 test('Every single-record action exposes a Filament Action instance', function () {

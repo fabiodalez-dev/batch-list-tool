@@ -32,7 +32,6 @@ final class DocumentActionGroup
         return [
             MoveToBoxAction::make(),
             SetCustodyStatusAction::make(),
-            SetLocationAction::make(),
             SetMuseumLocationAction::make(),
             SendToDisinfestationAction::make(),
             MarkDisinfestedAction::make(),
@@ -55,7 +54,6 @@ final class DocumentActionGroup
         return [
             MoveToBoxAction::bulk(),
             SetCustodyStatusAction::bulk(),
-            SetLocationAction::bulk(),
             SetMuseumLocationAction::bulk(),
             SendToDisinfestationAction::bulk(),
             MarkDisinfestedAction::bulk(),

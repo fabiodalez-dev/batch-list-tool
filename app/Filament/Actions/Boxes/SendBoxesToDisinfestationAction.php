@@ -70,7 +70,8 @@ final class SendBoxesToDisinfestationAction
             throw new \DomainException('The box is PERM OUT, which cannot change to OUT.');
         }
 
-        $documents = BoxBulkSupport::documentsIn($box)
+        // Client 2026-11-06: only what is physically in the box goes with it.
+        $documents = BoxBulkSupport::documentsPhysicallyIn($box)
             ->where('is_in_disinfestation', false)
             ->toBase()
             ->get(['id', 'barcode_status']);
@@ -89,6 +90,7 @@ final class SendBoxesToDisinfestationAction
             $box->barcode_status = 'OUT';
         }
         $box->save();
+        BoxBulkSupport::documentsFollowBox($box);
 
         BoxBulkSupport::auditDocuments(
             $documents->map(static fn (object $document): array => [

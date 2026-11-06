@@ -21,8 +21,9 @@ it('lists the years newest first in the browser', function () {
 
     $years = $page->script("Array.from(document.querySelectorAll('.fi-dropdown-panel li, .fi-select-input-option')).map(e => e.textContent.trim()).filter(t => /^\\d{4}$/.test(t))");
 
-    expect($years[0])->toBe((string) now()->year)
-        ->and($years[1])->toBe((string) (now()->year - 1));
+    // Client 2026-11-06: the list runs 50 years ahead.
+    expect($years[0])->toBe((string) (now()->year + 50))
+        ->and($years[1])->toBe((string) (now()->year + 49));
 });
 
 it('shows a stored year as selected on the edit page, also one outside the range', function () {

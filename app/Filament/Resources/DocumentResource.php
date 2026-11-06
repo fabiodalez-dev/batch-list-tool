@@ -75,6 +75,7 @@ use Filament\Tables\Table;
 use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\SoftDeletingScope;
+use Illuminate\Support\Facades\DB;
 
 class DocumentResource extends Resource
 {
@@ -938,14 +939,15 @@ class DocumentResource extends Resource
                 $gc(Tables\Columns\TextColumn::make('creator_names')
                     ->label('Creator')
                     ->state(fn (Document $record): array => $record->authorities
-                        ->map(fn (Authority $a): string => trim(implode(' ', array_filter([$a->given_names, $a->surname, $a->name_suffix]))))
+                        ->map(fn (Authority $a): string => self::creatorName($a))
                         ->filter()
                         ->values()
                         ->all())
                     ->listWithLineBreaks()
                     ->placeholder('—')
-                    // As the cell reads: given names first, a surname alone otherwise.
-                    ->sortable(query: fn (Builder $query, string $direction): Builder => TableSorts::authorityField($query, "COALESCE(NULLIF(sort_a.given_names, ''), NULLIF(sort_a.surname, ''))", $direction))
+                    // Client 2026-11-06: by surname, as the cell now reads, then
+                    // given names; given names alone when there is no surname.
+                    ->sortable(query: fn (Builder $query, string $direction): Builder => TableSorts::authorityField($query, self::creatorSortExpression(), $direction))
                     ->toggleable(), 'authorities'),
                 // Client 2026-10-29: "another column in the Documents to show the
                 // Flag along with the document — highlighting it with the chosen
@@ -1276,6 +1278,18 @@ class DocumentResource extends Resource
      *
      * @return list<string>
      */
+    /**
+     * Client 2026-11-06: the Creator cell reads surname first, "Abela, Giovanni",
+     * and a single name alone when only one is known.
+     */
+    public static function creatorName(Authority $authority): string
+    {
+        $given = trim(implode(' ', array_filter([$authority->given_names, $authority->name_suffix])));
+        $surname = trim((string) $authority->surname);
+
+        return $surname !== '' && $given !== '' ? $surname . ', ' . $given : $surname . $given;
+    }
+
     public static function openFlagLabels(Document $record): array
     {
         $labels = once(fn (): array => DocumentFlag::typeOptions());
@@ -1717,6 +1731,18 @@ class DocumentResource extends Resource
         // pagination-friendly (no count() rewrite quirks) and lets MySQL
         // reuse the existing index on `documents.identifier` for the
         // outer ORDER BY.
+    }
+
+    /** The Creator cell as SQL, so the sort follows what it reads. */
+    private static function creatorSortExpression(): string
+    {
+        $surname = "COALESCE(sort_a.surname, '')";
+        $given = "COALESCE(sort_a.given_names, '')";
+        $joined = DB::connection()->getDriverName() === 'sqlite'
+            ? "{$surname} || ' ' || {$given}"
+            : "CONCAT({$surname}, ' ', {$given})";
+
+        return "NULLIF(TRIM({$joined}), '')";
     }
 
     /**

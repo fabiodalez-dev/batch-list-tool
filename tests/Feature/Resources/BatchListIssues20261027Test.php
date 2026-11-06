@@ -123,7 +123,7 @@ it('shows every creator with the suffix after the surname, the museum location b
     }
 
     Livewire::test(ListDocuments::class)
-        ->assertTableColumnStateSet('creator_names', ['Giuseppe Grech', 'Carmelo Farrugia', 'Cristoforo Frendo Senior', 'Pietro Zammit'], $doc)
+        ->assertTableColumnStateSet('creator_names', ['Grech, Giuseppe', 'Farrugia, Carmelo', 'Frendo, Cristoforo Senior', 'Zammit, Pietro'], $doc)
         ->assertDontSee('and 1 more')
         ->assertTableColumnFormattedStateSet('museum_location', 'Showcase 6', $doc)
         ->assertTableColumnStateSet('digitised', 'https://w3id.org/vhmml/readingRoom/view/126946', $doc);

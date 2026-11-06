@@ -122,7 +122,7 @@ it('picks a flag type colour from a colour wheel, opening a legacy name as its c
         ->and(FlagType::cssColours()['mould_treatment'])->toBe('#123abc');
 });
 
-it('mixes AND and OR with an OR group inside the rules: (R16 OR R12) AND Bastardello (issue 4)', function (): void {
+it('mixes AND and OR with a join on each rule: R16 OR R12 AND Bastardello reads (R16 OR R12) AND Bastardello (issue 4, 2026-11-06)', function (): void {
     $bastardello = DocumentType::query()->create(['name' => 'Bastardello', 'identifier' => 'DT00010', 'is_active' => true]);
     $register = DocumentType::query()->create(['name' => 'Register Volume', 'identifier' => 'DT00098', 'is_active' => true]);
     $make = function (string $code, DocumentType $type): Document {
@@ -137,15 +137,12 @@ it('mixes AND and OR with an OR group inside the rules: (R16 OR R12) AND Bastard
     $r16register = $make('R16', $register);
     $r99 = $make('R99', $bastardello);
 
-    $code = fn (string $value): array => ['type' => 'authority_citing_code', 'data' => ['operator' => 'equals', 'settings' => ['text' => $value]]];
+    // Client 2026-11-06: the OR group was clunky; each rule names its join.
+    $code = fn (string $value, string $join): array => ['type' => 'authority_citing_code', 'data' => ['connector' => $join, 'operator' => 'equals', 'settings' => ['text' => $value]]];
     $rules = [
-        'either' => ['type' => 'or', 'data' => ['groups' => [
-            'a' => ['rules' => ['x' => $code('R16')]],
-            'b' => ['rules' => ['y' => $code('R12')]],
-            // An alternative left empty adds nothing, it does not match everything.
-            'c' => ['rules' => []],
-        ]]],
-        'type' => ['type' => 'documentTypeRef', 'data' => ['operator' => 'isRelatedTo', 'settings' => ['value' => [$bastardello->id]]]],
+        'a' => $code('R16', 'and'),
+        'b' => $code('R12', 'or'),
+        'type' => ['type' => 'documentTypeRef', 'data' => ['connector' => 'and', 'operator' => 'isRelatedTo', 'settings' => ['value' => [$bastardello->id]]]],
     ];
 
     Livewire::withQueryParams(['filters' => ['queryBuilder' => ['match' => 'all', 'rules' => $rules]]])
@@ -153,8 +150,6 @@ it('mixes AND and OR with an OR group inside the rules: (R16 OR R12) AND Bastard
         ->assertCanSeeTableRecords([$r16, $r12])
         ->assertCanNotSeeTableRecords([$r16register, $r99]);
 
-    // Livewire accepts the path of a value inside a group (it stopped at 10 levels).
-    expect(config('livewire.payload.max_nesting_depth'))->toBeGreaterThanOrEqual(13);
 });
 
 it('does not reuse a box remembered by the previous import in the same worker', function (): void {
