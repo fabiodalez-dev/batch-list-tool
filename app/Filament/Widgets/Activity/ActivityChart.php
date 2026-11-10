@@ -6,6 +6,7 @@ namespace App\Filament\Widgets\Activity;
 
 use App\Support\Reports\ActivitySeries;
 use Filament\Widgets\ChartWidget;
+use Filament\Widgets\Concerns\InteractsWithPageFilters;
 use Illuminate\Support\Carbon;
 use Illuminate\Support\Facades\Auth;
 use Illuminate\Support\Facades\Cache;
@@ -20,7 +21,12 @@ use Illuminate\Support\Facades\Cache;
  */
 class ActivityChart extends ChartWidget
 {
-    private const array PALETTE = ['#2563eb', '#f59e0b', '#dc2626', '#16a34a'];
+    // The Activity over time report's month range (from, to); the dashboard
+    // has none and shows the last twelve months.
+    use InteractsWithPageFilters;
+
+    /** NRA & NAF brand colours: knowledge, research centre, publications, conservation. */
+    private const array PALETTE = ['#4A6F77', '#C6A24E', '#912B36', '#746B64'];
 
     public string $kind = 'changes';
 
@@ -37,6 +43,7 @@ class ActivityChart extends ChartWidget
             'moves' => 'Moves per month',
             'disinfestations' => 'Disinfestations per month',
             'cataloguing' => 'Documents catalogued per month',
+            'collection' => 'Documents in the repository',
             default => 'Activity',
         };
     }
@@ -48,6 +55,7 @@ class ActivityChart extends ChartWidget
             'moves' => 'Documents between boxes, boxes and documents between locations — recorded moves only.',
             'disinfestations' => 'By disinfestation date of boxes and of documents.',
             'cataloguing' => 'Documents given a catalogue identifier, by the month it was given.',
+            'collection' => 'Total documents at the end of each month. A document counts from the day it was entered in the system, so the imported collection shows in the month of its import.',
             default => null,
         };
     }
@@ -58,18 +66,31 @@ class ActivityChart extends ChartWidget
     }
 
     /**
+     * @return list<string>
+     */
+    protected function months(): array
+    {
+        $from = $this->pageFilters['from'] ?? null;
+        $to = $this->pageFilters['to'] ?? null;
+
+        return ActivitySeries::months(12, is_string($from) ? $from : null, is_string($to) ? $to : null);
+    }
+
+    /**
      * @return array<string, mixed>
      */
     protected function getData(): array
     {
+        $months = $this->months();
         $series = Cache::remember(
-            'activity:' . $this->kind . ':u=' . (Auth::id() ?? 0),
+            'activity:' . $this->kind . ':u=' . (Auth::id() ?? 0) . ':' . $months[0] . '..' . end($months),
             now()->addMinutes(5),
             fn (): array => match ($this->kind) {
-                'moves' => ActivitySeries::moves(),
-                'disinfestations' => ActivitySeries::disinfestations(),
-                'cataloguing' => ActivitySeries::cataloguing(),
-                default => ActivitySeries::changes(),
+                'moves' => ActivitySeries::moves($months),
+                'disinfestations' => ActivitySeries::disinfestations($months),
+                'cataloguing' => ActivitySeries::cataloguing($months),
+                'collection' => ActivitySeries::collection($months),
+                default => ActivitySeries::changes($months),
             },
         );
 
@@ -90,7 +111,7 @@ class ActivityChart extends ChartWidget
             'datasets' => $datasets,
             'labels' => array_map(
                 static fn (string $m): string => Carbon::parse($m . '-01')->format('M Y'),
-                ActivitySeries::months(),
+                $months,
             ),
         ];
     }
@@ -103,7 +124,7 @@ class ActivityChart extends ChartWidget
         return [
             'scales' => [
                 'x' => ['stacked' => $this->kind === 'changes'],
-                'y' => ['stacked' => $this->kind === 'changes', 'beginAtZero' => true, 'ticks' => ['precision' => 0]],
+                'y' => ['stacked' => $this->kind === 'changes', 'beginAtZero' => $this->kind !== 'collection', 'ticks' => ['precision' => 0]],
             ],
             'plugins' => ['legend' => ['position' => 'bottom']],
         ];

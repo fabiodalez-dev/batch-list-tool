@@ -95,7 +95,7 @@ it('opens the report with its charts, none of them polling', function (): void {
 
 it('hides the whole-archive changes chart from those who may not read the audit trail', function (): void {
     $page = new ActivityOverTimeReport;
-    $kinds = fn (): array => array_map(fn ($w) => $w->getProperties()['kind'], (fn () => $this->getHeaderWidgets())->call($page));
+    $kinds = fn (): array => array_map(fn ($w) => $w->getProperties()['kind'], $page->charts());
 
     expect($kinds())->toContain('changes');
 
@@ -105,4 +105,45 @@ it('hides the whole-archive changes chart from those who may not read the audit 
     $this->actingAs($viewer);
 
     expect(in_array('changes', $kinds(), true))->toBe($viewer->can('view_any_audit'));
+});
+
+it('draws the months of a chosen range, turned round when reversed (client 2026-11-10)', function (): void {
+    Carbon::setTestNow('2026-11-10 10:00:00');
+
+    expect(ActivitySeries::months(12, '2026-01', '2026-03'))->toBe(['2026-01', '2026-02', '2026-03'])
+        ->and(ActivitySeries::months(12, '2026-03', '2026-01'))->toBe(['2026-01', '2026-02', '2026-03'])
+        ->and(ActivitySeries::months(12, '2026-09', null))->toBe(['2026-09', '2026-10', '2026-11'])
+        ->and(ActivitySeries::months(12, null, '2026-03'))->toHaveCount(12)
+        ->and(ActivitySeries::months(12, 'nonsense', '2026-13'))->toHaveCount(12)
+        ->and(ActivitySeries::months(12, '1990-01', '2026-11'))->toHaveCount(ActivitySeries::MAX_MONTHS);
+});
+
+it('counts the documents the repository held at the end of each month', function (): void {
+    Carbon::setTestNow('2026-11-10 10:00:00');
+    $doc = fn (string $id, string $created): Document => tap(Document::withoutGlobalScope(RepositoryScope::class)->create(['identifier' => $id, 'repository_id' => $this->repo->id, 'series_id' => $this->series->id, 'document_type' => 'T']), function (Document $d) use ($created): void {
+        $d->forceFill(['created_at' => $created])->saveQuietly();
+    });
+    $doc('C-0', '2025-12-20');
+    $doc('C-1', '2026-02-03');
+    $doc('C-2', '2026-02-25');
+    $gone = $doc('C-3', '2026-03-01');
+    $gone->delete();
+    $gone->forceFill(['deleted_at' => '2026-04-02'])->saveQuietly();
+
+    $totals = ActivitySeries::collection(ActivitySeries::months(12, '2026-01', '2026-05'))['Documents in the repository'];
+
+    expect($totals)->toBe([1, 3, 4, 3, 3]);
+});
+
+it('passes the chosen range to the charts of the page', function (): void {
+    Carbon::setTestNow('2026-11-10 10:00:00');
+
+    Livewire::test(ActivityChart::class, ['kind' => 'collection', 'pageFilters' => ['from' => '2026-06', 'to' => '2026-08']])
+        ->assertOk()
+        ->assertSee('Documents in the repository');
+
+    Livewire::test(ActivityOverTimeReport::class)
+        ->assertOk()
+        ->assertSee('From month')
+        ->assertSee('To month');
 });

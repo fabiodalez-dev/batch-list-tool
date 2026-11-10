@@ -29,15 +29,42 @@ use OwenIt\Auditing\Models\Audit;
  */
 final class ActivitySeries
 {
+    /** The longest range a chart draws: ten years of months. */
+    public const int MAX_MONTHS = 120;
+
     /**
+     * The last $count months, or the months from $from to $to ('YYYY-MM',
+     * either may be blank: client 2026-11-10 asked for a date range). A
+     * reversed range is turned round, and a range longer than MAX_MONTHS
+     * keeps its last MAX_MONTHS.
+     *
      * @return list<string> 'YYYY-MM', oldest first
      */
-    public static function months(int $count = 12): array
+    public static function months(int $count = 12, ?string $from = null, ?string $to = null): array
     {
+        $parse = static function (?string $month): ?Carbon {
+            if ($month === null || preg_match('/^\d{4}-\d{2}$/', $month) !== 1) {
+                return null;
+            }
+            try {
+                return Carbon::createFromFormat('Y-m-d', $month . '-01')?->startOfMonth();
+            } catch (\Throwable) {
+                return null;
+            }
+        };
+
+        $end = $parse($to) ?? Carbon::now()->startOfMonth();
+        $start = $parse($from) ?? $end->copy()->subMonths($count - 1);
+        if ($start->greaterThan($end)) {
+            [$start, $end] = [$end, $start];
+        }
+        if ((int) $start->diffInMonths($end) >= self::MAX_MONTHS) {
+            $start = $end->copy()->subMonths(self::MAX_MONTHS - 1);
+        }
+
         $months = [];
-        $start = Carbon::now()->startOfMonth()->subMonths($count - 1);
-        for ($i = 0; $i < $count; $i++) {
-            $months[] = $start->copy()->addMonths($i)->format('Y-m');
+        for ($month = $start->copy(); $month->lessThanOrEqualTo($end); $month->addMonth()) {
+            $months[] = $month->format('Y-m');
         }
 
         return $months;
@@ -46,9 +73,9 @@ final class ActivitySeries
     /**
      * @return array<string, list<int>> event => counts per month
      */
-    public static function changes(int $count = 12): array
+    public static function changes(?array $months = null): array
     {
-        $months = self::months($count);
+        $months ??= self::months();
         $series = [];
         foreach (['created' => 'Created', 'updated' => 'Changed', 'deleted' => 'Deleted'] as $event => $label) {
             $series[$label] = self::perMonth(Audit::query()->where('event', $event), 'created_at', $months);
@@ -60,9 +87,9 @@ final class ActivitySeries
     /**
      * @return array<string, list<int>>
      */
-    public static function moves(int $count = 12): array
+    public static function moves(?array $months = null): array
     {
-        $months = self::months($count);
+        $months ??= self::months();
 
         return [
             'Documents moved between boxes' => self::perMonth(
@@ -78,9 +105,9 @@ final class ActivitySeries
     /**
      * @return array<string, list<int>>
      */
-    public static function disinfestations(int $count = 12): array
+    public static function disinfestations(?array $months = null): array
     {
-        $months = self::months($count);
+        $months ??= self::months();
 
         return [
             'Boxes disinfested' => self::perMonth(Box::query(), 'disinfestation_date', $months),
@@ -95,9 +122,9 @@ final class ActivitySeries
      *
      * @return array<string, list<int>>
      */
-    public static function cataloguing(int $count = 12): array
+    public static function cataloguing(?array $months = null): array
     {
-        $months = self::months($count);
+        $months ??= self::months();
         $counts = array_fill_keys($months, 0);
 
         Audit::query()
@@ -120,6 +147,38 @@ final class ActivitySeries
             });
 
         return ['Documents catalogued' => array_values($counts)];
+    }
+
+    /**
+     * How many documents the repository held at the end of each month (client
+     * 2026-11-10: "to be able to see how much we are expanding the
+     * collection"): those entered before the first month and not deleted by
+     * then, plus each month's new documents, less those deleted. A document
+     * counts from the day it was entered in the system: the imported
+     * collection appears in the month it was imported.
+     *
+     * @param list<string>|null $months
+     * @return array<string, list<int>>
+     */
+    public static function collection(?array $months = null): array
+    {
+        $months ??= self::months();
+        $start = Carbon::parse($months[0] . '-01')->startOfDay();
+
+        $held = Document::withTrashed()
+            ->where('created_at', '<', $start)
+            ->where(fn (Builder $q) => $q->whereNull('deleted_at')->orWhere('deleted_at', '>=', $start))
+            ->count();
+        $added = self::perMonth(Document::withTrashed(), 'created_at', $months);
+        $removed = self::perMonth(Document::onlyTrashed(), 'deleted_at', $months);
+
+        $totals = [];
+        foreach ($months as $i => $_) {
+            $held += $added[$i] - $removed[$i];
+            $totals[] = $held;
+        }
+
+        return ['Documents in the repository' => $totals];
     }
 
     /**

@@ -142,7 +142,11 @@
     --gray-950: var(--coffee-950);
 
     /* Typography stacks */
-    --font-display: 'Fraunces', 'Times New Roman', Georgia, serif;
+    /* Client 2026-11-10 (NRA & NAF Brand Identity Guidelines 2024): Gill Sans
+       Nova is the primary typeface. It is an Adobe font, not served here; the
+       stack uses it where installed and falls back to Gill Sans (macOS) and
+       Gill Sans MT (Windows with Office), then Inter. */
+    --font-display: 'Gill Sans Nova', 'Gill Sans', 'Gill Sans MT', 'Inter', system-ui, sans-serif;
     --font-sans: 'Inter', system-ui, -apple-system, 'Segoe UI', sans-serif;
     --font-mono: 'JetBrains Mono', ui-monospace, SFMono-Regular, Menlo, Monaco, monospace;
 }
@@ -1144,4 +1148,138 @@ body:has(.fi-simple-main),
 /* Each rule's AND / OR / AND NOT, kept narrow above the rule it joins. */
 .nra-connector-rules .nra-rule-connector {
     max-width: 9rem;
+}
+
+
+/* ------------------------------------------------------------------ */
+/* Block 9 — NAF Knowledge chrome (client 2026-11-10)                  */
+/* ------------------------------------------------------------------ */
+/*
+ * "Can we incorporate more the aesthetics of the department? The Department
+ * is NAF Knowledge." The brand guidelines give NAF Knowledge its own colour,
+ * #4A6F77 (RGB 74 111 119), and allow the logo "reversed in white". The
+ * sidebar and topbar take that colour in light and dark mode alike, with the
+ * official white logo on it; the page body stays the cool paper of Block 3.
+ * White text on #3E5D64 is 7:1, on #4A6F77 5.4:1 (WCAG AA either way).
+ *
+ * Selectors are prefixed with :is(html) / .dark so they outrank both the
+ * light rules of Block 5 and the dark rules of Block 3b.
+ */
+:root {
+    --naf-knowledge: #4A6F77;
+    --naf-chrome: #3E5D64;          /* brand-600: the sidebar */
+    --naf-chrome-top: #4A6F77;      /* the topbar, the exact department colour */
+    --naf-chrome-line: rgb(255 255 255 / 0.12);
+    --naf-chrome-hover: rgb(255 255 255 / 0.10);
+    --naf-chrome-active: rgb(255 255 255 / 0.16);
+    --naf-chrome-text: #EEF3F4;
+    --naf-chrome-muted: #BCCDD0;    /* brand-200 */
+    --naf-gold: #C6A24E;            /* NAF research centre — the accent on the chrome */
+}
+
+:is(html, .dark) .fi-sidebar {
+    background-color: var(--naf-chrome);
+    border-right: 1px solid var(--naf-chrome-line);
+}
+
+:is(html, .dark) .fi-sidebar-header,
+:is(html, .dark) .fi-topbar,
+:is(html, .dark) .fi-topbar > nav {
+    background-color: var(--naf-chrome-top);
+    box-shadow: 0 1px 0 var(--naf-chrome-line);
+    border-bottom: 0;
+}
+
+:is(html, .dark) .fi-sidebar-nav-groups,
+:is(html, .dark) .fi-sidebar-item-btn,
+:is(html, .dark) .fi-sidebar-item-label,
+:is(html, .dark) .fi-sidebar-group-button,
+:is(html, .dark) .fi-topbar .fi-icon-btn {
+    color: var(--naf-chrome-text);
+}
+
+:is(html, .dark) .fi-sidebar-item-icon,
+:is(html, .dark) .fi-sidebar-group-collapse-btn,
+:is(html, .dark) .fi-sidebar-group-label {
+    color: var(--naf-chrome-muted);
+}
+
+:is(html, .dark) .fi-sidebar-item-btn:hover,
+:is(html, .dark) .fi-sidebar-item-btn:focus-visible {
+    background-color: var(--naf-chrome-hover);
+    color: #fff;
+}
+
+:is(html, .dark) .fi-sidebar-item.fi-active > .fi-sidebar-item-btn,
+:is(html, .dark) .fi-sidebar-item-btn[aria-current="page"] {
+    background-color: var(--naf-chrome-active);
+    color: #fff;
+    font-weight: 600;
+    box-shadow: inset 2px 0 0 var(--naf-gold);
+}
+
+:is(html, .dark) .fi-sidebar-item.fi-active .fi-sidebar-item-icon,
+:is(html, .dark) .fi-sidebar-item-btn[aria-current="page"] .fi-sidebar-item-icon {
+    color: var(--naf-gold);
+}
+
+:is(html, .dark) .fi-sidebar-item-grouped-border-part,
+:is(html, .dark) .fi-sidebar-item-grouped-border-part-not-first,
+:is(html, .dark) .fi-sidebar-item-grouped-border-part-not-last {
+    background-color: var(--naf-chrome-line);
+}
+
+:is(html, .dark) .fi-sidebar-item.fi-active .fi-sidebar-item-grouped-border-part {
+    background-color: var(--naf-gold);
+}
+
+:is(html, .dark) .fi-sidebar .fi-badge {
+    background-color: var(--naf-chrome-active);
+    color: var(--naf-chrome-text);
+    --tw-ring-color: transparent;
+}
+
+/* The white logo on the department colour, in light mode too (the coloured
+   logo stays on the light login page). */
+:is(html) :is(.fi-topbar, .fi-sidebar-header) .fi-logo-light {
+    display: none !important;
+}
+
+:is(html) :is(.fi-topbar, .fi-sidebar-header) .fi-logo-dark {
+    display: flex !important;
+}
+
+/* Brand name text when no logo image is set. */
+:is(html, .dark) :is(.fi-topbar, .fi-sidebar-header) .fi-logo {
+    color: #fff;
+    font-family: var(--font-display);
+}
+
+/* The topbar search and repository picker stay paper fields on the colour. */
+:is(html, .dark) .fi-topbar .fi-input-wrp {
+    background-color: var(--cream-50);
+}
+
+/* Headings and the stat figures in the brand typeface. */
+.fi-wi-stats-overview-stat-value,
+.fi-sidebar-group-label,
+.fi-breadcrumbs {
+    font-family: var(--font-display);
+}
+
+.fi-wi-stats-overview-stat-value {
+    font-weight: 500;
+    letter-spacing: 0;
+}
+
+/* In dark mode the department colour, deepened, so the chrome does not glare
+   beside the dark page. */
+.dark .fi-sidebar {
+    background-color: var(--brand-900);
+}
+
+.dark .fi-sidebar-header,
+.dark .fi-topbar,
+.dark .fi-topbar > nav {
+    background-color: var(--brand-800);
 }

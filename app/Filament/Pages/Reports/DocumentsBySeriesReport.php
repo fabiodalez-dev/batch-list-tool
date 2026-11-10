@@ -9,6 +9,7 @@ use App\Filament\Pages\Reports\Concerns\ExportsWhatIsOnScreen;
 use App\Filament\Pages\Reports\Concerns\HasReportTemplates;
 use App\Filament\Pages\Reports\Filters\DateRangeFilter;
 use App\Models\Document;
+use App\Models\Series;
 use App\Models\ReportTemplate;
 use App\Support\Reports\ReportRenderer;
 use Filament\Actions\Action;
@@ -18,6 +19,8 @@ use Filament\Tables\Concerns\InteractsWithTable;
 use Filament\Tables\Contracts\HasTable;
 use Filament\Tables\Table;
 use Illuminate\Database\Eloquent\Builder;
+use Illuminate\Database\Query\Builder as QueryBuilder;
+use Illuminate\Support\Facades\DB;
 use Symfony\Component\HttpFoundation\BinaryFileResponse;
 use Symfony\Component\HttpFoundation\Response;
 use Symfony\Component\HttpFoundation\StreamedResponse;
@@ -66,12 +69,16 @@ class DocumentsBySeriesReport extends Page implements HasTable
     {
         return $table
             ->query(fn (): Builder => $this->reportQuery())
-            ->defaultSort('document_count', 'desc')
+            // Client 2026-11-10: a parent series (R, I…) totals the
+            // documents of all its subseries; level of description and
+            // hierarchy shown, parents listed before their subseries.
+            ->defaultSort(fn (Builder $query): Builder => $query->orderByRaw('CASE WHEN sa.path IS NULL THEN 1 ELSE 0 END')->orderBy('sa.path'))
             ->columns([
                 Tables\Columns\TextColumn::make('series_code')
                     ->label('Code')
-                    ->sortable()
-                    ->searchable()
+                    ->sortable(query: fn (Builder $query, string $direction): Builder => $query->orderBy('series.code', $direction === 'desc' ? 'desc' : 'asc'))
+                    ->searchable(query: fn (Builder $query, string $search): Builder => $query->where('series.code', 'like', '%' . $search . '%'))
+                    ->weight(fn ($record): ?string => ($record->getAttributes()['is_parent'] ?? 0) ? 'bold' : null)
                     ->formatStateUsing(fn ($state): string => $state === null ? '(unassigned)' : (string) $state),
 
                 Tables\Columns\TextColumn::make('series_title')
@@ -79,8 +86,21 @@ class DocumentsBySeriesReport extends Page implements HasTable
                     ->limit(60)
                     ->placeholder('—'),
 
+                Tables\Columns\TextColumn::make('level_of_description')
+                    ->label('Level of description')
+                    ->badge()
+                    ->placeholder('—'),
+
+                Tables\Columns\TextColumn::make('hierarchy')
+                    ->label('Hierarchy')
+                    ->badge()
+                    ->color('gray')
+                    ->placeholder('—')
+                    ->sortable(query: fn (Builder $query, string $direction): Builder => $query->orderBy('sa.path', $direction === 'desc' ? 'desc' : 'asc')),
+
                 Tables\Columns\TextColumn::make('document_count')
                     ->label('# Documents')
+                    ->tooltip(fn ($record): ?string => ($record->getAttributes()['is_parent'] ?? 0) ? 'Including the documents of its subseries' : null)
                     ->alignEnd()
                     ->sortable()
                     ->numeric(),
@@ -219,6 +239,8 @@ class DocumentsBySeriesReport extends Page implements HasTable
             columns: [
                 'Code' => 'series_code',
                 'Title' => 'series_title',
+                'Level of description' => 'level_of_description',
+                'Hierarchy' => 'hierarchy',
                 '# Documents' => 'document_count',
             ],
             rows: $this->collectRows(),
@@ -232,7 +254,7 @@ class DocumentsBySeriesReport extends Page implements HasTable
         return ReportRenderer::renderPdf(
             title: 'Documents by subseries',
             slug: 'documents-by-series',
-            headers: ['Code', 'Title', '# Documents'],
+            headers: ['Code', 'Title', 'Level of description', 'Hierarchy', '# Documents'],
             rows: $this->collectRows(),
         );
     }
@@ -257,6 +279,8 @@ class DocumentsBySeriesReport extends Page implements HasTable
         return [
             'Code' => fn (array $r): string => $r['series_code'] === null ? '(unassigned)' : (string) $r['series_code'],
             'Title' => fn (array $r) => $r['series_title'],
+            'Level of description' => fn (array $r) => $r['level_of_description'],
+            'Hierarchy' => fn (array $r) => $r['hierarchy'],
             '# Documents' => fn (array $r): int => (int) ($r['document_count'] ?? 0),
         ];
     }
@@ -290,17 +314,74 @@ class DocumentsBySeriesReport extends Page implements HasTable
             ->all();
     }
 
+    /**
+     * One row per series, counting the documents of the series and of all
+     * its subseries. Each document joins once to its own series and once to
+     * every ancestor (series_ancestry below), so the document filters still
+     * work on documents.* and a parent's total is its own documents plus
+     * those of its subseries.
+     */
     protected function reportQuery(): Builder
     {
         return Document::query()
-            ->leftJoin('series', 'series.id', '=', 'documents.series_id')
+            ->leftJoinSub(self::seriesAncestry(), 'sa', 'sa.descendant_id', '=', 'documents.series_id')
+            ->leftJoin('series', 'series.id', '=', 'sa.ancestor_id')
             ->selectRaw(
-                'documents.series_id as id,'
+                'COALESCE(sa.ancestor_id, 0) as id,'
                 . ' series.code as series_code,'
                 . ' series.title as series_title,'
+                . ' series.level_of_description as level_of_description,'
+                . ' sa.path as hierarchy,'
+                . ' sa.is_parent as is_parent,'
                 . ' COUNT(documents.id) as document_count'
             )
-            ->groupBy('documents.series_id', 'series.code', 'series.title');
+            ->groupBy('sa.ancestor_id', 'series.code', 'series.title', 'series.level_of_description', 'sa.path', 'sa.is_parent');
+    }
+
+    /**
+     * (descendant_id, ancestor_id, path, is_parent) for every series and each
+     * of its ancestors, itself included: "REG" gives (REG, REG, "R › REG") and
+     * (REG, R, "R"). A literal table: there are a few dozen series.
+     */
+    public static function seriesAncestry(): QueryBuilder
+    {
+        $all = Series::withoutGlobalScopes()->whereNull('deleted_at')->get(['id', 'code', 'parent_id'])->keyBy('id');
+        $parents = $all->pluck('parent_id')->filter()->flip();
+
+        $path = function (int $id) use ($all): array {
+            $chain = [];
+            $guard = 0;
+            for ($node = $all->get($id); $node !== null && $guard++ < 100; $node = $node->parent_id !== null ? $all->get($node->parent_id) : null) {
+                array_unshift($chain, $node);
+            }
+
+            return $chain;
+        };
+
+        $rows = [];
+        foreach ($all as $series) {
+            $chain = $path((int) $series->id);
+            foreach ($chain as $depth => $ancestor) {
+                $rows[] = [
+                    (int) $series->id,
+                    (int) $ancestor->id,
+                    implode(' › ', array_map(static fn ($n): string => (string) $n->code, array_slice($chain, 0, $depth + 1))),
+                    $parents->has($ancestor->id) ? 1 : 0,
+                ];
+            }
+        }
+
+        if ($rows === []) {
+            return DB::query()->selectRaw('NULL as descendant_id, NULL as ancestor_id, NULL as path, 0 as is_parent')->whereRaw('1 = 0');
+        }
+
+        $query = null;
+        foreach ($rows as $row) {
+            $select = DB::query()->selectRaw('? as descendant_id, ? as ancestor_id, ? as path, ? as is_parent', $row);
+            $query = $query === null ? $select : $query->unionAll($select);
+        }
+
+        return $query;
     }
 
     /**
@@ -309,7 +390,7 @@ class DocumentsBySeriesReport extends Page implements HasTable
     protected function collectRows(): array
     {
         $rows = [];
-        $records = $this->exportQuery()->orderByDesc('document_count')->get();
+        $records = $this->exportQuery()->orderByRaw('CASE WHEN sa.path IS NULL THEN 1 ELSE 0 END')->orderBy('sa.path')->get();
 
         foreach ($records as $r) {
             $attrs = $r->getAttributes();
@@ -318,6 +399,8 @@ class DocumentsBySeriesReport extends Page implements HasTable
             $rows[] = [
                 $code === null ? '(unassigned)' : (string) $code,
                 isset($attrs['series_title']) ? (string) $attrs['series_title'] : null,
+                isset($attrs['level_of_description']) ? (string) $attrs['level_of_description'] : null,
+                isset($attrs['hierarchy']) ? (string) $attrs['hierarchy'] : null,
                 (int) ($attrs['document_count'] ?? 0),
             ];
         }
@@ -333,13 +416,15 @@ class DocumentsBySeriesReport extends Page implements HasTable
     protected function collectRowsAsAssoc(): array
     {
         $rows = [];
-        $records = $this->exportQuery()->orderByDesc('document_count')->get();
+        $records = $this->exportQuery()->orderByRaw('CASE WHEN sa.path IS NULL THEN 1 ELSE 0 END')->orderBy('sa.path')->get();
 
         foreach ($records as $r) {
             $attrs = $r->getAttributes();
             $rows[] = [
                 'series_code' => $attrs['series_code'] ?? null,
                 'series_title' => $attrs['series_title'] ?? null,
+                'level_of_description' => $attrs['level_of_description'] ?? null,
+                'hierarchy' => $attrs['hierarchy'] ?? null,
                 'document_count' => (int) ($attrs['document_count'] ?? 0),
             ];
         }

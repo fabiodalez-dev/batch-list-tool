@@ -4,11 +4,7 @@ namespace App\Providers\Filament;
 
 use App\Filament\Pages\Auth\EditProfile;
 use App\Filament\Pages\Auth\TwoFactorLogin;
-use App\Filament\Widgets\DocumentsPerBatchChart;
-use App\Filament\Widgets\DocumentsPerSeriesChart;
-use App\Filament\Widgets\PendingDisinfestationTable;
-use App\Filament\Widgets\RecentActivityWidget;
-use App\Filament\Widgets\StatsOverviewWidget;
+use App\Filament\Pages\Dashboard;
 use App\Http\Middleware\ApplyUserPreferences;
 use App\Http\Middleware\EnsurePasswordChanged;
 use App\Settings\BrandingSettings;
@@ -19,7 +15,6 @@ use Filament\Http\Middleware\Authenticate;
 use Filament\Http\Middleware\AuthenticateSession;
 use Filament\Http\Middleware\DisableBladeIconComponents;
 use Filament\Http\Middleware\DispatchServingFilamentEvent;
-use Filament\Pages;
 use Filament\Panel;
 use Filament\PanelProvider;
 use Filament\View\PanelsRenderHook;
@@ -126,17 +121,10 @@ class AdminPanelProvider extends PanelProvider
             ->discoverResources(in: app_path('Filament/Resources'), for: 'App\\Filament\\Resources')
             ->discoverPages(in: app_path('Filament/Pages'), for: 'App\\Filament\\Pages')
             ->pages([
-                Pages\Dashboard::class,
+                Dashboard::class,
             ])
             ->discoverWidgets(in: app_path('Filament/Widgets'), for: 'App\\Filament\\Widgets')
-            // Dashboard widgets — order matters: highest-value above the fold.
-            ->widgets([
-                StatsOverviewWidget::class,
-                PendingDisinfestationTable::class,
-                DocumentsPerSeriesChart::class,
-                DocumentsPerBatchChart::class,
-                RecentActivityWidget::class,
-            ])
+            // The dashboard's widgets and their order: App\Filament\Pages\Dashboard.
             ->middleware([
                 EncryptCookies::class,
                 AddQueuedCookiesToResponse::class,

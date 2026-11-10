@@ -36,7 +36,7 @@ use Illuminate\Support\Facades\Cache;
  *   2. Documents by creator / notary
  *   3. Documents by series
  *   4. Documents pending disinfestation
- *   5. Box movement history
+ *   5. Document movement history
  *   6. Flags by type (RFQ APP2-xviii)
  *
  * Below the canned-report grid the page also lists the saved
@@ -148,8 +148,8 @@ class Reports extends Page
             ],
             [
                 'key' => 'movements',
-                'title' => 'Box movement history',
-                'description' => 'Chronological log of box-to-box transfers, filterable by date.',
+                'title' => 'Document movement history',
+                'description' => 'Documents moved between boxes: when, from which box to which, why and by whom, with catalogue identifier, authority, volume, creator and dates.',
                 'icon' => 'heroicon-o-arrow-path',
                 'url' => BoxMovementHistoryReport::getUrl(),
                 'count' => $counts['movements'] . ' movements',
@@ -258,7 +258,7 @@ class Reports extends Page
             ReportTemplate::SOURCE_RAS_NRA_RECONCILIATION => 'RAS ↔ NRA reconciliation',
             ReportTemplate::SOURCE_STOCK_TAKE => 'Stock take',
             ReportTemplate::SOURCE_BOXES_READY_TO_DESTROY => 'Boxes ready to be destroyed',
-            ReportTemplate::SOURCE_BOX_MOVEMENTS => 'Box movement history',
+            ReportTemplate::SOURCE_BOX_MOVEMENTS => 'Document movement history',
             ReportTemplate::SOURCE_FLAGS_BY_TYPE => 'Flags by type',
             ReportTemplate::SOURCE_DOCUMENTS => 'Documents',
             default => $source,
