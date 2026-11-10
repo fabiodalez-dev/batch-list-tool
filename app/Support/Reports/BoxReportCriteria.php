@@ -46,8 +46,12 @@ final class BoxReportCriteria
 
         return $query
             ->orderByRaw("CASE WHEN COALESCE({$type}, 'RAS') = 'RAS' THEN 0 ELSE 1 END {$dir}")
-            ->orderByRaw("{$type} {$dir}")
+            // A box with no type reads as RAS (as shortLabel() does), so it
+            // sorts with the RAS boxes, not ahead of them.
+            ->orderByRaw("COALESCE({$type}, 'RAS') {$dir}")
             ->orderByRaw("CASE WHEN {$batch} IS NULL OR {$batch} = '' THEN 1 ELSE 0 END {$dir}")
+            // Text batch numbers ("Unknown") after the numbered ones.
+            ->orderByRaw("CASE WHEN CAST({$batch} AS UNSIGNED) = 0 AND {$batch} <> '0' THEN 1 ELSE 0 END {$dir}")
             ->orderByRaw("CAST({$batch} AS UNSIGNED) {$dir}")
             ->orderByRaw("{$batch} {$dir}")
             ->orderByRaw("CAST({$number} AS UNSIGNED) {$dir}")
