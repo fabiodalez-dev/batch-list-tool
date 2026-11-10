@@ -8,6 +8,7 @@ use App\Filament\Concerns\ExplainsPage;
 use App\Filament\Concerns\ExportsLikeTheTemplate;
 use App\Filament\Imports\DocumentImporter;
 use App\Filament\Pages\ImportWizard;
+use App\Filament\Pages\UserGuide;
 use App\Filament\Resources\DocumentResource;
 use App\Models\CustomFieldDefinition;
 use App\Models\Document;
@@ -166,6 +167,8 @@ class ListDocuments extends ListRecords
                 ->visible(fn () => auth()->user()?->can('create', Document::class) ?? false),
 
             Actions\CreateAction::make(),
+
+            UserGuide::helpAction('find-documents-with-search-and-filters'),
         ];
     }
 

@@ -265,6 +265,13 @@ class Reports extends Page
         };
     }
 
+    protected function getHeaderActions(): array
+    {
+        return [
+            UserGuide::helpAction('run-and-export-reports'),
+        ];
+    }
+
     /**
      * @return array<string, mixed>
      */
