@@ -16,6 +16,7 @@ use App\Filament\Pages\Reports\DocumentsByCreatorReport;
 use App\Filament\Pages\Reports\DocumentsBySeriesReport;
 use App\Filament\Pages\Reports\FlagsByTypeReport;
 use App\Filament\Pages\Reports\PendingDisinfestationReport;
+use App\Filament\Pages\Reports\RasReconciliationReport;
 use App\Filament\Pages\Settings\AuditSettingsPage;
 use App\Filament\Pages\Settings\BackupHealthPage;
 use App\Filament\Pages\Settings\BrandingPage;
@@ -148,6 +149,12 @@ Like the other report pages it supports selecting the reporting dimension, apply
 
 The filters intentionally mirror the standalone flags dashboard so you don\'t have to learn a new vocabulary moving between the two. Use this report to triage outstanding data-quality and conservation issues, drive remediation, and track resolution over time. Results export to CSV and PDF, and the configured view can be saved as a report template. Flags carry a denormalised repository id, so the report is automatically scoped to your repository for non-admin users.',
                 'refs' => 'RFQ §3.1.12 (replace colour-coding with searchable/filterable/reportable flags) · Appendix 2 (xviii) · §3.2.2 (export, save templates)',
+            ],
+            RasReconciliationReport::class => [
+                'body' => 'Upload the export RAS sends (Excel or CSV) and the system matches it with our RAS boxes: barcode (Column 1), RAS reference ARK/box-batch (Column 4, e.g. ARK/054-4 is box 54 of batch 4) and status IN / OUT / PERM_OUT (Column 6). Only the rows that do not tally are listed: status differs, barcode differs, batch / box differs, only in RAS, only in our system. Untick "Discrepancies only" to see the reconciled rows too.
+
+An earlier barcode of one of our boxes (kept in its barcode history) is matched as well, with the status it had when it was replaced. After correcting our records, press "Compare again" to recheck the same upload. The latest upload per repository is kept, with who uploaded it and when.',
+                'refs' => 'Client feedback 2026-11-10, Report 1 (RAS - NRA reconciliation) · §3.2.2 (export)',
             ],
             PendingDisinfestationReport::class => [
                 'body' => 'This report surfaces the actionable disinfestation backlog: every document whose disinfestation date is still empty and whose current box is not PERM OUT (PERM OUT documents are off the floor and don\'t need fumigation). Disinfestation is a mandatory pest-control treatment in the acquisition → storage → disinfestation → cataloguing → migration workflow — documents cannot migrate back to the NRA, and cannot be marked PERM OUT, until it is recorded.
