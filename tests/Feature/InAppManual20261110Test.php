@@ -80,7 +80,7 @@ it('renders the overview and an article for a user with no special role', functi
 
     $this->get(UserGuide::getUrl())
         ->assertOk()
-        ->assertSee('Archive Management Tool')
+        ->assertSee('Logistics Tool')
         ->assertSee('Part 1 · Getting started');
 
     $this->get(UserGuide::getUrl(['article' => 'find-documents-with-search-and-filters']))

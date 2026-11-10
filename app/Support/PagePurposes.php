@@ -55,7 +55,7 @@ use App\Filament\Resources\VolumeResource\Pages\ListVolumes;
  * Central registry of per-page "About this page" explanations.
  *
  * Each entry explains what a Filament page is for, in the language of the NRA
- * Batch List Tool requirements (RFQ-2026-06 Appendix 1), so an operator
+ * Logistics Tool requirements (RFQ-2026-06 Appendix 1), so an operator
  * (Administrator / Reading Room / General) understands the page's role in the
  * acquisition -> storage -> disinfestation -> cataloguing -> migration workflow.
  *
@@ -72,11 +72,11 @@ class PagePurposes
     {
         return [
             ListDocuments::class => [
-                'body' => "The Documents register is the heart of the Batch List — one row per notarial document (a register copy or loose sheet). Track each document through its lifecycle: acquisition → storage → disinfestation → cataloguing → migration to the NRA.\n\nSearch by current AND past identifiers and volume numbers, filter (e.g. uncatalogued documents, missing disinfestation dates), and move a document between boxes through the audited \"Move to box\" action. A document cannot be marked PERM OUT without a disinfestation date.",
+                'body' => "The Documents register is the heart of the Logistics Tool — one row per notarial document (a register copy or loose sheet). Track each document through its lifecycle: acquisition → storage → disinfestation → cataloguing → migration to the NRA.\n\nSearch by current AND past identifiers and volume numbers, filter (e.g. uncatalogued documents, missing disinfestation dates), and move a document between boxes through the audited \"Move to box\" action. A document cannot be marked PERM OUT without a disinfestation date.",
                 'refs' => 'RFQ §3.1.1, §3.1.6, §3.2.1 · Appendix 1 rule 2 · Glossary: Document',
             ],
             PreferencesPage::class => [
-                'body' => 'Your personal Preferences page. It does not touch any archival record — it tailors how the Batch List Tool behaves for you, the signed-in user, so day-to-day data entry and review stay quick and comfortable.
+                'body' => 'Your personal Preferences page. It does not touch any archival record — it tailors how the Logistics Tool behaves for you, the signed-in user, so day-to-day data entry and review stay quick and comfortable.
 
 Three settings are saved against your own account: the default table page size (10/25/50/100 rows shown per page in every register), the interface Language (English or Italiano, blank = system default), and the Display timezone used when dates and times are rendered. None of these change the underlying data, only your view of it.
 
@@ -220,7 +220,7 @@ For Notary Accessions a batch is allocated per accession (in the 30+ range), and
                 'refs' => 'RFQ §3.1.1, §3.1.3 · Appendix 2: RAS Box (Accession) · Glossary: Accession',
             ],
             ListAudits::class => [
-                'body' => 'This is the audit log: a read-only, searchable record of every change made anywhere in the Batch List Tool. Each row answers "who changed what, when" — the When (timestamp), the Who (the user, or a dash for system actions), the event (created / updated / deleted / restored, plus impersonation start/end), the Model and Record ID that was touched, and optionally the originating IP address and user agent. Opening a row (View) shows the field-by-field old value and new value for that change.
+                'body' => 'This is the audit log: a read-only, searchable record of every change made anywhere in the Logistics Tool. Each row answers "who changed what, when" — the When (timestamp), the Who (the user, or a dash for system actions), the event (created / updated / deleted / restored, plus impersonation start/end), the Model and Record ID that was touched, and optionally the originating IP address and user agent. Opening a row (View) shows the field-by-field old value and new value for that change.
 
 In the NRA workflow the audit trail is the accountability backbone across the whole lifecycle — acquisition, storage, disinfestation, cataloguing and migration. Because the legacy spreadsheet had no way to track who edited a cell, every box movement, barcode status change (IN / OUT / PERM OUT), disinfestation date and metadata edit is now captured automatically here so the institution can reconstruct the provenance of any decision.
 
@@ -390,7 +390,7 @@ The wills-series flag matters downstream: documents in a wills series feed the r
                 'refs' => 'RFQ §3.1.1, §3.1.11 · Appendix 1 rule 2 · Glossary: Document (Series classification)',
             ],
             ListUsers::class => [
-                'body' => 'Manage the people who use the Batch List Tool and what each of them may do. Every user is given a role that maps to the RFQ access tiers: Administrator (full access, including permissions management), Reading Room (read/write on metadata), and General (read-only). super_admin is only visible to, and grantable by, an existing super_admin — an admin can never grant or even see it.
+                'body' => 'Manage the people who use the Logistics Tool and what each of them may do. Every user is given a role that maps to the RFQ access tiers: Administrator (full access, including permissions management), Reading Room (read/write on metadata), and General (read-only). super_admin is only visible to, and grantable by, an existing super_admin — an admin can never grant or even see it.
 
 Because the system serves more than one repository, each user is assigned to one or more repositories and a default repository; their effective role can be set per repository (the pivot role), falling back to their global role. This is what keeps data separated between archives: a user only operates within the repositories they are attached to. Built-in self-protection stops you changing your own role or deactivating your own account, so an administrator cannot accidentally lock themselves out.
 

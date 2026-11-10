@@ -38,7 +38,7 @@ class WeeklyOperationsDigest extends Mailable
     public function envelope(): Envelope
     {
         return new Envelope(
-            subject: 'Batch List Tool — Weekly Operations Digest ' . now()->format(DisplayDate::DATE),
+            subject: 'Logistics Tool — Weekly Operations Digest ' . now()->format(DisplayDate::DATE),
         );
     }
 
