@@ -10,12 +10,15 @@ use App\Filament\Pages\Auth\TwoFactorEnrolment;
 use App\Filament\Pages\FieldPermissionMatrix;
 use App\Filament\Pages\ImportWizard;
 use App\Filament\Pages\Reports;
+use App\Filament\Pages\Reports\BoxesPendingDisinfestationReport;
 use App\Filament\Pages\Reports\BoxMovementHistoryReport;
 use App\Filament\Pages\Reports\DocumentsByBatchReport;
 use App\Filament\Pages\Reports\DocumentsByCreatorReport;
 use App\Filament\Pages\Reports\DocumentsBySeriesReport;
 use App\Filament\Pages\Reports\FlagsByTypeReport;
+use App\Filament\Pages\Reports\MassMigrationReport;
 use App\Filament\Pages\Reports\PendingDisinfestationReport;
+use App\Filament\Pages\Reports\StockTakeReport;
 use App\Filament\Pages\Settings\AuditSettingsPage;
 use App\Filament\Pages\Settings\BackupHealthPage;
 use App\Filament\Pages\Settings\BrandingPage;
@@ -154,6 +157,24 @@ The filters intentionally mirror the standalone flags dashboard so you don\'t ha
 
 Unlike the dashboard\'s top-10 widget, this page renders the full list, sortable and filterable (identifier, type, series, batch and the standard report filters), and exportable to CSV / Excel / PDF. The current view can be saved as a report template. The "missing disinfestation dates" filter is the concrete example called out in the RFQ reporting requirement. Repository scoping is applied automatically for non-admin users.',
                 'refs' => 'RFQ §3.2.2 (apply filters e.g. missing disinfestation dates, export, save templates) · Appendix 1 rule 2 (PERM OUT requires disinfestation date) · Glossary: Disinfestation',
+            ],
+            BoxesPendingDisinfestationReport::class => [
+                'body' => 'The boxes that still hold documents never disinfested. A box is listed when its status is IN, it is not destroyed, and at least one document physically in it (custody In Box) has no disinfestation date, in the current round or in any earlier one, and is not out at disinfestation already. A single such document is enough: the whole box goes. Boxes at OUT or PERM OUT are not listed, because no document may be at the NRA without a disinfestation date.
+
+Each row shows the batch and box number (or the NRA / MUS / MAV / STVC number), the barcode, the status, how many of its documents are pending, and the location. Select boxes and use "Send to disinfestation" to send them, exactly as from the Boxes list. The list exports to CSV / Excel / PDF.',
+                'refs' => 'Client feedback 2026-11-10 (Report 3) · Appendix 1 rule 2 (PERM OUT requires disinfestation date) · Glossary: Disinfestation',
+            ],
+            MassMigrationReport::class => [
+                'body' => 'The boxes to move in a mass migration. Choose any of the criteria, all optional: series (a series brings its subseries with it), document type, and a range of Actual Authority Reference Codes such as R150 to R165. Codes are compared by number, so R150 to R165 takes R151 and R163A but not R1500, and a document with several codes matches when any of them is in range. "Also documents with no or an Unknown code" adds the documents whose creator is unknown, as in most Miscellanea.
+
+A box is listed as soon as one of its documents meets every criterion given, even when it holds other documents too, because usually the whole box is migrated. Each row shows how many documents match out of all those in the box. The list exports to CSV / Excel / PDF, with the criteria in the PDF heading.',
+                'refs' => 'Client feedback 2026-11-10 (Report 4) · RFQ §3.2.2 (filters, export, save templates)',
+            ],
+            StockTakeReport::class => [
+                'body' => 'Stock take, per box or per document (the two buttons at the top). Per box lists every box not destroyed by its batch and box number, or by its NRA / MUS / MAV / STVC number, with its current box type and location, grouped by location and in number order (batch 2 before batch 10). "Include documents kept outside their box" adds the documents whose custody is Not in Box, Mounted or Conservation Box, under the location where they actually are.
+
+Per document lists every document with its catalogue identifier, Actual Authority Reference Codes, volume, creator, dates and location (its own, else its box\'s), grouped by location and sorted by catalogue identifier. Each location heading shows how many rows it holds; the PDF keeps the same headings.',
+                'refs' => 'Client feedback 2026-11-10 (Report 2) · NAF Queries Q4 · RFQ §3.2.2 (export, save templates)',
             ],
             AuditSettingsPage::class => [
                 'body' => 'This page configures the audit trail itself. A super-administrator can turn audit writing on or off (when off, no new audit records are written but every existing record is preserved) and set the retention threshold in days (0 keeps records indefinitely). It is the control panel behind the read-only Audit log, governing how the §3.1.5 "who changed what, when" history is captured and how long it is kept.

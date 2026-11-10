@@ -100,9 +100,14 @@ class BoxesReadyToDestroyReport extends Page implements HasTable
             ])
             ->filtersFormColumns(2)
             ->filters([
+                // Client 2026-11-10: "If a RAS box has ALL its documents
+                // associated with a catalogue identifier it can be listed
+                // here." RAS by default; In Situ boxes (RFQ Appendix 2 §vii)
+                // can be added here.
                 Tables\Filters\SelectFilter::make('box_type')
                     ->label('Box type')
                     ->options(fn (): array => BoxType::filterOptions())
+                    ->default(['RAS'])
                     ->multiple()
                     ->query(fn (Builder $query, array $data): Builder => empty($data['values']) ? $query : $query->whereIn('boxes.box_type', $data['values'])),
                 Tables\Filters\SelectFilter::make('repository_id')
@@ -188,21 +193,23 @@ class BoxesReadyToDestroyReport extends Page implements HasTable
      */
     protected function reportQuery(): Builder
     {
+        // An empty identifier is no identifier (client 2026-11-10: "ALL its
+        // documents associated with a catalogue identifier").
         $uncatalogued = Document::withTrashed()
             ->withoutGlobalScopes()
             ->select('current_box_id')
             ->whereNotNull('current_box_id')
-            ->whereNull('catalogue_identifier');
+            ->where(fn (Builder $q): Builder => $q->whereNull('catalogue_identifier')->orWhere('catalogue_identifier', ''));
 
         $query = Box::query()
             ->with(['batch:id,batch_number', 'location:id,name'])
             ->whereNull('boxes.destroyed_at')
             ->whereNotIn('boxes.id', $uncatalogued)
-            ->withCount(['documents' => fn (Builder $query) => $query->withoutGlobalScopes()])
-            ->withMax(['documents as last_catalogued_at' => fn (Builder $query) => $query->withoutGlobalScopes()], 'updated_at');
+            ->withCount(['documents' => fn (Builder $query) => $query->withoutGlobalScopes()->whereNull('documents.deleted_at')])
+            ->withMax(['documents as last_catalogued_at' => fn (Builder $query) => $query->withoutGlobalScopes()->whereNull('documents.deleted_at')], 'updated_at');
 
         if (! ($this->tableFilters['include_empty']['isActive'] ?? false)) {
-            $query->whereHas('documents', fn (Builder $query) => $query->withoutGlobalScopes());
+            $query->whereHas('documents', fn (Builder $query) => $query->withoutGlobalScopes()->whereNull('documents.deleted_at'));
         }
 
         return $query;

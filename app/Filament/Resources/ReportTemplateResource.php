@@ -280,6 +280,8 @@ class ReportTemplateResource extends Resource
             ReportTemplate::SOURCE_PENDING_DISINFESTATION => 'Pending disinfestation',
             ReportTemplate::SOURCE_BOX_MOVEMENTS => 'Document movement history',
             ReportTemplate::SOURCE_FLAGS_BY_TYPE => 'Flags by type',
+            ReportTemplate::SOURCE_BOXES_PENDING_DISINFESTATION => 'Boxes pending disinfestation',
+            ReportTemplate::SOURCE_MASS_MIGRATION => 'Mass migration',
         ];
     }
 }
