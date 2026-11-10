@@ -1,6 +1,6 @@
 {
-    "filename": "NAF_Archive_Management_Tool_User_Manual",
-    "title": "Archive Management Tool",
+    "filename": "NAF_Logistics_Tool_User_Manual",
+    "title": "Logistics Tool",
     "subtitle": "User Manual",
     "client": "Notarial Archives Foundation",
     "reference": "RFQ-2026-06 · Deliverable 11: User manual",
@@ -8,7 +8,7 @@
     "date": "23 October 2026",
     "author": "Prepared by Fabio Gaetano D'Alessandro",
     "introduction": [
-        "The Archive Management Tool helps the staff of the Notarial Archives Foundation and the National Repository keep track of their collection of historic notarial records: which documents exist, which box and batch each one belongs to, where every box is shelved, and how items move, are disinfested or flagged over time.",
+        "The Logistics Tool helps the staff of the Notarial Archives Foundation and the National Repository keep track of their collection of historic notarial records: which documents exist, which box and batch each one belongs to, where every box is shelved, and how items move, are disinfested or flagged over time.",
         "This manual is organised as a series of short, task-based guides. Each guide states who can carry out the task, lists what is needed beforehand, and then describes the steps in order, using the labels exactly as they appear on screen. Screenshots show the relevant screens; they contain example data only.",
         "The guides are grouped in five parts. Staff who are new to the application should begin with Part 1. Part 2 describes how batch lists are imported from Excel or CSV files, and should be read before the first import. Parts 3 and 4 cover everyday work on the catalogue and the reports. Part 5 is intended for administrators.",
         "Some screens and actions are available only to certain roles. Where a guide requires the administrator role, this is stated in its prerequisites. If a menu item or button described here does not appear, ask an administrator to check the permissions assigned to your account."

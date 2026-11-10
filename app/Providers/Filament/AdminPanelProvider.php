@@ -169,7 +169,7 @@ class AdminPanelProvider extends PanelProvider
         try {
             $settings = app(BrandingSettings::class);
 
-            $brandName = $settings->brand_name ?: 'NAf';
+            $brandName = $settings->brand_name ?: 'Logistics Tool';
             $brandLogoHeight = $settings->logo_height ?: '2.25rem';
 
             // Use the stored upload path only when it resolves to a locally
@@ -186,7 +186,7 @@ class AdminPanelProvider extends PanelProvider
             }
         } catch (\Throwable) {
             // Settings table missing (fresh install, migration not yet run).
-            $brandName = 'NAf';
+            $brandName = 'Logistics Tool';
             $brandLogo = asset('images/brand-logo.png');
             $brandLogoHeight = '2.25rem';
         }

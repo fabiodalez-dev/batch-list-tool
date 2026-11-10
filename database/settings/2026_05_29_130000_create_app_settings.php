@@ -7,7 +7,7 @@ return new class extends SettingsMigration
     public function up(): void
     {
         // Branding
-        $this->migrator->add('branding.brand_name', 'NAf');
+        $this->migrator->add('branding.brand_name', 'Logistics Tool');
         $this->migrator->add('branding.logo_path', 'images/brand-logo.png');
         $this->migrator->add('branding.logo_height', '2.5rem');
         $this->migrator->add('branding.primary_color', '#4A6F77');

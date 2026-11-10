@@ -257,7 +257,7 @@ return [
 
             'from' => [
                 'address' => env('MAIL_FROM_ADDRESS', 'backups@archivetool.eu'),
-                'name' => env('MAIL_FROM_NAME', 'Batch List Tool Backups'),
+                'name' => env('MAIL_FROM_NAME', 'Logistics Tool Backups'),
             ],
         ],
 

@@ -45,7 +45,7 @@
         <span class="title">{{ $title }}</span>
         <div class="meta">
             Generated {{ $generated_at }} &middot; By {{ $generated_by }}
-            &middot; Notarial Registers Archive (NRA) &mdash; Batch List Tool
+            &middot; Notarial Registers Archive (NRA) &mdash; Logistics Tool
         </div>
     </header>
 

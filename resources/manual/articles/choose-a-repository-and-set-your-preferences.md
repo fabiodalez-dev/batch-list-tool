@@ -1,10 +1,10 @@
 # How to choose a repository and set your preferences
 
-The archive management tool can hold the records of several repositories at once. This guide explains how to choose which repository you are working in, how the navigation menu and dashboard are organised, and how to tailor the tool to your own way of working on the **Preferences** page.
+The Logistics Tool can hold the records of several repositories at once. This guide explains how to choose which repository you are working in, how the navigation menu and dashboard are organised, and how to tailor the tool to your own way of working on the **Preferences** page.
 
 ## Prerequisites
 
-- [ ] An active user account with which you are signed in to the archive management tool.
+- [ ] An active user account with which you are signed in to the Logistics Tool.
 - [ ] Access to more than one repository, if you wish to use the repository selector. The selector is shown only when there is more than one repository to choose from.
 
 ## 1. Find your way around the dashboard
