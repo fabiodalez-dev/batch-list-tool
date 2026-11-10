@@ -96,6 +96,18 @@ it('lists boxes by location in batch / box number order, numbers compared as num
     $page->assertSee('Room A · 5 boxes')->assertSee('Room B · 1 box')->assertDontSee('Box 7');
 });
 
+it('sorts a box with no type among the RAS boxes and text batch numbers after the numbered ones', function (): void {
+    $b2 = ($this->batch)('2');
+    $b29 = ($this->batch)('29');
+    $unknown = ($this->batch)('Unknown');
+    ($this->ras)($unknown, '3');
+    ($this->ras)($b29, '32', ['box_type' => null]);
+    ($this->ras)($b2, '11');
+
+    expect(br_labels(Livewire::test(StockTakeReport::class)->assertOk()))
+        ->toBe(['Batch 2 / Box 11', 'Batch 29 / Box 32', 'Batch Unknown / Box 3']);
+});
+
 it('adds documents kept outside their box, at their own location, on request', function (): void {
     $box = ($this->ras)(($this->batch)('3'), '4');
     $mounted = ($this->doc)($box, ['custody_status' => 'mounted_no_box', 'catalogue_identifier' => 'R5/001', 'location_id' => $this->roomB->id]);

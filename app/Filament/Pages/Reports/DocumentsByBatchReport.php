@@ -307,8 +307,8 @@ class DocumentsByBatchReport extends Page implements HasTable
 
     /**
      * Batch numbers are text ("12", "4A", "Unknown"): ordered as numbers, so
-     * 2 comes before 10, then as text for the suffixes; documents without a
-     * batch last.
+     * 2 comes before 10, then as text for the suffixes; text batch numbers
+     * such as "Unknown" after the numbered ones, documents without a batch last.
      */
     public static function inBatchOrder(Builder $query, string $direction): Builder
     {
@@ -316,6 +316,8 @@ class DocumentsByBatchReport extends Page implements HasTable
 
         return $query
             ->orderByRaw('CASE WHEN batches.batch_number IS NULL THEN 1 ELSE 0 END')
+            // Text batch numbers ("Unknown", "NULL") after the numbered ones.
+            ->orderByRaw("CASE WHEN CAST(batches.batch_number AS UNSIGNED) = 0 AND batches.batch_number <> '0' THEN 1 ELSE 0 END")
             ->orderByRaw("CAST(batches.batch_number AS UNSIGNED) {$direction}")
             ->orderBy('batches.batch_number', $direction);
     }

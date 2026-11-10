@@ -65,7 +65,7 @@ function cr10_rows(object $page, string $method = 'collectRows'): array
 }
 
 it('lists batches in number order, 2 before 10, documents without a batch last', function (): void {
-    foreach (['10', '2', '1', '30'] as $n) {
+    foreach (['10', 'Unknown', '2', '1', '30'] as $n) {
         cr10_doc(['batch_id' => cr10_batch($n)->id]);
     }
     cr10_doc(['batch_id' => cr10_batch('10')->id]);
@@ -73,7 +73,7 @@ it('lists batches in number order, 2 before 10, documents without a batch last',
 
     $rows = cr10_rows(new DocumentsByBatchReport);
 
-    expect(array_column($rows, 0))->toBe(['1', '2', '10', '30', '(unassigned)']);
+    expect(array_column($rows, 0))->toBe(['1', '2', '10', '30', 'Unknown', '(unassigned)']);
 
     Livewire::test(DocumentsByBatchReport::class)
         ->assertOk()
