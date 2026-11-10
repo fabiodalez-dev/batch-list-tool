@@ -138,10 +138,23 @@ final class ReportRenderer
         array $headers,
         iterable $rows,
         ?string $subtitle = null,
+        ?int $groupBy = null,
+        ?string $groupNoun = null,
     ): Response {
         $filename = self::filename($slug, 'pdf');
 
         $rowsArray = is_array($rows) ? $rows : iterator_to_array($rows, preserve_keys: false);
+
+        // Grouped PDF (client 2026-11-10: stock take by location): the rows
+        // arrive sorted by the group column; that column becomes a heading
+        // row with its count instead of a repeated cell.
+        $groupCounts = [];
+        if ($groupBy !== null) {
+            foreach ($rowsArray as $row) {
+                $key = (string) ($row[$groupBy] ?? '');
+                $groupCounts[$key] = ($groupCounts[$key] ?? 0) + 1;
+            }
+        }
 
         $user = auth()->user();
         $generatedBy = 'system';
@@ -161,6 +174,9 @@ final class ReportRenderer
             'generated_at' => now()->format(DisplayDate::DATE_TIME),
             'generated_by' => $generatedBy,
             'total_rows' => count($rowsArray),
+            'group_by' => $groupBy,
+            'group_counts' => $groupCounts,
+            'group_noun' => $groupNoun ?? 'rows',
         ])->setPaper('a4', 'portrait');
 
         // Rendered here, before the response exists, so a DomPDF failure is

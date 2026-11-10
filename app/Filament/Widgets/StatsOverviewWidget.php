@@ -61,26 +61,17 @@ class StatsOverviewWidget extends BaseStatsOverviewWidget
             Stat::make('Active Batches', number_format($stats['batches_active']))
                 ->description('of ' . number_format($stats['batches_total']) . ' total')
                 ->descriptionIcon('heroicon-m-archive-box')
-                ->color('info'),
+                ->color('primary'),
 
             Stat::make('Boxes in archive', number_format($stats['boxes_in']))
                 ->description('barcode status IN')
                 ->descriptionIcon('heroicon-m-cube')
-                ->color('success'),
+                ->color('primary'),
 
             Stat::make('Authorities (Notaries)', number_format($stats['authorities_total']))
                 ->description('Creators on file')
                 ->descriptionIcon('heroicon-m-user-group')
                 ->color('gray'),
-
-            Stat::make('Pending disinfestation', number_format($stats['pending_disinfestation']))
-                ->description($stats['pending_disinfestation'] > 0
-                    ? 'documents awaiting fumigation'
-                    : 'all caught up')
-                ->descriptionIcon($stats['pending_disinfestation'] > 0
-                    ? 'heroicon-m-exclamation-triangle'
-                    : 'heroicon-m-check-circle')
-                ->color($stats['pending_disinfestation'] > 0 ? 'warning' : 'success'),
 
             // RFQ §3.1.12 — issue flags replace spreadsheet colour-coding.
             // Card colour is `danger` if any critical flag is open, `warning`
@@ -138,19 +129,6 @@ class StatsOverviewWidget extends BaseStatsOverviewWidget
         $batchesTotal = Batch::query()->count();
         $batchesActive = Batch::query()->whereHas('boxes')->count();
 
-        // Pending disinfestation: disinfestation_date NULL AND
-        // (current box is null OR current box is NOT PERM_OUT).
-        // PERM_OUT documents are off the floor — no fumigation needed.
-        $pendingDisinfestation = Document::query()
-            ->whereNull('disinfestation_date')
-            ->where(function ($q): void {
-                $q->whereNull('current_box_id')
-                    ->orWhereHas('currentBox', function ($q): void {
-                        $q->where('barcode_status', '!=', 'PERM_OUT');
-                    });
-            })
-            ->count();
-
         // Boxes in archive — tenant-correct: batched boxes via batch.repository_id,
         // batch-less boxes via their own repository_id (see the helper below).
         $boxesIn = $this->countBoxesInRespectingScope();
@@ -175,7 +153,6 @@ class StatsOverviewWidget extends BaseStatsOverviewWidget
             'authorities_total' => $authoritiesTotal,
             'batches_total' => $batchesTotal,
             'batches_active' => $batchesActive,
-            'pending_disinfestation' => $pendingDisinfestation,
             'boxes_in' => $boxesIn,
             'repositories_total' => $repositoriesTotal,
             'open_flags_total' => $openFlagsTotal,

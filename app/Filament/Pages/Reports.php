@@ -6,6 +6,7 @@ namespace App\Filament\Pages;
 
 use App\Filament\Concerns\ExplainsPage;
 use App\Filament\Pages\Reports\ActivityOverTimeReport;
+use App\Filament\Pages\Reports\BoxesPendingDisinfestationReport;
 use App\Filament\Pages\Reports\BoxesReadyToDestroyReport;
 use App\Filament\Pages\Reports\BoxMovementHistoryReport;
 use App\Filament\Pages\Reports\DisinfestationCycleReport;
@@ -14,16 +15,20 @@ use App\Filament\Pages\Reports\DocumentsByBatchReport;
 use App\Filament\Pages\Reports\DocumentsByCreatorReport;
 use App\Filament\Pages\Reports\DocumentsBySeriesReport;
 use App\Filament\Pages\Reports\FlagsByTypeReport;
+use App\Filament\Pages\Reports\MassMigrationReport;
 use App\Filament\Pages\Reports\PendingDisinfestationReport;
 use App\Filament\Pages\Reports\RasNraReconciliationReport;
+use App\Filament\Pages\Reports\RasReconciliationReport;
 use App\Filament\Pages\Reports\StockTakeReport;
 use App\Models\Box;
 use App\Models\BoxMovement;
 use App\Models\Document;
 use App\Models\DocumentFlag;
 use App\Models\Location;
+use App\Models\RasReconciliationRun;
 use App\Models\ReportTemplate;
 use App\Models\User;
+use App\Support\ActiveRepository;
 use App\Support\Reports\DisinfestationCycle;
 use Filament\Pages\Page;
 use Illuminate\Support\Facades\Cache;
@@ -36,7 +41,7 @@ use Illuminate\Support\Facades\Cache;
  *   2. Documents by creator / notary
  *   3. Documents by series
  *   4. Documents pending disinfestation
- *   5. Box movement history
+ *   5. Document movement history
  *   6. Flags by type (RFQ APP2-xviii)
  *
  * Below the canned-report grid the page also lists the saved
@@ -129,6 +134,14 @@ class Reports extends Page
                 'count' => $counts['pending'] . ' pending',
             ],
             [
+                'key' => 'boxes-pending-disinfestation',
+                'title' => 'Boxes pending disinfestation',
+                'description' => 'Boxes at status IN holding at least one document (In Box) with no disinfestation date: the whole box goes. Select them and send them to disinfestation.',
+                'icon' => 'heroicon-o-bug-ant',
+                'url' => BoxesPendingDisinfestationReport::getUrl(),
+                'count' => 'Box level',
+            ],
+            [
                 'key' => 'disinfestation-cycle',
                 'title' => 'Disinfestation cycle plan',
                 'description' => 'Boxes due for disinfestation — never-done first, then re-cycle (40/80-day cycle).',
@@ -139,17 +152,26 @@ class Reports extends Page
                 'count' => ($counts['cycle'] ?? 0) . ' boxes',
             ],
             [
-                'key' => 'ras-nra-reconciliation',
+                // Client 2026-11-10, Report 1: upload the RAS export, see where it does not tally.
+                'key' => 'ras-reconciliation',
                 'title' => 'RAS ↔ NRA reconciliation',
-                'description' => 'RAS Batch / Box / latest Barcode IN per document, flagging rows that cannot be reconciled.',
+                'description' => 'Upload the RAS report: it is matched with our RAS boxes by barcode, batch / box and status, and only the discrepancies are listed.',
                 'icon' => 'heroicon-o-scale',
+                'url' => RasReconciliationReport::getUrl(),
+                'count' => $this->rasUploadLabel(),
+            ],
+            [
+                'key' => 'ras-nra-reconciliation',
+                'title' => 'RAS key on documents',
+                'description' => 'RAS Batch / Box / latest Barcode IN per document, flagging documents whose RAS key is incomplete.',
+                'icon' => 'heroicon-o-key',
                 'url' => RasNraReconciliationReport::getUrl(),
                 'count' => ($counts['reconciliation'] ?? 0) . ' RAS-origin docs',
             ],
             [
                 'key' => 'movements',
-                'title' => 'Box movement history',
-                'description' => 'Chronological log of box-to-box transfers, filterable by date.',
+                'title' => 'Document movement history',
+                'description' => 'Documents moved between boxes: when, from which box to which, why and by whom, with catalogue identifier, authority, volume, creator and dates.',
                 'icon' => 'heroicon-o-arrow-path',
                 'url' => BoxMovementHistoryReport::getUrl(),
                 'count' => $counts['movements'] . ' movements',
@@ -157,10 +179,18 @@ class Reports extends Page
             [
                 'key' => 'stock-take',
                 'title' => 'Stock take (by location)',
-                'description' => 'Box and item counts per location/room — the "what we hold and where" view.',
+                'description' => 'Per box (batch / box or NRA number, current box type, location) or per document (catalogue identifier, authority code, volume, creator, dates), grouped by location.',
                 'icon' => 'heroicon-o-clipboard-document-check',
                 'url' => StockTakeReport::getUrl(),
                 'count' => ($counts['stocktake'] ?? 0) . ' locations',
+            ],
+            [
+                'key' => 'mass-migration',
+                'title' => 'Mass migration',
+                'description' => 'The boxes holding at least one document of the chosen series, document type and Actual Authority Reference Code range. The whole box is listed.',
+                'icon' => 'heroicon-o-truck',
+                'url' => MassMigrationReport::getUrl(),
+                'count' => 'Box level',
             ],
             [
                 'key' => 'activity-over-time',
@@ -173,7 +203,7 @@ class Reports extends Page
             [
                 'key' => 'boxes-ready-to-destroy',
                 'title' => 'Boxes ready to be destroyed',
-                'description' => 'Boxes whose documents all have a catalogue identifier — the ones that can now be marked destroyed (RFQ Appendix 2 §vii).',
+                'description' => 'RAS boxes whose documents all have a catalogue identifier — the ones that can now be marked destroyed (RFQ Appendix 2 §vii).',
                 'icon' => 'heroicon-o-archive-box-x-mark',
                 'url' => BoxesReadyToDestroyReport::getUrl(),
                 'count' => 'Box lifecycle',
@@ -222,6 +252,8 @@ class Reports extends Page
                 ReportTemplate::SOURCE_RAS_NRA_RECONCILIATION => RasNraReconciliationReport::class,
                 ReportTemplate::SOURCE_STOCK_TAKE => StockTakeReport::class,
                 ReportTemplate::SOURCE_BOXES_READY_TO_DESTROY => BoxesReadyToDestroyReport::class,
+                ReportTemplate::SOURCE_BOXES_PENDING_DISINFESTATION => BoxesPendingDisinfestationReport::class,
+                ReportTemplate::SOURCE_MASS_MIGRATION => MassMigrationReport::class,
                 ReportTemplate::SOURCE_BOX_MOVEMENTS => BoxMovementHistoryReport::class,
                 ReportTemplate::SOURCE_FLAGS_BY_TYPE => FlagsByTypeReport::class,
                 default => null,
@@ -255,14 +287,37 @@ class Reports extends Page
             ReportTemplate::SOURCE_DOCUMENT_LOCATIONS => 'Documents by location',
             ReportTemplate::SOURCE_PENDING_DISINFESTATION => 'Pending disinfestation',
             ReportTemplate::SOURCE_DISINFESTATION_CYCLE => 'Disinfestation cycle plan',
-            ReportTemplate::SOURCE_RAS_NRA_RECONCILIATION => 'RAS ↔ NRA reconciliation',
+            ReportTemplate::SOURCE_RAS_NRA_RECONCILIATION => 'RAS key on documents',
             ReportTemplate::SOURCE_STOCK_TAKE => 'Stock take',
             ReportTemplate::SOURCE_BOXES_READY_TO_DESTROY => 'Boxes ready to be destroyed',
-            ReportTemplate::SOURCE_BOX_MOVEMENTS => 'Box movement history',
+            ReportTemplate::SOURCE_BOXES_PENDING_DISINFESTATION => 'Boxes pending disinfestation',
+            ReportTemplate::SOURCE_MASS_MIGRATION => 'Mass migration',
+            ReportTemplate::SOURCE_BOX_MOVEMENTS => 'Document movement history',
             ReportTemplate::SOURCE_FLAGS_BY_TYPE => 'Flags by type',
             ReportTemplate::SOURCE_DOCUMENTS => 'Documents',
             default => $source,
         };
+    }
+
+    protected function getHeaderActions(): array
+    {
+        return [
+            UserGuide::helpAction('run-and-export-reports'),
+        ];
+    }
+
+    /** When the RAS report was last uploaded for the active repository. */
+    protected function rasUploadLabel(): string
+    {
+        $id = auth()->id();
+        $run = RasReconciliationRun::query()
+            ->forScope(app(ActiveRepository::class)->id(), $id === null ? null : (int) $id)
+            ->latest('id')
+            ->first(['id', 'created_at']);
+
+        return $run?->created_at === null
+            ? 'No upload yet'
+            : 'Last upload ' . $run->created_at->format('d-m-Y');
     }
 
     /**

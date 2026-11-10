@@ -142,7 +142,11 @@
     --gray-950: var(--coffee-950);
 
     /* Typography stacks */
-    --font-display: 'Fraunces', 'Times New Roman', Georgia, serif;
+    /* Client 2026-11-10 (NRA & NAF Brand Identity Guidelines 2024): Gill Sans
+       Nova is the primary typeface. It is an Adobe font, not served here; the
+       stack uses it where installed and falls back to Gill Sans (macOS) and
+       Gill Sans MT (Windows with Office), then Inter. */
+    --font-display: 'Gill Sans Nova', 'Gill Sans', 'Gill Sans MT', 'Inter', system-ui, sans-serif;
     --font-sans: 'Inter', system-ui, -apple-system, 'Segoe UI', sans-serif;
     --font-mono: 'JetBrains Mono', ui-monospace, SFMono-Regular, Menlo, Monaco, monospace;
 }
@@ -1144,4 +1148,774 @@ body:has(.fi-simple-main),
 /* Each rule's AND / OR / AND NOT, kept narrow above the rule it joins. */
 .nra-connector-rules .nra-rule-connector {
     max-width: 9rem;
+}
+
+
+/* ------------------------------------------------------------------ */
+/* Block 9 — NAF Knowledge chrome (client 2026-11-10)                  */
+/* ------------------------------------------------------------------ */
+/*
+ * "Can we incorporate more the aesthetics of the department? The Department
+ * is NAF Knowledge." The brand guidelines give NAF Knowledge its own colour,
+ * #4A6F77 (RGB 74 111 119), and allow the logo "reversed in white". The
+ * sidebar and topbar take that colour in light and dark mode alike, with the
+ * official white logo on it; the page body stays the cool paper of Block 3.
+ * White text on #3E5D64 is 7:1, on #4A6F77 5.4:1 (WCAG AA either way).
+ *
+ * Selectors are prefixed with :is(html) / .dark so they outrank both the
+ * light rules of Block 5 and the dark rules of Block 3b.
+ */
+:root {
+    --naf-knowledge: #4A6F77;
+    --naf-chrome: #3E5D64;          /* brand-600: the sidebar */
+    --naf-chrome-top: #4A6F77;      /* the topbar, the exact department colour */
+    --naf-chrome-line: rgb(255 255 255 / 0.12);
+    --naf-chrome-hover: rgb(255 255 255 / 0.10);
+    --naf-chrome-active: rgb(255 255 255 / 0.16);
+    --naf-chrome-text: #EEF3F4;
+    --naf-chrome-muted: #BCCDD0;    /* brand-200 */
+    --naf-gold: #C6A24E;            /* NAF research centre — the accent on the chrome */
+}
+
+:is(html, .dark) .fi-sidebar {
+    background-color: var(--naf-chrome);
+    border-right: 1px solid var(--naf-chrome-line);
+}
+
+:is(html, .dark) .fi-sidebar-header,
+:is(html, .dark) .fi-topbar,
+:is(html, .dark) .fi-topbar > nav {
+    background-color: var(--naf-chrome-top);
+    box-shadow: 0 1px 0 var(--naf-chrome-line);
+    border-bottom: 0;
+}
+
+:is(html, .dark) .fi-sidebar-nav-groups,
+:is(html, .dark) .fi-sidebar-item-btn,
+:is(html, .dark) .fi-sidebar-item-label,
+:is(html, .dark) .fi-sidebar-group-button,
+:is(html, .dark) .fi-topbar .fi-icon-btn {
+    color: var(--naf-chrome-text);
+}
+
+:is(html, .dark) .fi-sidebar-item-icon,
+:is(html, .dark) .fi-sidebar-group-collapse-btn,
+:is(html, .dark) .fi-sidebar-group-label {
+    color: var(--naf-chrome-muted);
+}
+
+:is(html, .dark) .fi-sidebar-item-btn:hover,
+:is(html, .dark) .fi-sidebar-item-btn:focus-visible {
+    background-color: var(--naf-chrome-hover);
+    color: #fff;
+}
+
+:is(html, .dark) .fi-sidebar-item.fi-active > .fi-sidebar-item-btn,
+:is(html, .dark) .fi-sidebar-item-btn[aria-current="page"] {
+    background-color: var(--naf-chrome-active);
+    color: #fff;
+    font-weight: 600;
+    box-shadow: inset 2px 0 0 var(--naf-gold);
+}
+
+:is(html, .dark) .fi-sidebar-item.fi-active .fi-sidebar-item-icon,
+:is(html, .dark) .fi-sidebar-item-btn[aria-current="page"] .fi-sidebar-item-icon {
+    color: var(--naf-gold);
+}
+
+:is(html, .dark) .fi-sidebar-item-grouped-border-part,
+:is(html, .dark) .fi-sidebar-item-grouped-border-part-not-first,
+:is(html, .dark) .fi-sidebar-item-grouped-border-part-not-last {
+    background-color: var(--naf-chrome-line);
+}
+
+:is(html, .dark) .fi-sidebar-item.fi-active .fi-sidebar-item-grouped-border-part {
+    background-color: var(--naf-gold);
+}
+
+:is(html, .dark) .fi-sidebar .fi-badge {
+    background-color: var(--naf-chrome-active);
+    color: var(--naf-chrome-text);
+    --tw-ring-color: transparent;
+}
+
+/* The white logo on the department colour, in light mode too (the coloured
+   logo stays on the light login page). */
+:is(html) :is(.fi-topbar, .fi-sidebar-header) .fi-logo-light {
+    display: none !important;
+}
+
+:is(html) :is(.fi-topbar, .fi-sidebar-header) .fi-logo-dark {
+    display: flex !important;
+}
+
+/* Brand name text when no logo image is set. */
+:is(html, .dark) :is(.fi-topbar, .fi-sidebar-header) .fi-logo {
+    color: #fff;
+    font-family: var(--font-display);
+}
+
+/* The topbar search and repository picker stay paper fields on the colour. */
+:is(html, .dark) .fi-topbar .fi-input-wrp {
+    background-color: var(--cream-50);
+}
+
+/* Headings and the stat figures in the brand typeface. */
+.fi-wi-stats-overview-stat-value,
+.fi-sidebar-group-label,
+.fi-breadcrumbs {
+    font-family: var(--font-display);
+}
+
+.fi-wi-stats-overview-stat-value {
+    font-weight: 500;
+    letter-spacing: 0;
+}
+
+/* In dark mode the department colour, deepened, so the chrome does not glare
+   beside the dark page. */
+.dark .fi-sidebar {
+    background-color: var(--brand-900);
+}
+
+.dark .fi-sidebar-header,
+.dark .fi-topbar,
+.dark .fi-topbar > nav {
+    background-color: var(--brand-800);
+}
+/* ------------------------------------------------------------------ */
+/* Block 8 — Help → User guide (App\Filament\Pages\UserGuide)          */
+/* ------------------------------------------------------------------ */
+/*
+ * The manual inside the tool. Everything is scoped under .nra-manual so the
+ * prose rules never leak into the rest of the panel. Colours come from the
+ * cream (surfaces) / coffee (ink) / brand scales, which already flip in dark
+ * mode; the few places that need a different step in dark mode say so below.
+ */
+
+.nra-manual {
+    display: grid;
+    grid-template-columns: minmax(0, 1fr);
+    gap: 1.5rem;
+    align-items: start;
+}
+
+@media (min-width: 1024px) {
+    .nra-manual {
+        grid-template-columns: 16.5rem minmax(0, 1fr);
+        gap: 3rem;
+    }
+
+    .nra-manual-sidebar {
+        position: sticky;
+        top: 5rem;
+        max-height: calc(100vh - 6rem);
+        display: flex;
+        flex-direction: column;
+        gap: 1rem;
+        padding-right: 1.25rem;
+        border-right: 1px solid var(--cream-200);
+    }
+
+    .nra-manual-toc-desktop {
+        overflow-y: auto;
+        overscroll-behavior: contain;
+        padding-bottom: 2rem;
+    }
+
+    .nra-manual-toc-mobile {
+        display: none;
+    }
+}
+
+@media (max-width: 1023.98px) {
+    .nra-manual-sidebar {
+        display: flex;
+        flex-direction: column;
+        gap: 0.75rem;
+    }
+
+    .nra-manual-toc-desktop {
+        display: none;
+    }
+}
+
+/* Phone / tablet: the contents fold into a disclosure above the article. */
+.nra-manual-toc-mobile {
+    border: 1px solid var(--cream-200);
+    border-radius: 0.625rem;
+    background-color: var(--cream-100);
+}
+
+.nra-manual-toc-mobile > summary {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 0.75rem;
+    padding: 0.625rem 0.875rem;
+    cursor: pointer;
+    list-style: none;
+    font-size: 0.875rem;
+    font-weight: 600;
+    color: var(--coffee-800);
+}
+
+.nra-manual-toc-mobile > summary::-webkit-details-marker {
+    display: none;
+}
+
+.nra-manual-toc-chevron {
+    width: 1rem;
+    height: 1rem;
+    flex: none;
+    color: var(--coffee-500);
+    transition: transform 150ms ease;
+}
+
+.nra-manual-toc-mobile[open] .nra-manual-toc-chevron {
+    transform: rotate(180deg);
+}
+
+.nra-manual-toc-mobile .nra-manual-toc {
+    max-height: 60vh;
+    overflow-y: auto;
+    padding: 0.25rem 0.5rem 0.75rem;
+    border-top: 1px solid var(--cream-200);
+}
+
+/* Contents */
+.nra-manual-toc ul {
+    list-style: none;
+    margin: 0;
+    padding: 0;
+}
+
+.nra-manual-toc-part {
+    margin: 1.25rem 0 0.375rem;
+    padding: 0 0.625rem;
+    font-size: 0.6875rem;
+    font-weight: 600;
+    letter-spacing: 0.06em;
+    text-transform: uppercase;
+    color: var(--coffee-500);
+}
+
+.nra-manual-toc-article {
+    display: block;
+    padding: 0.375rem 0.625rem;
+    border-radius: 0.375rem;
+    font-size: 0.875rem;
+    line-height: 1.35;
+    color: var(--coffee-600);
+    text-decoration: none;
+}
+
+.nra-manual-toc-article:hover {
+    background-color: var(--cream-100);
+    color: var(--coffee-900);
+}
+
+.nra-manual-toc-article[aria-current] {
+    background-color: var(--brand-100);
+    color: var(--brand-800);
+    font-weight: 600;
+}
+
+.nra-manual-toc .nra-manual-toc-sections {
+    margin: 0.25rem 0 0.5rem 0.875rem;
+    padding-left: 0.625rem;
+    border-left: 1px solid var(--cream-200);
+}
+
+.nra-manual-toc-sections a {
+    display: flex;
+    gap: 0.375rem;
+    padding: 0.25rem 0.5rem;
+    border-radius: 0.375rem;
+    font-size: 0.8125rem;
+    line-height: 1.35;
+    color: var(--coffee-500);
+    text-decoration: none;
+}
+
+.nra-manual-toc-sections a:hover {
+    color: var(--coffee-900);
+    background-color: var(--cream-100);
+}
+
+.nra-manual-toc-sections a[aria-current] {
+    color: var(--brand-700);
+    background-color: var(--brand-50);
+    font-weight: 500;
+}
+
+.nra-manual-toc-number {
+    flex: none;
+    min-width: 1.1rem;
+    font-variant-numeric: tabular-nums;
+    color: var(--coffee-400);
+}
+
+/* Main column */
+.nra-manual-main {
+    min-width: 0;
+    max-width: 50rem;
+}
+
+.nra-manual-header {
+    padding-bottom: 1.5rem;
+    margin-bottom: 2rem;
+    border-bottom: 1px solid var(--cream-200);
+}
+
+.nra-manual-eyebrow {
+    margin: 0 0 0.5rem;
+    font-size: 0.75rem;
+    font-weight: 600;
+    letter-spacing: 0.06em;
+    text-transform: uppercase;
+    color: var(--brand-600);
+}
+
+.nra-manual-title {
+    margin: 0;
+    font-size: clamp(1.625rem, 1.2rem + 1.4vw, 2.25rem);
+    line-height: 1.15;
+    font-weight: 600;
+    color: var(--coffee-900);
+    text-wrap: balance;
+}
+
+.nra-manual-lead {
+    margin: 0.75rem 0 0;
+    max-width: 44rem;
+    font-size: 1.0625rem;
+    line-height: 1.6;
+    color: var(--coffee-500);
+}
+
+/* Prose */
+.nra-manual-prose {
+    font-size: 0.9375rem;
+    line-height: 1.7;
+    color: var(--coffee-800);
+}
+
+.nra-manual-prose > * + * {
+    margin-top: 1rem;
+}
+
+.nra-manual-prose h2 {
+    display: flex;
+    align-items: center;
+    gap: 0.75rem;
+    margin-top: 2.75rem;
+    margin-bottom: 0.25rem;
+    font-size: 1.375rem;
+    font-weight: 600;
+    color: var(--coffee-900);
+    scroll-margin-top: 5.5rem;
+}
+
+.nra-manual-prose h3 {
+    margin-top: 2rem;
+    font-size: 1.125rem;
+    font-weight: 600;
+    color: var(--coffee-900);
+    scroll-margin-top: 5.5rem;
+}
+
+.nra-manual-prose > h2:first-child {
+    margin-top: 0;
+}
+
+/* Numbered steps: "## 3. Search the list" → round badge + title. */
+.nra-manual-step-number {
+    display: inline-flex;
+    flex: none;
+    align-items: center;
+    justify-content: center;
+    width: 1.875rem;
+    height: 1.875rem;
+    border-radius: 9999px;
+    background-color: var(--brand-600);
+    color: var(--brand-50);
+    font-family: var(--font-sans);
+    font-size: 0.875rem;
+    font-weight: 600;
+    font-variant-numeric: tabular-nums;
+}
+
+.nra-manual-prose h2.nra-manual-step {
+    font-family: var(--font-sans);
+    font-size: 1.0625rem;
+    letter-spacing: 0;
+}
+
+.nra-manual-prose h2.nra-manual-step + * {
+    margin-top: 0.5rem;
+}
+
+/* Step content hangs under the title, aligned past the badge. */
+.nra-manual-step-body > * + * {
+    margin-top: 1rem;
+}
+
+@media (min-width: 640px) {
+    .nra-manual-step-body {
+        margin-left: 2.625rem;
+    }
+}
+
+.nra-manual-prose .heading-permalink {
+    margin-left: 0.25rem;
+    font-family: var(--font-sans);
+    font-size: 0.875em;
+    font-weight: 400;
+    color: var(--coffee-300);
+    text-decoration: none;
+    opacity: 0;
+    transition: opacity 120ms ease;
+}
+
+.nra-manual-prose h2:hover .heading-permalink,
+.nra-manual-prose h3:hover .heading-permalink {
+    opacity: 1;
+}
+
+.nra-manual-prose a:not(.heading-permalink, .nra-manual-figure a) {
+    color: var(--brand-700);
+    text-decoration: underline;
+    text-decoration-color: var(--brand-300);
+    text-underline-offset: 2px;
+}
+
+.nra-manual-prose strong {
+    font-weight: 600;
+    color: var(--coffee-900);
+}
+
+.nra-manual-prose code {
+    padding: 0.1em 0.375em;
+    border: 1px solid var(--cream-200);
+    border-radius: 0.3rem;
+    background-color: var(--cream-100);
+    font-size: 0.85em;
+    color: var(--coffee-800);
+}
+
+.nra-manual-prose ul,
+.nra-manual-prose ol {
+    padding-left: 1.25rem;
+}
+
+.nra-manual-prose ul { list-style: disc; }
+.nra-manual-prose ol { list-style: decimal; }
+
+.nra-manual-prose li + li {
+    margin-top: 0.375rem;
+}
+
+.nra-manual-prose li::marker {
+    color: var(--coffee-400);
+}
+
+/* "Prerequisites": a checklist to read, drawn as ticks. */
+.nra-manual-prose ul:has(> .nra-manual-check) {
+    list-style: none;
+    padding-left: 0;
+}
+
+.nra-manual-prose .nra-manual-check {
+    position: relative;
+    padding-left: 1.75rem;
+}
+
+.nra-manual-prose .nra-manual-check::before {
+    content: '';
+    position: absolute;
+    left: 0.125rem;
+    top: 0.3rem;
+    width: 1.05rem;
+    height: 1.05rem;
+    border-radius: 9999px;
+    background-color: var(--brand-100);
+}
+
+.nra-manual-prose .nra-manual-check::after {
+    content: '';
+    position: absolute;
+    left: 0.5rem;
+    top: 0.47rem;
+    width: 0.3rem;
+    height: 0.55rem;
+    border: solid var(--brand-700);
+    border-width: 0 2px 2px 0;
+    transform: rotate(45deg);
+}
+
+/* Tips: a tinted note with a full border (no coloured side stripe). */
+.nra-manual-prose blockquote {
+    padding: 0.875rem 1rem;
+    border: 1px solid var(--brand-200);
+    border-radius: 0.625rem;
+    background-color: var(--brand-50);
+    color: var(--coffee-800);
+}
+
+.nra-manual-prose blockquote > * + * {
+    margin-top: 0.625rem;
+}
+
+/* Tables, like the reference: quiet header band, hairline rows. */
+.nra-manual-prose table {
+    display: block;
+    width: 100%;
+    overflow-x: auto;
+    border-collapse: collapse;
+    font-size: 0.875rem;
+}
+
+.nra-manual-prose thead th {
+    padding: 0.625rem 0.875rem;
+    background-color: var(--cream-100);
+    border-bottom: 1px solid var(--cream-200);
+    font-size: 0.75rem;
+    font-weight: 600;
+    letter-spacing: 0.05em;
+    text-align: left;
+    text-transform: uppercase;
+    color: var(--coffee-500);
+}
+
+.nra-manual-prose tbody td {
+    padding: 0.75rem 0.875rem;
+    border-bottom: 1px solid var(--cream-200);
+    vertical-align: top;
+}
+
+.nra-manual-prose tbody td:first-child {
+    font-weight: 600;
+    color: var(--coffee-900);
+}
+
+/* Definition lists (term, then description), as in the reference. */
+.nra-manual-prose dl {
+    display: grid;
+    grid-template-columns: max-content minmax(0, 1fr);
+    gap: 0.5rem 1.25rem;
+}
+
+.nra-manual-prose dt { font-weight: 600; color: var(--coffee-900); }
+.nra-manual-prose dd { margin: 0; }
+
+/* Screenshots in a framed card; the image opens full size. */
+.nra-manual-prose .nra-manual-figure {
+    margin-top: 1.25rem;
+    margin-bottom: 0.5rem;
+    max-width: 44rem;
+    padding: 0.75rem;
+    border: 1px solid var(--cream-200);
+    border-radius: 0.875rem;
+    background-color: var(--cream-100);
+    box-shadow: 0 1px 2px oklch(20% 0.02 215 / 0.05), 0 8px 24px -12px oklch(20% 0.02 215 / 0.18);
+}
+
+.nra-manual-figure a {
+    display: block;
+    border-radius: 0.5rem;
+    overflow: hidden;
+    cursor: zoom-in;
+}
+
+.nra-manual-figure img {
+    display: block;
+    width: 100%;
+    height: auto;
+    border: 1px solid var(--cream-200);
+    border-radius: 0.5rem;
+}
+
+.nra-manual-figure a:focus-visible {
+    outline: 2px solid var(--brand-500);
+    outline-offset: 3px;
+}
+
+.nra-manual-figure figcaption {
+    margin-top: 0.625rem;
+    font-size: 0.8125rem;
+    text-align: center;
+    color: var(--coffee-500);
+}
+
+/* Overview: the articles of each part as cards. */
+.nra-manual-prose .nra-manual-cards {
+    list-style: none;
+    padding-left: 0;
+    display: grid;
+    grid-template-columns: repeat(auto-fill, minmax(min(100%, 17rem), 1fr));
+    gap: 0.75rem;
+}
+
+.nra-manual-prose .nra-manual-cards li + li { margin-top: 0; }
+
+.nra-manual-prose .nra-manual-cards a {
+    display: flex;
+    flex-direction: column;
+    gap: 0.375rem;
+    height: 100%;
+    padding: 0.875rem 1rem;
+    border: 1px solid var(--cream-200);
+    border-radius: 0.625rem;
+    background-color: var(--cream-100);
+    text-decoration: none;
+    transition: border-color 120ms ease, background-color 120ms ease;
+}
+
+.nra-manual-prose .nra-manual-cards a:hover {
+    border-color: var(--brand-300);
+    background-color: var(--brand-50);
+}
+
+.nra-manual-card-title {
+    font-weight: 600;
+    line-height: 1.35;
+    color: var(--coffee-900);
+}
+
+.nra-manual-card-lead {
+    font-size: 0.8125rem;
+    line-height: 1.5;
+    color: var(--coffee-500);
+}
+
+/* Search results */
+.nra-manual-results {
+    list-style: none;
+    margin: 0;
+    padding: 0;
+    display: flex;
+    flex-direction: column;
+    gap: 0.625rem;
+}
+
+.nra-manual-results a {
+    display: flex;
+    flex-direction: column;
+    gap: 0.25rem;
+    padding: 0.875rem 1rem;
+    border: 1px solid var(--cream-200);
+    border-radius: 0.625rem;
+    background-color: var(--cream-100);
+    text-decoration: none;
+}
+
+.nra-manual-results a:hover {
+    border-color: var(--brand-300);
+    background-color: var(--brand-50);
+}
+
+.nra-manual-result-path {
+    font-size: 0.75rem;
+    font-weight: 600;
+    color: var(--brand-600);
+}
+
+.nra-manual-result-title {
+    font-weight: 600;
+    color: var(--coffee-900);
+}
+
+.nra-manual-result-snippet {
+    font-size: 0.875rem;
+    line-height: 1.55;
+    color: var(--coffee-600);
+}
+
+/* Previous / next */
+.nra-manual-pager {
+    display: grid;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    gap: 0.75rem;
+    margin-top: 3.5rem;
+    padding-top: 1.5rem;
+    border-top: 1px solid var(--cream-200);
+}
+
+.nra-manual-pager-link {
+    display: flex;
+    flex-direction: column;
+    gap: 0.25rem;
+    padding: 0.875rem 1rem;
+    border: 1px solid var(--cream-200);
+    border-radius: 0.625rem;
+    text-decoration: none;
+    transition: border-color 120ms ease, background-color 120ms ease;
+}
+
+.nra-manual-pager-link:hover {
+    border-color: var(--brand-300);
+    background-color: var(--brand-50);
+}
+
+.nra-manual-pager-next {
+    grid-column: 2;
+    align-items: flex-end;
+    text-align: right;
+}
+
+.nra-manual-pager-label {
+    display: inline-flex;
+    align-items: center;
+    gap: 0.25rem;
+    font-size: 0.75rem;
+    color: var(--coffee-500);
+}
+
+.nra-manual-pager-icon {
+    width: 0.875rem;
+    height: 0.875rem;
+}
+
+.nra-manual-pager-title {
+    font-weight: 600;
+    line-height: 1.35;
+    color: var(--brand-700);
+}
+
+@media (max-width: 639.98px) {
+    .nra-manual-pager {
+        grid-template-columns: minmax(0, 1fr);
+    }
+
+    .nra-manual-pager-next {
+        grid-column: 1;
+    }
+}
+
+/* Dark mode: brand text steps lighten so they read on the dark surface. */
+.dark .nra-manual-toc-article[aria-current] {
+    color: var(--coffee-900);
+    background-color: var(--brand-200);
+}
+
+.dark .nra-manual-toc-sections a[aria-current],
+.dark .nra-manual-prose a:not(.heading-permalink, .nra-manual-figure a),
+.dark .nra-manual-pager-title,
+.dark .nra-manual-result-path,
+.dark .nra-manual-eyebrow {
+    color: var(--brand-300);
+}
+
+.dark .nra-manual-step-number {
+    background-color: var(--brand-400);
+    color: var(--brand-950);
+}
+
+.dark .nra-manual-prose .nra-manual-check::after {
+    border-color: var(--brand-300);
+}
+
+.dark .nra-manual-prose .nra-manual-figure {
+    box-shadow: none;
 }

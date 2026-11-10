@@ -78,20 +78,31 @@ class DocumentsByCreatorReport extends Page implements HasTable
             ->query(fn (): Builder => $this->reportQuery())
             ->defaultSort('document_count', 'desc')
             ->columns([
-                Tables\Columns\TextColumn::make('identifier')
-                    ->label('Code')
-                    ->sortable()
-                    ->searchable(),
+                // Client 2026-11-10: the Actual Authority Reference Code in
+                // place of the database code, and the Authorised Form of Name
+                // in place of surname and given names.
+                Tables\Columns\TextColumn::make('reference_code')
+                    ->label('Actual Authority Reference Code')
+                    ->placeholder('—')
+                    ->sortable(query: fn (Builder $query, string $direction): Builder => $query
+                        ->orderByRaw('CASE WHEN authorities.alternative_identifier IS NULL THEN 1 ELSE 0 END')
+                        ->orderByRaw('LENGTH(authorities.alternative_identifier) ' . ($direction === 'desc' ? 'desc' : 'asc'))
+                        ->orderBy('authorities.alternative_identifier', $direction === 'desc' ? 'desc' : 'asc'))
+                    ->searchable(query: fn (Builder $query, string $search): Builder => $query
+                        ->where('authorities.alternative_identifier', 'like', '%' . $search . '%')),
 
-                Tables\Columns\TextColumn::make('surname')
-                    ->label('Surname')
-                    ->sortable()
-                    ->searchable(),
-
-                Tables\Columns\TextColumn::make('given_names')
-                    ->label('Given names')
-                    ->limit(40)
-                    ->placeholder('—'),
+                Tables\Columns\TextColumn::make('creator_name')
+                    ->label('Authorised form of name')
+                    ->state(fn ($record): ?string => self::creatorName($record->getAttributes()))
+                    ->wrap()
+                    ->placeholder('—')
+                    ->sortable(query: fn (Builder $query, string $direction): Builder => $query
+                        ->orderByRaw("COALESCE(NULLIF(authorities.authorised_form_of_name, ''), authorities.surname) " . ($direction === 'desc' ? 'desc' : 'asc')))
+                    ->searchable(query: fn (Builder $query, string $search): Builder => $query->where(function (Builder $q) use ($search): void {
+                        $q->where('authorities.authorised_form_of_name', 'like', '%' . $search . '%')
+                            ->orWhere('authorities.surname', 'like', '%' . $search . '%')
+                            ->orWhere('authorities.given_names', 'like', '%' . $search . '%');
+                    })),
 
                 Tables\Columns\TextColumn::make('document_count')
                     ->label('# Documents')
@@ -224,9 +235,8 @@ class DocumentsByCreatorReport extends Page implements HasTable
         return ReportRenderer::streamCsvFromRows(
             slug: 'documents-by-creator',
             columns: [
-                'Code' => 'identifier',
-                'Surname' => 'surname',
-                'Given names' => 'given_names',
+                'Actual Authority Reference Code' => 'reference_code',
+                'Authorised form of name' => 'creator_name',
                 '# Documents' => 'document_count',
             ],
             rows: $this->collectRows(),
@@ -240,7 +250,7 @@ class DocumentsByCreatorReport extends Page implements HasTable
         return ReportRenderer::renderPdf(
             title: 'Documents by creator / notary',
             slug: 'documents-by-creator',
-            headers: ['Code', 'Surname', 'Given names', '# Documents'],
+            headers: ['Actual Authority Reference Code', 'Authorised form of name', '# Documents'],
             rows: $this->collectRows(),
         );
     }
@@ -263,9 +273,8 @@ class DocumentsByCreatorReport extends Page implements HasTable
     public function getXlsxColumns(): array
     {
         return [
-            'Code' => fn (array $r) => $r['identifier'],
-            'Surname' => fn (array $r) => $r['surname'],
-            'Given names' => fn (array $r) => $r['given_names'],
+            'Actual Authority Reference Code' => fn (array $r) => $r['reference_code'],
+            'Authorised form of name' => fn (array $r) => $r['creator_name'],
             '# Documents' => fn (array $r): int => (int) ($r['document_count'] ?? 0),
         ];
     }
@@ -283,6 +292,32 @@ class DocumentsByCreatorReport extends Page implements HasTable
     public function mount(): void
     {
         $this->applyTemplateFromQuery();
+    }
+
+    /**
+     * SELECT authorities.*,
+     *        COUNT(DISTINCT document_authority.document_id) AS document_count
+     *   FROM authorities
+     *   LEFT JOIN document_authority ON document_authority.authority_id = authorities.id
+     *  WHERE document_authority.document_id IS NULL
+     *        OR document_authority.document_id IN (visible Document ids)
+     *  GROUP BY authorities.id
+     */
+    /**
+     * The Authorised Form of Name ("Abela, Placido, 1557-1595"); an authority
+     * without one shows "Surname, Given names".
+     *
+     * @param array<string, mixed> $attrs
+     */
+    public static function creatorName(array $attrs): ?string
+    {
+        $form = trim((string) ($attrs['authorised_form_of_name'] ?? ''));
+        if ($form !== '') {
+            return $form;
+        }
+        $name = implode(', ', array_filter([trim((string) ($attrs['surname'] ?? '')), trim((string) ($attrs['given_names'] ?? ''))], static fn (string $p): bool => $p !== ''));
+
+        return $name === '' ? null : $name;
     }
 
     /**
@@ -381,15 +416,6 @@ class DocumentsByCreatorReport extends Page implements HasTable
             ->all();
     }
 
-    /**
-     * SELECT authorities.*,
-     *        COUNT(DISTINCT document_authority.document_id) AS document_count
-     *   FROM authorities
-     *   LEFT JOIN document_authority ON document_authority.authority_id = authorities.id
-     *  WHERE document_authority.document_id IS NULL
-     *        OR document_authority.document_id IN (visible Document ids)
-     *  GROUP BY authorities.id
-     */
     protected function reportQuery(): Builder
     {
         $visibleDocIds = Document::query()->select('documents.id');
@@ -403,12 +429,13 @@ class DocumentsByCreatorReport extends Page implements HasTable
             })
             ->selectRaw(
                 'authorities.id as id,'
-                . ' authorities.identifier as identifier,'
+                . ' authorities.alternative_identifier as reference_code,'
+                . ' authorities.authorised_form_of_name as authorised_form_of_name,'
                 . ' authorities.surname as surname,'
                 . ' authorities.given_names as given_names,'
                 . ' COUNT(DISTINCT document_authority.document_id) as document_count'
             )
-            ->groupBy('authorities.id', 'authorities.identifier', 'authorities.surname', 'authorities.given_names');
+            ->groupBy('authorities.id', 'authorities.alternative_identifier', 'authorities.authorised_form_of_name', 'authorities.surname', 'authorities.given_names');
     }
 
     /**
@@ -419,15 +446,14 @@ class DocumentsByCreatorReport extends Page implements HasTable
         $rows = [];
         $records = $this->exportQuery()
             ->orderByDesc('document_count')
-            ->orderBy('surname')
+            ->orderByRaw("COALESCE(NULLIF(authorities.authorised_form_of_name, ''), authorities.surname)")
             ->get();
 
         foreach ($records as $r) {
             $attrs = $r->getAttributes();
             $rows[] = [
-                isset($attrs['identifier']) ? (string) $attrs['identifier'] : null,
-                isset($attrs['surname']) ? (string) $attrs['surname'] : null,
-                isset($attrs['given_names']) ? (string) $attrs['given_names'] : null,
+                isset($attrs['reference_code']) ? (string) $attrs['reference_code'] : null,
+                self::creatorName($attrs),
                 (int) ($attrs['document_count'] ?? 0),
             ];
         }
@@ -445,15 +471,14 @@ class DocumentsByCreatorReport extends Page implements HasTable
         $rows = [];
         $records = $this->exportQuery()
             ->orderByDesc('document_count')
-            ->orderBy('surname')
+            ->orderByRaw("COALESCE(NULLIF(authorities.authorised_form_of_name, ''), authorities.surname)")
             ->get();
 
         foreach ($records as $r) {
             $attrs = $r->getAttributes();
             $rows[] = [
-                'identifier' => $attrs['identifier'] ?? null,
-                'surname' => $attrs['surname'] ?? null,
-                'given_names' => $attrs['given_names'] ?? null,
+                'reference_code' => $attrs['reference_code'] ?? null,
+                'creator_name' => self::creatorName($attrs),
                 'document_count' => (int) ($attrs['document_count'] ?? 0),
             ];
         }

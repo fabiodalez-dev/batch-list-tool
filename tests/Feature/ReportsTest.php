@@ -229,7 +229,8 @@ test('DocumentsByCreator counts a Document attached to 2 authorities under BOTH'
 
     $countsBySurname = [];
     foreach ($rows as $row) {
-        $countsBySurname[(string) $row[1]] = (int) $row[3];
+        // [Actual Authority Reference Code, Authorised form of name, # Documents]
+        $countsBySurname[explode(',', (string) $row[1])[0]] = (int) $row[2];
     }
 
     expect($countsBySurname['Abela'])->toBe(1)
@@ -258,7 +259,8 @@ test('DocumentsBySeries returns counts correctly per series code', function () {
 
     $byCode = [];
     foreach ($rows as $row) {
-        $byCode[(string) $row[0]] = (int) $row[2];
+        // [Code, Title, Level of description, Hierarchy, # Documents]
+        $byCode[(string) $row[0]] = (int) $row[4];
     }
 
     expect($byCode[$sX->code])->toBe(2)
@@ -520,7 +522,7 @@ test('reports respect RepositoryScope for editor users', function () {
 
     $total = 0;
     foreach ($rows as $row) {
-        $total += (int) $row[2];
+        $total += (int) $row[4];
     }
 
     expect($total)->toBe(2);
@@ -664,8 +666,10 @@ test('landing page caches counts for 60 seconds', function () {
     $cards1 = $page->cards();
     // 6 canned reports + Documents-by-location (client feedback 2026-08-04)
     // + NAF Queries Q1 (cycle) + Q3 (reconciliation) + Q4 (stock take)
-    // + Boxes ready to be destroyed + Activity over time.
-    expect($cards1)->toHaveCount(12);
+    // + Boxes ready to be destroyed + Activity over time
+    // + Boxes pending disinfestation + Mass migration + RAS report upload
+    // reconciliation (client 2026-11-10).
+    expect($cards1)->toHaveCount(15);
     $byKey = collect($cards1)->keyBy('key');
     expect($byKey['disinfestation-cycle']['count'])->toBe('1 boxes')
         ->and($byKey['ras-nra-reconciliation']['count'])->toBe('1 RAS-origin docs')

@@ -10,12 +10,16 @@ use App\Filament\Pages\Auth\TwoFactorEnrolment;
 use App\Filament\Pages\FieldPermissionMatrix;
 use App\Filament\Pages\ImportWizard;
 use App\Filament\Pages\Reports;
+use App\Filament\Pages\Reports\BoxesPendingDisinfestationReport;
 use App\Filament\Pages\Reports\BoxMovementHistoryReport;
 use App\Filament\Pages\Reports\DocumentsByBatchReport;
 use App\Filament\Pages\Reports\DocumentsByCreatorReport;
 use App\Filament\Pages\Reports\DocumentsBySeriesReport;
 use App\Filament\Pages\Reports\FlagsByTypeReport;
+use App\Filament\Pages\Reports\MassMigrationReport;
 use App\Filament\Pages\Reports\PendingDisinfestationReport;
+use App\Filament\Pages\Reports\RasReconciliationReport;
+use App\Filament\Pages\Reports\StockTakeReport;
 use App\Filament\Pages\Settings\AuditSettingsPage;
 use App\Filament\Pages\Settings\BackupHealthPage;
 use App\Filament\Pages\Settings\BrandingPage;
@@ -120,25 +124,25 @@ Below the report cards the page also lists the saved report templates you can ac
                 'refs' => 'RFQ §3.2.1, §3.2.2 · §2.3 (reporting for disinfestation/migration/stock-takes) · §3.5.1 (multi-repository separation)',
             ],
             BoxMovementHistoryReport::class => [
-                'body' => 'This report is a chronological log of box-to-box movements, preserving the provenance and movement history the legacy spreadsheet tracked with repeated columns. Each row shows the movement date, the document, the from/to boxes, and the reason — giving operators an auditable trail of how documents have travelled between boxes, locations, and workspaces over time.
+                'body' => 'The document movement history lists every document moved from one box to another, newest first. Each row shows the movement date, the document\'s catalogue identifier, Actual Authority Reference Code, volume, creator and dates, the box it left and the box it went into (as "Batch 4 / Box 54" for RAS boxes, or "NRA 10" for NRA, MUS, MAV and STVC boxes), the reason and who recorded it.
 
 You can filter the log by date range and target box, export the results to CSV / Excel / PDF, and save the configured view as a report template. Movements without a recorded target box (legacy data) still appear so no audit-trail visibility is lost. Each movement carries its own repository id and is scoped per-repository, so the report is tenant-correct for non-admin users while admins see across repositories.',
                 'refs' => 'RFQ §3.1.6 (record/track box & document movement, preserve provenance) · §3.2.2 (filters, export, save templates) · §3.5.1 (per-repository separation)',
             ],
             DocumentsByBatchReport::class => [
-                'body' => 'This report counts documents grouped by their batch number, so you can see how the collection is distributed across batches at a glance. Documents not yet assigned to a batch are gathered into a single "(unassigned)" row, exposing un-batched backlog. The batch dimension is central to the NRA\'s logistics: batches 1–29 are the Main Collection, 30+ are Notary Accessions, and 50 is reserved for wills (33/34/36 are reserved or unused per the validation rules).
+                'body' => 'This report counts documents grouped by their batch number, listed in batch order (1, 2, 3…), so you can see how the collection is distributed across batches at a glance. Documents not yet assigned to a batch are gathered into a single "(unassigned)" row, exposing un-batched backlog. The batch dimension is central to the NRA\'s logistics: batches 1–29 are the Main Collection, 30+ are Notary Accessions, and 50 is reserved for wills (33/34/36 are reserved or unused per the validation rules).
 
 It is a full reporting surface, not just a table: filter by batch type (Main collection / Notary accession), by document date / created / updated / disinfestation date ranges, by repository, series, creators, document type and current barcode status (IN / OUT / PERM OUT), and by workflow ternaries — has open flags, uncatalogued, Torre, and currently in disinfestation. Results can be exported to CSV, Excel, or PDF, and the current filter/column/sort state can be saved as a report template for reuse.',
                 'refs' => 'RFQ §3.2.2 (select fields, apply filters, export, save templates) · §3.2.1 (search by batch) · Glossary: Batch · Appendix 1 rule 1 (batches 33/34/36/50)',
             ],
             DocumentsByCreatorReport::class => [
-                'body' => 'This report counts documents grouped by their creator — in this collection, normally the notary (Authority). Each row shows the creator\'s code, surname and given names with a document count. Because a document can be attributed to more than one creator (a many-to-many relation), a document with two creators is counted under each of them; the report is about per-creator workload, not a globally de-duplicated total.
+                'body' => 'This report counts documents grouped by their creator — in this collection, normally the notary (Authority). Each row shows the creator\'s Actual Authority Reference Code and Authorised Form of Name with a document count. Because a document can be attributed to more than one creator (a many-to-many relation), a document with two creators is counted under each of them; the report is about per-creator workload, not a globally de-duplicated total.
 
 Use it to profile a notary\'s holdings and drive migration/cataloguing planning. You can show only authorities that actually have documents, and constrain the underlying document set by date ranges (document dates, created, updated, disinfestation), repository, series, document type, current barcode status, and workflow ternaries (open flags, uncatalogued, currently in disinfestation). Results export to CSV / Excel / PDF, and the configured view can be saved as a report template. Creators are global reference data, but the counts only include documents visible to your repository.',
                 'refs' => 'RFQ §3.2.2 (select fields, filters, export, save templates) · §3.2.1 (search by creator) · Glossary: Creator (notary)',
             ],
             DocumentsBySeriesReport::class => [
-                'body' => 'This report counts documents grouped by their series code (R = Register Copies, REG = Registers Private Practice, RWL = Registers Private Practice Public Wills, O = Originals/Minutari, and so on), showing the series code and title alongside the document count. It lets you understand the composition of the collection by document type/series — useful for cataloguing and migration prioritisation.
+                'body' => 'This report counts documents grouped by their series code (R = Register Copies, REG = Registers Private Practice, RWL = Registers Private Practice Public Wills, O = Originals/Minutari, and so on), showing the series code, title, level of description and hierarchy (e.g. "R › REG") alongside the document count. A parent series such as R or O totals its own documents and those of all its subseries, and is listed just above them. It lets you understand the composition of the collection by document type/series — useful for cataloguing and migration prioritisation.
 
 Like the other report pages it supports selecting the reporting dimension, applying filters (date ranges, repository, series, document type, barcode status, and workflow ternaries such as uncatalogued or pending disinfestation), exporting to CSV / Excel / PDF, and saving the current configuration as a reusable report template. Counts respect your repository scope automatically.',
                 'refs' => 'RFQ §3.2.2 (select fields, filters, export, save templates) · §3.2.1 (search by series) · Glossary: Document, Volume',
@@ -149,11 +153,35 @@ Like the other report pages it supports selecting the reporting dimension, apply
 The filters intentionally mirror the standalone flags dashboard so you don\'t have to learn a new vocabulary moving between the two. Use this report to triage outstanding data-quality and conservation issues, drive remediation, and track resolution over time. Results export to CSV and PDF, and the configured view can be saved as a report template. Flags carry a denormalised repository id, so the report is automatically scoped to your repository for non-admin users.',
                 'refs' => 'RFQ §3.1.12 (replace colour-coding with searchable/filterable/reportable flags) · Appendix 2 (xviii) · §3.2.2 (export, save templates)',
             ],
+            RasReconciliationReport::class => [
+                'body' => 'Upload the export RAS sends (Excel or CSV) and the system matches it with our RAS boxes: barcode (Column 1), RAS reference ARK/box-batch (Column 4, e.g. ARK/054-4 is box 54 of batch 4) and status IN / OUT / PERM_OUT (Column 6). Only the rows that do not tally are listed: status differs, barcode differs, batch / box differs, only in RAS, only in our system. Untick "Discrepancies only" to see the reconciled rows too.
+
+An earlier barcode of one of our boxes (kept in its barcode history) is matched as well, with the status it had when it was replaced. After correcting our records, press "Compare again" to recheck the same upload. The latest upload per repository is kept, with who uploaded it and when.',
+                'refs' => 'Client feedback 2026-11-10, Report 1 (RAS - NRA reconciliation) · §3.2.2 (export)',
+            ],
             PendingDisinfestationReport::class => [
                 'body' => 'This report surfaces the actionable disinfestation backlog: every document whose disinfestation date is still empty and whose current box is not PERM OUT (PERM OUT documents are off the floor and don\'t need fumigation). Disinfestation is a mandatory pest-control treatment in the acquisition → storage → disinfestation → cataloguing → migration workflow — documents cannot migrate back to the NRA, and cannot be marked PERM OUT, until it is recorded.
 
 Unlike the dashboard\'s top-10 widget, this page renders the full list, sortable and filterable (identifier, type, series, batch and the standard report filters), and exportable to CSV / Excel / PDF. The current view can be saved as a report template. The "missing disinfestation dates" filter is the concrete example called out in the RFQ reporting requirement. Repository scoping is applied automatically for non-admin users.',
                 'refs' => 'RFQ §3.2.2 (apply filters e.g. missing disinfestation dates, export, save templates) · Appendix 1 rule 2 (PERM OUT requires disinfestation date) · Glossary: Disinfestation',
+            ],
+            BoxesPendingDisinfestationReport::class => [
+                'body' => 'The boxes that still hold documents never disinfested. A box is listed when its status is IN, it is not destroyed, and at least one document physically in it (custody In Box) has no disinfestation date, in the current round or in any earlier one, and is not out at disinfestation already. A single such document is enough: the whole box goes. Boxes at OUT or PERM OUT are not listed, because no document may be at the NRA without a disinfestation date.
+
+Each row shows the batch and box number (or the NRA / MUS / MAV / STVC number), the barcode, the status, how many of its documents are pending, and the location. Select boxes and use "Send to disinfestation" to send them, exactly as from the Boxes list. The list exports to CSV / Excel / PDF.',
+                'refs' => 'Client feedback 2026-11-10 (Report 3) · Appendix 1 rule 2 (PERM OUT requires disinfestation date) · Glossary: Disinfestation',
+            ],
+            MassMigrationReport::class => [
+                'body' => 'The boxes to move in a mass migration. Choose any of the criteria, all optional: series (a series brings its subseries with it), document type, and a range of Actual Authority Reference Codes such as R150 to R165. Codes are compared by number, so R150 to R165 takes R151 and R163A but not R1500, and a document with several codes matches when any of them is in range. "Also documents with no or an Unknown code" adds the documents whose creator is unknown, as in most Miscellanea.
+
+A box is listed as soon as one of its documents meets every criterion given, even when it holds other documents too, because usually the whole box is migrated. Each row shows how many documents match out of all those in the box. The list exports to CSV / Excel / PDF, with the criteria in the PDF heading.',
+                'refs' => 'Client feedback 2026-11-10 (Report 4) · RFQ §3.2.2 (filters, export, save templates)',
+            ],
+            StockTakeReport::class => [
+                'body' => 'Stock take, per box or per document (the two buttons at the top). Per box lists every box not destroyed by its batch and box number, or by its NRA / MUS / MAV / STVC number, with its current box type and location, grouped by location and in number order (batch 2 before batch 10). "Include documents kept outside their box" adds the documents whose custody is Not in Box, Mounted or Conservation Box, under the location where they actually are.
+
+Per document lists every document with its catalogue identifier, Actual Authority Reference Codes, volume, creator, dates and location (its own, else its box\'s), grouped by location and sorted by catalogue identifier. Each location heading shows how many rows it holds; the PDF keeps the same headings.',
+                'refs' => 'Client feedback 2026-11-10 (Report 2) · NAF Queries Q4 · RFQ §3.2.2 (export, save templates)',
             ],
             AuditSettingsPage::class => [
                 'body' => 'This page configures the audit trail itself. A super-administrator can turn audit writing on or off (when off, no new audit records are written but every existing record is preserved) and set the retention threshold in days (0 keeps records indefinitely). It is the control panel behind the read-only Audit log, governing how the §3.1.5 "who changed what, when" history is captured and how long it is kept.
