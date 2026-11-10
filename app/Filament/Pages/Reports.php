@@ -18,14 +18,17 @@ use App\Filament\Pages\Reports\FlagsByTypeReport;
 use App\Filament\Pages\Reports\MassMigrationReport;
 use App\Filament\Pages\Reports\PendingDisinfestationReport;
 use App\Filament\Pages\Reports\RasNraReconciliationReport;
+use App\Filament\Pages\Reports\RasReconciliationReport;
 use App\Filament\Pages\Reports\StockTakeReport;
 use App\Models\Box;
 use App\Models\BoxMovement;
 use App\Models\Document;
 use App\Models\DocumentFlag;
 use App\Models\Location;
+use App\Models\RasReconciliationRun;
 use App\Models\ReportTemplate;
 use App\Models\User;
+use App\Support\ActiveRepository;
 use App\Support\Reports\DisinfestationCycle;
 use Filament\Pages\Page;
 use Illuminate\Support\Facades\Cache;
@@ -149,10 +152,19 @@ class Reports extends Page
                 'count' => ($counts['cycle'] ?? 0) . ' boxes',
             ],
             [
-                'key' => 'ras-nra-reconciliation',
+                // Client 2026-11-10, Report 1: upload the RAS export, see where it does not tally.
+                'key' => 'ras-reconciliation',
                 'title' => 'RAS ↔ NRA reconciliation',
-                'description' => 'RAS Batch / Box / latest Barcode IN per document, flagging rows that cannot be reconciled.',
+                'description' => 'Upload the RAS report: it is matched with our RAS boxes by barcode, batch / box and status, and only the discrepancies are listed.',
                 'icon' => 'heroicon-o-scale',
+                'url' => RasReconciliationReport::getUrl(),
+                'count' => $this->rasUploadLabel(),
+            ],
+            [
+                'key' => 'ras-nra-reconciliation',
+                'title' => 'RAS key on documents',
+                'description' => 'RAS Batch / Box / latest Barcode IN per document, flagging documents whose RAS key is incomplete.',
+                'icon' => 'heroicon-o-key',
                 'url' => RasNraReconciliationReport::getUrl(),
                 'count' => ($counts['reconciliation'] ?? 0) . ' RAS-origin docs',
             ],
@@ -275,7 +287,7 @@ class Reports extends Page
             ReportTemplate::SOURCE_DOCUMENT_LOCATIONS => 'Documents by location',
             ReportTemplate::SOURCE_PENDING_DISINFESTATION => 'Pending disinfestation',
             ReportTemplate::SOURCE_DISINFESTATION_CYCLE => 'Disinfestation cycle plan',
-            ReportTemplate::SOURCE_RAS_NRA_RECONCILIATION => 'RAS ↔ NRA reconciliation',
+            ReportTemplate::SOURCE_RAS_NRA_RECONCILIATION => 'RAS key on documents',
             ReportTemplate::SOURCE_STOCK_TAKE => 'Stock take',
             ReportTemplate::SOURCE_BOXES_READY_TO_DESTROY => 'Boxes ready to be destroyed',
             ReportTemplate::SOURCE_BOXES_PENDING_DISINFESTATION => 'Boxes pending disinfestation',
@@ -292,6 +304,20 @@ class Reports extends Page
         return [
             UserGuide::helpAction('run-and-export-reports'),
         ];
+    }
+
+    /** When the RAS report was last uploaded for the active repository. */
+    protected function rasUploadLabel(): string
+    {
+        $id = auth()->id();
+        $run = RasReconciliationRun::query()
+            ->forScope(app(ActiveRepository::class)->id(), $id === null ? null : (int) $id)
+            ->latest('id')
+            ->first(['id', 'created_at']);
+
+        return $run?->created_at === null
+            ? 'No upload yet'
+            : 'Last upload ' . $run->created_at->format('d-m-Y');
     }
 
     /**

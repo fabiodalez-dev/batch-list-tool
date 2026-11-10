@@ -667,8 +667,9 @@ test('landing page caches counts for 60 seconds', function () {
     // 6 canned reports + Documents-by-location (client feedback 2026-08-04)
     // + NAF Queries Q1 (cycle) + Q3 (reconciliation) + Q4 (stock take)
     // + Boxes ready to be destroyed + Activity over time
-    // + Boxes pending disinfestation + Mass migration (client 2026-11-10).
-    expect($cards1)->toHaveCount(14);
+    // + Boxes pending disinfestation + Mass migration + RAS report upload
+    // reconciliation (client 2026-11-10).
+    expect($cards1)->toHaveCount(15);
     $byKey = collect($cards1)->keyBy('key');
     expect($byKey['disinfestation-cycle']['count'])->toBe('1 boxes')
         ->and($byKey['ras-nra-reconciliation']['count'])->toBe('1 RAS-origin docs')
