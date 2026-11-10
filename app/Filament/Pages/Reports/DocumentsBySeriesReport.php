@@ -9,8 +9,8 @@ use App\Filament\Pages\Reports\Concerns\ExportsWhatIsOnScreen;
 use App\Filament\Pages\Reports\Concerns\HasReportTemplates;
 use App\Filament\Pages\Reports\Filters\DateRangeFilter;
 use App\Models\Document;
-use App\Models\Series;
 use App\Models\ReportTemplate;
+use App\Models\Series;
 use App\Support\Reports\ReportRenderer;
 use Filament\Actions\Action;
 use Filament\Pages\Page;
@@ -301,44 +301,6 @@ class DocumentsBySeriesReport extends Page implements HasTable
     }
 
     /**
-     * @return array<string, string>
-     */
-    protected static function documentTypeOptions(): array
-    {
-        return Document::query()
-            ->whereNotNull('document_type')
-            ->select('document_type')
-            ->distinct()
-            ->orderBy('document_type')
-            ->pluck('document_type', 'document_type')
-            ->all();
-    }
-
-    /**
-     * One row per series, counting the documents of the series and of all
-     * its subseries. Each document joins once to its own series and once to
-     * every ancestor (series_ancestry below), so the document filters still
-     * work on documents.* and a parent's total is its own documents plus
-     * those of its subseries.
-     */
-    protected function reportQuery(): Builder
-    {
-        return Document::query()
-            ->leftJoinSub(self::seriesAncestry(), 'sa', 'sa.descendant_id', '=', 'documents.series_id')
-            ->leftJoin('series', 'series.id', '=', 'sa.ancestor_id')
-            ->selectRaw(
-                'COALESCE(sa.ancestor_id, 0) as id,'
-                . ' series.code as series_code,'
-                . ' series.title as series_title,'
-                . ' series.level_of_description as level_of_description,'
-                . ' sa.path as hierarchy,'
-                . ' sa.is_parent as is_parent,'
-                . ' COUNT(documents.id) as document_count'
-            )
-            ->groupBy('sa.ancestor_id', 'series.code', 'series.title', 'series.level_of_description', 'sa.path', 'sa.is_parent');
-    }
-
-    /**
      * (descendant_id, ancestor_id, path, is_parent) for every series and each
      * of its ancestors, itself included: "REG" gives (REG, REG, "R › REG") and
      * (REG, R, "R"). A literal table: there are a few dozen series.
@@ -382,6 +344,44 @@ class DocumentsBySeriesReport extends Page implements HasTable
         }
 
         return $query;
+    }
+
+    /**
+     * @return array<string, string>
+     */
+    protected static function documentTypeOptions(): array
+    {
+        return Document::query()
+            ->whereNotNull('document_type')
+            ->select('document_type')
+            ->distinct()
+            ->orderBy('document_type')
+            ->pluck('document_type', 'document_type')
+            ->all();
+    }
+
+    /**
+     * One row per series, counting the documents of the series and of all
+     * its subseries. Each document joins once to its own series and once to
+     * every ancestor (series_ancestry below), so the document filters still
+     * work on documents.* and a parent's total is its own documents plus
+     * those of its subseries.
+     */
+    protected function reportQuery(): Builder
+    {
+        return Document::query()
+            ->leftJoinSub(self::seriesAncestry(), 'sa', 'sa.descendant_id', '=', 'documents.series_id')
+            ->leftJoin('series', 'series.id', '=', 'sa.ancestor_id')
+            ->selectRaw(
+                'COALESCE(sa.ancestor_id, 0) as id,'
+                . ' series.code as series_code,'
+                . ' series.title as series_title,'
+                . ' series.level_of_description as level_of_description,'
+                . ' sa.path as hierarchy,'
+                . ' sa.is_parent as is_parent,'
+                . ' COUNT(documents.id) as document_count'
+            )
+            ->groupBy('sa.ancestor_id', 'series.code', 'series.title', 'series.level_of_description', 'sa.path', 'sa.is_parent');
     }
 
     /**

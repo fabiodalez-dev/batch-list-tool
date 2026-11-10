@@ -295,6 +295,32 @@ class DocumentsByCreatorReport extends Page implements HasTable
     }
 
     /**
+     * SELECT authorities.*,
+     *        COUNT(DISTINCT document_authority.document_id) AS document_count
+     *   FROM authorities
+     *   LEFT JOIN document_authority ON document_authority.authority_id = authorities.id
+     *  WHERE document_authority.document_id IS NULL
+     *        OR document_authority.document_id IN (visible Document ids)
+     *  GROUP BY authorities.id
+     */
+    /**
+     * The Authorised Form of Name ("Abela, Placido, 1557-1595"); an authority
+     * without one shows "Surname, Given names".
+     *
+     * @param array<string, mixed> $attrs
+     */
+    public static function creatorName(array $attrs): ?string
+    {
+        $form = trim((string) ($attrs['authorised_form_of_name'] ?? ''));
+        if ($form !== '') {
+            return $form;
+        }
+        $name = implode(', ', array_filter([trim((string) ($attrs['surname'] ?? '')), trim((string) ($attrs['given_names'] ?? ''))], static fn (string $p): bool => $p !== ''));
+
+        return $name === '' ? null : $name;
+    }
+
+    /**
      * Build a "documents.<column> in [from, to]" filter that targets the
      * outer Authority query through the document_authority pivot. The
      * pivot is already LEFT JOINed in {@see self::reportQuery()}.
@@ -388,32 +414,6 @@ class DocumentsByCreatorReport extends Page implements HasTable
             ->orderBy('document_type')
             ->pluck('document_type', 'document_type')
             ->all();
-    }
-
-    /**
-     * SELECT authorities.*,
-     *        COUNT(DISTINCT document_authority.document_id) AS document_count
-     *   FROM authorities
-     *   LEFT JOIN document_authority ON document_authority.authority_id = authorities.id
-     *  WHERE document_authority.document_id IS NULL
-     *        OR document_authority.document_id IN (visible Document ids)
-     *  GROUP BY authorities.id
-     */
-    /**
-     * The Authorised Form of Name ("Abela, Placido, 1557-1595"); an authority
-     * without one shows "Surname, Given names".
-     *
-     * @param array<string, mixed> $attrs
-     */
-    public static function creatorName(array $attrs): ?string
-    {
-        $form = trim((string) ($attrs['authorised_form_of_name'] ?? ''));
-        if ($form !== '') {
-            return $form;
-        }
-        $name = implode(', ', array_filter([trim((string) ($attrs['surname'] ?? '')), trim((string) ($attrs['given_names'] ?? ''))], static fn (string $p): bool => $p !== ''));
-
-        return $name === '' ? null : $name;
     }
 
     protected function reportQuery(): Builder

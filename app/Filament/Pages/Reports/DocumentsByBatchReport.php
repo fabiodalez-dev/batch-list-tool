@@ -306,6 +306,21 @@ class DocumentsByBatchReport extends Page implements HasTable
     }
 
     /**
+     * Batch numbers are text ("12", "4A", "Unknown"): ordered as numbers, so
+     * 2 comes before 10, then as text for the suffixes; documents without a
+     * batch last.
+     */
+    public static function inBatchOrder(Builder $query, string $direction): Builder
+    {
+        $direction = $direction === 'desc' ? 'desc' : 'asc';
+
+        return $query
+            ->orderByRaw('CASE WHEN batches.batch_number IS NULL THEN 1 ELSE 0 END')
+            ->orderByRaw("CAST(batches.batch_number AS UNSIGNED) {$direction}")
+            ->orderBy('batches.batch_number', $direction);
+    }
+
+    /**
      * Distinct, non-null document_type values harvested from the live
      * dataset — keeps the dropdown current without a hard-coded enum.
      *
@@ -339,21 +354,6 @@ class DocumentsByBatchReport extends Page implements HasTable
                 . ' COUNT(documents.id) as document_count'
             )
             ->groupBy('documents.batch_id', 'batches.batch_number', 'batches.description', 'batches.type');
-    }
-
-    /**
-     * Batch numbers are text ("12", "4A", "Unknown"): ordered as numbers, so
-     * 2 comes before 10, then as text for the suffixes; documents without a
-     * batch last.
-     */
-    public static function inBatchOrder(Builder $query, string $direction): Builder
-    {
-        $direction = $direction === 'desc' ? 'desc' : 'asc';
-
-        return $query
-            ->orderByRaw('CASE WHEN batches.batch_number IS NULL THEN 1 ELSE 0 END')
-            ->orderByRaw("CAST(batches.batch_number AS UNSIGNED) {$direction}")
-            ->orderBy('batches.batch_number', $direction);
     }
 
     /**
