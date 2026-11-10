@@ -46,6 +46,7 @@ final class ActivitySeries
             if ($month === null || preg_match('/^\d{4}-\d{2}$/', $month) !== 1) {
                 return null;
             }
+
             try {
                 return Carbon::createFromFormat('Y-m-d', $month . '-01')?->startOfMonth();
             } catch (\Throwable) {
@@ -131,6 +132,9 @@ final class ActivitySeries
             ->where('auditable_type', (new Document)->getMorphClass())
             ->where('event', 'updated')
             ->where('new_values', 'like', '%"catalogue_identifier"%')
+            // The audit trail has no repository: only documents the user may
+            // see (their repositories, deleted ones included) are counted.
+            ->whereIn('auditable_id', Document::withTrashed()->select('documents.id'))
             ->where('created_at', '>=', Carbon::parse($months[0] . '-01'))
             ->select(['id', 'old_values', 'new_values', 'created_at'])
             ->chunkById(1000, function ($audits) use (&$counts): void {

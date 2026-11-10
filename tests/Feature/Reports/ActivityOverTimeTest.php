@@ -16,6 +16,7 @@ use App\Models\User;
 use App\Support\Reports\ActivitySeries;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Support\Carbon;
+use Livewire\Features\SupportLockedProperties\CannotUpdateLockedPropertyException;
 use Livewire\Livewire;
 use OwenIt\Auditing\AuditableObserver;
 use OwenIt\Auditing\Models\Audit;
@@ -146,4 +147,26 @@ it('passes the chosen range to the charts of the page', function (): void {
         ->assertOk()
         ->assertSee('From month')
         ->assertSee('To month');
+});
+
+it('locks the chart kind and refuses the audit series to those who may not read it', function (): void {
+    Livewire::test(ActivityChart::class, ['kind' => 'moves'])
+        ->set('kind', 'changes')
+        ->assertStatus(403);
+})->throws(CannotUpdateLockedPropertyException::class);
+
+it('counts cataloguing only for documents the user may see', function (): void {
+    $other = Repository::factory()->create(['code' => 'AOT2']);
+    $mine = Document::withoutGlobalScope(RepositoryScope::class)->create(['identifier' => 'AOT-M', 'repository_id' => $this->repo->id, 'series_id' => $this->series->id, 'document_type' => 'T']);
+    $theirs = Document::withoutGlobalScope(RepositoryScope::class)->create(['identifier' => 'AOT-T', 'repository_id' => $other->id, 'series_id' => $this->series->id, 'document_type' => 'T']);
+    $mine->update(['catalogue_identifier' => 'CAT-M']);
+    $theirs->update(['catalogue_identifier' => 'CAT-T']);
+
+    Role::firstOrCreate(['name' => 'editor', 'guard_name' => 'web']);
+    $editor = User::factory()->create(['is_active' => true, 'default_repository_id' => $this->repo->id]);
+    $editor->assignRole('editor');
+    $editor->repositories()->syncWithoutDetaching([$this->repo->id => ['is_default' => true]]);
+    $this->actingAs($editor);
+
+    expect(array_sum(ActivitySeries::cataloguing()['Documents catalogued']))->toBe(1);
 });

@@ -10,6 +10,7 @@ use Filament\Widgets\Concerns\InteractsWithPageFilters;
 use Illuminate\Support\Carbon;
 use Illuminate\Support\Facades\Auth;
 use Illuminate\Support\Facades\Cache;
+use Livewire\Attributes\Locked;
 
 /**
  * One month-by-month chart of the "Activity over time" report. $kind picks the
@@ -28,6 +29,8 @@ class ActivityChart extends ChartWidget
     /** NRA & NAF brand colours: knowledge, research centre, publications, conservation. */
     private const array PALETTE = ['#4A6F77', '#C6A24E', '#912B36', '#746B64'];
 
+    /** Set by the page; locked so a browser cannot switch a chart to another series. */
+    #[Locked]
     public string $kind = 'changes';
 
     protected ?string $pollingInterval = null;
@@ -81,6 +84,12 @@ class ActivityChart extends ChartWidget
      */
     protected function getData(): array
     {
+        // The whole-archive audit chart, for those allowed to read the audit
+        // trail only — checked here as well as where the chart is placed.
+        if ($this->kind === 'changes' && ! (Auth::user()?->can('view_any_audit') ?? false)) {
+            return ['datasets' => [], 'labels' => []];
+        }
+
         $months = $this->months();
         $series = Cache::remember(
             'activity:' . $this->kind . ':u=' . (Auth::id() ?? 0) . ':' . $months[0] . '..' . end($months),
