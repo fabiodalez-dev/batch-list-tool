@@ -351,12 +351,23 @@ class Box extends Model implements AuditableContract, Sortable
      */
     public function shortLabel(): string
     {
-        if (($this->box_type ?? 'RAS') !== 'RAS') {
-            return trim($this->box_type . ' ' . $this->box_number);
-        }
         $batch = $this->batch_id !== null ? $this->getRelationValue('batch')?->getAttribute('batch_number') : null;
 
-        return ($batch !== null ? 'Batch ' . $batch . ' / ' : '') . 'Box ' . $this->box_number;
+        return self::shortLabelFrom($this->box_type, $this->box_number, $batch);
+    }
+
+    /**
+     * {@see shortLabel()} from the bare values, for report rows read straight
+     * from SQL with no Box model behind them. It is the client's "latest batch
+     * and box number if RAS, or the NRA/MUS/MAV/STVC box number".
+     */
+    public static function shortLabelFrom(?string $boxType, mixed $boxNumber, mixed $batchNumber): string
+    {
+        if (($boxType ?? 'RAS') !== 'RAS') {
+            return trim($boxType . ' ' . $boxNumber);
+        }
+
+        return ($batchNumber !== null && $batchNumber !== '' ? 'Batch ' . $batchNumber . ' / ' : '') . 'Box ' . $boxNumber;
     }
 
     /**
@@ -586,7 +597,8 @@ class Box extends Model implements AuditableContract, Sortable
         // the query through the Document model so we can opt into withTrashed.
         $uncatalogued = Document::withTrashed()
             ->where('current_box_id', $this->getKey())
-            ->whereNull('catalogue_identifier')
+            // An empty identifier is no identifier: the import writes '' too.
+            ->where(fn (Builder $q): Builder => $q->whereNull('catalogue_identifier')->orWhere('catalogue_identifier', ''))
             ->count();
 
         if ($uncatalogued > 0) {

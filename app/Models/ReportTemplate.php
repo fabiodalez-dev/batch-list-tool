@@ -68,6 +68,11 @@ class ReportTemplate extends Model implements AuditableContract
     // RFQ Appendix 2 §vii — boxes whose documents are all catalogued.
     public const SOURCE_BOXES_READY_TO_DESTROY = 'boxes_ready_to_destroy';
 
+    // Client 2026-11-10: boxes holding documents not disinfested yet; boxes for a mass migration.
+    public const SOURCE_BOXES_PENDING_DISINFESTATION = 'boxes_pending_disinfestation';
+
+    public const SOURCE_MASS_MIGRATION = 'mass_migration';
+
     /**
      * Whitelist of accepted source values — exposed so forms / validation
      * never drift from the actual report pages.
@@ -87,6 +92,8 @@ class ReportTemplate extends Model implements AuditableContract
         self::SOURCE_RAS_NRA_RECONCILIATION,
         self::SOURCE_STOCK_TAKE,
         self::SOURCE_BOXES_READY_TO_DESTROY,
+        self::SOURCE_BOXES_PENDING_DISINFESTATION,
+        self::SOURCE_MASS_MIGRATION,
     ];
 
     /**

@@ -35,6 +35,7 @@
         thead th { background: #f3f4f6; border-bottom: 1.5px solid #9ca3af; text-align: left; padding: 2mm 2mm; font-size: 9pt; color: #111827; }
         tbody td { border-bottom: 0.5px solid #e5e7eb; padding: 1.5mm 2mm; vertical-align: top; word-wrap: break-word; }
         tbody tr:nth-child(even) td { background: #fafafa; }
+        tbody tr.group td { background: #e5e7eb; font-weight: bold; color: #111827; padding-top: 2.5mm; border-bottom: 1px solid #9ca3af; }
         .empty { text-align: center; color: #6b7280; font-style: italic; padding: 8mm 2mm; }
         .summary { margin-top: 4mm; font-size: 8pt; color: #6b7280; }
     </style>
@@ -61,19 +62,34 @@
         @if (empty($rows))
             <div class="empty">No data available for this report.</div>
         @else
+            @php($groupBy = $group_by ?? null)
             <table>
                 <thead>
                     <tr>
-                        @foreach ($headers as $h)
-                            <th>{{ $h }}</th>
+                        @foreach ($headers as $i => $h)
+                            @if ($groupBy === null || $i !== $groupBy)
+                                <th>{{ $h }}</th>
+                            @endif
                         @endforeach
                     </tr>
                 </thead>
                 <tbody>
+                    @php($currentGroup = null)
                     @foreach ($rows as $row)
+                        @if ($groupBy !== null && ($currentGroup === null || (string) ($row[$groupBy] ?? '') !== $currentGroup))
+                            @php($currentGroup = (string) ($row[$groupBy] ?? ''))
+                            <tr class="group">
+                                <td colspan="{{ count($headers) - 1 }}">
+                                    {{ $headers[$groupBy] }}: {{ $currentGroup !== '' ? $currentGroup : 'none' }}
+                                    &middot; {{ $group_counts[$currentGroup] ?? 0 }} {{ $group_noun ?? 'rows' }}
+                                </td>
+                            </tr>
+                        @endif
                         <tr>
-                            @foreach ($row as $cell)
-                                <td>{{ $cell ?? '' }}</td>
+                            @foreach ($row as $i => $cell)
+                                @if ($groupBy === null || $i !== $groupBy)
+                                    <td>{{ $cell ?? '' }}</td>
+                                @endif
                             @endforeach
                         </tr>
                     @endforeach

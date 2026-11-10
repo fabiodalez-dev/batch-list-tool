@@ -6,6 +6,7 @@ namespace App\Filament\Pages;
 
 use App\Filament\Concerns\ExplainsPage;
 use App\Filament\Pages\Reports\ActivityOverTimeReport;
+use App\Filament\Pages\Reports\BoxesPendingDisinfestationReport;
 use App\Filament\Pages\Reports\BoxesReadyToDestroyReport;
 use App\Filament\Pages\Reports\BoxMovementHistoryReport;
 use App\Filament\Pages\Reports\DisinfestationCycleReport;
@@ -14,6 +15,7 @@ use App\Filament\Pages\Reports\DocumentsByBatchReport;
 use App\Filament\Pages\Reports\DocumentsByCreatorReport;
 use App\Filament\Pages\Reports\DocumentsBySeriesReport;
 use App\Filament\Pages\Reports\FlagsByTypeReport;
+use App\Filament\Pages\Reports\MassMigrationReport;
 use App\Filament\Pages\Reports\PendingDisinfestationReport;
 use App\Filament\Pages\Reports\RasNraReconciliationReport;
 use App\Filament\Pages\Reports\StockTakeReport;
@@ -129,6 +131,14 @@ class Reports extends Page
                 'count' => $counts['pending'] . ' pending',
             ],
             [
+                'key' => 'boxes-pending-disinfestation',
+                'title' => 'Boxes pending disinfestation',
+                'description' => 'Boxes at status IN holding at least one document (In Box) with no disinfestation date: the whole box goes. Select them and send them to disinfestation.',
+                'icon' => 'heroicon-o-bug-ant',
+                'url' => BoxesPendingDisinfestationReport::getUrl(),
+                'count' => 'Box level',
+            ],
+            [
                 'key' => 'disinfestation-cycle',
                 'title' => 'Disinfestation cycle plan',
                 'description' => 'Boxes due for disinfestation — never-done first, then re-cycle (40/80-day cycle).',
@@ -157,10 +167,18 @@ class Reports extends Page
             [
                 'key' => 'stock-take',
                 'title' => 'Stock take (by location)',
-                'description' => 'Box and item counts per location/room — the "what we hold and where" view.',
+                'description' => 'Per box (batch / box or NRA number, current box type, location) or per document (catalogue identifier, authority code, volume, creator, dates), grouped by location.',
                 'icon' => 'heroicon-o-clipboard-document-check',
                 'url' => StockTakeReport::getUrl(),
                 'count' => ($counts['stocktake'] ?? 0) . ' locations',
+            ],
+            [
+                'key' => 'mass-migration',
+                'title' => 'Mass migration',
+                'description' => 'The boxes holding at least one document of the chosen series, document type and Actual Authority Reference Code range. The whole box is listed.',
+                'icon' => 'heroicon-o-truck',
+                'url' => MassMigrationReport::getUrl(),
+                'count' => 'Box level',
             ],
             [
                 'key' => 'activity-over-time',
@@ -173,7 +191,7 @@ class Reports extends Page
             [
                 'key' => 'boxes-ready-to-destroy',
                 'title' => 'Boxes ready to be destroyed',
-                'description' => 'Boxes whose documents all have a catalogue identifier — the ones that can now be marked destroyed (RFQ Appendix 2 §vii).',
+                'description' => 'RAS boxes whose documents all have a catalogue identifier — the ones that can now be marked destroyed (RFQ Appendix 2 §vii).',
                 'icon' => 'heroicon-o-archive-box-x-mark',
                 'url' => BoxesReadyToDestroyReport::getUrl(),
                 'count' => 'Box lifecycle',
@@ -222,6 +240,8 @@ class Reports extends Page
                 ReportTemplate::SOURCE_RAS_NRA_RECONCILIATION => RasNraReconciliationReport::class,
                 ReportTemplate::SOURCE_STOCK_TAKE => StockTakeReport::class,
                 ReportTemplate::SOURCE_BOXES_READY_TO_DESTROY => BoxesReadyToDestroyReport::class,
+                ReportTemplate::SOURCE_BOXES_PENDING_DISINFESTATION => BoxesPendingDisinfestationReport::class,
+                ReportTemplate::SOURCE_MASS_MIGRATION => MassMigrationReport::class,
                 ReportTemplate::SOURCE_BOX_MOVEMENTS => BoxMovementHistoryReport::class,
                 ReportTemplate::SOURCE_FLAGS_BY_TYPE => FlagsByTypeReport::class,
                 default => null,
@@ -258,6 +278,8 @@ class Reports extends Page
             ReportTemplate::SOURCE_RAS_NRA_RECONCILIATION => 'RAS ↔ NRA reconciliation',
             ReportTemplate::SOURCE_STOCK_TAKE => 'Stock take',
             ReportTemplate::SOURCE_BOXES_READY_TO_DESTROY => 'Boxes ready to be destroyed',
+            ReportTemplate::SOURCE_BOXES_PENDING_DISINFESTATION => 'Boxes pending disinfestation',
+            ReportTemplate::SOURCE_MASS_MIGRATION => 'Mass migration',
             ReportTemplate::SOURCE_BOX_MOVEMENTS => 'Box movement history',
             ReportTemplate::SOURCE_FLAGS_BY_TYPE => 'Flags by type',
             ReportTemplate::SOURCE_DOCUMENTS => 'Documents',
