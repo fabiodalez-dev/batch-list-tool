@@ -65,6 +65,16 @@ class RasReconciliationReport extends Page implements HasTable
 
     protected static ?string $slug = 'reports/ras-reconciliation';
 
+    /**
+     * Uploading replaces the repository's last RAS report for everyone, and
+     * Compare again rewrites its results: those who may change boxes only.
+     * Reading the report needs view_any_report alone.
+     */
+    public static function canUpload(): bool
+    {
+        return static::canAccess() && (bool) auth()->user()?->can('update_box');
+    }
+
     public static function canAccess(): bool
     {
         return (bool) auth()->user()?->can('view_any_report');
@@ -97,7 +107,7 @@ class RasReconciliationReport extends Page implements HasTable
 
     public function compareAgain(): void
     {
-        abort_unless(static::canAccess(), 403);
+        abort_unless(static::canUpload(), 403);
         $run = $this->run();
         if ($run === null) {
             return;
@@ -340,7 +350,7 @@ class RasReconciliationReport extends Page implements HasTable
      */
     protected function processUpload(string $path, string $originalName): void
     {
-        abort_unless(static::canAccess(), 403);
+        abort_unless(static::canUpload(), 403);
 
         $extension = strtolower(pathinfo($originalName, PATHINFO_EXTENSION));
         if (! in_array($extension, ['xlsx', 'xls', 'csv'], true)) {
@@ -425,6 +435,7 @@ class RasReconciliationReport extends Page implements HasTable
                 ->modalHeading('Upload the RAS report')
                 ->modalDescription('The export RAS sends (Excel or CSV). It replaces the previous upload for this repository.')
                 ->modalSubmitActionLabel('Compare')
+                ->visible(fn (): bool => static::canUpload())
                 ->schema([
                     FileUpload::make('file')
                         ->label('RAS report')
@@ -458,7 +469,7 @@ class RasReconciliationReport extends Page implements HasTable
                 ->icon('heroicon-o-arrow-path')
                 ->color('gray')
                 ->tooltip('Recheck the same RAS report against our records as they are now')
-                ->visible(fn (): bool => $this->runId !== null)
+                ->visible(fn (): bool => $this->runId !== null && static::canUpload())
                 ->action(fn () => $this->compareAgain()),
 
             Action::make('exportCsv')

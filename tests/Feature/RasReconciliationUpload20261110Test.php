@@ -517,3 +517,22 @@ it('links Report 1 from the reports page and keeps the document RAS-key report',
         ->and($cards['ras-reconciliation']['count'])->toBe('No upload yet')
         ->and($cards['ras-nra-reconciliation']['title'])->toBe('RAS key on documents');
 });
+
+it('lets a reader see the report but not upload or compare again', function (): void {
+    bl_seedShieldPermissions();
+    $repo = Repository::factory()->create();
+    $viewer = bl_actor('viewer', $repo);
+    $this->actingAs($viewer);
+
+    expect($viewer->can('view_any_report'))->toBeTrue()
+        ->and($viewer->can('update_box'))->toBeFalse();
+
+    Livewire::test(RasReconciliationReport::class)
+        ->assertOk()
+        ->assertActionHidden('upload');
+
+    expect(RasReconciliationReport::canUpload())->toBeFalse();
+
+    $this->actingAs(bl_actor('editor', $repo));
+    expect(RasReconciliationReport::canUpload())->toBeTrue();
+});
