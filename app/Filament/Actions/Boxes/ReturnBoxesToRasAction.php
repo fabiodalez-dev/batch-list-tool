@@ -108,7 +108,11 @@ final class ReturnBoxesToRasAction
 
     private static function allowed(): bool
     {
-        return (bool) (auth()->user()?->can('update_box') ?? false);
+        // As ChangeBoxBatchAction: a box returned from NRA moves its documents
+        // into the new batch, so changing documents is required too.
+        $user = auth()->user();
+
+        return $user !== null && $user->can('update_box') && $user->can('update_document');
     }
 
     private static function description(): string
@@ -177,7 +181,7 @@ final class ReturnBoxesToRasAction
                         ->required($anyOther)
                         ->maxLength(64)
                         ->rule(static fn (Get $get): \Closure => static function (string $attribute, mixed $value, \Closure $fail) use ($get): void {
-                            $repositoryId = filled($get('batch_repository_id')) ? (int) $get('batch_repository_id') : null;
+                            $repositoryId = self::allowedRepository($get('batch_repository_id'));
                             $message = self::batchNumberProblem((string) $value, $repositoryId);
                             if ($message !== null) {
                                 $fail($message);
@@ -254,6 +258,24 @@ final class ReturnBoxesToRasAction
         return (int) $holder === $boxId
             ? 'This is the box\'s current barcode: give it a new one.'
             : 'This barcode is already assigned to another box. Box barcodes must be globally unique.';
+    }
+
+    /**
+     * The repository posted in the hidden field, only when the user may work
+     * in it: a forged id must not reveal which batch numbers another
+     * repository holds. The batch itself is planned from the boxes on the
+     * server (batchPlan), never from this field.
+     */
+    private static function allowedRepository(mixed $id): ?int
+    {
+        $user = auth()->user();
+        if (! filled($id) || $user === null) {
+            return null;
+        }
+        $id = (int) $id;
+        $allowed = ActiveRepository::allowedRepositoryIdsFor($user);
+
+        return $allowed === null || in_array($id, array_map(intval(...), $allowed), true) ? $id : null;
     }
 
     /** Why this number cannot be the new batch, or null when it can. */

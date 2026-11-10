@@ -2,6 +2,7 @@
 
 declare(strict_types=1);
 
+use App\Filament\Actions\Boxes\ReturnBoxesToRasAction;
 use App\Filament\Resources\BoxResource\Pages\ListBoxes;
 use App\Filament\Resources\BoxResource\Pages\ViewBox;
 use App\Models\Batch;
@@ -9,11 +10,15 @@ use App\Models\Box;
 use App\Models\BoxBarcodeHistory;
 use App\Models\Document;
 use App\Models\Repository;
+use App\Models\User;
 use Filament\Forms\Components\Repeater;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Support\Arr;
 use Livewire\Livewire;
 use OwenIt\Auditing\Models\Audit;
+use Spatie\Permission\Models\Permission;
+use Spatie\Permission\Models\Role;
+use Spatie\Permission\PermissionRegistrar;
 
 /**
  * Client 2026-11-10, Operation 1: Return to RAS, for RAS boxes (new barcode,
@@ -393,4 +398,26 @@ it('refuses the other box types to a user who may not create batches', function 
     expect($box->fresh()->box_type)->toBe('NRA')
         ->and(Batch::withoutGlobalScopes()->where('batch_number', '600')->exists())->toBeFalse()
         ->and(rr_notified()[1])->toContain('may not create batches');
+});
+
+it('needs permission to change documents too, as moving a box to another batch does', function (): void {
+    $user = auth()->user();
+    $role = Role::findOrCreate('box_only', 'web');
+    $role->syncPermissions(Permission::whereIn('name', ['view_any_box', 'view_box', 'update_box', 'create_batch'])->get());
+    $user->syncRoles([$role]);
+    app(PermissionRegistrar::class)->forgetCachedPermissions();
+
+    expect((new ReflectionMethod(ReturnBoxesToRasAction::class, 'allowed'))->invoke(null))->toBeFalse();
+});
+
+it('ignores a posted repository the user may not work in when checking the batch number', function (): void {
+    $foreign = Repository::factory()->create();
+    $user = User::factory()->create();
+    $user->assignRole('editor');
+    $user->repositories()->syncWithoutDetaching([Repository::factory()->create()->id => ['is_default' => true]]);
+    $this->actingAs($user);
+
+    $allowed = new ReflectionMethod(ReturnBoxesToRasAction::class, 'allowedRepository');
+
+    expect($allowed->invoke(null, $foreign->id))->toBeNull();
 });
