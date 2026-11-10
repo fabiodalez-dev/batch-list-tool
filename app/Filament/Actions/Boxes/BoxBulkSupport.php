@@ -79,14 +79,15 @@ final class BoxBulkSupport
 
     /**
      * @param array{done: int, skipped: array<string, list<string>>} $result
+     * @param list<string> $before plain-text lines shown above the skipped boxes
      */
-    public static function notify(array $result, string $doneVerb, string $failedTitle): void
+    public static function notify(array $result, string $doneVerb, string $failedTitle, array $before = []): void
     {
         $done = $result['done'];
         $skippedCount = array_sum(array_map(count(...), $result['skipped']));
         $boxes = $done === 1 ? '1 box' : "{$done} boxes";
 
-        $lines = [];
+        $lines = array_map(e(...), $before);
         foreach ($result['skipped'] as $reason => $labels) {
             $named = array_slice($labels, 0, self::NAMED_PER_REASON);
             $more = count($labels) - count($named);

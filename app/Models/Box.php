@@ -91,6 +91,13 @@ class Box extends Model implements AuditableContract, Sortable
      */
     public bool $keepLocationWhenIn = false;
 
+    /**
+     * Reason written to box_barcode_history by the next save that changes the
+     * barcode or its status, when that change has a named cause (Return to
+     * RAS, client 2026-11-10). Reset after the row is written.
+     */
+    public ?string $barcodeChangeReason = null;
+
     protected $fillable = [
         'sort_order',
         'box_type', 'current_box_type', 'box_number', 'batch_id', 'parent_box_id',
@@ -1298,7 +1305,9 @@ class Box extends Model implements AuditableContract, Sortable
             newBarcode: $transition['new_barcode'],
             previousStatus: $transition['previous_status'],
             newStatus: $transition['new_status'],
+            reason: $this->barcodeChangeReason,
         );
+        $this->barcodeChangeReason = null;
     }
 
     /**

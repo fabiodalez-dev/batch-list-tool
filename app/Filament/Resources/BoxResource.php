@@ -8,6 +8,7 @@ use App\Filament\Actions\Boxes\DestroyBoxAction;
 use App\Filament\Actions\Boxes\FinishDisinfestationAction;
 use App\Filament\Actions\Boxes\MarkBoxStatusAction;
 use App\Filament\Actions\Boxes\MoveBoxToLocationAction;
+use App\Filament\Actions\Boxes\ReturnBoxesToRasAction;
 use App\Filament\Actions\Boxes\SendBoxesToDisinfestationAction;
 use App\Filament\Concerns\AppliesFieldPermissions;
 use App\Filament\Resources\BoxResource\Pages;
@@ -956,6 +957,8 @@ class BoxResource extends Resource
                 self::addDocumentAction('addDocumentRow'),
                 // RFQ §3.1.6 — Move box to a different location (audited).
                 MoveBoxToLocationAction::make(),
+                // Client 2026-11-10, Operation 1: boxes at NRA back to RAS.
+                ReturnBoxesToRasAction::make(),
                 // RFQ App.2 §vii — single-record "Mark as destroyed" row
                 // action. The action's own visible() callback hides it on
                 // already-destroyed rows, so we always register it here.
@@ -1094,6 +1097,7 @@ class BoxResource extends Resource
                                 . '. Marking them PERM OUT is a permanent custody change (RFQ A1.2).')
                             ->deselectRecordsAfterCompletion(),
                         ChangeBoxBatchAction::bulk(),
+                        ReturnBoxesToRasAction::bulk(),
                     ])->dropdown(false),
                     BulkActionGroup::make([
                         SendBoxesToDisinfestationAction::bulk(),
