@@ -5,11 +5,13 @@ namespace App\Providers\Filament;
 use App\Filament\Pages\Auth\EditProfile;
 use App\Filament\Pages\Auth\TwoFactorLogin;
 use App\Filament\Pages\Dashboard;
+use App\Filament\Pages\UserGuide;
 use App\Http\Middleware\ApplyUserPreferences;
 use App\Http\Middleware\EnsurePasswordChanged;
 use App\Settings\BrandingSettings;
 use App\Support\Avatars\LocalAvatarProvider;
 use BezhanSalleh\FilamentShield\FilamentShieldPlugin;
+use Filament\Actions\Action;
 use Filament\FontProviders\LocalFontProvider;
 use Filament\Http\Middleware\Authenticate;
 use Filament\Http\Middleware\AuthenticateSession;
@@ -63,6 +65,16 @@ class AdminPanelProvider extends PanelProvider
                 'Reports',
                 'My Account',
                 'Administration',
+                // Last: the user guide sits at the foot of the sidebar.
+                'Help',
+            ])
+            // Client 2026-11-10: the user manual inside the tool, also from
+            // the user menu so it is reachable from any page.
+            ->userMenuItems([
+                Action::make('user-guide')
+                    ->label('User guide')
+                    ->icon('heroicon-o-question-mark-circle')
+                    ->url(fn (): string => UserGuide::getUrl()),
             ])
             // Security Baseline §15: NO external CDNs at runtime —
             // Inter font is served from /fonts/inter/ (rsms/inter v4.1, OFL-1.1)

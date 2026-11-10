@@ -55,6 +55,7 @@ it('registers the panel navigation groups in the required order', function () {
         'Reports',
         'My Account',
         'Administration',
+        'Help',
     ]);
 });
 

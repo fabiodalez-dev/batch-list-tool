@@ -1,0 +1,64 @@
+{
+    "filename": "NAF_Archive_Management_Tool_User_Manual",
+    "title": "Archive Management Tool",
+    "subtitle": "User Manual",
+    "client": "Notarial Archives Foundation",
+    "reference": "RFQ-2026-06 · Deliverable 11: User manual",
+    "version": "1.0",
+    "date": "23 October 2026",
+    "author": "Prepared by Fabio Gaetano D'Alessandro",
+    "introduction": [
+        "The Archive Management Tool helps the staff of the Notarial Archives Foundation and the National Repository keep track of their collection of historic notarial records: which documents exist, which box and batch each one belongs to, where every box is shelved, and how items move, are disinfested or flagged over time.",
+        "This manual is organised as a series of short, task-based guides. Each guide states who can carry out the task, lists what is needed beforehand, and then describes the steps in order, using the labels exactly as they appear on screen. Screenshots show the relevant screens; they contain example data only.",
+        "The guides are grouped in five parts. Staff who are new to the application should begin with Part 1. Part 2 describes how batch lists are imported from Excel or CSV files, and should be read before the first import. Parts 3 and 4 cover everyday work on the catalogue and the reports. Part 5 is intended for administrators.",
+        "Some screens and actions are available only to certain roles. Where a guide requires the administrator role, this is stated in its prerequisites. If a menu item or button described here does not appear, ask an administrator to check the permissions assigned to your account."
+    ],
+    "parts": [
+        {
+            "title": "Part 1 · Getting started",
+            "intro": "How to find your way around the application, work in the right repository and protect your account.",
+            "articles": [
+                "choose-a-repository-and-set-your-preferences",
+                "protect-your-account-with-two-factor-authentication"
+            ]
+        },
+        {
+            "title": "Part 2 · Importing records",
+            "intro": "How to load batch lists from spreadsheets, follow each import and, when necessary, start again.",
+            "articles": [
+                "import-records-from-a-spreadsheet-with-the-import-wizard",
+                "check-an-import-and-correct-the-rows-that-failed",
+                "reuse-column-names-from-your-own-spreadsheets-with-import-profiles",
+                "delete-boxes-and-start-an-import-again-from-scratch"
+            ]
+        },
+        {
+            "title": "Part 3 · Working with the catalogue",
+            "intro": "How to find and update documents, boxes and storage locations.",
+            "articles": [
+                "find-documents-with-search-and-filters",
+                "view-and-update-a-document-record",
+                "manage-boxes-and-their-barcode-status",
+                "move-boxes-between-locations",
+                "set-up-and-maintain-storage-locations"
+            ]
+        },
+        {
+            "title": "Part 4 · Reports",
+            "intro": "How to produce the ready-made reports.",
+            "articles": [
+                "run-and-export-reports"
+            ]
+        },
+        {
+            "title": "Part 5 · Administration",
+            "intro": "Tasks for administrators: reference lists, users and permissions, the audit log, backups and branding.",
+            "articles": [
+                "maintain-series-creators-batches-and-other-reference-records",
+                "manage-users-roles-and-field-permissions",
+                "review-changes-in-the-audit-log",
+                "check-backups-and-set-up-branding"
+            ]
+        }
+    ]
+}
