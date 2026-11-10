@@ -146,7 +146,7 @@
        Nova is the primary typeface. It is an Adobe font, not served here; the
        stack uses it where installed and falls back to Gill Sans (macOS) and
        Gill Sans MT (Windows with Office), then Inter. */
-    --font-display: 'Gill Sans Nova', 'Gill Sans', 'Gill Sans MT', 'Inter', system-ui, sans-serif;
+    --font-display: 'gill-sans-nova', 'Gill Sans Nova', 'Gill Sans', 'Gill Sans MT', 'Inter', system-ui, sans-serif;
     --font-sans: 'Inter', system-ui, -apple-system, 'Segoe UI', sans-serif;
     --font-mono: 'JetBrains Mono', ui-monospace, SFMono-Regular, Menlo, Monaco, monospace;
 }
@@ -1160,21 +1160,23 @@ body:has(.fi-simple-main),
  * #4A6F77 (RGB 74 111 119), and allow the logo "reversed in white". The
  * sidebar and topbar take that colour in light and dark mode alike, with the
  * official white logo on it; the page body stays the cool paper of Block 3.
- * White text on #3E5D64 is 7:1, on #4A6F77 5.4:1 (WCAG AA either way).
+ * White text on #2D4A50 is 9.5:1, on the active #415C63 7:1.
  *
  * Selectors are prefixed with :is(html) / .dark so they outrank both the
  * light rules of Block 5 and the dark rules of Block 3b.
  */
 :root {
     --naf-knowledge: #4A6F77;
-    --naf-chrome: #3E5D64;          /* brand-600: the sidebar */
-    --naf-chrome-top: #4A6F77;      /* the topbar, the exact department colour */
+    /* Sidebar and topbar as in the client's example (Notarypedia, sampled
+       2026-11-10): one deep shade of the department colour for both, the
+       active item a lighter shade, #4A6F77 itself for buttons and badges. */
+    --naf-chrome: #2D4A50;
+    --naf-chrome-top: #2D4A50;
     --naf-chrome-line: rgb(255 255 255 / 0.12);
     --naf-chrome-hover: rgb(255 255 255 / 0.10);
-    --naf-chrome-active: rgb(255 255 255 / 0.16);
+    --naf-chrome-active: #415C63;
     --naf-chrome-text: #EEF3F4;
     --naf-chrome-muted: #BCCDD0;    /* brand-200 */
-    --naf-gold: #C6A24E;            /* NAF research centre — the accent on the chrome */
 }
 
 :is(html, .dark) .fi-sidebar {
@@ -1215,12 +1217,12 @@ body:has(.fi-simple-main),
     background-color: var(--naf-chrome-active);
     color: #fff;
     font-weight: 600;
-    box-shadow: inset 2px 0 0 var(--naf-gold);
+    box-shadow: none;
 }
 
 :is(html, .dark) .fi-sidebar-item.fi-active .fi-sidebar-item-icon,
 :is(html, .dark) .fi-sidebar-item-btn[aria-current="page"] .fi-sidebar-item-icon {
-    color: var(--naf-gold);
+    color: #fff;
 }
 
 :is(html, .dark) .fi-sidebar-item-grouped-border-part,
@@ -1230,7 +1232,7 @@ body:has(.fi-simple-main),
 }
 
 :is(html, .dark) .fi-sidebar-item.fi-active .fi-sidebar-item-grouped-border-part {
-    background-color: var(--naf-gold);
+    background-color: #fff;
 }
 
 :is(html, .dark) .fi-sidebar .fi-badge {
@@ -1272,16 +1274,13 @@ body:has(.fi-simple-main),
     letter-spacing: 0;
 }
 
-/* In dark mode the department colour, deepened, so the chrome does not glare
-   beside the dark page. */
-.dark .fi-sidebar {
-    background-color: var(--brand-900);
-}
-
+/* In dark mode a shade deeper still, so the chrome does not glare beside the
+   dark page; sidebar and topbar stay one colour as in light mode. */
+.dark .fi-sidebar,
 .dark .fi-sidebar-header,
 .dark .fi-topbar,
 .dark .fi-topbar > nav {
-    background-color: var(--brand-800);
+    background-color: var(--brand-900);
 }
 /* ------------------------------------------------------------------ */
 /* Block 8 — Help → User guide (App\Filament\Pages\UserGuide)          */
