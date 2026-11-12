@@ -45,6 +45,9 @@ return [
                 'exclude' => [
                     base_path('vendor'),
                     base_path('node_modules'),
+                    // Logs are not data, and the import logs alone run to
+                    // 60-70 MB each: they tripled the nightly archive.
+                    storage_path('logs'),
                 ],
 
                 /*

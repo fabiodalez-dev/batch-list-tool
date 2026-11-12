@@ -7,6 +7,9 @@ use App\Models\User;
 use App\Settings\BackupSettings;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Support\Facades\Artisan;
+use Illuminate\Support\Facades\File;
+use Spatie\Health\Checks\Checks\BackupsCheck;
+use Spatie\Health\Facades\Health;
 
 /**
  * Task 10 — Backup & health page.
@@ -95,4 +98,37 @@ it('persists retention settings', function () {
     expect($fresh->keep_daily)->toBe(30)
         ->and($fresh->keep_weekly)->toBe(10)
         ->and($fresh->keep_monthly)->toBe(6);
+});
+
+/*
+ * 2026-11-12: the Backups health check was handed the backup folder instead of
+ * a glob, so it globbed the folder itself and failed with "does not exist"
+ * every five minutes, whatever was inside.
+ */
+it('the Backups health check finds the zips in the backup folder', function (): void {
+    $dir = storage_path('app/private/' . config('backup.backup.name'));
+    $made = ! is_dir($dir);
+    if ($made) {
+        mkdir($dir, 0777, true);
+    }
+    $zip = $dir . '/health-check-probe-' . uniqid() . '.zip';
+    file_put_contents($zip, 'zip');
+
+    try {
+        $check = collect(Health::registeredChecks())
+            ->first(fn ($c): bool => $c instanceof BackupsCheck);
+        $result = $check->run();
+
+        expect($result->status->value)->toBe('ok');
+    } finally {
+        File::delete($zip);
+        if ($made) {
+            File::deleteDirectory($dir);
+        }
+    }
+});
+
+it('leaves the logs out of the nightly backup', function (): void {
+    expect(config('backup.backup.source.files.exclude'))->toContain(storage_path('logs'))
+        ->and(config('backup.backup.source.files.include'))->toContain(base_path());
 });
