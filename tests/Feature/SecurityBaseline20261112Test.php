@@ -107,14 +107,12 @@ test('the backup folder name can be pinned so renaming the app does not split th
 function encryptedBackupFixture(string $password, string $sql): string
 {
     Storage::fake('local');
-    $tmp = tempnam(sys_get_temp_dir(), 'bl-test-zip');
+    Storage::disk('local')->makeDirectory('Logistics Tool');
     $zip = new ZipArchive;
-    $zip->open($tmp, ZipArchive::CREATE | ZipArchive::OVERWRITE);
+    $zip->open(Storage::disk('local')->path('Logistics Tool/backup.zip'), ZipArchive::CREATE | ZipArchive::OVERWRITE);
     $zip->addFromString('db-dumps/mysql-test.sql', $sql);
     $zip->setEncryptionName('db-dumps/mysql-test.sql', ZipArchive::EM_AES_256, $password);
     $zip->close();
-    Storage::disk('local')->put('Logistics Tool/backup.zip', file_get_contents($tmp));
-    unlink($tmp);
 
     return 'Logistics Tool/backup.zip';
 }
