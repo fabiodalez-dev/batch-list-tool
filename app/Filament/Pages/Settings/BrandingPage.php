@@ -126,7 +126,7 @@ class BrandingPage extends Page
                                 $url = Storage::disk('public')->url($path);
 
                                 return new HtmlString(
-                                    '<img src="' . e($url) . '" alt="Current logo" style="max-height:4rem">'
+                                    '<img src="' . e($url) . '" alt="Current logo" class="nra-branding-logo-preview">'
                                 );
                             }),
 
