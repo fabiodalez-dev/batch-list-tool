@@ -279,16 +279,37 @@ class RestoreDatabase
                 throw new RuntimeException('No SQL dump found under db-dumps/ in the archive.');
             }
 
-            $contents = $zip->getFromName($entry);
+            // Archives are AES-256 encrypted when BACKUP_ARCHIVE_PASSWORD is
+            // set; an unencrypted archive ignores the password.
+            $password = config('backup.backup.password');
 
-            if ($contents === false) {
-                throw new RuntimeException('Could not read SQL dump from the archive: ' . $entry);
+            if (is_string($password) && $password !== '') {
+                $zip->setPassword($password);
+            }
+
+            // Streamed to disk: the dump is hundreds of MB and the web request
+            // runs under a much smaller memory limit than that.
+            $in = $zip->getStream($entry);
+
+            if ($in === false) {
+                throw new RuntimeException('Could not read SQL dump from the archive (wrong backup password?): ' . $entry);
             }
 
             $sqlPath = $this->makeTempFile('bl-restore-', '.sql');
+            $out = fopen($sqlPath, 'wb');
 
-            if (file_put_contents($sqlPath, $contents) === false) {
-                throw new RuntimeException('Could not write extracted SQL dump to a temporary file.');
+            try {
+                $copied = $out === false ? false : stream_copy_to_stream($in, $out);
+            } finally {
+                fclose($in);
+
+                if ($out !== false) {
+                    fclose($out);
+                }
+            }
+
+            if ($copied === false || ($zip->statName($entry)['size'] ?? -1) !== $copied) {
+                throw new RuntimeException('Could not extract the SQL dump from the archive (wrong backup password?): ' . $entry);
             }
 
             return $sqlPath;
