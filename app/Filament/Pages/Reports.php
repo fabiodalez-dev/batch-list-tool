@@ -9,7 +9,6 @@ use App\Filament\Pages\Reports\ActivityOverTimeReport;
 use App\Filament\Pages\Reports\BoxesPendingDisinfestationReport;
 use App\Filament\Pages\Reports\BoxesReadyToDestroyReport;
 use App\Filament\Pages\Reports\BoxMovementHistoryReport;
-use App\Filament\Pages\Reports\DisinfestationCycleReport;
 use App\Filament\Pages\Reports\DocumentLocationReport;
 use App\Filament\Pages\Reports\DocumentsByBatchReport;
 use App\Filament\Pages\Reports\DocumentsByCreatorReport;
@@ -20,7 +19,6 @@ use App\Filament\Pages\Reports\PendingDisinfestationReport;
 use App\Filament\Pages\Reports\RasNraReconciliationReport;
 use App\Filament\Pages\Reports\RasReconciliationReport;
 use App\Filament\Pages\Reports\StockTakeReport;
-use App\Models\Box;
 use App\Models\BoxMovement;
 use App\Models\Document;
 use App\Models\DocumentFlag;
@@ -29,7 +27,6 @@ use App\Models\RasReconciliationRun;
 use App\Models\ReportTemplate;
 use App\Models\User;
 use App\Support\ActiveRepository;
-use App\Support\Reports\DisinfestationCycle;
 use Filament\Pages\Page;
 use Illuminate\Support\Facades\Cache;
 
@@ -142,16 +139,6 @@ class Reports extends Page
                 'count' => 'Box level',
             ],
             [
-                'key' => 'disinfestation-cycle',
-                'title' => 'Disinfestation cycle plan',
-                'description' => 'Boxes due for disinfestation — never-done first, then re-cycle (40/80-day cycle).',
-                'icon' => 'heroicon-o-calendar-days',
-                'url' => DisinfestationCycleReport::getUrl(),
-                // ?? 0 guards the 60s window right after a deploy when the cached
-                // counts array may predate this key.
-                'count' => ($counts['cycle'] ?? 0) . ' boxes',
-            ],
-            [
                 // Client 2026-11-10, Report 1: upload the RAS export, see where it does not tally.
                 'key' => 'ras-reconciliation',
                 'title' => 'RAS ↔ NRA reconciliation',
@@ -248,7 +235,6 @@ class Reports extends Page
                 ReportTemplate::SOURCE_DOCUMENTS_BY_SERIES => DocumentsBySeriesReport::class,
                 ReportTemplate::SOURCE_DOCUMENT_LOCATIONS => DocumentLocationReport::class,
                 ReportTemplate::SOURCE_PENDING_DISINFESTATION => PendingDisinfestationReport::class,
-                ReportTemplate::SOURCE_DISINFESTATION_CYCLE => DisinfestationCycleReport::class,
                 ReportTemplate::SOURCE_RAS_NRA_RECONCILIATION => RasNraReconciliationReport::class,
                 ReportTemplate::SOURCE_STOCK_TAKE => StockTakeReport::class,
                 ReportTemplate::SOURCE_BOXES_READY_TO_DESTROY => BoxesReadyToDestroyReport::class,
@@ -286,7 +272,6 @@ class Reports extends Page
             ReportTemplate::SOURCE_DOCUMENTS_BY_SERIES => 'Documents by subseries',
             ReportTemplate::SOURCE_DOCUMENT_LOCATIONS => 'Documents by location',
             ReportTemplate::SOURCE_PENDING_DISINFESTATION => 'Pending disinfestation',
-            ReportTemplate::SOURCE_DISINFESTATION_CYCLE => 'Disinfestation cycle plan',
             ReportTemplate::SOURCE_RAS_NRA_RECONCILIATION => 'RAS key on documents',
             ReportTemplate::SOURCE_STOCK_TAKE => 'Stock take',
             ReportTemplate::SOURCE_BOXES_READY_TO_DESTROY => 'Boxes ready to be destroyed',
@@ -356,15 +341,6 @@ class Reports extends Page
                     ->count(),
                 'movements' => BoxMovement::query()->count(),
                 'flags' => DocumentFlag::query()->count(),
-                'cycle' => Box::query()
-                    ->whereNull('destroyed_at')
-                    ->where(function ($q): void {
-                        // Use the shared cycle constant so this dashboard count can
-                        // never drift from DisinfestationCycleReport::reportQuery().
-                        $q->whereNull('disinfestation_date')
-                            ->orWhere('disinfestation_date', '<=', now()->subDays(DisinfestationCycle::DUE_DAYS)->startOfDay());
-                    })
-                    ->count(),
                 'reconciliation' => Document::query()
                     ->where(function ($q): void {
                         $q->where(fn ($b) => $b->whereNotNull('ras_batch_1')->where('ras_batch_1', '!=', ''))
@@ -385,7 +361,6 @@ class Reports extends Page
             'pending' => number_format((int) $counts['pending']),
             'movements' => number_format((int) $counts['movements']),
             'flags' => number_format((int) $counts['flags']),
-            'cycle' => number_format((int) $counts['cycle']),
             'reconciliation' => number_format((int) $counts['reconciliation']),
             'stocktake' => number_format((int) $counts['stocktake']),
         ];

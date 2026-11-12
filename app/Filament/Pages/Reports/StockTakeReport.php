@@ -147,7 +147,7 @@ class StockTakeReport extends Page implements HasTable
             title: $this->getReportTitle(),
             slug: $this->getReportSlug(),
             headers: $this->exportHeaders(),
-            rows: $this->exportRows(limit: 5000),
+            rows: $this->exportRows(limit: ReportRenderer::PDF_FETCH_LIMIT),
             groupBy: 0,
             groupNoun: $this->isDocumentMode() ? 'documents' : 'rows',
         );

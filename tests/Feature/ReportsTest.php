@@ -4,7 +4,6 @@ declare(strict_types=1);
 
 use App\Filament\Pages\Reports;
 use App\Filament\Pages\Reports\BoxMovementHistoryReport;
-use App\Filament\Pages\Reports\DisinfestationCycleReport;
 use App\Filament\Pages\Reports\DocumentLocationReport;
 use App\Filament\Pages\Reports\DocumentsByBatchReport;
 use App\Filament\Pages\Reports\DocumentsByCreatorReport;
@@ -163,7 +162,6 @@ test('All 5 report pages render 200 for admin', function () {
     Livewire::test(DocumentsBySeriesReport::class)->assertOk();
     Livewire::test(DocumentLocationReport::class)->assertOk();
     Livewire::test(PendingDisinfestationReport::class)->assertOk();
-    Livewire::test(DisinfestationCycleReport::class)->assertOk();
     Livewire::test(RasNraReconciliationReport::class)->assertOk();
     Livewire::test(StockTakeReport::class)->assertOk();
     Livewire::test(BoxMovementHistoryReport::class)->assertOk();
@@ -665,13 +663,14 @@ test('landing page caches counts for 60 seconds', function () {
     $page = new Reports;
     $cards1 = $page->cards();
     // 6 canned reports + Documents-by-location (client feedback 2026-08-04)
-    // + NAF Queries Q1 (cycle) + Q3 (reconciliation) + Q4 (stock take)
+    // + NAF Queries Q3 (reconciliation) + Q4 (stock take)
     // + Boxes ready to be destroyed + Activity over time
     // + Boxes pending disinfestation + Mass migration + RAS report upload
-    // reconciliation (client 2026-11-10).
-    expect($cards1)->toHaveCount(15);
+    // reconciliation (client 2026-11-10). The Q1 cycle plan was removed on
+    // 2026-11-12 (the client finds Boxes pending disinfestation enough).
+    expect($cards1)->toHaveCount(14);
     $byKey = collect($cards1)->keyBy('key');
-    expect($byKey['disinfestation-cycle']['count'])->toBe('1 boxes')
+    expect($byKey->has('disinfestation-cycle'))->toBeFalse()
         ->and($byKey['ras-nra-reconciliation']['count'])->toBe('1 RAS-origin docs')
         ->and($byKey['stock-take']['count'])->toBe('1 locations');
 

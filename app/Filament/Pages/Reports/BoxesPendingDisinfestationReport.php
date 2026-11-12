@@ -156,7 +156,7 @@ class BoxesPendingDisinfestationReport extends Page implements HasTable
             title: $this->getReportTitle(),
             slug: $this->getReportSlug(),
             headers: self::HEADERS,
-            rows: $this->rows(5000),
+            rows: $this->rows(ReportRenderer::PDF_FETCH_LIMIT),
         );
     }
 

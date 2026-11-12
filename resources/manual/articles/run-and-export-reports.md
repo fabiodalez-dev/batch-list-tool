@@ -22,7 +22,6 @@ In the sidebar, under the **Reports** group, select **Reports**. The page lists 
 - **Documents by subseries**: the number of documents in each subseries.
 - **Boxes ready to be destroyed**: boxes whose documents all have a catalogue identifier and can therefore be marked as destroyed.
 - **Documents pending disinfestation**: documents without a disinfestation date that are not permanently out, with the number of days each has been waiting.
-- **Disinfestation cycle plan**: boxes due for disinfestation, with boxes that have never been treated listed first, followed by boxes due for a repeat cycle.
 - **Box movement history**: a chronological log of transfers between boxes, with the date, reason and the user who performed each move.
 - **Flags by type**: the number of open and resolved issue flags in each category and severity.
 - **RAS ↔ NRA reconciliation**: the RAS batch, box and barcode of each document beside its current NRA batch and box, marking the rows that cannot be reconciled.

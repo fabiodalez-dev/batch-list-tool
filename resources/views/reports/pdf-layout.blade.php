@@ -15,6 +15,7 @@
       - $generated_at  (string)  "Y-m-d H:i"
       - $generated_by  (string)  user identity that triggered the export
       - $total_rows    (int)     count(rows)
+      - $truncation_notice (?string) set when the PDF holds only the first rows
 --}}
 <!DOCTYPE html>
 <html lang="en">
@@ -38,6 +39,7 @@
         tbody tr.group td { background: #e5e7eb; font-weight: bold; color: #111827; padding-top: 2.5mm; border-bottom: 1px solid #9ca3af; }
         .empty { text-align: center; color: #6b7280; font-style: italic; padding: 8mm 2mm; }
         .summary { margin-top: 4mm; font-size: 8pt; color: #6b7280; }
+        .notice { margin-bottom: 3mm; padding: 2mm 3mm; border: 1px solid #d97706; background: #fffbeb; color: #92400e; font-size: 8.5pt; }
     </style>
 </head>
 <body>
@@ -59,10 +61,21 @@
             <div class="subtitle">{{ $subtitle }}</div>
         @endif
 
+        @if (! empty($truncation_notice))
+            <div class="notice">{{ $truncation_notice }}</div>
+        @endif
+
         @if (empty($rows))
             <div class="empty">No data available for this report.</div>
         @else
             @php($groupBy = $group_by ?? null)
+            @php($currentGroup = null)
+            {{-- DomPDF lays out a table as one block, and its memory grows
+                 faster than the row count: one 500-row table took over
+                 700 MB and the host stops a request at 512 MB. A fresh
+                 table every 50 rows keeps each layout small; the header
+                 repeats at the top of each chunk. --}}
+            @foreach (array_chunk($rows, 50) as $chunk)
             <table>
                 <thead>
                     <tr>
@@ -74,8 +87,7 @@
                     </tr>
                 </thead>
                 <tbody>
-                    @php($currentGroup = null)
-                    @foreach ($rows as $row)
+                    @foreach ($chunk as $row)
                         @if ($groupBy !== null && ($currentGroup === null || (string) ($row[$groupBy] ?? '') !== $currentGroup))
                             @php($currentGroup = (string) ($row[$groupBy] ?? ''))
                             <tr class="group">
@@ -95,6 +107,7 @@
                     @endforeach
                 </tbody>
             </table>
+            @endforeach
             <div class="summary">Total rows: {{ $total_rows }}</div>
         @endif
     </main>

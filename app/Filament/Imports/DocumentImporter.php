@@ -2885,7 +2885,7 @@ class DocumentImporter extends Importer
         if ($raw === '') {
             return null;
         }
-        // A type on the Physical Box Type page, as written ("Conservation
+        // A type on the Current Box Types page, as written ("Conservation
         // Box"), before the legacy shorthand below ("RAS", "big").
         $exact = Document::canonicalEnumValue($raw, CurrentBoxType::codes());
         if ($exact !== null) {

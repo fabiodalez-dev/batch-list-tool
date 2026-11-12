@@ -31,7 +31,7 @@ it('assigns a representative set of resources to the new groups', function () {
 
 it('applies the renamed classification labels', function () {
     expect(BoxTypeResource::getNavigationLabel())->toBe('Box Typology')
-        ->and(CurrentBoxTypeResource::getNavigationLabel())->toBe('Physical Box Type')
+        ->and(CurrentBoxTypeResource::getNavigationLabel())->toBe('Current Box Types')
         ->and(CustodyStatusTypeResource::getNavigationLabel())->toBe('Custody Status Types')
         ->and(CustodyStatusTypeResource::getNavigationGroup())->toBe('Classifications')
         ->and(EntityTypeResource::getNavigationLabel())->toBe('Entity Types')

@@ -58,9 +58,8 @@ class ReportTemplate extends Model implements AuditableContract
 
     public const SOURCE_FLAGS_BY_TYPE = 'flags_by_type';
 
-    // NAF Queries reports (Q1/Q3/Q4).
-    public const SOURCE_DISINFESTATION_CYCLE = 'disinfestation_cycle';
-
+    // NAF Queries reports (Q3/Q4). Q1, the disinfestation cycle plan, was
+    // removed on 2026-11-12: the client finds Boxes pending disinfestation enough.
     public const SOURCE_RAS_NRA_RECONCILIATION = 'ras_nra_reconciliation';
 
     public const SOURCE_STOCK_TAKE = 'stock_take';
@@ -88,7 +87,6 @@ class ReportTemplate extends Model implements AuditableContract
         self::SOURCE_PENDING_DISINFESTATION,
         self::SOURCE_BOX_MOVEMENTS,
         self::SOURCE_FLAGS_BY_TYPE,
-        self::SOURCE_DISINFESTATION_CYCLE,
         self::SOURCE_RAS_NRA_RECONCILIATION,
         self::SOURCE_STOCK_TAKE,
         self::SOURCE_BOXES_READY_TO_DESTROY,
