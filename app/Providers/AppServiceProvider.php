@@ -26,6 +26,7 @@ use Illuminate\Support\Facades\Event;
 use Illuminate\Support\Facades\Gate;
 use Illuminate\Support\Facades\Log;
 use Illuminate\Support\ServiceProvider;
+use Illuminate\Validation\Rules\Password;
 use Laravel\Telescope\TelescopeServiceProvider;
 use OwenIt\Auditing\Models\Audit;
 use Spatie\Backup\Notifications\Notifications\BackupHasFailedNotification;
@@ -75,6 +76,13 @@ class AppServiceProvider extends ServiceProvider
     public function boot(): void
     {
         Document::observe(DocumentObserver::class);
+
+        // Security baseline §5: at least 12 characters with upper case, lower
+        // case and a digit. Password::default() is what Fortify, Filament's
+        // profile and reset pages and the user form all validate against, so
+        // the policy lives here once. It applies when a password is set, never
+        // to existing ones.
+        Password::defaults(fn () => Password::min(12)->mixedCase()->numbers());
 
         // A relation read in a loop without being eager-loaded is one query per
         // row: on a 26,000-document list that is the difference between one
