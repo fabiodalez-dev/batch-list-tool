@@ -12,7 +12,7 @@ Every box and document in the catalogue refers to entries in a set of reference 
 
 - Under **Records** in the sidebar: **Subseries**, **Batches**, **Authorities** and **Practices**.
 - Under **Operations**: **Notary Accessions**, which record each accession received from a notary.
-- Under **Classifications**: **Document Types** and the controlled vocabularies **Accession Types**, **Barcode Statuses**, **Box Typology**, **Flag Types**, **Location Typology**, **Physical Box Type**, **Custody Status Types** and **Entity Types**.
+- Under **Classifications**: **Document Types** and the controlled vocabularies **Accession Types**, **Barcode Statuses**, **Box Typology**, **Flag Types**, **Location Typology**, **Current Box Types**, **Custody Status Types** and **Entity Types**.
 - Volumes are not kept as a separate list. The volume number is recorded on each document in the **Volume** field.
 
 ## 1. Open the list and start a new entry

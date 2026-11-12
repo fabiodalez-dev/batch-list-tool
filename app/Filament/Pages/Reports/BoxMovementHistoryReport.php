@@ -269,7 +269,7 @@ class BoxMovementHistoryReport extends Page implements HasTable
 
         $rows = [];
         /** @var BoxMovement $r */
-        foreach ($this->withRelations($this->exportQuery())->orderByDesc('movement_date')->limit(5000)->get() as $r) {
+        foreach ($this->withRelations($this->exportQuery())->orderByDesc('movement_date')->limit(ReportRenderer::PDF_FETCH_LIMIT)->get() as $r) {
             $rows[] = self::movementRow($r);
         }
 

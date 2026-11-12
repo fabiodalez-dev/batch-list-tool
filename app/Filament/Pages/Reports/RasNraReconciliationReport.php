@@ -185,7 +185,7 @@ class RasNraReconciliationReport extends Page implements HasTable
 
         $rows = [];
         /** @var Document $r */
-        foreach ($this->exportQuery()->orderBy('identifier')->limit(5000)->get() as $r) {
+        foreach ($this->exportQuery()->orderBy('identifier')->limit(ReportRenderer::PDF_FETCH_LIMIT)->get() as $r) {
             $rows[] = self::reconciliationRow($r);
         }
 

@@ -954,7 +954,7 @@ class Document extends Model implements AuditableContract, HasMedia, Sortable
             }
 
             if ($document->current_box_type !== null) {
-                // The Physical Box Type page is the list (client 2026-10-13),
+                // The Current Box Types page is the list (client 2026-10-13),
                 // not the three types the archive started with.
                 $allowedBoxTypes = CurrentBoxType::codes();
                 $normalized = self::canonicalEnumValue($document->current_box_type, $allowedBoxTypes);

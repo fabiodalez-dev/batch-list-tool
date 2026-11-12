@@ -132,7 +132,7 @@ class BoxResource extends Resource
                             })),
                         // Physical container type (distinct from the archival
                         // box_type). Client 2026-10-30: a dropdown fed by the
-                        // Physical Box Type lookup; a legacy free-text value stays
+                        // Current Box Types lookup; a legacy free-text value stays
                         // selectable on edit (optionsWith), so nothing is lost.
                         $g(Forms\Components\Select::make('current_box_type')
                             ->label(ColumnLabels::get('box', 'current_box_type'))

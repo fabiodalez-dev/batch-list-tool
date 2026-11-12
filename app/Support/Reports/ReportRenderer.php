@@ -38,6 +38,12 @@ use Symfony\Component\HttpFoundation\StreamedResponse;
  */
 final class ReportRenderer
 {
+    /** Rows a PDF export holds at most (see renderPdf). */
+    public const int PDF_MAX_ROWS = 1000;
+
+    /** Rows the report pages fetch for a PDF, so the notice can tell "1,000 of 3,200". */
+    public const int PDF_FETCH_LIMIT = 5000;
+
     /**
      * Stream a CSV download.
      *
@@ -122,6 +128,33 @@ final class ReportRenderer
     }
 
     /**
+     * DomPDF needs about 0.13 MB a row on top of a ~150 MB base, and the host
+     * stops a web request at 512 MB: 1,000 rows stay well inside it (and under
+     * the 180 s time limit). Beyond that the PDF says what it left out; Excel
+     * and CSV stream every row.
+     *
+     * @param list<array<int, mixed>> $rows
+     * @return array{0: list<array<int, mixed>>, 1: ?string}
+     */
+    public static function limitPdfRows(array $rows): array
+    {
+        $fetched = count($rows);
+        if ($fetched <= self::PDF_MAX_ROWS) {
+            return [$rows, null];
+        }
+
+        return [
+            array_slice($rows, 0, self::PDF_MAX_ROWS),
+            sprintf(
+                'This PDF lists the first %s of %s%s rows. Use Export Excel or Export CSV for the full list.',
+                number_format(self::PDF_MAX_ROWS),
+                number_format($fetched),
+                $fetched >= self::PDF_FETCH_LIMIT ? '+' : '',
+            ),
+        ];
+    }
+
+    /**
      * Render a PDF download via the shared `reports/pdf-layout` blade.
      *
      * No chunking — DomPDF needs the full DOM in memory anyway. The
@@ -144,6 +177,8 @@ final class ReportRenderer
         $filename = self::filename($slug, 'pdf');
 
         $rowsArray = is_array($rows) ? $rows : iterator_to_array($rows, preserve_keys: false);
+
+        [$rowsArray, $truncationNotice] = self::limitPdfRows($rowsArray);
 
         // Grouped PDF (client 2026-11-10: stock take by location): the rows
         // arrive sorted by the group column; that column becomes a heading
@@ -177,6 +212,7 @@ final class ReportRenderer
             'group_by' => $groupBy,
             'group_counts' => $groupCounts,
             'group_noun' => $groupNoun ?? 'rows',
+            'truncation_notice' => $truncationNotice,
         ])->setPaper('a4', 'portrait');
 
         // Rendered here, before the response exists, so a DomPDF failure is

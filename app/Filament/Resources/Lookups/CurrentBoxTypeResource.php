@@ -37,7 +37,7 @@ class CurrentBoxTypeResource extends Resource
 
     protected static ?int $navigationSort = 80;
 
-    protected static ?string $navigationLabel = 'Physical Box Type';
+    protected static ?string $navigationLabel = 'Current Box Types';
 
     protected static ?string $recordTitleAttribute = 'label';
 
