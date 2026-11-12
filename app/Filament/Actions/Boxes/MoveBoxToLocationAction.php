@@ -74,7 +74,7 @@ final class MoveBoxToLocationAction
                 // Review finding (tenant isolation): a repository-scoped location
                 // may only be assigned to a box in the SAME repository. Global
                 // locations (repository_id IS NULL) are assignable anywhere.
-                // Mirrors SetLocationAction's cross-repository guard.
+                // Cross-repository guard: a box cannot move to another repository's location.
                 $boxRepositoryId = $record->customFieldRepositoryId();
                 if ($location->repository_id !== null
                     && (int) $location->repository_id !== (int) $boxRepositoryId) {
@@ -100,15 +100,11 @@ final class MoveBoxToLocationAction
                     // dedicated tracking_note (kept separate from the general
                     // note) so the movement context is human-readable in the box
                     // view without consulting the audit log.
-                    // Explicit null/'' check: a literal "0" tracking note is a
-                    // real value and must not be treated as empty.
-                    $existing = ($record->tracking_note !== null && $record->tracking_note !== '')
-                        ? rtrim($record->tracking_note) . "\n"
-                        : '';
-                    $record->tracking_note = $existing . '[Move] ' . $reason;
+                    $record->appendTrackingNote('[Move] ' . $reason);
                 }
 
                 $record->save();
+                BoxBulkSupport::documentsFollowBox($record);
 
                 Notification::make()
                     ->title('Box moved to ' . $location->name)

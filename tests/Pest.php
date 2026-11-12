@@ -297,3 +297,15 @@ function qf_stockEntry(string $type, int $sourceId): ?StockTakeEntry
 
     return $row;
 }
+
+/**
+ * The Documents list's "Add rule" filter state with one rule (client
+ * 2026-10-29: the filter panel holds only rules), for filterTable() or a URL.
+ *
+ * @param array<string, mixed> $settings
+ * @return array{match: string, rules: array<string, array<string, mixed>>}
+ */
+function doc_rule(string $type, string $operator, array $settings = []): array
+{
+    return ['match' => 'all', 'rules' => ['r' => ['type' => $type, 'data' => ['operator' => $operator, 'settings' => $settings]]]];
+}

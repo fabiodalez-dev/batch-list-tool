@@ -9,10 +9,14 @@ use App\Filament\Pages\Reports\Concerns\CapsExportRows;
 use App\Filament\Pages\Reports\Concerns\ExportsWhatIsOnScreen;
 use App\Filament\Pages\Reports\Concerns\HasReportTemplates;
 use App\Filament\Pages\Reports\Filters\DateRangeFilter;
+use App\Filament\Resources\DocumentResource;
+use App\Models\Authority;
 use App\Models\Box;
 use App\Models\BoxMovement;
+use App\Models\Document;
 use App\Models\ReportTemplate;
 use App\Models\Scopes\RepositoryScope;
+use App\Support\DisplayDate;
 use App\Support\Reports\ReportRenderer;
 use Filament\Actions\Action;
 use Filament\Forms;
@@ -22,12 +26,17 @@ use Filament\Tables\Concerns\InteractsWithTable;
 use Filament\Tables\Contracts\HasTable;
 use Filament\Tables\Table;
 use Illuminate\Database\Eloquent\Builder;
+use Illuminate\Database\Eloquent\Collection;
 use Symfony\Component\HttpFoundation\BinaryFileResponse;
 use Symfony\Component\HttpFoundation\Response;
 use Symfony\Component\HttpFoundation\StreamedResponse;
 
 /**
- * RFQ §3.1.10 #5 — Box movement history.
+ * RFQ §3.1.10 #5 — Box movement history, renamed "Document movement history"
+ * by the client on 2026-11-10: each row is a document moved between boxes,
+ * shown with its catalogue identifier, authority codes, volume, creator and
+ * dates, and the boxes read as the archive names them ("Batch 4 / Box 54",
+ * "NRA 10").
  *
  * Chronological list of `box_movements` rows with optional filters by
  * date range and target box. Movements without a target box (legacy
@@ -48,11 +57,22 @@ class BoxMovementHistoryReport extends Page implements HasTable
     /** @see ReportTemplate::SOURCES */
     public const REPORT_SOURCE = ReportTemplate::SOURCE_BOX_MOVEMENTS;
 
+    /** What a row reads, loaded once per page or export. */
+    private const array RELATIONS = [
+        'document:id,catalogue_identifier,volume_number,dates',
+        'document.authorities',
+        'fromBox:id,box_type,box_number,batch_id',
+        'fromBox.batch:id,batch_number',
+        'toBox:id,box_type,box_number,batch_id',
+        'toBox.batch:id,batch_number',
+        'user:id,name,email',
+    ];
+
     protected string $view = 'filament.pages.reports.table';
 
     protected static string|\UnitEnum|null $navigationGroup = 'Operations';
 
-    protected static ?string $title = 'Box movement history';
+    protected static ?string $title = 'Document movement history';
 
     protected static ?string $slug = 'reports/box-movements';
 
@@ -73,21 +93,42 @@ class BoxMovementHistoryReport extends Page implements HasTable
             ->defaultSort('movement_date', 'desc')
             ->columns([
                 Tables\Columns\TextColumn::make('movement_date')
-                    ->label('Date')
-                    ->dateTime('Y-m-d H:i')
+                    ->label('Movement date')
+                    ->dateTime()
                     ->sortable(),
 
-                Tables\Columns\TextColumn::make('document.identifier')
-                    ->label('Document')
+                Tables\Columns\TextColumn::make('document.catalogue_identifier')
+                    ->label('Catalogue Identifier')
                     ->placeholder('—')
                     ->searchable(),
 
-                Tables\Columns\TextColumn::make('fromBox.box_number')
-                    ->label('From box')
+                Tables\Columns\TextColumn::make('document.authorities.alternative_identifier')
+                    ->label('Actual Authority Reference Code')
+                    ->listWithLineBreaks()
                     ->placeholder('—'),
 
-                Tables\Columns\TextColumn::make('toBox.box_number')
+                Tables\Columns\TextColumn::make('document.volume_number')
+                    ->label('Volume')
+                    ->placeholder('—'),
+
+                Tables\Columns\TextColumn::make('creator')
+                    ->label('Creator')
+                    ->state(fn (BoxMovement $record): array => self::creators($record))
+                    ->listWithLineBreaks()
+                    ->placeholder('—'),
+
+                Tables\Columns\TextColumn::make('document.dates')
+                    ->label('Document dates')
+                    ->placeholder('—'),
+
+                Tables\Columns\TextColumn::make('from_box')
+                    ->label('From box')
+                    ->state(fn (BoxMovement $record): ?string => self::boxLabel($record->fromBox))
+                    ->placeholder('—'),
+
+                Tables\Columns\TextColumn::make('to_box')
                     ->label('To box')
+                    ->state(fn (BoxMovement $record): ?string => self::boxLabel($record->toBox))
                     ->placeholder('—'),
 
                 Tables\Columns\TextColumn::make('reason')
@@ -122,10 +163,10 @@ class BoxMovementHistoryReport extends Page implements HasTable
                     ->indicateUsing(function (array $data): array {
                         $indicators = [];
                         if (! empty($data['from'])) {
-                            $indicators[] = 'From: ' . $data['from'];
+                            $indicators[] = 'From: ' . DisplayDate::date($data['from']);
                         }
                         if (! empty($data['to'])) {
-                            $indicators[] = 'To: ' . $data['to'];
+                            $indicators[] = 'To: ' . DisplayDate::date($data['to']);
                         }
 
                         return $indicators;
@@ -211,18 +252,13 @@ class BoxMovementHistoryReport extends Page implements HasTable
     {
         abort_unless(static::canAccess(), 403);
 
+        $labels = array_keys($this->getXlsxColumns());
+
         return ReportRenderer::streamCsv(
-            title: 'Box movement history',
-            slug: 'box-movement-history',
-            columns: [
-                'Date' => 'movement_date',
-                'Document' => 'document',
-                'From box' => 'from_box',
-                'To box' => 'to_box',
-                'Reason' => 'reason',
-                'By' => 'user',
-            ],
-            query: $this->exportQuery()->orderBy('box_movements.id'),
+            title: $this->getReportTitle(),
+            slug: $this->getReportSlug(),
+            columns: array_combine($labels, $labels),
+            query: $this->withRelations($this->exportQuery())->orderBy('box_movements.id'),
             rowMapper: fn (BoxMovement $r): array => self::movementRow($r),
         );
     }
@@ -233,14 +269,14 @@ class BoxMovementHistoryReport extends Page implements HasTable
 
         $rows = [];
         /** @var BoxMovement $r */
-        foreach ($this->exportQuery()->orderByDesc('movement_date')->limit(5000)->get() as $r) {
+        foreach ($this->withRelations($this->exportQuery())->orderByDesc('movement_date')->limit(ReportRenderer::PDF_FETCH_LIMIT)->get() as $r) {
             $rows[] = self::movementRow($r);
         }
 
         return ReportRenderer::renderPdf(
-            title: 'Box movement history',
-            slug: 'box-movement-history',
-            headers: ['Date', 'Document', 'From box', 'To box', 'Reason', 'By'],
+            title: $this->getReportTitle(),
+            slug: $this->getReportSlug(),
+            headers: array_keys($this->getXlsxColumns()),
             rows: $rows,
         );
     }
@@ -249,16 +285,8 @@ class BoxMovementHistoryReport extends Page implements HasTable
     {
         abort_unless(static::canAccess(), 403);
 
-        $query = $this->exportQuery();
         $rows = $this->fetchExportRowsWithCap(
-            $query
-                ->with([
-                    'document:id,identifier',
-                    'fromBox:id,box_number',
-                    'toBox:id,box_number',
-                    'user:id,name,email',
-                ])
-                ->orderByDesc('movement_date'),
+            $this->withRelations($this->exportQuery())->orderByDesc('movement_date'),
         );
 
         return ReportRenderer::streamXlsx(
@@ -270,17 +298,25 @@ class BoxMovementHistoryReport extends Page implements HasTable
     }
 
     /**
+     * The one projection of a movement, shared by the three exports.
+     *
      * @return array<string, callable(BoxMovement): mixed>
      */
     public function getXlsxColumns(): array
     {
         return [
-            'Date' => fn (BoxMovement $r) => $r->movement_date instanceof \DateTimeInterface
-                ? $r->movement_date->format('Y-m-d H:i')
+            'Movement date' => fn (BoxMovement $r) => $r->movement_date instanceof \DateTimeInterface
+                ? $r->movement_date->format(DisplayDate::DATE_TIME)
                 : null,
-            'Document' => fn (BoxMovement $r) => $r->document?->getAttribute('identifier'),
-            'From box' => fn (BoxMovement $r) => $r->fromBox?->getAttribute('box_number'),
-            'To box' => fn (BoxMovement $r) => $r->toBox?->getAttribute('box_number'),
+            'Catalogue Identifier' => fn (BoxMovement $r) => $r->document?->getAttribute('catalogue_identifier'),
+            'Actual Authority Reference Code' => fn (BoxMovement $r): ?string => self::joined(
+                self::authorities($r)->pluck('alternative_identifier')->all(),
+            ),
+            'Volume' => fn (BoxMovement $r) => $r->document?->getAttribute('volume_number'),
+            'Creator' => fn (BoxMovement $r): ?string => self::joined(self::creators($r)),
+            'Document dates' => fn (BoxMovement $r) => $r->document?->getAttribute('dates'),
+            'From box' => fn (BoxMovement $r): ?string => self::boxLabel($r->fromBox),
+            'To box' => fn (BoxMovement $r): ?string => self::boxLabel($r->toBox),
             'Reason' => fn (BoxMovement $r) => $r->reason,
             'By' => function (BoxMovement $r): ?string {
                 $name = $r->user?->getAttribute('name');
@@ -295,7 +331,7 @@ class BoxMovementHistoryReport extends Page implements HasTable
 
     public function getReportTitle(): string
     {
-        return 'Box movement history';
+        return 'Document movement history';
     }
 
     public function getReportSlug(): string
@@ -308,15 +344,58 @@ class BoxMovementHistoryReport extends Page implements HasTable
         $this->applyTemplateFromQuery();
     }
 
+    /**
+     * @return list<string>
+     */
+    protected static function creators(BoxMovement $r): array
+    {
+        return self::authorities($r)
+            ->map(fn (Authority $a): string => DocumentResource::creatorName($a))
+            ->filter(fn (string $name): bool => $name !== '')
+            ->values()
+            ->all();
+    }
+
+    /**
+     * @return Collection<int, Authority>
+     */
+    protected static function authorities(BoxMovement $r): Collection
+    {
+        $document = $r->document;
+
+        if (! $document instanceof Document) {
+            return new Collection;
+        }
+
+        /** @var Collection<int, Authority> $authorities */
+        $authorities = $document->authorities;
+
+        return $authorities;
+    }
+
+    protected static function boxLabel(mixed $box): ?string
+    {
+        return $box instanceof Box ? $box->shortLabel() : null;
+    }
+
+    /**
+     * @param array<int, mixed> $values
+     */
+    protected static function joined(array $values): ?string
+    {
+        $values = array_values(array_filter(array_map(static fn ($v): string => trim((string) $v), $values), static fn (string $v): bool => $v !== ''));
+
+        return $values === [] ? null : implode('; ', $values);
+    }
+
+    protected function withRelations(Builder $query): Builder
+    {
+        return $query->with(self::RELATIONS);
+    }
+
     protected function reportQuery(): Builder
     {
-        return BoxMovement::query()
-            ->with([
-                'document:id,identifier',
-                'fromBox:id,box_number',
-                'toBox:id,box_number',
-                'user:id,name,email',
-            ]);
+        return BoxMovement::query()->with(self::RELATIONS);
     }
 
     /**
@@ -328,22 +407,10 @@ class BoxMovementHistoryReport extends Page implements HasTable
      */
     protected static function movementRow(BoxMovement $r): array
     {
-        $userName = $r->user?->getAttribute('name');
-        $userEmail = $r->user?->getAttribute('email');
-        $userLabel = is_string($userName) && $userName !== ''
-            ? $userName
-            : (is_string($userEmail) ? $userEmail : null);
-
-        return [
-            $r->movement_date instanceof \DateTimeInterface
-                ? $r->movement_date->format('Y-m-d H:i')
-                : null,
-            $r->document?->getAttribute('identifier'),
-            $r->fromBox?->getAttribute('box_number'),
-            $r->toBox?->getAttribute('box_number'),
-            $r->reason,
-            $userLabel,
-        ];
+        return array_values(array_map(
+            static fn (callable $column): mixed => $column($r),
+            (new self)->getXlsxColumns(),
+        ));
     }
 
     protected function getHeaderActions(): array

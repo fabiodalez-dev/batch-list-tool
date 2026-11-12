@@ -5,6 +5,8 @@ declare(strict_types=1);
 namespace App\Filament\Resources\Lookups;
 
 use App\Filament\Resources\Lookups\DigitisationStatusResource\Pages;
+use App\Filament\Support\ListRules;
+use App\Filament\Support\MatchQueryBuilder;
 use App\Models\Lookup\DigitisationStatus;
 use Filament\Actions\Action;
 use Filament\Actions\BulkActionGroup;
@@ -122,7 +124,9 @@ class DigitisationStatusResource extends Resource
             ->defaultSort('sort_order')
             ->reorderable('sort_order')
             ->filters([
-                Tables\Filters\TernaryFilter::make('is_active'),
+                // Client 2026-10-30: one rule per column, as on Documents.
+                MatchQueryBuilder::make()
+                    ->constraints(ListRules::lookup('Code')),
             ])
             ->actions([
                 Action::make('toggle_active')

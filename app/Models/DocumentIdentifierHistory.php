@@ -36,6 +36,8 @@ class DocumentIdentifierHistory extends Model implements AuditableContract
         // a row can record an identifier change without a volume change.
         'previous_volume',
         'new_volume',
+        // Client 2026-11-05: the authority the document used to be attributed to.
+        'previous_authority_id',
         'changed_at',
         'changed_by_user_id',
         'reason',
@@ -54,6 +56,49 @@ class DocumentIdentifierHistory extends Model implements AuditableContract
     public function changedBy(): BelongsTo
     {
         return $this->belongsTo(User::class, 'changed_by_user_id');
+    }
+
+    public function previousAuthority(): BelongsTo
+    {
+        return $this->belongsTo(Authority::class, 'previous_authority_id')->withTrashed();
+    }
+
+    /**
+     * Client 2026-11-05: "From volume 5 I want to change it to volume 4 but I
+     * want to keep track of the old volume". The row keeps the document's own
+     * identifier on both sides: the identifier did not change.
+     */
+    public static function recordPastVolume(Document $document, string $previousVolume, ?string $newVolume, ?string $reason = null): self
+    {
+        return static::create([
+            'document_id' => $document->getKey(),
+            'previous_identifier' => (string) $document->identifier,
+            'new_identifier' => $document->identifier,
+            'previous_volume' => $previousVolume,
+            'new_volume' => $newVolume,
+            'changed_at' => now(),
+            'changed_by_user_id' => auth()->id(),
+            'reason' => $reason,
+            'repository_id' => $document->repository_id,
+        ]);
+    }
+
+    /**
+     * Client 2026-11-05: a document wrongly attributed to an authority is
+     * changed, and "to whom it used to be attributed" is kept.
+     */
+    public static function recordPastAuthority(Document $document, int $authorityId, ?string $reason = null): self
+    {
+        return static::create([
+            'document_id' => $document->getKey(),
+            'previous_identifier' => (string) $document->identifier,
+            'new_identifier' => $document->identifier,
+            'previous_authority_id' => $authorityId,
+            'changed_at' => now(),
+            'changed_by_user_id' => auth()->id(),
+            'reason' => $reason,
+            'repository_id' => $document->repository_id,
+        ]);
     }
 
     /**

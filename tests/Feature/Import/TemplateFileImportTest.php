@@ -246,15 +246,15 @@ it('imports an Authorities workbook filled in as the cataloguer would', function
             'Type of Entity' => 'Notary',
             'Creator Surname' => 'Bonnici',
             'Creator Name' => 'Ġużeppi',
-            'Authorised form of name' => 'Bonnici, Ġużeppi',
-            'Functions, occupations and activities' => 'Notarial practice',
+            'Authorised Form of Name' => 'Bonnici, Ġużeppi',
+            'Functions, Occupations and Activities' => 'Notarial practice',
             // Lower case on purpose: the sheet is typed by hand.
             'Level of detail' => 'full level',
             'Status' => 'in progress',
             'Rules and/or conventions' => 'ISAAR(CPF), 2nd ed.',
             'Date of creation' => '1607-1629',
             'Creator of record' => 'C. Ellul',
-            'Notes' => 'Transferred from the Valletta deposit.',
+            'Note' => 'Transferred from the Valletta deposit.',
         ],
     ]);
 

@@ -8,6 +8,7 @@ use App\Mail\WeeklyOperationsDigest;
 use App\Models\Document;
 use App\Models\DocumentFlag;
 use App\Models\User;
+use App\Support\DisplayDate;
 use Illuminate\Console\Command;
 use Illuminate\Support\Facades\Mail;
 
@@ -72,8 +73,8 @@ class SendWeeklyOperationsDigest extends Command
         $weekStart = now()->subWeek();
 
         return [
-            'period_start' => $weekStart->format('Y-m-d'),
-            'period_end' => now()->format('Y-m-d'),
+            'period_start' => $weekStart->format(DisplayDate::DATE),
+            'period_end' => now()->format(DisplayDate::DATE),
             'documents_added_this_week' => Document::query()->where('created_at', '>=', $weekStart)->count(),
             'documents_total' => Document::query()->count(),
             'pending_disinfestation_over_30d' => Document::query()

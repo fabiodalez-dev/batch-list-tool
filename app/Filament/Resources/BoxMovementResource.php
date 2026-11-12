@@ -4,6 +4,9 @@ namespace App\Filament\Resources;
 
 use App\Filament\Resources\BoxMovementResource\Pages;
 use App\Filament\Support\CreatorColumn;
+use App\Filament\Support\EqualsFirst;
+use App\Filament\Support\ListRules;
+use App\Filament\Support\MatchQueryBuilder;
 use App\Filament\Support\SearchableSelects;
 use App\Models\Box;
 use App\Models\BoxMovement;
@@ -19,6 +22,8 @@ use Filament\Schemas\Components\Section;
 use Filament\Schemas\Components\Utilities\Get;
 use Filament\Schemas\Schema;
 use Filament\Tables;
+use Filament\Tables\Filters\QueryBuilder\Constraints\RelationshipConstraint;
+use Filament\Tables\Filters\QueryBuilder\Constraints\RelationshipConstraint\Operators\IsRelatedToOperator;
 use Filament\Tables\Table;
 use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Support\Str;
@@ -268,7 +273,19 @@ class BoxMovementResource extends Resource
                 CreatorColumn::make(),
             ])
             ->filters([
-                //
+                // Client 2026-10-30: one rule per column, as on Documents.
+                MatchQueryBuilder::make()
+                    ->constraints([
+                        ListRules::relation('document', 'Document', 'identifier', preload: false),
+                        self::boxRule('fromBox', 'From box'),
+                        self::boxRule('toBox', 'To box'),
+                        ListRules::date('movement_date'),
+                        EqualsFirst::text('reason', 'Reason', nullable: true),
+                        ListRules::relation('user', 'User', 'name', emptyable: true),
+                        ListRules::date('created_at'),
+                        ListRules::date('updated_at'),
+                        ListRules::inputter(),
+                    ]),
             ])
             ->actions([
                 ViewAction::make(),
@@ -310,5 +327,25 @@ class BoxMovementResource extends Resource
             'view' => Pages\ViewBoxMovement::route('/{record}'),
             'edit' => Pages\EditBoxMovement::route('/{record}/edit'),
         ];
+    }
+
+    /**
+     * A box of the movement, picked the way the Documents "Current box"
+     * rule picks it ("Batch 30 / Box 8").
+     */
+    private static function boxRule(string $relationship, string $label): RelationshipConstraint
+    {
+        return RelationshipConstraint::make($relationship)
+            ->label($label)
+            ->emptyable()
+            ->selectable(
+                IsRelatedToOperator::make()
+                    ->titleAttribute('box_number')
+                    ->getOptionLabelFromRecordUsing(fn (Box $record): string => $record->shortLabel())
+                    ->modifyRelationshipQueryUsing(fn (Builder $query): Builder => $query->with('batch'))
+                    ->getSearchResultsUsing(fn (string $search): array => Box::searchOptions($search))
+                    ->searchable()
+                    ->multiple(),
+            );
     }
 }

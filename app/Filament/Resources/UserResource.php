@@ -4,6 +4,9 @@ namespace App\Filament\Resources;
 
 use App\Filament\Resources\UserResource\Pages;
 use App\Filament\Resources\UserResource\RelationManagers;
+use App\Filament\Support\EqualsFirst;
+use App\Filament\Support\ListRules;
+use App\Filament\Support\MatchQueryBuilder;
 use App\Models\User;
 use App\Support\RoleLabels;
 use Filament\Actions\Action;
@@ -19,9 +22,14 @@ use Filament\Resources\Resource;
 use Filament\Schemas\Components\Section;
 use Filament\Schemas\Schema;
 use Filament\Tables;
+use Filament\Tables\Filters\QueryBuilder\Constraints\BooleanConstraint;
+use Filament\Tables\Filters\QueryBuilder\Constraints\RelationshipConstraint;
+use Filament\Tables\Filters\QueryBuilder\Constraints\RelationshipConstraint\Operators\IsRelatedToOperator;
 use Filament\Tables\Table;
+use Illuminate\Database\Eloquent\Model;
 use Illuminate\Support\Facades\Hash;
 use Illuminate\Support\Str;
+use Illuminate\Validation\Rules\Password;
 
 class UserResource extends Resource
 {
@@ -87,6 +95,7 @@ class UserResource extends Resource
                             ->password()
                             ->revealable()
                             ->confirmed()
+                            ->rule(Password::default())
                             ->required(fn (string $operation): bool => $operation === 'create')
                             ->dehydrateStateUsing(fn ($state) => Hash::make($state))
                             ->dehydrated(fn ($state): bool => filled($state))
@@ -108,6 +117,7 @@ class UserResource extends Resource
                     ->columns($twoCols)
                     ->schema([
                         Forms\Components\Select::make('role')
+                            ->searchable()
                             ->options(static::roleOptions())
                             ->required()
                             ->native(false)
@@ -214,7 +224,24 @@ class UserResource extends Resource
                     ->toggleable(isToggledHiddenByDefault: true),
             ])
             ->filters([
-                //
+                // Client 2026-10-30: one rule per column, as on Documents.
+                MatchQueryBuilder::make()
+                    ->constraints([
+                        EqualsFirst::text('name', 'Name'),
+                        EqualsFirst::text('email', 'Email'),
+                        RelationshipConstraint::make('roles')
+                            ->label('Roles')
+                            ->emptyable()
+                            ->selectable(
+                                IsRelatedToOperator::make()
+                                    ->titleAttribute('name')
+                                    ->getOptionLabelFromRecordUsing(fn (Model $record): string => RoleLabels::for((string) $record->getAttribute('name')))
+                                    ->preload()
+                                    ->multiple(),
+                            ),
+                        BooleanConstraint::make('is_active'),
+                        ListRules::date('created_at'),
+                    ]),
             ])
             ->actions([
                 // Bug #9 — uniform compact icon buttons so the actions cell keeps a

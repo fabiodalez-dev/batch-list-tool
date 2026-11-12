@@ -10,14 +10,17 @@ use App\Filament\Imports\Concerns\SkipsExistingRows;
 use App\Filament\Pages\ImportWizard;
 use App\Models\Accession;
 use App\Models\Authority;
+use App\Models\Batch;
 use App\Models\Box;
 use App\Models\BoxBarcodeHistory;
 use App\Models\BoxMovement;
 use App\Models\CustomFieldDefinition;
 use App\Models\Document;
+use App\Models\DocumentFlag;
 use App\Models\DocumentIdentifierHistory;
 use App\Models\Lookup\BoxType;
 use App\Models\Lookup\CurrentBoxType;
+use App\Models\Lookup\CustodyStatusType;
 use App\Models\Repository;
 use App\Models\Scopes\RepositoryScope;
 use App\Models\User;
@@ -112,6 +115,20 @@ class DocumentImporter extends Importer
      * in {@see buildAutoIdentifier()}.
      */
     public const SOURCE_ROW_KEY = SpreadsheetHeaders::SOURCE_ROW_KEY;
+
+    /**
+     * Client 2026-10-29: "To remove from mass upload of documents". Box
+     * properties (seal, Destroyed, container type, box barcode) are imported
+     * with the box, and No of Acts / Pages/Folios hold nothing, so the import
+     * wizard neither offers nor maps these. The console batch-list import
+     * still reads them from the legacy sheet.
+     *
+     * @var list<string>
+     */
+    public const WIZARD_HIDDEN_COLUMNS = [
+        'number_of_acts', 'pages_folios', 'current_box_barcode', 'seal_number', 'current_box_type',
+        'ras_box_1_destroyed', 'ras_box_2_destroyed', 'in_situ_box_1_destroyed', 'in_situ_box_2_destroyed', 'in_situ_box_3_destroyed',
+    ];
 
     /**
      * Post-save side effects (box-status reconciliation + authority pivot
@@ -253,6 +270,14 @@ class DocumentImporter extends Importer
      * @var array<int, array<string, string>>
      */
     protected static array $rowDestroyedStash = [];
+
+    /**
+     * Client 2026-10-28 — the flag types named in the row's Flags cell, given
+     * to the document in {@see persistRowSideEffects()} once it is saved.
+     *
+     * @var array<int, list<string>>
+     */
+    protected static array $rowFlagStash = [];
 
     /**
      * Per-row transactional safety (review I2 / Fix 5).
@@ -429,7 +454,22 @@ class DocumentImporter extends Importer
             ->where('identifier', trim((string) $identifier))
             ->where('repository_id', $repoId); // guaranteed non-null past the guard above
 
-        $record = $q->first() ?? new Document;
+        $record = $q->first();
+
+        // Client 2026-10-29: a row typed again from the template, with a flag
+        // added and "Overwrite" ticked, made a second copy of the document: the
+        // template has no identifier column and the auto identifier changes with
+        // the row's content. Such a row is the document already filed at the
+        // same place in the sheet (see matchBySheetPosition()).
+        // Client 2026-10-30: the same row's auto identifier also named a copy
+        // deleted the day before, so the import restored the deleted copy
+        // instead of updating the document still in the archive. The live
+        // document at that place in the sheet comes first.
+        if ($autoIdentifier !== null && ($record === null || $record->trashed())) {
+            $record = $this->matchBySheetPosition((int) $repoId) ?? $record;
+        }
+
+        $record ??= new Document;
         // A new document gets the row's repository here: the model's creating
         // hook takes it from the signed-in user, and the queued job has none,
         // so it was left null (the same trap BoxImporter hit, PR #195).
@@ -542,7 +582,9 @@ class DocumentImporter extends Importer
         // only if the stash is somehow missing keeps a single source of truth so
         // the stamped value can never drift from the value used to find the record.
         if (empty($record->identifier) || $record->identifier === 'AUTO-') {
-            $record->identifier = self::$rowAutoIdentifierStash[spl_object_id($record)]
+            // A document matched by its place in the sheet keeps its identifier.
+            $record->identifier = ($record->exists ? $record->getOriginal('identifier') : null)
+                ?: self::$rowAutoIdentifierStash[spl_object_id($record)]
                 ?? $this->generateDocumentIdentifier($record);
         }
 
@@ -609,6 +651,27 @@ class DocumentImporter extends Importer
         // written, which would otherwise leave a half-saved row.
         DB::beginTransaction();
         $this->rowSavepointOpen = true;
+    }
+
+    /**
+     * A save that throws (e.g. a blank Subseries hitting the NOT NULL on
+     * series_id) comes after the savepoint opened in {@see beforeSave()}, and
+     * afterSave() never runs. Close the savepoint here: left open on the last
+     * row of a chunk, it kept Filament's chunk transaction from ever
+     * committing, and the whole chunk was lost (client 2026-10-27).
+     */
+    public function saveRecord(): void
+    {
+        try {
+            parent::saveRecord();
+        } catch (\Throwable $throwable) {
+            if ($this->rowSavepointOpen) {
+                DB::rollBack();
+                $this->rowSavepointOpen = false;
+            }
+
+            throw $throwable;
+        }
     }
 
     /**
@@ -747,6 +810,7 @@ class DocumentImporter extends Importer
         self::$rowCustodyExplicitStash = [];
         self::$rowCustomFieldStash = [];
         self::$rowSealStash = [];
+        self::$rowFlagStash = [];
         self::$rowRepositoryStash = [];
         self::$rowAutoIdentifierStash = [];
     }
@@ -769,19 +833,26 @@ class DocumentImporter extends Importer
     }
 
     /**
-     * Map a Custody Status cell to its stored code: the labels shown on the
-     * document form ("Not in box"), the codes themselves ("not_in_box") and
-     * the obvious short form "Mounted". Case and spacing do not matter.
+     * Map a Custody Status cell to its stored code: the labels and codes of the
+     * Custody Status Types page ("Not in Box", "not_in_box") and the obvious
+     * short forms ("Mounted"). Case and spacing do not matter. A deactivated
+     * status is returned too: the Document guard fails the row and says why.
      */
     public static function custodyCode(string $value): ?string
     {
-        $norm = strtolower(trim((string) preg_replace('/[\s_;,\-]+/', ' ', $value)));
+        $normalise = static fn (string $v): string => strtolower(trim((string) preg_replace('/[\s_;,\-]+/', ' ', $v)));
+        $norm = $normalise($value);
+
+        foreach (CustodyStatusType::labels() as $code => $label) {
+            if ($norm === $normalise($code) || $norm === $normalise($label)) {
+                return $code;
+            }
+        }
 
         return match ($norm) {
-            'in box' => 'in_box',
-            'not in box', 'no box', 'not boxed' => 'not_in_box',
-            'mounted no box', 'mounted' => 'mounted_no_box',
-            'conservation box', 'in conservation box' => 'conservation_box',
+            'no box', 'not boxed' => 'not_in_box',
+            'mounted' => 'mounted_no_box',
+            'in conservation box' => 'conservation_box',
             default => null,
         };
     }
@@ -804,6 +875,63 @@ class DocumentImporter extends Importer
             $repoId !== null ? (int) $repoId : null,
             $this->currentRowSequence(),
         );
+    }
+
+    /**
+     * The document already in the archive that a row without an identifier
+     * describes: same RAS Batch 1 and Box 1, In Situ Box 1, Volume, Part
+     * Number, Subseries and authorities. Only documents that existed before
+     * this import started are considered, so two rows of one sheet never
+     * merge. Several matches fail the row: the sheet must then name the one
+     * to update in a Document Identifier column.
+     */
+    protected function matchBySheetPosition(int $repoId): ?Document
+    {
+        $batchNumber = self::sheetValue($this->data['batch_number'] ?? null);
+        $boxNumber = self::sheetValue($this->data['current_box_number'] ?? null);
+        if ($batchNumber === null || $boxNumber === null) {
+            return null;
+        }
+
+        $batchIds = Batch::withoutGlobalScopes()->where('repository_id', $repoId)->where('batch_number', $batchNumber)->pluck('id');
+        if ($batchIds->isEmpty()) {
+            return null;
+        }
+
+        $series = self::sheetValue($this->data['series'] ?? null);
+        $seriesCode = $series === null ? null : strtoupper(trim(explode(':', $series, 2)[0]));
+        $authorityCodes = collect(explode(';', (string) ($this->data['authority_identifier'] ?? '')))
+            ->map(fn (string $code): ?string => self::sheetValue($code))
+            ->filter()
+            ->map(fn (string $code): string => mb_strtolower($code))
+            ->unique()
+            ->values();
+
+        $candidates = Document::withoutGlobalScopes()
+            ->where('repository_id', $repoId)
+            ->whereIn('batch_id', $batchIds)
+            // withoutGlobalScopes() drops SoftDeletes too: a deleted copy is
+            // not the document the row describes.
+            ->whereNull('deleted_at')
+            // Narrowed in SQL to the box, so a big sheet re-imported over a
+            // full archive compares a handful of documents per row, not a batch.
+            ->whereIn('ras_box_1', array_unique([trim((string) $this->data['current_box_number']), $boxNumber]))
+            ->where('created_at', '<', $this->import->created_at ?? now())
+            ->with(['series', 'authorities'])
+            ->get()
+            ->filter(fn (Model $doc): bool => $doc instanceof Document && $this->describesDocument($doc, $boxNumber, $seriesCode, $authorityCodes->all()));
+
+        if ($candidates->count() > 1) {
+            throw new RowImportFailedException(sprintf(
+                'This row matches %d documents already in the archive (%s). Add a Document Identifier column with the identifier of the one to update.',
+                $candidates->count(),
+                $candidates->take(5)->pluck('identifier')->implode(', '),
+            ));
+        }
+
+        $match = $candidates->first();
+
+        return $match instanceof Document ? $match : null;
     }
 
     /**
@@ -1671,7 +1799,7 @@ class DocumentImporter extends Importer
             // cell lets the import decide from the
             // box columns (see syncCustodyWithBox()).
             ImportColumn::make('custody_status')
-                ->label('Custody Status (In box / Not in box / Mounted; no box / Conservation Box)')
+                ->label('Custody Status (' . implode(' / ', Document::custodyLabels()) . ')')
                 ->guess(['Custody Status', 'custody_status', 'Custody'])
                 ->fillRecordUsing(function (Document $record, ?string $state): void {
                     $v = trim((string) ($state ?? ''));
@@ -1681,11 +1809,39 @@ class DocumentImporter extends Importer
                     $code = self::custodyCode($v);
                     if ($code === null) {
                         throw ValidationException::withMessages([
-                            'custody_status' => "Custody Status '{$v}' is not one of: In box, Not in box, Mounted; no box, Conservation Box.",
+                            'custody_status' => "Custody Status '{$v}' is not one of: " . implode(', ', Document::custodyLabels()) . '.',
                         ]);
                     }
                     $record->custody_status = $code;
                     self::$rowCustodyExplicitStash[spl_object_id($record)] = true;
+                }),
+
+            // Client 2026-10-28: "We had a number of flags — how can we apply
+            // them to documents? During importation or after". One open flag
+            // per type the cell names, by code, name or colour ("Mould
+            // Treatment; Pink"); a name the Flag Types page does not know fails
+            // the row rather than being dropped.
+            ImportColumn::make('flags')
+                ->label('Flags (flag types or colours, ";"-separated)')
+                ->guess(['Flags', 'Flag', 'flags'])
+                ->fillRecordUsing(function (Document $record, ?string $state): void {
+                    if ($state === null || trim($state) === '') {
+                        return;
+                    }
+                    $types = [];
+                    foreach (explode(';', $state) as $piece) {
+                        if (trim($piece) === '') {
+                            continue;
+                        }
+                        $type = DocumentFlag::resolveType($piece);
+                        if ($type === null) {
+                            throw ValidationException::withMessages([
+                                'flags' => __("Flag ':flag' is not a flag type on the Flag Types page", ['flag' => trim($piece)]),
+                            ]);
+                        }
+                        $types[] = $type;
+                    }
+                    self::$rowFlagStash[spl_object_id($record)] = array_values(array_unique($types));
                 }),
 
             ImportColumn::make('torre')
@@ -2276,6 +2432,30 @@ class DocumentImporter extends Importer
             $record->setCustomFieldData($customData, false);  // false = merge/import semantics
         }
 
+        // Flags column: a type the document already has open is left as it
+        // is, so importing the same sheet twice does not flag it twice.
+        $flagTypes = self::$rowFlagStash[$key] ?? [];
+        unset(self::$rowFlagStash[$key]);
+        $labels = $flagTypes !== [] ? DocumentFlag::typeOptions() : [];
+        foreach ($flagTypes as $type) {
+            $open = DocumentFlag::withoutGlobalScopes()
+                ->where('document_id', $record->getKey())
+                ->where('type', $type)
+                ->whereIn('status', DocumentFlag::OPEN_STATUSES)
+                ->exists();
+            if (! $open) {
+                DocumentFlag::create([
+                    'document_id' => $record->getKey(),
+                    'repository_id' => $record->repository_id,
+                    'type' => $type,
+                    'title' => $labels[$type] ?? $type,
+                    'description' => 'Imported from the Flags column.',
+                    'flagged_by_user_id' => $this->import->user->getKey(),
+                    'flagged_at' => now(),
+                ]);
+            }
+        }
+
         // Runs after buildLegacyMovementChain(), which may still move the
         // document into an In Situ box.
         $this->syncCustodyWithBox($record);
@@ -2315,12 +2495,17 @@ class DocumentImporter extends Importer
         $explicit = isset(self::$rowCustodyExplicitStash[$key]);
         unset(self::$rowCustodyExplicitStash[$key]);
 
-        if ($explicit || $record->custody_status === 'mounted_no_box') {
+        // Only in or out of a box follows the box columns: any other status
+        // (Mounted, Conservation Box, one added on the Custody Status Types
+        // page) was somebody's choice. Null is a new row before its default.
+        if ($explicit || ! in_array($record->custody_status, ['in_box', 'not_in_box', null], true)) {
             return;
         }
 
         $custody = $record->current_box_id === null ? 'not_in_box' : 'in_box';
-        if ($record->custody_status !== $custody) {
+        // saveQuietly skips the Document guard, and not_in_box can be deactivated
+        // or deleted on that page: never write a status it no longer offers.
+        if ($record->custody_status !== $custody && array_key_exists($custody, Document::custodyLabels())) {
             $record->custody_status = $custody;
             $record->saveQuietly();
         }
@@ -2483,6 +2668,54 @@ class DocumentImporter extends Importer
         // rows may lack a location); the seal write itself is unrelated to it.
         $box->skipPermOutGuard = true;
         $box->save();
+    }
+
+    /**
+     * Whether a document sits where the row puts it, with the row's volume,
+     * part, subseries and authorities.
+     *
+     * @param list<string> $authorityCodes lower-cased
+     */
+    private function describesDocument(Document $doc, string $boxNumber, ?string $seriesCode, array $authorityCodes): bool
+    {
+        $authorities = $doc->getRelationValue('authorities');
+        if (self::sheetValue($doc->ras_box_1) !== $boxNumber
+            || self::sheetValue($doc->in_situ_box_1) !== self::sheetValue($this->data['in_situ_box_1'] ?? null)
+            || self::sheetValue($doc->volume_number) !== self::sheetValue($this->data['volume_number'] ?? null)
+            || self::sheetValue($doc->part_number) !== self::sheetValue($this->data['part_number'] ?? null)
+            || ($seriesCode !== null && strtoupper((string) $doc->getRelationValue('series')?->getAttribute('code')) !== $seriesCode)
+            || $authorities->count() !== count($authorityCodes)) {
+            return false;
+        }
+
+        // Every authority of the row is one of the document's, by any of the
+        // codes the Authority Identifier column accepts.
+        foreach ($authorityCodes as $code) {
+            $found = $authorities->contains(fn (Model $a): bool => in_array($code, array_map(
+                fn (mixed $v): string => mb_strtolower(trim((string) $v)),
+                [$a->getAttribute('identifier'), $a->getAttribute('alternative_identifier'), $a->getAttribute('alternative_identifier_warrant')],
+            ), true));
+            if (! $found) {
+                return false;
+            }
+        }
+
+        return true;
+    }
+
+    /**
+     * A sheet cell as compared between rows: trimmed, case and spacing ignored,
+     * "52.0" read as "52", blank as null.
+     */
+    private static function sheetValue(mixed $value): ?string
+    {
+        if ($value === null || ! is_scalar($value)) {
+            return null;
+        }
+        $value = mb_strtolower(trim((string) preg_replace('/\s+/u', '', (string) $value)));
+        $value = (string) preg_replace('/^(\d+)\.0+$/', '$1', $value);
+
+        return $value === '' ? null : $value;
     }
 
     /**
@@ -2652,7 +2885,7 @@ class DocumentImporter extends Importer
         if ($raw === '') {
             return null;
         }
-        // A type on the Physical Box Type page, as written ("Conservation
+        // A type on the Current Box Types page, as written ("Conservation
         // Box"), before the legacy shorthand below ("RAS", "big").
         $exact = Document::canonicalEnumValue($raw, CurrentBoxType::codes());
         if ($exact !== null) {

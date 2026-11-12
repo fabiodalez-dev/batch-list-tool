@@ -6,6 +6,9 @@ namespace App\Filament\Resources\Lookups;
 
 use App\Filament\Resources\Lookups\FlagTypeResource\Pages;
 use App\Filament\Support\CreatorColumn;
+use App\Filament\Support\EqualsFirst;
+use App\Filament\Support\ListRules;
+use App\Filament\Support\MatchQueryBuilder;
 use App\Models\Lookup\FlagType;
 use Filament\Actions\Action;
 use Filament\Actions\BulkActionGroup;
@@ -82,9 +85,12 @@ class FlagTypeResource extends Resource
                             ->minValue(0),
                         Forms\Components\Toggle::make('is_active')
                             ->default(true),
-                        Forms\Components\TextInput::make('colour')
-                            ->maxLength(64)
-                            ->helperText('Legacy colour code (e.g. brown, pink, yellow).')
+                        // Client 2026-10-30: picked from a colour wheel rather
+                        // than typed. A legacy name ("red") opens as its colour.
+                        Forms\Components\ColorPicker::make('colour')
+                            ->hex()
+                            ->afterStateHydrated(fn (Forms\Components\ColorPicker $component, ?string $state) => $component->state(FlagType::cssColour($state)))
+                            ->helperText('The colour of this flag in the Flags column and on the document page.')
                             ->nullable(),
                     ]),
                 Section::make('Metadata')
@@ -116,9 +122,9 @@ class FlagTypeResource extends Resource
                 Tables\Columns\TextColumn::make('sort_order')
                     ->sortable()
                     ->toggleable(),
-                Tables\Columns\TextColumn::make('colour')
+                Tables\Columns\ColorColumn::make('colour')
                     ->label('Colour')
-                    ->placeholder('—')
+                    ->state(fn (FlagType $record): ?string => FlagType::cssColour($record->colour))
                     ->sortable()
                     ->toggleable(),
                 Tables\Columns\IconColumn::make('is_active')
@@ -136,7 +142,11 @@ class FlagTypeResource extends Resource
             ->defaultSort('sort_order')
             ->reorderable('sort_order')
             ->filters([
-                Tables\Filters\TernaryFilter::make('is_active'),
+                // Client 2026-10-30: one rule per column, as on Documents.
+                MatchQueryBuilder::make()
+                    ->constraints(ListRules::lookup('Code', [
+                        EqualsFirst::text('colour', 'Colour', nullable: true),
+                    ])),
             ])
             ->actions([
                 Action::make('toggle_active')

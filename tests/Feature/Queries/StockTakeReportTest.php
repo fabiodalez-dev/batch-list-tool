@@ -65,7 +65,7 @@ it('counts boxes (destroyed excluded) and items per location', function (): void
         ->and((int) $row->getAttribute('item_count'))->toBe(3);
 });
 
-it('emits detailed box and document stock-take rows with the required identifiers and NRA location', function (): void {
+it('emits box rows, and document rows only for documents kept outside their box on request', function (): void {
     $this->actingAs(stockAdmin());
 
     $loc = stockLocation();
@@ -77,25 +77,23 @@ it('emits detailed box and document stock-take rows with the required identifier
         'location_id' => $loc->id,
         'provenance_unknown' => true,
     ]);
-    $doc = Document::factory()->create([
-        'current_box_id' => $box->id,
-        'location_id' => $loc->id,
-        'catalogue_identifier' => 'CAT-001',
-        'identifier' => 'TMP-001',
-        'object_reference_number' => 'COR-001',
-    ]);
+    $inBox = Document::factory()->create(['current_box_id' => $box->id, 'catalogue_identifier' => 'CAT-001']);
+    $outside = Document::factory()->create(['current_box_id' => $box->id, 'custody_status' => 'not_in_box', 'location_id' => $loc->id, 'catalogue_identifier' => 'CAT-002']);
 
     $boxRow = qf_stockEntry('box', $box->id);
-    $docRow = qf_stockEntry('document', $doc->id);
 
     expect($boxRow)->not->toBeNull()
-        ->and((string) $boxRow->getAttribute('latest_batch_no'))->toBe('27')
-        ->and($boxRow->getAttribute('box_no'))->toBe('IS-54')
-        ->and($boxRow->getAttribute('in_situ_box_no'))->toBe('IS-54')
-        ->and($boxRow->getAttribute('nra_location'))->toBe($loc->name)
-        ->and($docRow)->not->toBeNull()
-        ->and($docRow->getAttribute('catalogue_identifier'))->toBe('CAT-001')
-        ->and($docRow->getAttribute('temporary_identifier'))->toBe('TMP-001')
-        ->and($docRow->getAttribute('conservation_object_reference_number'))->toBe('COR-001')
-        ->and($docRow->getAttribute('nra_location'))->toBe($loc->name);
+        ->and((string) $boxRow->getAttribute('batch_number'))->toBe('27')
+        ->and($boxRow->getAttribute('box_number'))->toBe('IS-54')
+        ->and($boxRow->getAttribute('location_name'))->toBe($loc->name)
+        ->and(qf_stockEntry('document', $outside->id))->toBeNull(); // not asked for
+
+    $page = new StockTakeReport;
+    $page->tableFilters = ['include_out_of_box' => ['isActive' => true]];
+    $rows = (new ReflectionMethod($page, 'reportQuery'))->invoke($page)->where('stock_type', 'document')->get();
+
+    expect($rows->pluck('source_id')->all())->toBe([$outside->id])
+        ->and($rows->first()->getAttribute('document_ref'))->toBe('CAT-002')
+        ->and($rows->first()->getAttribute('location_name'))->toBe($loc->name)
+        ->and($rows->pluck('source_id')->all())->not->toContain($inBox->id);
 });

@@ -4,22 +4,19 @@ namespace App\Providers\Filament;
 
 use App\Filament\Pages\Auth\EditProfile;
 use App\Filament\Pages\Auth\TwoFactorLogin;
-use App\Filament\Widgets\DocumentsPerBatchChart;
-use App\Filament\Widgets\DocumentsPerSeriesChart;
-use App\Filament\Widgets\PendingDisinfestationTable;
-use App\Filament\Widgets\RecentActivityWidget;
-use App\Filament\Widgets\StatsOverviewWidget;
+use App\Filament\Pages\Dashboard;
+use App\Filament\Pages\UserGuide;
 use App\Http\Middleware\ApplyUserPreferences;
 use App\Http\Middleware\EnsurePasswordChanged;
 use App\Settings\BrandingSettings;
 use App\Support\Avatars\LocalAvatarProvider;
 use BezhanSalleh\FilamentShield\FilamentShieldPlugin;
+use Filament\Actions\Action;
 use Filament\FontProviders\LocalFontProvider;
 use Filament\Http\Middleware\Authenticate;
 use Filament\Http\Middleware\AuthenticateSession;
 use Filament\Http\Middleware\DisableBladeIconComponents;
 use Filament\Http\Middleware\DispatchServingFilamentEvent;
-use Filament\Pages;
 use Filament\Panel;
 use Filament\PanelProvider;
 use Filament\View\PanelsRenderHook;
@@ -68,6 +65,16 @@ class AdminPanelProvider extends PanelProvider
                 'Reports',
                 'My Account',
                 'Administration',
+                // Last: the user guide sits at the foot of the sidebar.
+                'Help',
+            ])
+            // Client 2026-11-10: the user manual inside the tool, also from
+            // the user menu so it is reachable from any page.
+            ->userMenuItems([
+                Action::make('user-guide')
+                    ->label('User guide')
+                    ->icon('heroicon-o-question-mark-circle')
+                    ->url(fn (): string => UserGuide::getUrl()),
             ])
             // Security Baseline §15: NO external CDNs at runtime —
             // Inter font is served from /fonts/inter/ (rsms/inter v4.1, OFL-1.1)
@@ -126,17 +133,10 @@ class AdminPanelProvider extends PanelProvider
             ->discoverResources(in: app_path('Filament/Resources'), for: 'App\\Filament\\Resources')
             ->discoverPages(in: app_path('Filament/Pages'), for: 'App\\Filament\\Pages')
             ->pages([
-                Pages\Dashboard::class,
+                Dashboard::class,
             ])
             ->discoverWidgets(in: app_path('Filament/Widgets'), for: 'App\\Filament\\Widgets')
-            // Dashboard widgets — order matters: highest-value above the fold.
-            ->widgets([
-                StatsOverviewWidget::class,
-                PendingDisinfestationTable::class,
-                DocumentsPerSeriesChart::class,
-                DocumentsPerBatchChart::class,
-                RecentActivityWidget::class,
-            ])
+            // The dashboard's widgets and their order: App\Filament\Pages\Dashboard.
             ->middleware([
                 EncryptCookies::class,
                 AddQueuedCookiesToResponse::class,
@@ -169,7 +169,7 @@ class AdminPanelProvider extends PanelProvider
         try {
             $settings = app(BrandingSettings::class);
 
-            $brandName = $settings->brand_name ?: 'NAf';
+            $brandName = $settings->brand_name ?: 'Logistics Tool';
             $brandLogoHeight = $settings->logo_height ?: '2.25rem';
 
             // Use the stored upload path only when it resolves to a locally
@@ -186,7 +186,7 @@ class AdminPanelProvider extends PanelProvider
             }
         } catch (\Throwable) {
             // Settings table missing (fresh install, migration not yet run).
-            $brandName = 'NAf';
+            $brandName = 'Logistics Tool';
             $brandLogo = asset('images/brand-logo.png');
             $brandLogoHeight = '2.25rem';
         }

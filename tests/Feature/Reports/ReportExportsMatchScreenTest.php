@@ -3,7 +3,6 @@
 declare(strict_types=1);
 
 use App\Filament\Pages\Reports\BoxMovementHistoryReport;
-use App\Filament\Pages\Reports\DisinfestationCycleReport;
 use App\Filament\Pages\Reports\DocumentLocationReport;
 use App\Filament\Pages\Reports\DocumentsByBatchReport;
 use App\Filament\Pages\Reports\DocumentsByCreatorReport;
@@ -156,7 +155,6 @@ function rex_cases(): array
         'flags by type' => [FlagsByTypeReport::class, 'repository_id', fn (array $w) => $w['repoA'], ['exportCsv', 'exportPdf']],
         'stock take' => [StockTakeReport::class, 'repository_id', fn (array $w) => [$w['repoA']], $all],
         'RAS / NRA reconciliation' => [RasNraReconciliationReport::class, 'reconcilable', fn (array $w) => true, $all],
-        'disinfestation cycle' => [DisinfestationCycleReport::class, 'box_type', fn (array $w) => ['RAS'], $all],
         'box movement history' => [BoxMovementHistoryReport::class, 'from_box_id', fn (array $w) => [$w['boxA']], $all],
     ];
 }

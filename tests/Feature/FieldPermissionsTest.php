@@ -295,7 +295,8 @@ it('§3.1.8 #21: viewer rendering ListDocuments page does not see the `extra` ta
         ->assertCanSeeTableRecords([$doc]);
 });
 
-it('§3.1.8 #22: admin rendering EditDocument has the `extra` KeyValue field visible+enabled', function () {
+// Client 2026-11-05: `extra` left the form for every role; the save leaves its data alone.
+it('§3.1.8 #22: admin rendering EditDocument has no `extra` field, and may edit the repository', function () {
     $repo = fp_repo();
     $series = fp_series();
     $doc = fp_doc($repo->id, $series->id);
@@ -308,7 +309,8 @@ it('§3.1.8 #22: admin rendering EditDocument has the `extra` KeyValue field vis
 
     Livewire::test(EditDocument::class, ['record' => $doc->getRouteKey()])
         ->assertOk()
-        ->assertFormFieldExists('extra');
+        ->assertFormFieldDoesNotExist('extra')
+        ->assertFormFieldIsEnabled('repository_id');
 });
 
 it('§3.1.8 #23: editor rendering EditDocument does NOT have the `extra` field in the form', function () {
@@ -329,10 +331,11 @@ it('§3.1.8 #23: editor rendering EditDocument does NOT have the `extra` field i
 
     Livewire::test(EditDocument::class, ['record' => $doc->getRouteKey()])
         ->assertOk()
-        ->assertFormFieldIsHidden('extra');
+        ->assertFormFieldDoesNotExist('extra');
 });
 
-it('§3.1.8 #24: editor rendering EditDocument has `identifier` enabled but `repository_id` disabled', function () {
+// Client 2026-11-05: the identifier is never editable, by any role.
+it('§3.1.8 #24: editor rendering EditDocument has `notes` enabled but `repository_id` and `identifier` disabled', function () {
     $repo = fp_repo();
     $series = fp_series();
     $doc = fp_doc($repo->id, $series->id);
@@ -348,7 +351,8 @@ it('§3.1.8 #24: editor rendering EditDocument has `identifier` enabled but `rep
         ->assertFormFieldExists('identifier')
         ->assertFormFieldExists('repository_id')
         ->assertFormFieldIsDisabled('repository_id')
-        ->assertFormFieldIsEnabled('identifier');
+        ->assertFormFieldIsDisabled('identifier')
+        ->assertFormFieldIsEnabled('notes');
 });
 
 it('§3.1.8 #25: viewer is denied the EditDocument page by Shield (resource-level)', function () {
@@ -378,7 +382,7 @@ it('§3.1.8 #25: viewer is denied the EditDocument page by Shield (resource-leve
     expect(FieldPermissions::canWrite('document', 'identifier', $viewer))->toBeFalse();
 });
 
-it('§3.1.8 #26: super_admin rendering EditDocument has every field visible and enabled', function () {
+it('§3.1.8 #26: super_admin rendering EditDocument has its fields visible and enabled, the identifier apart', function () {
     $repo = fp_repo();
     $series = fp_series();
     $doc = fp_doc($repo->id, $series->id);
@@ -392,11 +396,10 @@ it('§3.1.8 #26: super_admin rendering EditDocument has every field visible and 
     Livewire::test(EditDocument::class, ['record' => $doc->getRouteKey()])
         ->assertOk()
         ->assertFormFieldExists('identifier')
-        ->assertFormFieldExists('extra')
         ->assertFormFieldExists('repository_id')
-        ->assertFormFieldIsEnabled('identifier')
+        ->assertFormFieldIsDisabled('identifier')
         ->assertFormFieldIsEnabled('repository_id')
-        ->assertFormFieldIsEnabled('extra');
+        ->assertFormFieldIsEnabled('notes');
 });
 
 /* ================================================================ *

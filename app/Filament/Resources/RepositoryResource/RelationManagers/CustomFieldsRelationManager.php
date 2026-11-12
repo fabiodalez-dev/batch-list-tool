@@ -74,6 +74,7 @@ class CustomFieldsRelationManager extends RelationManager
             // GROUP E fix: immutable once the definition has associated values
             // (changing it would silently re-scope or orphan existing stored data).
             Forms\Components\Select::make('entity_type')
+                ->searchable()
                 ->label('Entity type')
                 ->options($entityTypeOptions)
                 ->required()
@@ -144,6 +145,7 @@ class CustomFieldsRelationManager extends RelationManager
             // (changing type would silently reinterpret existing stored data —
             // e.g. turning a boolean '1' into a number or a date string).
             Forms\Components\Select::make('type')
+                ->searchable()
                 ->label('Type')
                 ->options($typeOptions)
                 ->required()

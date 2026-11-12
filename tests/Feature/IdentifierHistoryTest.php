@@ -66,6 +66,7 @@ test('model exposes the correct fillable and casts', function () {
         'previous_identifier',
         'new_identifier',
         'previous_volume',
+        'previous_authority_id',
         'new_volume',
         'changed_at',
         'changed_by_user_id',
@@ -127,7 +128,7 @@ test('multiple identifier changes produce multiple rows in chronological order',
     $doc->refresh();
     $doc->update(['identifier' => 'R5-c']);
 
-    $rows = $doc->identifierHistory()->orderBy('id')->get();
+    $rows = $doc->identifierHistory()->reorder('id')->get();
     expect($rows)->toHaveCount(3);
     expect($rows->pluck('previous_identifier')->all())
         ->toBe(['R5', 'R5-a', 'R5-b']);

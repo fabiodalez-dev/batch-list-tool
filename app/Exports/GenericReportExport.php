@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace App\Exports;
 
+use App\Support\DisplayDate;
 use Illuminate\Support\Collection;
 use Maatwebsite\Excel\Concerns\FromCollection;
 use Maatwebsite\Excel\Concerns\ShouldAutoSize;
@@ -86,7 +87,7 @@ final class GenericReportExport implements FromCollection, ShouldAutoSize, WithH
 
     /**
      * Coerce a value into something Excel can sensibly render.
-     * Carbon → "Y-m-d H:i", arrays → JSON, objects with __toString → string.
+     * Carbon → "d-m-Y H:i", arrays → JSON, objects with __toString → string.
      */
     protected function normaliseCell(mixed $value): mixed
     {
@@ -95,7 +96,7 @@ final class GenericReportExport implements FromCollection, ShouldAutoSize, WithH
         }
 
         if ($value instanceof \DateTimeInterface) {
-            return $value->format('Y-m-d H:i');
+            return $value->format(DisplayDate::DATE_TIME);
         }
 
         if (is_array($value)) {

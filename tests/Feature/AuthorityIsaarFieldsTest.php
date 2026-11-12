@@ -161,18 +161,18 @@ it('still imports a sheet that uses any of the previous identifier names', funct
     expect($older['identifier'] ?? null)->toBe('Identifier');
 });
 
-it('carries every new descriptive column, Notes included', function (): void {
+it('carries every new descriptive column, Note included', function (): void {
     $headers = TemplateGenerator::headersFor('authority');
 
     foreach ([
-        'Authorised form of name',
-        'Functions, occupations and activities',
+        'Authorised Form of Name',
+        'Functions, Occupations and Activities',
         'Level of detail',
         'Status',
         'Rules and/or conventions',
         'Date of creation',
         'Creator of record',
-        'Notes',
+        'Note',
     ] as $expected) {
         expect($headers)->toContain($expected);
     }
@@ -190,9 +190,9 @@ it('maps every template header onto an importer column without manual mapping', 
     expect($map['status'] ?? null)->toBe('Status');
     expect($map['date_of_creation'] ?? null)->toBe('Date of creation');
     expect($map['creator_of_record'] ?? null)->toBe('Creator of record');
-    expect($map['notes'] ?? null)->toBe('Notes');
-    expect($map['authorised_form_of_name'] ?? null)->toBe('Authorised form of name');
-    expect($map['functions_occupations_activities'] ?? null)->toBe('Functions, occupations and activities');
+    expect($map['notes'] ?? null)->toBe('Note');
+    expect($map['authorised_form_of_name'] ?? null)->toBe('Authorised Form of Name');
+    expect($map['functions_occupations_activities'] ?? null)->toBe('Functions, Occupations and Activities');
     expect($map['rules_and_conventions'] ?? null)->toBe('Rules and/or conventions');
 });
 
@@ -337,21 +337,22 @@ it('does not read a hand-typed number as an Excel serial', function (): void {
     expect(Authority::where('identifier', 'NAM-D5')->value('date_of_creation'))->toBe('2026-07-29');
 });
 
-it('imports Notes without the maiden-surname line overwriting it', function (): void {
+it('imports the maiden surname and the name suffix in their own columns, leaving notes and given names alone', function (): void {
+    // Client 2026-10-27: the suffix was appended to the given names and the
+    // maiden surname written into the notes; neither showed as such.
     $u = isaar_admin();
     $this->actingAs($u);
 
-    // maiden_surname APPENDS a line to notes. Filament fills columns in the
-    // order they are declared, so declaring notes after it would have the
-    // imported note replace the appended line and lose it silently.
     isaar_import([
         'identifier' => 'NAM-6', 'surname' => 'Camilleri', 'given_names' => 'Rita', 'entity_type' => 'Notary',
         'notes' => 'Transferred from the Gozo section.',
-        'maiden_surname' => 'Zammit',
+        'maiden_surname' => 'Zammit', 'name_suffix' => 'Senior',
     ], $u->id);
 
-    $notes = (string) Authority::where('identifier', 'NAM-6')->value('notes');
+    $a = Authority::where('identifier', 'NAM-6')->firstOrFail();
 
-    expect($notes)->toContain('Transferred from the Gozo section.');
-    expect($notes)->toContain('Maiden surname: Zammit');
+    expect($a->notes)->toBe('Transferred from the Gozo section.')
+        ->and($a->maiden_surname)->toBe('Zammit')
+        ->and($a->given_names)->toBe('Rita')
+        ->and($a->name_suffix)->toBe('Senior');
 });

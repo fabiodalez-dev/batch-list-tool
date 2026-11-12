@@ -4,7 +4,12 @@ namespace App\Filament\Resources;
 
 use App\Filament\Concerns\AppliesFieldPermissions;
 use App\Filament\Resources\SeriesResource\Pages;
+use App\Filament\Support\CompactLayout;
 use App\Filament\Support\CreatorColumn;
+use App\Filament\Support\DocumentRules;
+use App\Filament\Support\EqualsFirst;
+use App\Filament\Support\ListRules;
+use App\Filament\Support\MatchQueryBuilder;
 use App\Models\Repository;
 use App\Models\Series;
 use App\Support\ColumnLabels\ColumnLabels;
@@ -24,8 +29,9 @@ use Filament\Schemas\Components\Section;
 use Filament\Schemas\Components\Utilities\Get;
 use Filament\Schemas\Schema;
 use Filament\Tables;
-use Filament\Tables\Filters\SelectFilter;
-use Filament\Tables\Filters\TernaryFilter;
+use Filament\Tables\Filters\QueryBuilder\Constraints\BooleanConstraint;
+use Filament\Tables\Filters\QueryBuilder\Constraints\SelectConstraint;
+use Filament\Tables\Filters\QueryBuilder\Constraints\SelectConstraint\Operators\IsOperator;
 use Filament\Tables\Filters\TrashedFilter;
 use Filament\Tables\Table;
 use Illuminate\Database\Eloquent\Builder;
@@ -62,16 +68,14 @@ class SeriesResource extends Resource
     {
         $g = fn (Schemas\Components\Component $c): Schemas\Components\Component => self::gateField($c, self::FIELD_PERMISSIONS_KEY);
 
-        // Layout rule (user mandate): root columns(1) → full-width Sections;
-        // atomic-field Sections use ['default' => 1, 'md' => 2]; non-atomic
-        // children (Textarea) → columnSpanFull.
-        $twoCols = ['default' => 1, 'md' => 2];
-
+        // Client 2026-10-30: the same two parts as the view, in the same order
+        // — Details (Level of description beside the identification) and
+        // Audit info, which holds the sheet's inputter and date of creation.
         return $schema
             ->columns(1)
             ->schema([
-                Section::make('Identification')
-                    ->columns($twoCols)
+                Section::make(CompactLayout::DETAILS)
+                    ->columns(CompactLayout::GRID)
                     ->schema([
                         // Feedback1 — Series code must be unique.
                         // A3/D9 — user-facing label is "Identifier"; DB column stays 'code'.
@@ -87,6 +91,30 @@ class SeriesResource extends Resource
                             ->label(ColumnLabels::get('series', 'title'))
                             ->required()
                             ->maxLength(255)),
+                        $g(Forms\Components\TextInput::make('level_of_description')
+                            ->label(ColumnLabels::get('series', 'level_of_description'))),
+                        // Wave D1 — Repository scope + Document types
+                        $g(Forms\Components\Select::make('repository_id')
+                            ->label('Repository')
+                            ->options(function () {
+                                $user = auth()->user();
+                                $query = Repository::query();
+                                if ($user !== null
+                                    && method_exists($user, 'hasAnyRole')
+                                    && ! $user->hasAnyRole(['super_admin', 'admin'])
+                                ) {
+                                    $ids = method_exists($user, 'repositories')
+                                        ? $user->repositories()->pluck('repositories.id')->all()
+                                        : [];
+                                    $query->whereIn('id', $ids);
+                                }
+
+                                return $query->orderBy('code')->pluck('name', 'id')->all();
+                            })
+                            ->searchable()
+                            ->nullable()
+                            ->helperText('Leave empty for a GLOBAL series (visible to every repository).')
+                            ->default(fn () => auth()->user()?->default_repository_id)),
                         // Feedback1 C1.4 — multi-level hierarchy. A series may
                         // sit under a parent (sub-series, sub-sub-series, …).
                         // Options EXCLUDE the record itself and all of its
@@ -124,50 +152,18 @@ class SeriesResource extends Resource
                         $g(Forms\Components\Toggle::make('is_active')
                             ->default(true)   // Bug #21 — a new Series is active by default
                             ->required()),
-                    ]),
-
-                // Wave D1 — Repository scope + Document types
-                Section::make('Repository & document types')
-                    ->columns($twoCols)
-                    ->schema([
-                        $g(Forms\Components\Select::make('repository_id')
-                            ->label('Repository')
-                            ->options(function () {
-                                $user = auth()->user();
-                                $query = Repository::query();
-                                if ($user !== null
-                                    && method_exists($user, 'hasAnyRole')
-                                    && ! $user->hasAnyRole(['super_admin', 'admin'])
-                                ) {
-                                    $ids = method_exists($user, 'repositories')
-                                        ? $user->repositories()->pluck('repositories.id')->all()
-                                        : [];
-                                    $query->whereIn('id', $ids);
-                                }
-
-                                return $query->orderBy('code')->pluck('name', 'id')->all();
-                            })
-                            ->searchable()
-                            ->nullable()
-                            ->helperText('Leave empty for a GLOBAL series (visible to every repository).')
-                            ->default(fn () => auth()->user()?->default_repository_id)),
                         $g(Forms\Components\Select::make('documentTypes')
                             ->label('Document types')
                             ->relationship('documentTypes', 'name')
                             ->multiple()
                             ->preload()
                             ->searchable()
-                            ->columnSpanFull()),
-                    ]),
-
-                Section::make('Description')
-                    ->columns(1)
-                    ->collapsed()
-                    ->schema([
+                            ->columnSpan(CompactLayout::HALF)),
                         $g(Forms\Components\Textarea::make('description')
                             ->rows(3)
                             ->columnSpanFull()),
                     ]),
+
                 // The columns this repository added itself.
                 // Client 2026-09-25: standalone columns reach every entity, so
                 // an extra column no longer needs a developer.
@@ -180,22 +176,31 @@ class SeriesResource extends Resource
                     ->visible(static function (Get $get, ?Series $record): bool {
                         return CustomFieldSchema::for('series', self::customFieldRepository($get, $record)) !== [];
                     }),
+
+                Section::make(CompactLayout::AUDIT)
+                    ->columns(CompactLayout::GRID)
+                    ->collapsed()
+                    ->schema([
+                        $g(Forms\Components\TextInput::make('name_of_inputter')
+                            ->label(ColumnLabels::get('series', 'name_of_inputter'))),
+                        $g(Forms\Components\TextInput::make('date_of_creation')
+                            ->label(ColumnLabels::get('series', 'date_of_creation'))
+                            ->helperText('Free text, e.g. "1607-1629".')),
+                    ]),
             ]);
     }
 
     public static function infolist(Schema $schema): Schema
     {
-        // Layout rule (user mandate): root columns(1) → full-width Sections;
-        // atomic entries on ['default' => 1, 'md' => 2]; non-atomic content
-        // (prose Description) → columnSpanFull. Series has no outbound FK
-        // relationships — only the inverse (documents).
-        $twoCols = ['default' => 1, 'md' => 2];
-
+        // Client 2026-10-30: Identification, Description and Counts condensed
+        // into one section with Level of description beside the
+        // identification, Repository shown, and the sheet's inputter and date
+        // of creation folded into Audit info: two parts, as on the form.
         return $schema
             ->columns(1)
             ->components([
-                Section::make('Identification')
-                    ->columns($twoCols)
+                Section::make(CompactLayout::DETAILS)
+                    ->columns(CompactLayout::GRID)
                     ->schema([
                         TextEntry::make('code')
                             ->label(ColumnLabels::get('series', 'code'))
@@ -206,73 +211,70 @@ class SeriesResource extends Resource
                         TextEntry::make('title')
                             ->label(ColumnLabels::get('series', 'title'))
                             ->placeholder('—'),
-                        // Feedback1 C1.4 — show the full hierarchy path and a
-                        // link to the parent series.
-                        TextEntry::make('hierarchy_path')
-                            ->label('Hierarchy')
-                            ->state(fn (?Series $record): string => $record?->qualifiedTitle() ?? '—')
+                        TextEntry::make('level_of_description')
+                            ->label(ColumnLabels::get('series', 'level_of_description'))
+                            ->placeholder('—'),
+                        TextEntry::make('repository.code')
+                            ->label('Repository')
                             ->badge()
-                            ->color('gray'),
+                            ->color('info')
+                            ->url(fn (?Series $record): ?string => $record?->repository_id
+                                ? route('filament.admin.resources.repositories.view', ['record' => $record->repository_id])
+                                : null)
+                            ->openUrlInNewTab(false)
+                            ->placeholder('GLOBAL'),
+                        // Feedback1 C1.4 — link to the parent and the full path.
                         TextEntry::make('parent.code')
                             ->label('Parent subseries')
                             ->url(fn (?Series $record): ?string => $record?->parent_id
                                 ? route('filament.admin.resources.series.view', ['record' => $record->parent_id])
                                 : null)
                             ->placeholder('Top-level (no parent)'),
+                        TextEntry::make('hierarchy_path')
+                            ->label('Hierarchy')
+                            ->state(fn (?Series $record): string => $record?->qualifiedTitle() ?? '—')
+                            ->badge()
+                            ->color('gray'),
                         IconEntry::make('is_wills_series')
                             ->label('Wills subseries')
                             ->boolean(),
                         IconEntry::make('is_active')
                             ->label('Active')
                             ->boolean(),
-                    ]),
-
-                Section::make('Description')
-                    ->columns(1)
-                    ->collapsed()
-                    ->schema([
+                        TextEntry::make('documentTypes.name')
+                            ->label('Document types')
+                            ->badge()
+                            ->color('gray')
+                            ->placeholder('—')
+                            ->columnSpan(CompactLayout::HALF),
+                        // Client 2026-10-30: "R has only 1 ... many documents
+                        // have this parent category" — the own count missed
+                        // every document filed in a subseries below.
+                        TextEntry::make('documents_count')
+                            ->label('Documents (this subseries only)')
+                            ->state(fn (?Series $record): int => $record?->documents()->count() ?? 0)
+                            ->badge()
+                            ->color('gray'),
+                        TextEntry::make('documents_with_descendants_count')
+                            ->label('Documents (incl. subseries below)')
+                            ->state(fn (?Series $record): int => $record?->documentsIncludingDescendantsCount() ?? 0)
+                            ->badge()
+                            ->color('gray'),
                         TextEntry::make('description')
-                            ->hiddenLabel()
+                            ->label('Description')
                             ->prose()
                             ->placeholder('No description.')
                             ->columnSpanFull(),
                     ]),
 
-                // ISAD(G) metadata imported from the client's sheet.
-                Section::make('Archival metadata')
-                    ->columns($twoCols)
-                    ->schema([
-                        TextEntry::make('level_of_description')
-                            ->label(ColumnLabels::get('series', 'level_of_description'))
-                            ->placeholder('—'),
-                        TextEntry::make('date_of_creation')
-                            ->label(ColumnLabels::get('series', 'date_of_creation'))
-                            ->placeholder('—'),
-                        TextEntry::make('name_of_inputter')
-                            ->label(ColumnLabels::get('series', 'name_of_inputter'))
-                            ->placeholder('—')
-                            ->columnSpanFull(),
-                    ]),
-
-                Section::make('Counts')
-                    ->columns($twoCols)
-                    ->schema([
-                        TextEntry::make('documents_count')
-                            ->label('Documents')
-                            ->state(fn (?Series $record): int => $record?->documents()->count() ?? 0)
-                            ->badge()
-                            ->color('gray'),
-                    ]),
-
-                Section::make('Audit info')
-                    ->columns($twoCols)
-                    ->collapsed()
-                    ->schema([
-                        TextEntry::make('created_at')->dateTime()->label('Created'),
-                        TextEntry::make('updated_at')->dateTime()->label('Updated'),
-                        TextEntry::make('deleted_at')->dateTime()->label('Trashed')->placeholder('—')->columnSpanFull(),
-                    ])
-                    ->visible(fn (): bool => (bool) auth()->user()?->hasRole('super_admin')),
+                CompactLayout::auditInfolist([
+                    TextEntry::make('name_of_inputter')
+                        ->label(ColumnLabels::get('series', 'name_of_inputter'))
+                        ->placeholder('—'),
+                    TextEntry::make('date_of_creation')
+                        ->label(ColumnLabels::get('series', 'date_of_creation'))
+                        ->placeholder('—'),
+                ]),
             ]);
     }
 
@@ -353,11 +355,8 @@ class SeriesResource extends Resource
                     ->toggleable()
                     ->badge()
                     ->color('gray'),
-                $gc(Tables\Columns\TextColumn::make('parent.code')
-                    ->label('Parent')
-                    ->placeholder('—')
-                    ->sortable()
-                    ->toggleable(isToggledHiddenByDefault: true)),
+                // Client 2026-10-30: the Parent column repeated what the
+                // Hierarchy already shows; the "Parent subseries" filter stays.
                 $gc(Tables\Columns\IconColumn::make('is_wills_series')
                     ->boolean()
                     ->sortable()
@@ -390,46 +389,26 @@ class SeriesResource extends Resource
                     ->tooltip('The account that imported or created this record — not the cataloguer named in the sheet.'),
             ])
             ->filters([
-                // Feedback1 Wave B (B1) — dropdown-driven filters (mechanism #1)
-                // alongside the free-text search on code/title (mechanism #2).
-                // Series is a small reference table → plain SelectFilter on the
-                // distinct codes plus the two boolean flags as TernaryFilters.
-                // A3/D9 — filter label matches the column rename: "Identifier".
-                SelectFilter::make('code')
-                    ->label(ColumnLabels::get('series', 'code'))
-                    ->options(fn (): array => Series::query()
-                        ->orderBy('code')
-                        ->pluck('code', 'code')
-                        ->all())
-                    ->searchable()
-                    ->multiple(),
-                TernaryFilter::make('is_wills_series')
-                    ->label('Wills subseries')
-                    ->placeholder('All')
-                    ->trueLabel('Wills subseries only')
-                    ->falseLabel('Non-wills only'),
-                TernaryFilter::make('is_active')
-                    ->label('Active')
-                    ->placeholder('All')
-                    ->trueLabel('Active only')
-                    ->falseLabel('Inactive only'),
-                // Feedback1 C1.4 — narrow to root series, and pick a parent.
-                TernaryFilter::make('top_level')
-                    ->label('Top-level only')
-                    ->placeholder('All levels')
-                    ->trueLabel('Top-level subseries only')
-                    ->falseLabel('Child subseries only')
-                    ->queries(
-                        true: fn (Builder $q): Builder => $q->whereNull('parent_id'),
-                        false: fn (Builder $q): Builder => $q->whereNotNull('parent_id'),
-                        blank: fn (Builder $q): Builder => $q,
-                    ),
-                SelectFilter::make('parent_id')
-                    ->label('Parent subseries')
-                    ->options(fn (): array => Series::linkParents(Series::query()->orderBy('code')->get())
-                        ->mapWithKeys(fn (Series $s): array => [$s->getKey() => $s->qualifiedTitle()])
-                        ->all())
-                    ->searchable(),
+                // Client 2026-10-30: one rule per column, AND / OR above them,
+                // as on Documents. "Top-level only" is Parent "Is empty".
+                MatchQueryBuilder::make()
+                    ->constraints([
+                        ListRules::relation('repository', 'Repo', 'code', emptyable: true),
+                        EqualsFirst::text('code', ColumnLabels::get('series', 'code')),
+                        EqualsFirst::text('title', ColumnLabels::get('series', 'title'), nullable: true),
+                        EqualsFirst::text('level_of_description', ColumnLabels::get('series', 'level_of_description'), nullable: true),
+                        EqualsFirst::text('date_of_creation', ColumnLabels::get('series', 'date_of_creation'), nullable: true),
+                        EqualsFirst::text('name_of_inputter', ColumnLabels::get('series', 'name_of_inputter'), nullable: true),
+                        ListRules::count('document_types_count', 'Doc. types', 'documentTypes'),
+                        self::hierarchyRule(),
+                        ListRules::relation('parent', 'Parent', 'code', emptyable: true),
+                        BooleanConstraint::make('is_wills_series'),
+                        BooleanConstraint::make('is_active'),
+                        ListRules::date('created_at'),
+                        ListRules::date('updated_at'),
+                        ListRules::date('deleted_at'),
+                        ListRules::inputter('Uploaded by'),
+                    ]),
                 // Client 2026-10-14: a deleted subseries (MDV) kept its
                 // identifier but was nowhere to be seen, so "This series
                 // identifier is already in use" had no visible cause. Deleted
@@ -473,6 +452,36 @@ class SeriesResource extends Resource
     {
         return parent::getRecordRouteBindingEloquentQuery()
             ->withoutGlobalScopes([SoftDeletingScope::class]);
+    }
+
+    /**
+     * The Hierarchy column as a rule: the chosen subseries and every
+     * subseries under it ("REG" finds REG, RWL, …).
+     */
+    public static function hierarchyRule(): SelectConstraint
+    {
+        return SelectConstraint::make('hierarchy')
+            ->label('Hierarchy')
+            ->icon('heroicon-o-queue-list')
+            ->multiple()
+            ->searchable()
+            ->options(fn (): array => Series::linkParents(Series::query()->orderBy('code')->get())
+                ->mapWithKeys(fn (Series $s): array => [$s->getKey() => $s->qualifiedTitle()])
+                ->all())
+            ->operators([
+                IsOperator::make()->modifyBaseQueryUsing(function (Builder $query, ?array $settings, ?bool $isInverse): Builder {
+                    $ids = [];
+                    foreach (Series::query()->whereKey(DocumentRules::values($settings))->get() as $series) {
+                        $ids[] = (int) $series->getKey();
+                        foreach ($series->descendants() as $child) {
+                            $ids[] = (int) $child->getKey();
+                        }
+                    }
+                    $column = $query->qualifyColumn('id');
+
+                    return $isInverse ? $query->whereNotIn($column, $ids) : $query->whereIn($column, $ids);
+                }),
+            ]);
     }
 
     public static function getRelations(): array

@@ -8,6 +8,7 @@ use App\Filament\Concerns\ExplainsPage;
 use App\Filament\Concerns\ExportsLikeTheTemplate;
 use App\Filament\Imports\BoxImporter;
 use App\Filament\Pages\ImportWizard;
+use App\Filament\Pages\UserGuide;
 use App\Filament\Resources\BoxResource;
 use App\Models\Box;
 use App\Support\BulkImport\TemplateGenerator;
@@ -72,6 +73,8 @@ class ListBoxes extends ListRecords
                 ->visible(fn () => auth()->user()?->can('create', Box::class) ?? false),
 
             Actions\CreateAction::make(),
+
+            UserGuide::helpAction('manage-boxes-and-their-barcode-status'),
         ];
     }
 

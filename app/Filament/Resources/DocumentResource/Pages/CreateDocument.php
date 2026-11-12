@@ -4,6 +4,7 @@ namespace App\Filament\Resources\DocumentResource\Pages;
 
 use App\Filament\Concerns\HandlesCustomFieldForm;
 use App\Filament\Resources\DocumentResource;
+use App\Filament\Support\DocumentDates;
 use App\Models\Box;
 use Filament\Resources\Pages\CreateRecord;
 
@@ -30,10 +31,14 @@ class CreateDocument extends CreateRecord
 
         $boxId = $this->prefillBoxId();
 
-        // Pass the prefill straight to fill(): Filament merges it with each
-        // field's own default, so the box lands pre-selected while every other
-        // default (repository, custody_status, …) is still applied.
-        $this->form->fill($boxId !== null ? ['current_box_id' => $boxId] : []);
+        // fill() with no state is what applies each field's own default: given
+        // an array, even an empty one, Filament takes it as the whole state, and
+        // the form opened with no repository and no custody status, which the
+        // column refuses. The box goes in after.
+        $this->form->fill();
+        if ($boxId !== null) {
+            $this->data['current_box_id'] = $boxId;
+        }
 
         $this->callHook('afterFill');
     }
@@ -62,7 +67,7 @@ class CreateDocument extends CreateRecord
             }
         }
 
-        return $data;
+        return DocumentDates::apply($data, $this->data['dates_as'] ?? null, null);
     }
 
     /**

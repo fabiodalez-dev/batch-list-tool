@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 use App\Filament\Imports\BoxImporter;
 use App\Filament\Pages\ImportWizard;
+use App\Models\Batch;
 use App\Models\Box;
 use App\Models\Location;
 use App\Models\Repository;
@@ -11,6 +12,7 @@ use App\Models\Scopes\RepositoryScope;
 use App\Models\Scopes\ThroughBatchRepositoryScope;
 use App\Models\User;
 use App\Support\BulkImport\EntityResolver;
+use App\Support\BulkImport\SpreadsheetParsers;
 use Filament\Actions\Imports\Models\Import;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use PhpOffice\PhpSpreadsheet\IOFactory;
@@ -61,6 +63,23 @@ it('imports the real 7166-row box template with none of the loosened rules block
                 ['name' => $code, 'type' => 'repository', 'is_active' => true],
             );
         }
+    }
+
+    // The batches too, as in production (the wizard imports them before the
+    // boxes). Without them every RAS box would land with no batch, and since
+    // 2026-10-30 a box type and number is one box per batch, or per
+    // repository with no batch.
+    $batchIdx = isset($map['batch_number']) ? array_search($map['batch_number'], $headers, true) : false;
+    if ($batchIdx !== false) {
+        collect(array_slice($grid, 1))
+            ->map(fn ($row): ?string => SpreadsheetParsers::parseBatchNumber($row[$batchIdx] ?? null))
+            ->filter()
+            ->unique()
+            ->reject(fn (string $n): bool => in_array($n, array_map('strval', Batch::FORBIDDEN_NUMBERS), true))
+            ->each(fn (string $n) => Batch::withoutGlobalScopes()->firstOrCreate(
+                ['batch_number' => $n, 'repository_id' => $repo->id],
+                ['type' => 'MAIN_COLLECTION'],
+            ));
     }
 
     /** @var Import $imp */

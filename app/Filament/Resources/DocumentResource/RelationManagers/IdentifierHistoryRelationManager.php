@@ -2,6 +2,7 @@
 
 namespace App\Filament\Resources\DocumentResource\RelationManagers;
 
+use App\Support\DisplayDate;
 use Filament\Actions\CreateAction;
 use Filament\Actions\ViewAction;
 use Filament\Forms;
@@ -107,10 +108,10 @@ class IdentifierHistoryRelationManager extends RelationManager
                     ->indicateUsing(function (array $data): array {
                         $i = [];
                         if (! empty($data['from'])) {
-                            $i[] = 'Changed ≥ ' . $data['from'];
+                            $i[] = 'Changed ≥ ' . DisplayDate::date($data['from']);
                         }
                         if (! empty($data['to'])) {
-                            $i[] = 'Changed ≤ ' . $data['to'];
+                            $i[] = 'Changed ≤ ' . DisplayDate::date($data['to']);
                         }
 
                         return $i;

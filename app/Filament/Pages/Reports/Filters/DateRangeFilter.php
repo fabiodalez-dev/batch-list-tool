@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace App\Filament\Pages\Reports\Filters;
 
+use App\Support\DisplayDate;
 use Filament\Forms;
 use Filament\Tables\Filters\Filter;
 use Illuminate\Database\Eloquent\Builder;
@@ -219,11 +220,11 @@ class DateRangeFilter extends Filter
         $label = $this->getColumnLabelForIndicator();
 
         if (! empty($data['from'])) {
-            $indicators[] = $label . ' ≥ ' . $data['from'];
+            $indicators[] = $label . ' ≥ ' . DisplayDate::date($data['from']);
         }
 
         if (! empty($data['to'])) {
-            $indicators[] = $label . ' ≤ ' . $data['to'];
+            $indicators[] = $label . ' ≤ ' . DisplayDate::date($data['to']);
         }
 
         return $indicators;

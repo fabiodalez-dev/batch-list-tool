@@ -5,7 +5,9 @@ declare(strict_types=1);
 namespace App\Filament\Actions\Documents;
 
 use App\Models\Box;
+use App\Models\BoxMovement;
 use App\Models\Document;
+use App\Models\Location;
 use Filament\Notifications\Notification;
 use Illuminate\Database\Eloquent\Collection as EloquentCollection;
 use Illuminate\Support\Collection;
@@ -122,6 +124,50 @@ final class ActionSupport
         $doc->setAttribute('barcode_status', $status);
 
         return false;
+    }
+
+    /**
+     * A location picked in a form, read past the repository scope so that
+     * global rows are found: what it may be applied to is
+     * {@see self::assertLocationFits()}, per document.
+     */
+    public static function findActiveLocation(int $locationId): ?Location
+    {
+        $location = Location::withoutGlobalScopes()->find($locationId);
+
+        return $location instanceof Location && ! $location->trashed() && (bool) $location->is_active
+            ? $location
+            : null;
+    }
+
+    /**
+     * Tenant safety: a repository-scoped location can only be assigned to
+     * documents in the same repository. A global location (repository_id=null)
+     * can be assigned to any doc.
+     */
+    public static function assertLocationFits(Location $location, Document $doc): void
+    {
+        if ($location->repository_id !== null
+            && (int) $location->repository_id !== (int) $doc->repository_id) {
+            throw new \DomainException('location belongs to a different repository');
+        }
+    }
+
+    /**
+     * The chain of custody of a document that has left a box and is in no
+     * other: a movement with no target. Its batch stays.
+     */
+    public static function recordLeftBox(Document $doc, int $fromBoxId, string $reason): void
+    {
+        BoxMovement::create([
+            'document_id' => $doc->getKey(),
+            'repository_id' => $doc->repository_id,
+            'from_box_id' => $fromBoxId,
+            'to_box_id' => null,
+            'movement_date' => now(),
+            'reason' => $reason,
+            'user_id' => auth()->id(),
+        ]);
     }
 
     /**

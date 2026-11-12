@@ -3,6 +3,7 @@
 namespace App\Filament\Resources\BoxResource\RelationManagers;
 
 use App\Models\BoxBarcodeHistory;
+use App\Support\DisplayDate;
 use Filament\Actions\ViewAction;
 use Filament\Forms;
 use Filament\Resources\RelationManagers\RelationManager;
@@ -121,10 +122,10 @@ class BarcodeHistoryRelationManager extends RelationManager
                     ->indicateUsing(function (array $data): array {
                         $i = [];
                         if (! empty($data['from'])) {
-                            $i[] = 'Changed ≥ ' . $data['from'];
+                            $i[] = 'Changed ≥ ' . DisplayDate::date($data['from']);
                         }
                         if (! empty($data['to'])) {
-                            $i[] = 'Changed ≤ ' . $data['to'];
+                            $i[] = 'Changed ≤ ' . DisplayDate::date($data['to']);
                         }
 
                         return $i;

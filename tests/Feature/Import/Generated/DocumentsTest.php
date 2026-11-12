@@ -947,11 +947,11 @@ test('a blank "Torre" cell no longer fails the row — ignoreBlankState() keeps 
 });
 
 // ════════════════════════════════════════════════════════════════════════
-//  Per-row savepoint LEAK — any saveRecord() failure corrupts the
-//  connection's transaction depth for the REST OF THE PROCESS
+//  Per-row savepoint — a saveRecord() failure must not leave the
+//  connection's transaction depth raised
 // ════════════════════════════════════════════════════════════════════════
 
-test("a row that fails inside saveRecord() leaks DocumentImporter's per-row savepoint, corrupting the connection for every subsequent operation", function () {
+test("a row that fails inside saveRecord() closes DocumentImporter's per-row savepoint", function () {
     dgt_series('REG');
     $u = dgt_admin();
     $this->actingAs($u);
@@ -972,29 +972,17 @@ test("a row that fails inside saveRecord() leaks DocumentImporter's per-row save
     );
     expect(dgt_failures($import))->toHaveCount(1);
 
-    // Capture the corrupted level, then restore the connection immediately
-    // (try/finally-style) so this test does not itself take down every
-    // OTHER test in the suite that happens to run afterwards.
+    // beforeSave() opens a per-row savepoint and only afterSave() closed it,
+    // but Filament skips afterSave() when saveRecord() throws. Left open on
+    // the last row of a chunk, it kept the chunk transaction from ever
+    // committing and the whole chunk was lost when the worker exited
+    // (client 2026-10-27). DocumentImporter::saveRecord() now closes it.
     $levelAfterFailure = DB::transactionLevel();
     while (DB::transactionLevel() > 1) {
         DB::rollBack();
     }
 
-    // Confirmed BUG: DocumentImporter::beforeSave() unconditionally opens a
-    // savepoint (`DB::beginTransaction()`) and sets $rowSavepointOpen=true.
-    // The ONLY place that closes it is afterSave() — but Filament's own
-    // hook chain (`beforeSave(); saveRecord(); afterSave();` in
-    // Importer::__invoke()) skips afterSave() entirely whenever saveRecord()
-    // itself throws. The "defensive" cleanup at the top of the NEXT
-    // beforeSave() call does not fully compensate: after processing a
-    // single failing row, the connection is left with a permanently
-    // incremented transaction depth (proven directly via
-    // DB::transactionLevel(), not inferred). In production this same
-    // Importer instance keeps processing every remaining row of a 500-row
-    // chunk (HayderHatem's ImportExcel::handle() loop), and the connection
-    // is reused by the rest of that queue worker's lifetime — so ONE bad
-    // row silently corrupts everything that runs after it.
-    expect($levelAfterFailure)->toBeGreaterThan(1);
+    expect($levelAfterFailure)->toBe(1);
 });
 
 // ════════════════════════════════════════════════════════════════════════

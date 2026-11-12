@@ -804,7 +804,7 @@ test('a GLOBAL series (repository_id null) imported from the real file is not ex
     // The shared Series select (used across Document/Batch forms) queries
     // Series unscoped by repository — a GLOBAL row must still be found.
     $results = SearchableSelects::seriesSearchResults('R');
-    expect($results)->toContain('R — Register Copies (Registro)');
+    expect($results)->toContain('R: Register Copies (Registro)');
 });
 
 // ─── 30. Re-running the exact same real prod file twice is fully idempotent ─

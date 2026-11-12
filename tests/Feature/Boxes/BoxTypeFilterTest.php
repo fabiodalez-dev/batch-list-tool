@@ -2,8 +2,8 @@
 
 declare(strict_types=1);
 
+use App\Filament\Pages\Reports\BoxesPendingDisinfestationReport;
 use App\Filament\Pages\Reports\BoxesReadyToDestroyReport;
-use App\Filament\Pages\Reports\DisinfestationCycleReport;
 use App\Filament\Resources\BoxResource\Pages\ListBoxes;
 use App\Models\Batch;
 use App\Models\Box;
@@ -77,7 +77,7 @@ it('keeps an inactive type, and a type only boxes still carry, in the filter', f
 });
 
 it('offers MUS in the Box type filter of the box reports', function (): void {
-    foreach ([BoxesReadyToDestroyReport::class, DisinfestationCycleReport::class] as $page) {
+    foreach ([BoxesReadyToDestroyReport::class, BoxesPendingDisinfestationReport::class] as $page) {
         $options = Livewire::test($page)->instance()->getTable()->getFilter('box_type')->getOptions();
         expect(array_key_exists('MUS', $options))->toBeTrue("MUS missing on {$page}");
     }

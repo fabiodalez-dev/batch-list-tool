@@ -49,10 +49,10 @@ describe('REQ-3.1.2 Validation (forbidden batches, wills, PERM_OUT)', function (
     });
 
     test('PERM_OUT requires disinfestation_date — declared at the Box::BARCODE_STATUSES enum', function () {
-        // The runtime check is performed by MarkPermOutAction (Feature suite
-        // covers end-to-end). Here we just assert the enum + the precondition
-        // helper exists, so this compliance test fires if the safeguard is
-        // removed by refactor.
+        // Marking PERM OUT is a Boxes bulk action (client 2026-11-05, see
+        // Feature\\BoxBulkActions20261105Test). Here we just assert the enum +
+        // the precondition helper exists, so this compliance test fires if the
+        // safeguard is removed by refactor.
         expect(Box::BARCODE_STATUSES)->toContain('PERM_OUT');
         expect(method_exists(Box::class, 'requiresParent'))->toBeTrue();
     });

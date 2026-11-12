@@ -13,7 +13,8 @@ concurrency:
 jobs:
   browser:
     name: E2E (PHP 8.4 · Chromium)
-    runs-on: ubuntu-latest
+    # ubuntu-latest moved to 26.04, where Playwright cannot install Chromium yet.
+    runs-on: ubuntu-24.04
     timeout-minutes: 25
 
     steps:

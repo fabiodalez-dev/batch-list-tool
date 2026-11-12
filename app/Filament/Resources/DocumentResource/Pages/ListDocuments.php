@@ -8,14 +8,17 @@ use App\Filament\Concerns\ExplainsPage;
 use App\Filament\Concerns\ExportsLikeTheTemplate;
 use App\Filament\Imports\DocumentImporter;
 use App\Filament\Pages\ImportWizard;
+use App\Filament\Pages\UserGuide;
 use App\Filament\Resources\DocumentResource;
 use App\Models\CustomFieldDefinition;
 use App\Models\Document;
+use App\Models\Repository;
 use App\Models\Scopes\RepositoryScope;
 use App\Support\ActiveRepository;
 use App\Support\BulkImport\TemplateGenerator;
 use App\Support\CustomFields\CustomFieldResolver;
 use Filament\Actions;
+use Filament\Actions\BulkAction;
 use Filament\Forms\Components\TextInput;
 use Filament\Notifications\Notification;
 use Filament\Resources\Pages\ListRecords;
@@ -27,6 +30,116 @@ class ListDocuments extends ListRecords
     use ExportsLikeTheTemplate;
 
     protected static string $resource = DocumentResource::class;
+
+    /**
+     * Client 2026-10-30: kept only among the bulk actions, out of the page's
+     * header where it sat next to "New document". It ignores the selection:
+     * it empties the repository chosen in the top bar.
+     */
+    public static function deleteAllAction(): BulkAction
+    {
+        // Charlene UX — one-shot "empty this repository" for super_admins.
+        // The standard page-by-page bulk delete forced 26 k rows to be
+        // confirmed 25-at-a-time. This wipes every Document in the acting
+        // user's CURRENT repository scope (RepositoryScope already narrows
+        // Document::query() to the active repository — or all repositories
+        // when "All" is selected).
+        //
+        // Delete strategy — chunked forceDelete: documents SoftDelete, but
+        // "delete all" means gone, and the dependent rows (box_movements,
+        // document_authority, identifier/barcode history …) are wired with
+        // ON DELETE CASCADE, so a real DELETE removes them too. We chunk by
+        // id (1 000 at a time) selecting only the id column, so memory stays
+        // flat and each round-trip is a single mass DELETE — no per-model
+        // hydration, events or observers. 26 k rows ≈ 26 statements, which
+        // completes well within a request; a synchronous delete also lets
+        // the success state be asserted immediately (no queue worker needed).
+        return BulkAction::make('deleteAll')
+            ->label('Delete all documents')
+            ->icon('heroicon-o-trash')
+            ->color('danger')
+            ->requiresConfirmation()
+            ->modalHeading('Delete ALL documents in this repository')
+            // 2026-11-12: run by mistake on the whole NRA when only one batch
+            // was meant to go. The modal now names the repository and the
+            // number of documents, points at the right tool for a single
+            // batch, and asks for the repository code instead of a fixed word.
+            ->modalDescription(function (): string {
+                $repository = self::activeRepositoryForDeleteAll();
+                if ($repository === null) {
+                    return 'Pick a specific repository in the top bar first: this action never deletes across repositories.';
+                }
+
+                return sprintf(
+                    'This permanently removes all %s documents of %s (%s), not only the ticked ones, together with their movements, flags and history. This cannot be undone. To delete a single batch, filter the list by that batch and use "Delete selected" instead.',
+                    number_format(self::deleteAllCount($repository->id)),
+                    $repository->name,
+                    $repository->code,
+                );
+            })
+            ->modalSubmitActionLabel('Delete everything')
+            ->form([
+                TextInput::make('confirmation')
+                    ->label(fn (): string => 'Type the repository code (' . (self::activeRepositoryForDeleteAll()?->code ?? '—') . ') to confirm')
+                    ->required()
+                    ->rule(fn (): \Closure => function (string $attribute, mixed $value, \Closure $fail): void {
+                        $code = self::activeRepositoryForDeleteAll()?->code;
+                        if ($code === null || trim((string) $value) !== $code) {
+                            $fail('Type the repository code exactly as shown to confirm.');
+                        }
+                    }),
+            ])
+            ->action(function (): void {
+                abort_unless(
+                    auth()->user()?->hasRole('super_admin') ?? false,
+                    403,
+                    'Only super administrators may delete all documents.',
+                );
+
+                // SAFETY: a super_admin viewing "All repositories" has no
+                // RepositoryScope narrowing, so Document::query() would span
+                // EVERY repository — a cross-tenant wipe. Require an explicit
+                // active repository and scope the delete to it, never trusting
+                // the ambient scope for a destructive mass operation.
+                $repoId = app(ActiveRepository::class)->id();
+                if ($repoId === null) {
+                    Notification::make()
+                        ->title('Select a repository first')
+                        ->body('Pick a specific repository in the top bar before deleting all documents — this action never deletes across repositories.')
+                        ->danger()
+                        ->send();
+
+                    return;
+                }
+
+                $deleted = 0;
+
+                Document::query()
+                    ->withoutGlobalScope(RepositoryScope::class)
+                    ->withTrashed()
+                    ->where('repository_id', $repoId)
+                    ->select('id')
+                    ->chunkById(1000, function (Collection $rows) use (&$deleted, $repoId): void {
+                        $ids = $rows->pluck('id')->all();
+                        Document::query()
+                            ->withoutGlobalScope(RepositoryScope::class)
+                            ->withTrashed()
+                            ->where('repository_id', $repoId)
+                            ->whereIn('id', $ids)
+                            ->forceDelete();
+                        $deleted += count($ids);
+                    });
+
+                Notification::make()
+                    ->title($deleted > 0
+                        ? "Deleted {$deleted} document(s) from this repository."
+                        : 'There were no documents to delete in this repository.')
+                    ->success()
+                    ->send();
+            })
+            ->visible(fn () => auth()->user()?->hasRole('super_admin') ?? false)
+            ->deselectRecordsAfterCompletion();
+    }
 
     protected static function exportEntity(): string
     {
@@ -74,89 +187,26 @@ class ListDocuments extends ListRecords
                 ->action(fn () => TemplateGenerator::download('document'))
                 ->visible(fn () => auth()->user()?->can('create', Document::class) ?? false),
 
-            // Charlene UX — one-shot "empty this repository" for super_admins.
-            // The standard page-by-page bulk delete forced 26 k rows to be
-            // confirmed 25-at-a-time. This wipes every Document in the acting
-            // user's CURRENT repository scope (RepositoryScope already narrows
-            // Document::query() to the active repository — or all repositories
-            // when "All" is selected).
-            //
-            // Delete strategy — chunked forceDelete: documents SoftDelete, but
-            // "delete all" means gone, and the dependent rows (box_movements,
-            // document_authority, identifier/barcode history …) are wired with
-            // ON DELETE CASCADE, so a real DELETE removes them too. We chunk by
-            // id (1 000 at a time) selecting only the id column, so memory stays
-            // flat and each round-trip is a single mass DELETE — no per-model
-            // hydration, events or observers. 26 k rows ≈ 26 statements, which
-            // completes well within a request; a synchronous delete also lets
-            // the success state be asserted immediately (no queue worker needed).
-            Actions\Action::make('deleteAll')
-                ->label('Delete all documents')
-                ->icon('heroicon-o-trash')
-                ->color('danger')
-                ->requiresConfirmation()
-                ->modalHeading('Delete ALL documents in this repository')
-                ->modalDescription('This permanently removes every document in your current repository scope, together with their movements, flags and history. This cannot be undone. Type DELETE to confirm.')
-                ->modalSubmitActionLabel('Delete everything')
-                ->form([
-                    TextInput::make('confirmation')
-                        ->label('Type DELETE to confirm')
-                        ->required()
-                        ->rule('in:DELETE')
-                        ->validationMessages(['in' => 'You must type DELETE (in capitals) to confirm.']),
-                ])
-                ->action(function (): void {
-                    abort_unless(
-                        auth()->user()?->hasRole('super_admin') ?? false,
-                        403,
-                        'Only super administrators may delete all documents.',
-                    );
-
-                    // SAFETY: a super_admin viewing "All repositories" has no
-                    // RepositoryScope narrowing, so Document::query() would span
-                    // EVERY repository — a cross-tenant wipe. Require an explicit
-                    // active repository and scope the delete to it, never trusting
-                    // the ambient scope for a destructive mass operation.
-                    $repoId = app(ActiveRepository::class)->id();
-                    if ($repoId === null) {
-                        Notification::make()
-                            ->title('Select a repository first')
-                            ->body('Pick a specific repository in the top bar before deleting all documents — this action never deletes across repositories.')
-                            ->danger()
-                            ->send();
-
-                        return;
-                    }
-
-                    $deleted = 0;
-
-                    Document::query()
-                        ->withoutGlobalScope(RepositoryScope::class)
-                        ->withTrashed()
-                        ->where('repository_id', $repoId)
-                        ->select('id')
-                        ->chunkById(1000, function (Collection $rows) use (&$deleted, $repoId): void {
-                            $ids = $rows->pluck('id')->all();
-                            Document::query()
-                                ->withoutGlobalScope(RepositoryScope::class)
-                                ->withTrashed()
-                                ->where('repository_id', $repoId)
-                                ->whereIn('id', $ids)
-                                ->forceDelete();
-                            $deleted += count($ids);
-                        });
-
-                    Notification::make()
-                        ->title($deleted > 0
-                            ? "Deleted {$deleted} document(s) from this repository."
-                            : 'There were no documents to delete in this repository.')
-                        ->success()
-                        ->send();
-                })
-                ->visible(fn () => auth()->user()?->hasRole('super_admin') ?? false),
-
             Actions\CreateAction::make(),
+
+            UserGuide::helpAction('find-documents-with-search-and-filters'),
         ];
+    }
+
+    private static function activeRepositoryForDeleteAll(): ?Repository
+    {
+        $id = app(ActiveRepository::class)->id();
+
+        return $id === null ? null : Repository::query()->find($id);
+    }
+
+    private static function deleteAllCount(int $repositoryId): int
+    {
+        return Document::query()
+            ->withoutGlobalScope(RepositoryScope::class)
+            ->withTrashed()
+            ->where('repository_id', $repositoryId)
+            ->count();
     }
 
     /**

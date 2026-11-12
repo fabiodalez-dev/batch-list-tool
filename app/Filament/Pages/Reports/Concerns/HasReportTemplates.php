@@ -74,7 +74,9 @@ trait HasReportTemplates
                     'name' => $data['name'],
                     'description' => $data['description'] ?? null,
                     'source' => static::REPORT_SOURCE,
-                    'filters' => $this->tableFilters ?? [],
+                    // A page with a view of its own (the stock take's per box /
+                    // per document) keeps it alongside the filters.
+                    'filters' => array_merge($this->tableFilters ?? [], $this->templateExtraState()),
                     'columns' => method_exists($this, 'getActiveColumns')
                         ? $this->getActiveColumns()
                         : null,
@@ -87,6 +89,29 @@ trait HasReportTemplates
                     ->success()
                     ->send();
             });
+    }
+
+    /**
+     * Page state beyond the table filters to keep in a template. Keys start
+     * with "_" so they never meet a filter name.
+     *
+     * @return array<string, mixed>
+     */
+    protected function templateExtraState(): array
+    {
+        return [];
+    }
+
+    /**
+     * Take back what {@see templateExtraState()} stored; returns the filters
+     * without it.
+     *
+     * @param array<string, mixed> $filters
+     * @return array<string, mixed>
+     */
+    protected function restoreTemplateExtraState(array $filters): array
+    {
+        return $filters;
     }
 
     /**
@@ -120,7 +145,7 @@ trait HasReportTemplates
 
         $filters = $tpl->filters;
         if (is_array($filters)) {
-            $this->tableFilters = $filters;
+            $this->tableFilters = $this->restoreTemplateExtraState($filters);
         }
 
         $sort = $tpl->sort;

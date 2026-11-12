@@ -372,7 +372,7 @@ it('AccessionResource batch filter narrows results via N:N pivot', function (): 
     $accInBatch->batches()->attach($batch->id);
 
     Livewire::test(ListAccessions::class)
-        ->filterTable('batches', $batch->id)
+        ->filterTable('queryBuilder', doc_rule('batches', 'isRelatedTo', ['value' => [$batch->id]]))
         ->assertCanSeeTableRecords([$accInBatch])
         ->assertCanNotSeeTableRecords([$accNotInBatch]);
 });

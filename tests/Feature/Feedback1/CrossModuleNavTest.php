@@ -2,6 +2,7 @@
 
 declare(strict_types=1);
 
+use App\Filament\Resources\BatchResource;
 use App\Filament\Resources\BoxResource;
 use App\Filament\Resources\BoxResource\Pages\CreateBox;
 use App\Filament\Resources\BoxResource\Pages\EditBox;
@@ -77,16 +78,15 @@ function cmn_doc(int $repoId, int $seriesId, array $attrs = []): Document
 /* ============================ B3 — Batch → Boxes =========================== */
 
 it('the BoxResource index URL carries the batch filter param shape used by BatchResource navigation', function (): void {
-    $url = BoxResource::getUrl('index', [
-        'filters' => ['batch' => ['values' => [42]]],
-    ]);
+    $batch = Batch::factory()->make(['id' => 42]);
+    $url = BatchResource::boxesUrl($batch);
 
     // Filament binds $tableFilters as #[Url(as: 'filters')], so the query-string
     // key MUST be `filters` — NOT `tableFilters` — or the link lands unfiltered.
-    expect(urldecode($url))->toContain('filters')
+    // Client 2026-10-30: the Boxes filters are rules, so the link is a rule.
+    expect(urldecode($url))->toContain('filters[queryBuilder][rules][batch][type]=batch')
         ->and(urldecode($url))->not->toContain('tableFilters')
-        ->and(urldecode($url))->toContain('batch')
-        ->and(urldecode($url))->toContain('42');
+        ->and(urldecode($url))->toContain('[value][0]=42');
 });
 
 it('Boxes list given the batch filter param shows only that batch boxes (B3)', function (): void {
@@ -99,7 +99,7 @@ it('Boxes list given the batch filter param shows only that batch boxes (B3)', f
     $boxB = Box::factory()->create(['batch_id' => $batchB->id, 'box_number' => 'B1']);
 
     Livewire::test(ListBoxes::class)
-        ->filterTable('batch', [$batchA->id])
+        ->filterTable('queryBuilder', doc_rule('batch', 'isRelatedTo', ['value' => [$batchA->id]]))
         ->assertCanSeeTableRecords([$boxA])
         ->assertCanNotSeeTableRecords([$boxB]);
 });
@@ -115,7 +115,8 @@ it('arriving at the Boxes list via the navigation filter query-string applies th
 
     // Drive the EXACT query-string key Filament reads ('filters'), as produced
     // by BatchResource::getUrl(... ['filters' => ...]) — proves the round trip.
-    Livewire::withQueryParams(['filters' => ['batch' => ['values' => [(string) $batchA->id]]]])
+    parse_str((string) parse_url(BatchResource::boxesUrl($batchA), PHP_URL_QUERY), $query);
+    Livewire::withQueryParams($query)
         ->test(ListBoxes::class)
         ->assertCanSeeTableRecords([$boxA])
         ->assertCanNotSeeTableRecords([$boxB]);
@@ -125,12 +126,12 @@ it('arriving at the Boxes list via the navigation filter query-string applies th
 
 it('the DocumentResource index URL carries the current_box_id filter param shape (B4)', function (): void {
     $url = DocumentResource::getUrl('index', [
-        'filters' => ['current_box_id' => ['values' => [7]]],
+        'filters' => ['queryBuilder' => doc_rule('currentBox', 'isRelatedTo', ['value' => [7]])],
     ]);
 
     expect(urldecode($url))->toContain('filters')
         ->and(urldecode($url))->not->toContain('tableFilters')
-        ->and(urldecode($url))->toContain('current_box_id')
+        ->and(urldecode($url))->toContain('currentBox')
         ->and(urldecode($url))->toContain('7');
 });
 
@@ -146,7 +147,7 @@ it('Documents list given the box filter param shows only that box documents (B4)
     $docB = cmn_doc($repo->id, $series->id, ['current_box_id' => $boxB->id]);
 
     Livewire::test(ListDocuments::class)
-        ->filterTable('current_box_id', [$boxA->id])
+        ->filterTable('queryBuilder', doc_rule('currentBox', 'isRelatedTo', ['value' => [$boxA->id]]))
         ->assertCanSeeTableRecords([$docA])
         ->assertCanNotSeeTableRecords([$docB]);
 });
@@ -162,7 +163,7 @@ it('arriving at the Documents list via the navigation filter query-string applie
     $docA = cmn_doc($repo->id, $series->id, ['current_box_id' => $boxA->id]);
     $docB = cmn_doc($repo->id, $series->id, ['current_box_id' => $boxB->id]);
 
-    Livewire::withQueryParams(['filters' => ['current_box_id' => ['values' => [(string) $boxA->id]]]])
+    Livewire::withQueryParams(['filters' => ['queryBuilder' => doc_rule('currentBox', 'isRelatedTo', ['value' => [(string) $boxA->id]])]])
         ->test(ListDocuments::class)
         ->assertCanSeeTableRecords([$docA])
         ->assertCanNotSeeTableRecords([$docB]);

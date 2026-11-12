@@ -133,7 +133,7 @@ final class AssignAuthorityAction
             }
         }
 
-        $label = "{$authority->identifier} — {$authority->surname}";
+        $label = $authority->citingLabel();
 
         if ($errors === [] && $attached > 0) {
             $suffix = $skipped > 0 ? " ({$skipped} already had it)" : '';

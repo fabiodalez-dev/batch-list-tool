@@ -11,6 +11,7 @@ use App\Filament\Resources\DocumentResource\RelationManagers\FlagsRelationManage
 use App\Models\DocumentFlag;
 use App\Models\ReportTemplate;
 use App\Models\Repository;
+use App\Support\DisplayDate;
 use App\Support\Reports\ReportRenderer;
 use Filament\Actions\Action;
 use Filament\Forms;
@@ -99,20 +100,22 @@ class FlagsByTypeReport extends Page implements HasTable
                     ->placeholder('—'),
 
                 Tables\Columns\TextColumn::make('count_open')
-                    ->label('# Open')
+                    ->label('# Documents open')
+                    ->tooltip('Documents with an open or acknowledged flag of this type')
                     ->alignEnd()
                     ->sortable()
                     ->numeric(),
 
                 Tables\Columns\TextColumn::make('count_resolved')
-                    ->label('# Resolved')
+                    ->label('# Documents resolved')
+                    ->tooltip('Documents with a resolved or dismissed flag of this type')
                     ->alignEnd()
                     ->sortable()
                     ->numeric(),
 
                 Tables\Columns\TextColumn::make('last_flagged_at')
                     ->label('Last flagged')
-                    ->dateTime('Y-m-d H:i')
+                    ->dateTime()
                     ->placeholder('—')
                     ->sortable(),
             ])
@@ -167,10 +170,10 @@ class FlagsByTypeReport extends Page implements HasTable
                     ->indicateUsing(function (array $data): array {
                         $out = [];
                         if (! empty($data['from'])) {
-                            $out[] = 'From: ' . $data['from'];
+                            $out[] = 'From: ' . DisplayDate::date($data['from']);
                         }
                         if (! empty($data['to'])) {
-                            $out[] = 'To: ' . $data['to'];
+                            $out[] = 'To: ' . DisplayDate::date($data['to']);
                         }
 
                         return $out;
@@ -188,8 +191,8 @@ class FlagsByTypeReport extends Page implements HasTable
             columns: [
                 'Flag type' => 'type',
                 'Severity' => 'severity',
-                '# Open' => 'count_open',
-                '# Resolved' => 'count_resolved',
+                '# Documents open' => 'count_open',
+                '# Documents resolved' => 'count_resolved',
                 'Last flagged' => 'last_flagged_at',
             ],
             rows: $this->collectRows(),
@@ -203,7 +206,7 @@ class FlagsByTypeReport extends Page implements HasTable
         return ReportRenderer::renderPdf(
             title: 'Flags by type',
             slug: 'flags-by-type',
-            headers: ['Flag type', 'Severity', '# Open', '# Resolved', 'Last flagged'],
+            headers: ['Flag type', 'Severity', '# Documents open', '# Documents resolved', 'Last flagged'],
             rows: $this->collectRows(),
         );
     }
@@ -215,15 +218,15 @@ class FlagsByTypeReport extends Page implements HasTable
 
     /**
      * SELECT type, severity,
-     *        SUM(CASE WHEN status IN ('open','acknowledged') THEN 1 ELSE 0 END) AS count_open,
-     *        SUM(CASE WHEN status IN ('resolved','dismissed') THEN 1 ELSE 0 END) AS count_resolved,
+     *        COUNT(DISTINCT CASE WHEN status IN ('open','acknowledged') THEN document_id END) AS count_open,
+     *        COUNT(DISTINCT CASE WHEN status IN ('resolved','dismissed') THEN document_id END) AS count_resolved,
      *        MAX(flagged_at) AS last_flagged_at
      *   FROM document_flags
      *  GROUP BY type, severity
      *
-     * Counts use SUM(CASE) instead of COUNT(*) per status so both
-     * buckets surface on the same row (one DB round trip vs. two
-     * UNIONed queries).
+     * Client 2026-11-10 ("#Open #Resolved … number of documents right?"):
+     * both columns count documents, not flags — a document flagged twice for
+     * mould counts once. Both buckets on the same row in one query.
      */
     protected function reportQuery(): Builder
     {
@@ -232,8 +235,8 @@ class FlagsByTypeReport extends Page implements HasTable
                 'MIN(document_flags.id) as id,'
                 . ' document_flags.type as type,'
                 . ' document_flags.severity as severity,'
-                . " SUM(CASE WHEN document_flags.status IN ('open', 'acknowledged') THEN 1 ELSE 0 END) as count_open,"
-                . " SUM(CASE WHEN document_flags.status IN ('resolved', 'dismissed') THEN 1 ELSE 0 END) as count_resolved,"
+                . " COUNT(DISTINCT CASE WHEN document_flags.status IN ('open', 'acknowledged') THEN document_flags.document_id END) as count_open,"
+                . " COUNT(DISTINCT CASE WHEN document_flags.status IN ('resolved', 'dismissed') THEN document_flags.document_id END) as count_resolved,"
                 . ' MAX(document_flags.flagged_at) as last_flagged_at'
             )
             ->groupBy('document_flags.type', 'document_flags.severity');
@@ -254,14 +257,8 @@ class FlagsByTypeReport extends Page implements HasTable
             $attrs = $r->getAttributes();
             $type = isset($attrs['type']) ? (string) $attrs['type'] : null;
 
-            $lastFlagged = $attrs['last_flagged_at'] ?? null;
-            if ($lastFlagged instanceof \DateTimeInterface) {
-                $lastFlaggedStr = $lastFlagged->format('Y-m-d H:i');
-            } elseif (is_string($lastFlagged) && $lastFlagged !== '') {
-                $lastFlaggedStr = $lastFlagged;
-            } else {
-                $lastFlaggedStr = null;
-            }
+            // MAX() comes back as a plain "Y-m-d H:i:s" string, not a Carbon.
+            $lastFlaggedStr = DisplayDate::dateTime($attrs['last_flagged_at'] ?? null);
 
             $rows[] = [
                 $type !== null ? FlagsRelationManager::typeLabel($type) : null,

@@ -9,6 +9,7 @@ use App\Filament\Concerns\ExplainsPage;
 use App\Filament\Resources\BackupDestinationResource;
 use App\Models\BackupRun;
 use App\Settings\BackupSettings;
+use App\Support\DisplayDate;
 use Carbon\Carbon;
 use Filament\Actions\Action;
 use Filament\Forms\Components\Checkbox;
@@ -203,7 +204,7 @@ class BackupHealthPage extends Page
                         'path' => $file,
                         'size' => $this->formatBytes($size),
                         'size_bytes' => $size,
-                        'date' => Carbon::createFromTimestamp($modified)->toDateTimeString(),
+                        'date' => Carbon::createFromTimestamp($modified)->format(DisplayDate::DATE_TIME),
                         'timestamp' => $modified,
                     ];
                 }
@@ -544,7 +545,7 @@ class BackupHealthPage extends Page
                 'ok' => true,
                 'message' => 'Backup found',
                 'file' => basename((string) $latest),
-                'date' => Carbon::createFromTimestamp($lastModified)->toDateTimeString(),
+                'date' => Carbon::createFromTimestamp($lastModified)->format(DisplayDate::DATE_TIME),
                 'size' => $this->formatBytes($size),
             ];
         } catch (\Throwable) {

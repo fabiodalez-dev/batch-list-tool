@@ -9,6 +9,7 @@ use App\Models\Authority;
 use App\Models\Box;
 use App\Models\CustomFieldDefinition;
 use App\Models\Document;
+use App\Models\DocumentFlag;
 use App\Models\DocumentIdentifierHistory;
 use App\Models\Repository;
 use App\Support\BulkImport\SpreadsheetHeaders;
@@ -58,6 +59,9 @@ final class EntityExport
 
     /** @var array<int, string|null> repository id => code, read once per request */
     private static array $repositoryCodes = [];
+
+    /** @var array<string, string>|null flag type code => label, per export */
+    private static ?array $flagLabels = null;
 
     /**
      * Template entity (TemplateGenerator key) => importer class.
@@ -150,6 +154,7 @@ final class EntityExport
         $definitions = self::definitionsByKey($entity);
         // A code renamed since the last export must not come back stale.
         self::$repositoryCodes = [];
+        self::$flagLabels = null;
 
         $with = array_merge(self::relationsFor($entity), $definitions === [] ? [] : ['customFieldValues.definition']);
         $query->with($with);
@@ -330,7 +335,7 @@ final class EntityExport
     private static function storageColumn(): array
     {
         return [
-            'authority' => ['practice_dates_active' => 'practice_dates_start', 'ntg_dates_active' => 'ntg_dates_start', 'name_suffix' => 'given_names', 'maiden_surname' => 'notes'],
+            'authority' => ['practice_dates_active' => 'practice_dates_start', 'ntg_dates_active' => 'ntg_dates_start'],
             'series' => ['parent_code' => 'parent_id', 'repository_code' => 'repository_id'],
             'batch' => ['repository_code' => 'repository_id'],
             'location' => ['parent_name' => 'parent_id', 'repository_code' => 'repository_id'],
@@ -371,11 +376,6 @@ final class EntityExport
             'authority' => [
                 'practice_dates_active' => static fn (Model $r): ?string => $yearRange($r->getAttribute('practice_dates_start'), $r->getAttribute('practice_dates_end')),
                 'ntg_dates_active' => static fn (Model $r): ?string => $yearRange($r->getAttribute('ntg_dates_start'), $r->getAttribute('ntg_dates_end')),
-                // The importer APPENDS these to given_names and notes. Their
-                // values are already in those exported columns; writing them
-                // here too would append them a second time on every re-import.
-                'name_suffix' => static fn (): ?string => null,
-                'maiden_surname' => static fn (): ?string => null,
             ],
             'series' => [
                 'parent_code' => static fn (Model $r): mixed => $r->getRelationValue('parent')?->getAttribute('code'),
@@ -413,10 +413,17 @@ final class EntityExport
                 // The free-text Creator cell as it arrived, kept by the importer.
                 'creator_legacy_text' => static fn (Model $r): mixed => $r instanceof Document ? $r->extra->get('legacy_creator_text') : null,
                 'prev_attributed_identifier' => static fn (Model $r): mixed => self::previousAttribution($r)?->getAttribute('previous_identifier'),
-                'prev_attributed_volume' => static fn (Model $r): mixed => self::previousAttribution($r)?->getAttribute('previous_volume'),
+                'prev_attributed_volume' => static fn (Model $r): mixed => $r instanceof Document ? $r->latestPastVolume() : null,
                 // The sheet's "RAS 1/2 Box Destroyed" cells, as the document keeps them.
                 'ras_box_1_destroyed' => static fn (Model $r): mixed => $r->getAttribute('ras_1_box_destroyed'),
                 'ras_box_2_destroyed' => static fn (Model $r): mixed => $r->getAttribute('ras_2_box_destroyed'),
+                // The document's open flags, by name, as the Flags column reads them.
+                'flags' => static function (Model $r): ?string {
+                    self::$flagLabels ??= DocumentFlag::typeOptions();
+
+                    return self::joinList($r->getRelationValue('openFlags')
+                        ?->map(fn (DocumentFlag $f): string => self::$flagLabels[$f->type] ?? $f->type)->unique()->values()->all() ?? []);
+                },
             ],
             // The accession sheet is one row per DOCUMENT: the record here is a
             // Document, and the accession, batch and box columns are read from
@@ -455,7 +462,7 @@ final class EntityExport
             'location' => ['parent', 'repository'],
             'box' => ['batch', 'parent', 'location'],
             'volume' => ['document'],
-            'document' => ['batch', 'currentBox', 'location', 'series', 'authorities', 'identifierHistory'],
+            'document' => ['batch', 'currentBox', 'location', 'series', 'authorities', 'identifierHistory', 'openFlags'],
             'accession' => ['accession', 'batch', 'currentBox', 'series', 'authorities'],
             default => [],
         };

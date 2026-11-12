@@ -194,7 +194,7 @@ class DocumentLocationReport extends Page implements HasTable
         $query = $this->exportQuery()
             ->with(['currentBox.location', 'location'])
             ->reorder('documents.identifier')
-            ->limit(5000);
+            ->limit(ReportRenderer::PDF_FETCH_LIMIT);
         /** @var Document $r */
         foreach ($query->get() as $r) {
             $rows[] = $this->locationRow($r);

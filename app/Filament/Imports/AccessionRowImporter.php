@@ -374,6 +374,29 @@ class AccessionRowImporter extends Importer
         $this->rowSavepointOpen = true;
     }
 
+    /**
+     * A save that throws comes after the savepoint opened in beforeSave(),
+     * and afterSave() never runs: close it here, or on the last row of a
+     * chunk it keeps the chunk transaction from committing.
+     */
+    public function saveRecord(): void
+    {
+        try {
+            parent::saveRecord();
+        } catch (\Throwable $throwable) {
+            if ($this->rowSavepointOpen) {
+                DB::rollBack();
+                $this->rowSavepointOpen = false;
+            }
+            if ($this->pendingRowKey !== null) {
+                $this->clearRowStash($this->pendingRowKey);
+                $this->pendingRowKey = null;
+            }
+
+            throw $throwable;
+        }
+    }
+
     public function afterSave(): void
     {
         try {

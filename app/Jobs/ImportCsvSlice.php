@@ -6,8 +6,11 @@ namespace App\Jobs;
 
 use App\Filament\Imports\DocumentImporter;
 use App\Filament\Pages\ImportWizard;
+use App\Models\Lookup\CustodyStatusType;
+use App\Support\BulkImport\EntityResolver;
 use Filament\Actions\Imports\Jobs\ImportCsv;
 use Filament\Actions\Imports\Models\Import;
+use Illuminate\Queue\Middleware\WithoutOverlapping;
 
 /**
  * One chunk of a wizard import, read from the CSV on disk when the job runs.
@@ -38,8 +41,31 @@ class ImportCsvSlice extends ImportCsv
         parent::__construct($import, [], $columnMap, $options);
     }
 
+    /**
+     * Client 2026-10-27: the last 767 rows of a 26,867-row sheet were never
+     * imported. Filament's job lock lasts ten minutes and a job that finds it
+     * taken goes straight back on the queue; with a lock left over, the
+     * remaining slices were taken and put back hundreds of times a minute
+     * until their attempt count overflowed, and they failed unseen. The lock
+     * now expires after two minutes and a waiting slice retries every 20 s.
+     *
+     * @return array<int, object>
+     */
+    public function middleware(): array
+    {
+        return [
+            (new WithoutOverlapping("import{$this->import->getKey()}"))->releaseAfter(20)->expireAfter(120),
+        ];
+    }
+
     public function handle(): void
     {
+        // The queue worker lives across imports: ids remembered by the
+        // previous one may name boxes or batches deleted since ("The selected
+        // box does not exist." on a row of the next import).
+        EntityResolver::flushMemo();
+        CustodyStatusType::flushMemo();
+
         $headers = ImportWizard::csvHeaderKeys($this->csvPath);
         $withSourceRow = $this->import->importer === DocumentImporter::class;
 

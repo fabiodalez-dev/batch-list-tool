@@ -11,6 +11,7 @@ use App\Models\Series;
 use App\Models\User;
 use App\Support\ActiveRepository;
 use Illuminate\Foundation\Testing\RefreshDatabase;
+use Illuminate\Support\Collection;
 use Livewire\Livewire;
 use Spatie\Permission\Models\Role;
 
@@ -62,6 +63,25 @@ function dda_seedDocuments(int $n): Repository
     return $repo;
 }
 
+/**
+ * Client 2026-10-30: the action is a bulk action now; it needs a row ticked
+ * to open, and ignores which.
+ */
+function dda_selection(): Collection
+{
+    return Document::withoutGlobalScope(RepositoryScope::class)->limit(1)->get();
+}
+
+it('is only among the bulk actions, not in the page header', function () {
+    dda_seedDocuments(1);
+    $this->actingAs(dda_user('super_admin'));
+
+    $page = Livewire::test(ListDocuments::class)->assertTableBulkActionExists('deleteAll');
+
+    $header = (fn (): array => $this->getHeaderActions())->call($page->instance());
+    expect(array_map(fn ($action) => $action->getName(), $header))->not->toContain('deleteAll');
+});
+
 it('deletes every document when a super admin confirms', function () {
     $repo = dda_seedDocuments(12);
     expect(Document::withoutGlobalScope(RepositoryScope::class)->count())->toBe(12);
@@ -70,8 +90,8 @@ it('deletes every document when a super admin confirms', function () {
     app(ActiveRepository::class)->set($repo->id); // a specific repository is selected
 
     Livewire::test(ListDocuments::class)
-        ->callAction('deleteAll', data: ['confirmation' => 'DELETE'])
-        ->assertHasNoActionErrors();
+        ->callTableBulkAction('deleteAll', dda_selection(), data: ['confirmation' => $repo->code])
+        ->assertHasNoTableBulkActionErrors();
 
     expect(Document::withoutGlobalScope(RepositoryScope::class)->withTrashed()->count())->toBe(0);
 });
@@ -85,8 +105,8 @@ it('EDGE: only deletes the ACTIVE repository, never across repositories', functi
     app(ActiveRepository::class)->set($repoA->id); // viewing repo A only
 
     Livewire::test(ListDocuments::class)
-        ->callAction('deleteAll', data: ['confirmation' => 'DELETE'])
-        ->assertHasNoActionErrors();
+        ->callTableBulkAction('deleteAll', dda_selection(), data: ['confirmation' => $repoA->code])
+        ->assertHasNoTableBulkActionErrors();
 
     // Repo A wiped, repo B fully intact — no cross-tenant wipe.
     expect(Document::withoutGlobalScope(RepositoryScope::class)->where('repository_id', $repoA->id)->withTrashed()->count())->toBe(0)
@@ -100,8 +120,8 @@ it('EDGE: refuses (deletes nothing) when no repository is selected (viewing All)
     app(ActiveRepository::class)->set(null); // "All repositories"
 
     Livewire::test(ListDocuments::class)
-        ->callAction('deleteAll', data: ['confirmation' => 'DELETE'])
-        ->assertHasNoActionErrors(); // no form error — it just refuses via notification
+        ->callTableBulkAction('deleteAll', dda_selection(), data: ['confirmation' => 'DELETE'])
+        ->assertHasTableBulkActionErrors(['confirmation']); // no repository code can match
 
     // Nothing deleted — the destructive action never runs without a repo scope.
     expect(Document::withoutGlobalScope(RepositoryScope::class)->count())->toBe(7);
@@ -122,8 +142,8 @@ it('EDGE: cascades to a document\'s dependent rows (movements)', function () {
     app(ActiveRepository::class)->set($repo->id);
 
     Livewire::test(ListDocuments::class)
-        ->callAction('deleteAll', data: ['confirmation' => 'DELETE'])
-        ->assertHasNoActionErrors();
+        ->callTableBulkAction('deleteAll', dda_selection(), data: ['confirmation' => $repo->code])
+        ->assertHasNoTableBulkActionErrors();
 
     expect(Document::withoutGlobalScope(RepositoryScope::class)->withTrashed()->count())->toBe(0)
         ->and(BoxMovement::withoutGlobalScopes()->count())->toBe(0); // cascade-deleted
@@ -135,8 +155,8 @@ it('rejects the confirmation form when the wrong word is typed', function () {
     $this->actingAs(dda_user('super_admin'));
 
     Livewire::test(ListDocuments::class)
-        ->callAction('deleteAll', data: ['confirmation' => 'nope'])
-        ->assertHasActionErrors(['confirmation']);
+        ->callTableBulkAction('deleteAll', dda_selection(), data: ['confirmation' => 'nope'])
+        ->assertHasTableBulkActionErrors(['confirmation']);
 
     expect(Document::withoutGlobalScope(RepositoryScope::class)->count())->toBe(5);
 });
@@ -148,7 +168,7 @@ it('hides the action from a non-super-admin', function () {
 
     Livewire::test(ListDocuments::class)
         ->assertOk()
-        ->assertActionHidden('deleteAll');
+        ->assertTableBulkActionHidden('deleteAll');
 
     // Data is untouched.
     expect(Document::withoutGlobalScope(RepositoryScope::class)->count())->toBe(3);
@@ -161,5 +181,53 @@ it('also hides the action from an ordinary admin', function () {
 
     Livewire::test(ListDocuments::class)
         ->assertOk()
-        ->assertActionHidden('deleteAll');
+        ->assertTableBulkActionHidden('deleteAll');
+});
+
+/*
+ * 2026-11-12: "Delete all documents" was run on the whole NRA when only one
+ * batch was meant to go. The confirmation now names the repository, says how
+ * many documents go, and needs the repository code, not a fixed word.
+ */
+it('no longer accepts the old fixed word DELETE', function () {
+    $repo = dda_seedDocuments(5);
+
+    $this->actingAs(dda_user('super_admin'));
+    app(ActiveRepository::class)->set($repo->id);
+
+    Livewire::test(ListDocuments::class)
+        ->callTableBulkAction('deleteAll', dda_selection(), data: ['confirmation' => 'DELETE'])
+        ->assertHasTableBulkActionErrors(['confirmation']);
+
+    expect(Document::withoutGlobalScope(RepositoryScope::class)->count())->toBe(5);
+});
+
+it('does not accept the code of another repository', function () {
+    $repoA = dda_seedDocuments(3);
+    $repoB = dda_seedDocuments(2);
+
+    $this->actingAs(dda_user('super_admin'));
+    app(ActiveRepository::class)->set($repoA->id);
+
+    Livewire::test(ListDocuments::class)
+        ->callTableBulkAction('deleteAll', dda_selection(), data: ['confirmation' => $repoB->code])
+        ->assertHasTableBulkActionErrors(['confirmation']);
+
+    expect(Document::withoutGlobalScope(RepositoryScope::class)->count())->toBe(5);
+});
+
+it('names the repository and the number of documents before deleting', function () {
+    $repo = dda_seedDocuments(1234);
+    $repo->update(['name' => 'Notarial Registers Archive (Main)']);
+
+    $this->actingAs(dda_user('super_admin'));
+    app(ActiveRepository::class)->set($repo->id);
+
+    Livewire::test(ListDocuments::class)
+        ->mountTableBulkAction('deleteAll', dda_selection())
+        ->assertMountedActionModalSee([
+            'all 1,234 documents of Notarial Registers Archive (Main) (' . $repo->code . ')',
+            'Delete selected',
+            'Type the repository code (' . $repo->code . ') to confirm',
+        ]);
 });

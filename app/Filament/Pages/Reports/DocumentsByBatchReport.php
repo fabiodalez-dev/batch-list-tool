@@ -69,11 +69,12 @@ class DocumentsByBatchReport extends Page implements HasTable
     {
         return $table
             ->query(fn (): Builder => $this->reportQuery())
-            ->defaultSort('document_count', 'desc')
+            // Client 2026-11-10: "sort by batch number in sequence? 1, 2, 3…"
+            ->defaultSort(fn (Builder $query): Builder => self::inBatchOrder($query, 'asc'))
             ->columns([
                 Tables\Columns\TextColumn::make('batch_number')
                     ->label('Batch #')
-                    ->sortable()
+                    ->sortable(query: fn (Builder $query, string $direction): Builder => self::inBatchOrder($query, $direction))
                     ->searchable()
                     ->formatStateUsing(fn ($state): string => $state === null ? '(unassigned)' : (string) $state),
 
@@ -305,6 +306,23 @@ class DocumentsByBatchReport extends Page implements HasTable
     }
 
     /**
+     * Batch numbers are text ("12", "4A", "Unknown"): ordered as numbers, so
+     * 2 comes before 10, then as text for the suffixes; text batch numbers
+     * such as "Unknown" after the numbered ones, documents without a batch last.
+     */
+    public static function inBatchOrder(Builder $query, string $direction): Builder
+    {
+        $direction = $direction === 'desc' ? 'desc' : 'asc';
+
+        return $query
+            ->orderByRaw('CASE WHEN batches.batch_number IS NULL THEN 1 ELSE 0 END')
+            // Text batch numbers ("Unknown", "NULL") after the numbered ones.
+            ->orderByRaw("CASE WHEN CAST(batches.batch_number AS UNSIGNED) = 0 AND batches.batch_number <> '0' THEN 1 ELSE 0 END")
+            ->orderByRaw("CAST(batches.batch_number AS UNSIGNED) {$direction}")
+            ->orderBy('batches.batch_number', $direction);
+    }
+
+    /**
      * Distinct, non-null document_type values harvested from the live
      * dataset — keeps the dropdown current without a hard-coded enum.
      *
@@ -331,7 +349,7 @@ class DocumentsByBatchReport extends Page implements HasTable
         return Document::query()
             ->leftJoin('batches', 'batches.id', '=', 'documents.batch_id')
             ->selectRaw(
-                'documents.batch_id as id,'
+                'COALESCE(documents.batch_id, 0) as id,'
                 . ' batches.batch_number as batch_number,'
                 . ' batches.description as batch_description,'
                 . ' batches.type as batch_type,'
@@ -350,7 +368,7 @@ class DocumentsByBatchReport extends Page implements HasTable
     protected function collectRows(): array
     {
         $rows = [];
-        $records = $this->exportQuery()->orderByDesc('document_count')->get();
+        $records = self::inBatchOrder($this->exportQuery(), 'asc')->get();
 
         foreach ($records as $r) {
             $attrs = $r->getAttributes();
@@ -376,7 +394,7 @@ class DocumentsByBatchReport extends Page implements HasTable
     protected function collectRowsAsAssoc(): array
     {
         $rows = [];
-        $records = $this->exportQuery()->orderByDesc('document_count')->get();
+        $records = self::inBatchOrder($this->exportQuery(), 'asc')->get();
 
         foreach ($records as $r) {
             $attrs = $r->getAttributes();

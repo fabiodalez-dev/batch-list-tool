@@ -26,7 +26,7 @@ return [
          * The name of this application. You can use this name to monitor
          * the backups.
          */
-        'name' => env('APP_NAME', 'laravel-backup'),
+        'name' => env('BACKUP_NAME', env('APP_NAME', 'laravel-backup')),
 
         'source' => [
             'files' => [
@@ -45,6 +45,9 @@ return [
                 'exclude' => [
                     base_path('vendor'),
                     base_path('node_modules'),
+                    // Logs are not data, and the import logs alone run to
+                    // 60-70 MB each: they tripled the nightly archive.
+                    storage_path('logs'),
                 ],
 
                 /*
@@ -257,7 +260,7 @@ return [
 
             'from' => [
                 'address' => env('MAIL_FROM_ADDRESS', 'backups@archivetool.eu'),
-                'name' => env('MAIL_FROM_NAME', 'Batch List Tool Backups'),
+                'name' => env('MAIL_FROM_NAME', 'Logistics Tool Backups'),
             ],
         ],
 
@@ -296,7 +299,7 @@ return [
      */
     'monitor_backups' => [
         [
-            'name' => env('APP_NAME', 'laravel-backup'),
+            'name' => env('BACKUP_NAME', env('APP_NAME', 'laravel-backup')),
             'disks' => ['local'],
             'health_checks' => [
                 MaximumAgeInDays::class => 1,

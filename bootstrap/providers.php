@@ -3,11 +3,13 @@
 use App\Providers\AppServiceProvider;
 use App\Providers\Filament\AdminPanelProvider;
 use App\Providers\FortifyServiceProvider;
+use App\Providers\PresentationServiceProvider;
 
 return [
     AppServiceProvider::class,
     AdminPanelProvider::class,
     FortifyServiceProvider::class,
+    PresentationServiceProvider::class,
     // TelescopeServiceProvider is registered conditionally in
     // AppServiceProvider::register() only when the laravel/telescope
     // package is installed (require-dev). Listing it here breaks

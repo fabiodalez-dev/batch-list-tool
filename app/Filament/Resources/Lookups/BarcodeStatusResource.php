@@ -6,6 +6,8 @@ namespace App\Filament\Resources\Lookups;
 
 use App\Filament\Resources\Lookups\BarcodeStatusResource\Pages;
 use App\Filament\Support\CreatorColumn;
+use App\Filament\Support\ListRules;
+use App\Filament\Support\MatchQueryBuilder;
 use App\Models\Lookup\BarcodeStatus;
 use Filament\Actions\Action;
 use Filament\Actions\BulkActionGroup;
@@ -129,7 +131,9 @@ class BarcodeStatusResource extends Resource
             ->defaultSort('sort_order')
             ->reorderable('sort_order')
             ->filters([
-                Tables\Filters\TernaryFilter::make('is_active'),
+                // Client 2026-10-30: one rule per column, as on Documents.
+                MatchQueryBuilder::make()
+                    ->constraints(ListRules::lookup()),
             ])
             ->actions([
                 Action::make('toggle_active')

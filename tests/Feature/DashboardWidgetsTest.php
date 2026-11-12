@@ -177,101 +177,15 @@ test('Documents stat returns expected count', function () {
     expect($stats['documents_total'])->toBeGreaterThanOrEqual(3);
 });
 
-test('Pending disinfestation stat counts only NULL disinfestation_date and non-PERM_OUT', function () {
-    $repo = makeRepository('PD');
-    $series = makeSeries('PD');
-    $batch = makeBatch($repo->id, 1);
-
-    // 3 disinfested, 2 not, 1 PERM_OUT (excluded from pending)
-    $box = Box::create([
-        'box_type' => 'RAS', 'box_number' => 'B-' . substr(uniqid(), -4),
-        'batch_id' => $batch->id, 'barcode_status' => 'IN',
-    ]);
-    $permBox = Box::create([
-        'box_type' => 'RAS', 'box_number' => 'B-' . substr(uniqid(), -4),
-        'batch_id' => $batch->id, 'barcode_status' => 'PERM_OUT',
-        'disinfestation_date' => now(),
-    ]);
-
-    for ($i = 0; $i < 3; $i++) {
-        makeDocument($repo->id, $series->id, [
-            'disinfestation_date' => now(), 'current_box_id' => $box->id,
-        ]);
-    }
-    for ($i = 0; $i < 2; $i++) {
-        makeDocument($repo->id, $series->id, [
-            'disinfestation_date' => null, 'current_box_id' => $box->id,
-        ]);
-    }
-    makeDocument($repo->id, $series->id, [
-        'disinfestation_date' => null, 'current_box_id' => $permBox->id,
-    ]);
-
-    // Act as an editor scoped to the same repo
-    $this->actingAs(editorUserIn($repo));
-
-    $widget = new StatsOverviewWidget;
-    $m = new ReflectionClass($widget)->getMethod('computeStats');
-    $stats = $m->invoke($widget);
-
-    expect($stats['pending_disinfestation'])->toBe(2);
-});
-
-test('Pending disinfestation stat respects multi-tenant scope', function () {
-    $repoA = makeRepository('TA');
-    $repoB = makeRepository('TB');
-    $series = makeSeries('TT');
-
-    // 4 pending in repoA, 7 pending in repoB
-    for ($i = 0; $i < 4; $i++) {
-        makeDocument($repoA->id, $series->id, ['disinfestation_date' => null]);
-    }
-    for ($i = 0; $i < 7; $i++) {
-        makeDocument($repoB->id, $series->id, ['disinfestation_date' => null]);
-    }
-
-    $this->actingAs(editorUserIn($repoA));
-
-    $widget = new StatsOverviewWidget;
-    $m = new ReflectionClass($widget)->getMethod('computeStats');
-    $stats = $m->invoke($widget);
-
-    // Editor in repoA must only see repoA's pending count.
-    expect($stats['pending_disinfestation'])->toBe(4);
-});
-
-test('Stat color is warning when pending > 0 and success when zero', function () {
+test('The overview has no pending disinfestation card (client 2026-11-10)', function () {
     $repo = makeRepository('SC');
-    $series = makeSeries('SC');
-
-    // Case 1: 1 pending → warning
-    makeDocument($repo->id, $series->id, ['disinfestation_date' => null]);
-
+    makeDocument($repo->id, makeSeries('SC')->id, ['disinfestation_date' => null]);
     $this->actingAs(editorUserIn($repo));
 
-    $widget = new StatsOverviewWidget;
-    $m = new ReflectionClass($widget)->getMethod('getStats');
-
     Cache::flush();
-    $stats = $m->invoke($widget);
+    $stats = new ReflectionClass(StatsOverviewWidget::class)->getMethod('getStats')->invoke(new StatsOverviewWidget);
 
-    /** @var Stat $pendingCard */
-    $pendingCard = collect($stats)->first(fn ($s) => str_contains(strtolower((string) $s->getLabel()), 'pending'));
-    expect($pendingCard)->not->toBeNull();
-
-    $colorProp = new ReflectionClass($pendingCard)->getProperty('color');
-    expect($colorProp->getValue($pendingCard))->toBe('warning');
-
-    // Case 2: clear them — color must flip to success
-    Document::withoutGlobalScope(RepositoryScope::class)
-        ->where('repository_id', $repo->id)
-        ->update(['disinfestation_date' => now()]);
-    Cache::flush();
-
-    $widget2 = new StatsOverviewWidget;
-    $stats2 = $m->invoke($widget2);
-    $pending2 = collect($stats2)->first(fn ($s) => str_contains(strtolower((string) $s->getLabel()), 'pending'));
-    expect($colorProp->getValue($pending2))->toBe('success');
+    expect(collect($stats)->map(fn (Stat $s) => strtolower((string) $s->getLabel()))->filter(fn ($l) => str_contains($l, 'pending')))->toBeEmpty();
 });
 
 /* -------------------------------------------------------------------------

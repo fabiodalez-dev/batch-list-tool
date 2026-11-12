@@ -643,7 +643,7 @@ it('AccessionResource list batches filter respects the pivot', function (): void
     $linked->batches()->attach($batch->id);
 
     Livewire::test(ListAccessions::class)
-        ->filterTable('batches', $batch->id)
+        ->filterTable('queryBuilder', doc_rule('batches', 'isRelatedTo', ['value' => [$batch->id]]))
         ->assertCanSeeTableRecords([$linked])
         ->assertCanNotSeeTableRecords([$other]);
 });

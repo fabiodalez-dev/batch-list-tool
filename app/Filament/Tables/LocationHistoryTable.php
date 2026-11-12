@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace App\Filament\Tables;
 
+use App\Support\DisplayDate;
 use Filament\Actions\ViewAction;
 use Filament\Forms;
 use Filament\Schemas\Schema;
@@ -88,10 +89,10 @@ final class LocationHistoryTable
                     ->indicateUsing(function (array $data): array {
                         $indicators = [];
                         if (! empty($data['from'])) {
-                            $indicators[] = 'Moved ≥ ' . $data['from'];
+                            $indicators[] = 'Moved ≥ ' . DisplayDate::date($data['from']);
                         }
                         if (! empty($data['to'])) {
-                            $indicators[] = 'Moved ≤ ' . $data['to'];
+                            $indicators[] = 'Moved ≤ ' . DisplayDate::date($data['to']);
                         }
 
                         return $indicators;

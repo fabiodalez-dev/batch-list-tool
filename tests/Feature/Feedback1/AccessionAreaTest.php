@@ -250,7 +250,7 @@ it('ternary filter has_accession_number correctly filters rows', function () {
     $withoutNum = aa_accession($repo->id);
 
     Livewire::test(ListAccessions::class)
-        ->filterTable('has_accession_number', true)
+        ->filterTable('queryBuilder', doc_rule('accession_number', 'isFilled'))
         ->assertCanSeeTableRecords([$withNum])
         ->assertCanNotSeeTableRecords([$withoutNum]);
 });
@@ -274,7 +274,7 @@ it('authority filter narrows result set correctly', function () {
     $noAuth = aa_accession($repo->id);
 
     Livewire::test(ListAccessions::class)
-        ->filterTable('authority', $authority->id)
+        ->filterTable('queryBuilder', doc_rule('authority', 'isRelatedTo', ['value' => [$authority->id]]))
         ->assertCanSeeTableRecords([$withAuth])
         ->assertCanNotSeeTableRecords([$noAuth]);
 });

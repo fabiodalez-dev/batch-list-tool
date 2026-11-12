@@ -130,7 +130,7 @@ class ImportSampleData extends Command
                         'alternative_identifier' => trim((string) ($row[1] ?? '')) ?: null,
                         'surname' => $surname,
                         'given_names' => $given ?: null,
-                        'entity_type' => strtoupper(trim((string) ($row[2] ?? ''))) === 'PERSON' ? 'PERSON' : 'INSTITUTION',
+                        'entity_type' => strtoupper(trim((string) ($row[2] ?? ''))) === 'PERSON' ? 'Person' : 'INSTITUTION',
                         'practice_dates_start' => $start,
                         'practice_dates_end' => $end,
                     ]

@@ -47,6 +47,8 @@ class Box extends Model implements AuditableContract, Sortable
     /** box_location_history.source of a location taken from the box's documents. */
     public const string LOCATION_SOURCE_DOCUMENTS = 'documents';
 
+    private const string TRACKING_NOTE_DELIMITER = '; ';
+
     /**
      * Boxes are ordered WITHIN their batch — sort_order is unique per batch_id,
      * not globally. The override below scopes the sort query so renumbering
@@ -81,6 +83,20 @@ class Box extends Model implements AuditableContract, Sortable
      * operator change never sets it, so the live audit hook keeps working.
      */
     public bool $suppressBarcodeHistory = false;
+
+    /**
+     * Transient flag for the next save: the location on this instance was given
+     * on purpose, so the status IN rule below leaves it. BoxImporter sets it when
+     * the sheet names a location for the box (client 2026-11-05).
+     */
+    public bool $keepLocationWhenIn = false;
+
+    /**
+     * Reason written to box_barcode_history by the next save that changes the
+     * barcode or its status, when that change has a named cause (Return to
+     * RAS, client 2026-11-10). Reset after the row is written.
+     */
+    public ?string $barcodeChangeReason = null;
 
     protected $fillable = [
         'sort_order',
@@ -309,6 +325,18 @@ class Box extends Model implements AuditableContract, Sortable
         return $this->disinfestation_date !== null;
     }
 
+    /**
+     * Client 2026-11-05: "Tracking Note is being concatenated to tracking note
+     * but we need some kind of delimeter ex: '; ' if a tracking note already
+     * exists". Not saved here: the caller saves with the rest of its change.
+     */
+    public function appendTrackingNote(string $note): void
+    {
+        // A literal "0" is a real note, so no empty().
+        $existing = trim((string) $this->tracking_note);
+        $this->tracking_note = $existing !== '' ? $existing . self::TRACKING_NOTE_DELIMITER . $note : $note;
+    }
+
     /** RFQ rule #3: IN_SITU / NRA require parent RAS box */
     /**
      * How a person names the box: "RAS 110 (batch 28) · AA00110". Reads the
@@ -323,9 +351,173 @@ class Box extends Model implements AuditableContract, Sortable
             . ($this->barcode ? ' · ' . $this->barcode : '');
     }
 
+    /**
+     * How the box reads in a list of boxes to pick from: "Batch 30 / Box 8"
+     * for a RAS box, "MAV 1" or "NRA 202" for the others, which are named by
+     * type and number (client 2026-10-27: "108" listed once per batch).
+     */
+    public function shortLabel(): string
+    {
+        $batch = $this->batch_id !== null ? $this->getRelationValue('batch')?->getAttribute('batch_number') : null;
+
+        return self::shortLabelFrom($this->box_type, $this->box_number, $batch);
+    }
+
+    /**
+     * {@see shortLabel()} from the bare values, for report rows read straight
+     * from SQL with no Box model behind them. It is the client's "latest batch
+     * and box number if RAS, or the NRA/MUS/MAV/STVC box number".
+     */
+    public static function shortLabelFrom(?string $boxType, mixed $boxNumber, mixed $batchNumber): string
+    {
+        if (($boxType ?? 'RAS') !== 'RAS') {
+            return trim($boxType . ' ' . $boxNumber);
+        }
+
+        return ($batchNumber !== null && $batchNumber !== '' ? 'Batch ' . $batchNumber . ' / ' : '') . 'Box ' . $boxNumber;
+    }
+
+    /**
+     * Options for a box picker, searched the way the boxes read: "MAV 1",
+     * "MAV1", "Batch 30 / Box 8", "30/8", "30 8" or a bare "8". Exact numbers
+     * come first, so "8" lists every Box 8 before Box 18 and Box 81 (client
+     * 2026-10-28: a contains-search on the number filled the list with Batch
+     * 19 and never reached Batch 30 / Box 8, and "MAV 1" found nothing).
+     *
+     * $narrow limits every search to some boxes, and with it the empty search
+     * lists the first of them, so a picker can open on its options. A plain
+     * number or text that matches no box number is tried on the barcode.
+     *
+     * @param ?\Closure(Builder): mixed $narrow
+     * @param ?\Closure(self): string $label instead of shortLabel()
+     * @return array<int, string> id => label
+     */
+    public static function searchOptions(string $search, int $limit = 50, ?\Closure $narrow = null, ?\Closure $label = null): array
+    {
+        $search = trim((string) preg_replace('/\s+/u', ' ', $search));
+        if ($search === '' && $narrow === null) {
+            return [];
+        }
+
+        // The searches to run, best match first; each narrows the query it is given.
+        $steps = [];
+        $type = $search === '' ? null : self::splitTypeAndNumber($search);
+        if ($search === '') {
+            $steps[] = fn (Builder $q): Builder => $q;
+        } elseif ($type !== null) {
+            [$code, $number] = $type;
+            $byType = fn (Builder $q): Builder => $q->where('box_type', $code);
+            $steps[] = $number === ''
+                ? $byType
+                : fn (Builder $q): Builder => $byType($q)->where('box_number', $number);
+            if ($number !== '') {
+                $steps[] = fn (Builder $q): Builder => $byType($q)->where('box_number', 'like', $number . '%');
+            }
+        } elseif (preg_match('~^batch\s*(\S+)$~iu', $search, $m) === 1) {
+            $steps[] = fn (Builder $q): Builder => $q->whereHas('batch', fn (Builder $b): Builder => $b->where('batch_number', $m[1]));
+        } elseif (preg_match('~^(?!box\b)(?:batch\s*)?([^\s/]+)\s*(?:/|\s)\s*(?:box\s*)?([^\s/]+)$~iu', $search, $m) === 1) {
+            [, $batch, $number] = $m;
+            $inBatch = fn (Builder $q): Builder => $q->whereHas('batch', fn (Builder $b): Builder => $b->where('batch_number', $batch));
+            $steps[] = fn (Builder $q): Builder => $inBatch($q)->where('box_number', $number);
+            $steps[] = fn (Builder $q): Builder => $inBatch($q)->where('box_number', 'like', $number . '%');
+        } else {
+            $number = (string) preg_replace('~^box\s*~iu', '', $search);
+            $steps[] = fn (Builder $q): Builder => $q->where('box_number', $number);
+            $steps[] = fn (Builder $q): Builder => $q->where('box_number', 'like', $number . '%');
+            $steps[] = fn (Builder $q): Builder => $q->where('box_number', 'like', '%' . $number . '%');
+            $steps[] = fn (Builder $q): Builder => $q->where('barcode', 'like', '%' . $number . '%');
+        }
+
+        $batchNumber = '(select search_batch.batch_number from batches search_batch where search_batch.id = boxes.batch_id)';
+        $options = [];
+        foreach ($steps as $step) {
+            $left = $limit - count($options);
+            if ($left <= 0) {
+                break;
+            }
+            $query = self::query()->with('batch');
+            $step($query);
+            if ($narrow !== null) {
+                $narrow($query);
+            }
+            $query->whereNotIn('id', array_keys($options))
+                ->orderByRaw("CAST({$batchNumber} AS UNSIGNED)")
+                ->orderByRaw($batchNumber)
+                ->orderByRaw('CAST(box_number AS UNSIGNED)')
+                ->orderBy('box_number')
+                ->limit($left)
+                ->get()
+                ->each(function (self $box) use (&$options, $label): void {
+                    $options[$box->getKey()] = $label !== null ? $label($box) : $box->shortLabel();
+                });
+        }
+
+        return $options;
+    }
+
+    /**
+     * Label each selected box id the way {@see searchOptions()} lists it.
+     *
+     * @param array<int|string> $ids
+     * @return array<int, string>
+     */
+    public static function shortLabelsFor(array $ids): array
+    {
+        return static::query()->with('batch')->whereKey($ids)->get()
+            ->mapWithKeys(fn (self $box): array => [$box->getKey() => $box->shortLabel()])
+            ->all();
+    }
+
     public function requiresParent(): bool
     {
         return in_array($this->box_type, ['IN_SITU', 'NRA'], true);
+    }
+
+    /**
+     * The live box that already carries this identity: the same type and
+     * number in the same batch or, with no batch, in the same repository.
+     * Client 2026-10-30: two batch-less "NRA 500" were accepted, because a SQL
+     * unique index counts every NULL batch as different; the form rule and
+     * the saving guard both ask this instead.
+     */
+    public static function identityClash(?int $batchId, ?int $repositoryId, ?string $boxType, ?string $boxNumber, int|string|null $ignoreId = null): ?self
+    {
+        $boxNumber = trim((string) $boxNumber);
+        if ($boxNumber === '' || $boxType === null || $boxType === '') {
+            return null;
+        }
+        if ($batchId === null && $repositoryId === null) {
+            return null;
+        }
+
+        return static::query()
+            ->withoutGlobalScopes()
+            ->whereNull('deleted_at')
+            ->where('box_type', $boxType)
+            ->where('box_number', $boxNumber)
+            ->when(
+                $batchId !== null,
+                fn (Builder $q): Builder => $q->where('batch_id', $batchId),
+                fn (Builder $q): Builder => $q->whereNull('batch_id')->where('repository_id', $repositoryId),
+            )
+            ->when($ignoreId !== null, fn (Builder $q): Builder => $q->whereKeyNot($ignoreId))
+            ->with(['batch' => fn ($q) => $q->withoutGlobalScopes()])
+            ->first();
+    }
+
+    /** What the duplicate-box messages say about the box already there. */
+    public function identityClashMessage(): string
+    {
+        $rule = 'A box type and number can be used only once per batch, or once per repository for boxes with no batch.';
+        // A box the reader cannot open (another repository's) is not described.
+        if (! static::query()->whereKey($this->getKey())->exists()) {
+            return 'This box type and number are already used. ' . $rule;
+        }
+
+        $batch = $this->batch_id !== null ? $this->getRelationValue('batch')?->getAttribute('batch_number') : null;
+        $where = $batch !== null ? "in batch {$batch}" : 'with no batch in this repository';
+
+        return "There is already a {$this->box_type} box {$this->box_number} {$where} (box #{$this->getKey()}). " . $rule;
     }
 
     /**
@@ -373,6 +565,20 @@ class Box extends Model implements AuditableContract, Sortable
     }
 
     /**
+     * Narrow a query to the boxes a document can be moved into: not destroyed, not
+     * permanently out. Only RAS boxes carry a meaningful barcode status, the
+     * others hold the column default; NULL has to stay in (NULL != x is not
+     * true in SQL).
+     */
+    public static function whereAssignable(Builder $q): Builder
+    {
+        return $q->whereNull($q->qualifyColumn('destroyed_at'))
+            ->where(fn (Builder $q): Builder => $q
+                ->whereNull($q->qualifyColumn('barcode_status'))
+                ->orWhere($q->qualifyColumn('barcode_status'), '!=', 'PERM_OUT'));
+    }
+
+    /**
      * RFQ Appendix 2 §vii — eligibility gate for `markDestroyed()`.
      *
      * A box can be destroyed iff (a) it has not already been destroyed and
@@ -398,7 +604,8 @@ class Box extends Model implements AuditableContract, Sortable
         // the query through the Document model so we can opt into withTrashed.
         $uncatalogued = Document::withTrashed()
             ->where('current_box_id', $this->getKey())
-            ->whereNull('catalogue_identifier')
+            // An empty identifier is no identifier: the import writes '' too.
+            ->where(fn (Builder $q): Builder => $q->whereNull('catalogue_identifier')->orWhere('catalogue_identifier', ''))
             ->count();
 
         if ($uncatalogued > 0) {
@@ -630,6 +837,32 @@ class Box extends Model implements AuditableContract, Sortable
             }
         });
 
+        // One box per (batch, type, number), or per (repository, type, number)
+        // with no batch: every write path, importers included. Runs after the
+        // repository_id normalisation above, so a batch-less box is compared
+        // within the repository it is about to be saved under. Only a save
+        // that sets or changes the identity is checked (or restores a box), so
+        // duplicates already in the data do not block unrelated edits.
+        static::saving(function (self $box): void {
+            if ($box->deleted_at !== null) {
+                return;
+            }
+            if ($box->exists && ! $box->isDirty(['box_type', 'box_number', 'batch_id', 'repository_id', 'deleted_at'])) {
+                return;
+            }
+
+            $clash = self::identityClash(
+                $box->batch_id !== null ? (int) $box->batch_id : null,
+                $box->repository_id !== null ? (int) $box->repository_id : null,
+                $box->box_type,
+                $box->box_number,
+                $box->exists ? $box->getKey() : null,
+            );
+            if ($clash !== null) {
+                throw ValidationException::withMessages(['box_number' => $clash->identityClashMessage()]);
+            }
+        });
+
         // RFQ App.1 #4 — Legacy box types (MAV, STVC) cannot be created as NEW
         // records. Historical legacy boxes are still importable, but ONLY when
         // explicitly flagged `is_legacy = true` (the migration/import path sets
@@ -807,6 +1040,28 @@ class Box extends Model implements AuditableContract, Sortable
                 throw ValidationException::withMessages([
                     'barcode_status' => 'PERM OUT is a permanent transfer: a box cannot move from PERM OUT to OUT. It may only stay PERM OUT or re-enter with status IN (which requires a new barcode) (RFQ Feedback1 C2.2).',
                 ]);
+            }
+        });
+
+        // Client 2026-11-05: "If a Box has Barcode Status IN, we should
+        // automatically set Location as RAS". On the way INTO status IN only, so
+        // an unrelated save of a box already IN leaves a location set by hand,
+        // and only where the location exists: without one, nothing changes. A
+        // RAS box alone (only they have a barcode status), and not a destroyed
+        // one. A box created without a status gets IN from the column default.
+        static::saving(function (self $box): void {
+            if ($box->keepLocationWhenIn || $box->box_type !== 'RAS' || $box->destroyed_at !== null) {
+                return;
+            }
+            $isIn = $box->exists
+                ? $box->isDirty('barcode_status') && $box->barcode_status === 'IN'
+                : ($box->barcode_status ?? 'IN') === 'IN';
+            if (! $isIn) {
+                return;
+            }
+            $ras = Location::namedFor(Location::NAME_RAS, $box->effectiveRepositoryId());
+            if ($ras !== null) {
+                $box->location_id = $ras->getKey();
             }
         });
 
@@ -1050,7 +1305,35 @@ class Box extends Model implements AuditableContract, Sortable
             newBarcode: $transition['new_barcode'],
             previousStatus: $transition['previous_status'],
             newStatus: $transition['new_status'],
+            reason: $this->barcodeChangeReason,
         );
+        $this->barcodeChangeReason = null;
+    }
+
+    /**
+     * "MAV 1" / "mav1" / "STVC 37 P1" → [type code, number]; null when the text
+     * does not start with a box type. Longest code first, so "SMALL_BOX" wins
+     * over a shorter code it starts with.
+     *
+     * @return array{0: string, 1: string}|null
+     */
+    private static function splitTypeAndNumber(string $search): ?array
+    {
+        $codes = array_map('strval', array_keys(BoxType::filterOptions()));
+        usort($codes, fn (string $a, string $b): int => strlen($b) <=> strlen($a));
+
+        foreach ($codes as $code) {
+            if ($code === '' || strncasecmp($search, $code, strlen($code)) !== 0) {
+                continue;
+            }
+            $rest = substr($search, strlen($code));
+            // "MAV 1" and "MAV1", not "NRAxyz" read as type NRA.
+            if ($rest === '' || $rest[0] === ' ' || ctype_digit($rest[0])) {
+                return [$code, trim($rest)];
+            }
+        }
+
+        return null;
     }
 
     private function recordLocationChange(?int $from, ?int $to, string $source, ?string $notes = null): void

@@ -9,6 +9,8 @@ use App\Filament\Resources\DocumentTypeResource;
 use App\Filament\Resources\ImportProfileResource;
 use App\Filament\Resources\Lookups\BoxTypeResource;
 use App\Filament\Resources\Lookups\CurrentBoxTypeResource;
+use App\Filament\Resources\Lookups\CustodyStatusTypeResource;
+use App\Filament\Resources\Lookups\EntityTypeResource;
 use App\Filament\Resources\Lookups\LocationTypeResource;
 use App\Filament\Resources\RepositoryResource;
 
@@ -29,7 +31,11 @@ it('assigns a representative set of resources to the new groups', function () {
 
 it('applies the renamed classification labels', function () {
     expect(BoxTypeResource::getNavigationLabel())->toBe('Box Typology')
-        ->and(CurrentBoxTypeResource::getNavigationLabel())->toBe('Physical Box Type')
+        ->and(CurrentBoxTypeResource::getNavigationLabel())->toBe('Current Box Types')
+        ->and(CustodyStatusTypeResource::getNavigationLabel())->toBe('Custody Status Types')
+        ->and(CustodyStatusTypeResource::getNavigationGroup())->toBe('Classifications')
+        ->and(EntityTypeResource::getNavigationLabel())->toBe('Entity Types')
+        ->and(EntityTypeResource::getNavigationGroup())->toBe('Classifications')
         ->and(LocationTypeResource::getNavigationLabel())->toBe('Location Typology');
 });
 
@@ -49,6 +55,7 @@ it('registers the panel navigation groups in the required order', function () {
         'Reports',
         'My Account',
         'Administration',
+        'Help',
     ]);
 });
 

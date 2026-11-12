@@ -55,6 +55,7 @@ class FlagsRelationManager extends RelationManager
                     ->searchable(),
 
                 Forms\Components\Select::make('severity')
+                    ->searchable()
                     ->options(self::severityOptions())
                     ->required()
                     ->default('warning')
@@ -75,6 +76,7 @@ class FlagsRelationManager extends RelationManager
             // an admin can pre-set a flag as already-resolved (e.g. when
             // back-filling historical data) without a second save.
             Forms\Components\Select::make('status')
+                ->searchable()
                 ->options(self::statusOptions())
                 ->default('open')
                 ->required()

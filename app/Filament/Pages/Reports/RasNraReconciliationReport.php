@@ -24,7 +24,12 @@ use Symfony\Component\HttpFoundation\Response;
 use Symfony\Component\HttpFoundation\StreamedResponse;
 
 /**
- * NAF Queries Q3 — RAS ↔ NRA reconciliation.
+ * NAF Queries Q3 — RAS key on documents.
+ *
+ * Until 2026-11-10 this was the "RAS ↔ NRA reconciliation" report. The client
+ * then described the reconciliation they do (Report 1): the RAS export
+ * against our boxes, see {@see RasReconciliationReport}. This page stays as
+ * the check of the RAS key recorded on each document.
  *
  * Extracts, per RAS-originated document, the reconciliation key the client
  * asked for — RAS Batch, RAS Box and the latest Barcode IN — alongside the
@@ -46,7 +51,7 @@ class RasNraReconciliationReport extends Page implements HasTable
 
     protected static string|\UnitEnum|null $navigationGroup = 'Operations';
 
-    protected static ?string $title = 'RAS ↔ NRA reconciliation';
+    protected static ?string $title = 'RAS key on documents';
 
     protected static ?string $slug = 'reports/ras-nra-reconciliation';
 
@@ -157,7 +162,7 @@ class RasNraReconciliationReport extends Page implements HasTable
         abort_unless(static::canAccess(), 403);
 
         return ReportRenderer::streamCsv(
-            title: 'RAS ↔ NRA reconciliation',
+            title: 'RAS key on documents',
             slug: 'ras-nra-reconciliation',
             columns: [
                 'Document' => 'identifier',
@@ -180,12 +185,12 @@ class RasNraReconciliationReport extends Page implements HasTable
 
         $rows = [];
         /** @var Document $r */
-        foreach ($this->exportQuery()->orderBy('identifier')->limit(5000)->get() as $r) {
+        foreach ($this->exportQuery()->orderBy('identifier')->limit(ReportRenderer::PDF_FETCH_LIMIT)->get() as $r) {
             $rows[] = self::reconciliationRow($r);
         }
 
         return ReportRenderer::renderPdf(
-            title: 'RAS ↔ NRA reconciliation',
+            title: 'RAS key on documents',
             slug: 'ras-nra-reconciliation',
             headers: ['Document', 'RAS batch', 'RAS box', 'RAS barcode', 'Latest barcode IN', 'Current batch', 'Current box', 'Reconcilable'],
             rows: $rows,
@@ -228,7 +233,7 @@ class RasNraReconciliationReport extends Page implements HasTable
 
     public function getReportTitle(): string
     {
-        return 'RAS ↔ NRA reconciliation';
+        return 'RAS key on documents';
     }
 
     public function getReportSlug(): string
