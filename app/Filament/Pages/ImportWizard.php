@@ -755,7 +755,7 @@ class ImportWizard extends Page
 
         Notification::make()
             ->title('Import started')
-            ->body(sprintf('Queued %d rows of %s. Watch the notifications tray for progress.', $rowCount, $type))
+            ->body(sprintf('Queued %d rows of %s. When it finishes, a notification appears under the bell icon in the top bar, with a link to the failed rows if there are any.', $rowCount, $type))
             ->success()
             ->send();
 
