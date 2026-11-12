@@ -1,60 +1,73 @@
 # How to run and export reports
 
-The **Reports** page gathers the pre-built summaries of the archive in one place. This guide explains how to open a report, narrow its results with filters, read the table and export the results to CSV, Excel or a print-friendly PDF.
+The Reports page gathers the canned reports of the Logistics Tool in one place. This guide explains how to open a report, narrow it with filters, read and sort the results, export them to CSV, Excel or PDF, and save the configuration as a template for later use.
 
 ## Prerequisites
 
-- [ ] Your account has permission to view reports. If **Reports** does not appear in the sidebar, contact your administrator.
-- [ ] If you work across several repositories, select the repository you require in the top bar, or leave **All repositories** selected. Users who are not administrators see only the data of their own repository.
+- [ ] A Logistics Tool account whose role includes permission to view reports. Without it, **Reports** does not appear in the sidebar.
+- [ ] The repository you wish to report on selected as the active repository in the top bar, where your account can see more than one repository.
 
 ## 1. Open the Reports page
 
-In the sidebar, under the **Reports** group, select **Reports**. The page lists the **Canned reports** as cards; each card shows the report title, a short description and a current count. Select the card of the report you wish to run.
+In the sidebar, under the **Reports** group, select **Reports**. The page lists the **Canned reports** as cards; each card gives the report title, a one-line description and a short count, such as the number of documents or locations, so that you can judge the size of the report before opening it.
 
 ![Open the Reports page](./block_open-reports.png)
 
-## Available reports
+## 2. Choose a report
 
-- **Stock take (by location)**: every box and document with its identifiers, latest batch and box numbers and NRA location, for verifying what is held and where.
-- **Documents by location**: every document with its effective location and the box it sits in, or the location alone if it is no longer in a box.
+Select the card of the report you require, for example **Stock take (by location)**. The report opens on its own page, with its actions in the header and its results in a table below. Select **About this page** under the title for a fuller description of what the report includes.
+
+![Choose a report](./block_choose-report.png)
+
+## What each report is for
+
+- **Stock take (by location)**: lists every box not destroyed, either **Per box** (batch and box, or NRA / MUS / MAV / STVC number, with the current box type and location) or **Per document** (catalogue identifier, Actual Authority Reference Code, volume, creator and dates), grouped by location.
+- **Documents by location**: every document with its effective location and the box it sits in, or only the location if it is no longer in a box.
 - **Documents by batch**: the number of documents in each batch.
-- **Documents by creator / notary**: the number of documents attributed to each authority (notary).
+- **Documents by creator / notary**: the number of documents for each authority (notary).
 - **Documents by subseries**: the number of documents in each subseries.
-- **Boxes ready to be destroyed**: boxes whose documents all have a catalogue identifier and can therefore be marked as destroyed.
-- **Documents pending disinfestation**: documents without a disinfestation date that are not permanently out, with the number of days each has been waiting.
-- **Box movement history**: a chronological log of transfers between boxes, with the date, reason and the user who performed each move.
-- **Flags by type**: the number of open and resolved issue flags in each category and severity.
-- **RAS ↔ NRA reconciliation**: the RAS batch, box and barcode of each document beside its current NRA batch and box, marking the rows that cannot be reconciled.
-- **Activity over time**: four monthly charts covering the last twelve months: changes recorded, moves, disinfestations and documents catalogued.
+- **Boxes ready to be destroyed**: RAS boxes whose documents all have a catalogue identifier, which can therefore be marked as destroyed.
+- **Documents pending disinfestation**: documents without a disinfestation date that are not in a PERM_OUT box.
+- **Boxes pending disinfestation**: boxes at status IN that hold at least one document (In Box) without a disinfestation date. You can select boxes in this report and choose **Send to disinfestation**.
+- **Document movement history**: documents moved between boxes, showing when, from which box to which, why and by whom.
+- **Flags by type**: for each flag type and severity, the number of documents with an open or acknowledged flag and the number with a resolved or dismissed flag.
+- **RAS ↔ NRA reconciliation**: compares an uploaded RAS report with the RAS boxes in the tool and lists only the discrepancies. This report is described in *How to reconcile RAS barcodes with an uploaded list*.
+- **RAS key on documents**: the RAS batch, RAS box and latest barcode IN of each document, flagging documents whose RAS key is incomplete.
+- **Mass migration**: the boxes that hold at least one document of the chosen series, document type and Actual Authority Reference Code range; the whole box is listed.
+- **Activity over time**: month-by-month charts of the collection, the changes recorded, moves, disinfestations and cataloguing, for the months you choose with **From month** and **To month**. This report is shown as charts and has no export.
 
-## 2. Set the report filters
+## 3. Set the filters
 
-Select the **Filter** button at the top right of the table to open the **Filters** panel. Choose the values you require, for example a **Stock row type** or one or more entries under **NRA location**, then select **Apply filters**; **Reset** clears every filter. To find a specific record, type an identifier or box number in the **Search** box.
+In the **Stock take** report, select **Per box** or **Per document** in the header to choose the view. Select the **Filter** icon above the table, then set the filters you need, for example a **Location** or a **Box type**, or switch on **Include documents kept outside their box (Not in Box / Mounted / Conservation Box)**. Select **Apply filters** to update the results, or **Reset** to clear them.
 
-![Set the report filters](./block_set-filters.png)
+![Set the filters](./block_set-filters.png)
 
-## 3. Read the results
+## 4. Read and sort the results
 
-The table updates to show only the matching rows, and the filters in use are listed under **Active filters** above the table. Select a column heading to sort by that column. The footer shows the number of results, and the **Per page** list sets how many rows each page displays.
+Type in **Search** to find a particular box, barcode or document within the results. Select a column heading that can be sorted, such as **Batch / Box**, to sort by it, and select it again to reverse the order. In the stock take, each location heading shows how many boxes or documents it holds; dates are shown as dd-mm-yyyy, and the **Per page** selector at the foot of the table shows 25, 50 or 100 rows.
 
-## 4. Export the results
+## 5. Export the results
 
-Select **Export CSV**, **Export Excel** or **Export PDF** at the top of the report. The file contains the rows that match the filters and search currently applied on screen, not the whole archive. The **Flags by type** report offers CSV and PDF only, and **Activity over time** is viewed on screen only.
+Select **Export CSV**, **Export Excel** or **Export PDF** in the report header. Every export contains the rows that the filters and the search currently show on screen. The file is downloaded by your browser.
 
-![Export the results](./block_export-results.png)
+## Export limits
 
-## 5. Print the report
+- A PDF is printed on A4 paper, holds at most 1,000 rows and is laid out in tables of 50 rows, each with its own header row. When there are more rows, the PDF states how many it left out; use **Export Excel** or **Export CSV** for the complete list.
+- CSV and Excel exports of the reports that list individual boxes, documents or movements hold up to 50,000 rows. Beyond that, an **Export truncated** warning appears; add filters to reduce the list.
+- **Flags by type** offers **Export CSV** and **Export PDF** only, and **Activity over time** has no export.
 
-To print a report, select **Export PDF** and open the downloaded file. The PDF is laid out on A4 paper and records the report title, the date and time it was generated and the user who generated it. Print it from your PDF viewer.
+## 6. Save the report as a template
+
+To reuse the current filters and sort order, select **Save as template** in the report header (available on every report except **RAS ↔ NRA reconciliation** and **Activity over time**). Enter a name and, optionally, a description, switch on **Share with my repository** if other users in your repository should also see the template, and select **Submit**. The template then appears under **Saved templates** on the **Reports** page; selecting it opens the report with the saved filters and sort order restored.
 
 ## Tips
 
-> **Tip:** Select **Save as template** to store the current filters and sort order under a name. Saved templates appear under **Saved templates** on the Reports page and reopen the report in the same state; enable **Share with my repository** to make a template available to colleagues in your repository.
+> **Tip:** To rename, review or delete a saved template, open **Report Templates** in the sidebar under the **Reports** group.
 >
-> **Tip:** CSV and Excel exports are limited to 50,000 rows and PDF exports to 5,000 rows. CSV and Excel exports show a notification when they are shortened, whereas PDF exports are cut at 5,000 rows without notice; apply narrower filters and export again.
+> **Tip:** A stock take template also remembers whether it was saved **Per box** or **Per document**.
 >
-> **Tip:** Apply filters before exporting a large report. The on-screen filters determine the content of the file.
+> **Tip:** For large reports, apply filters before exporting to PDF, so that the 1,000-row limit covers the rows you need.
 
 ## Summary
 
-Open **Reports** from the sidebar, select a report card, apply the filters you require and review the table. Then select **Export CSV**, **Export Excel** or **Export PDF** to obtain a file of exactly the rows shown, and use the PDF when a printed copy is needed.
+Open **Reports**, choose a report card, narrow the results with the filters and the search, and export them with **Export CSV**, **Export Excel** or **Export PDF**. Save configurations that you use regularly with **Save as template** so that they are available from **Saved templates**.

@@ -1,70 +1,58 @@
-# How to maintain series, creators, batches and other reference records
+# How to maintain subseries, creators, batches and other reference lists
 
-Every box and document in the catalogue refers to entries in a set of reference lists: Subseries, Authorities (the creators of records, such as notaries), Batches, Notary Accessions, Document Types, Practices and the classification vocabularies. This guide explains how administrators create, edit and deactivate these entries, and why they must be in place before boxes and documents are imported.
+Every document in the catalogue points to reference records: the subseries it is filed under, the creator who produced it, the batch and notary accession it arrived with, and controlled values such as its document type and the type of box that holds it. This guide explains how an administrator creates, edits and deactivates entries in these lists, and the order in which they should be filled.
 
 ## Prerequisites
 
-- [ ] You are signed in with an administrator account that is permitted to create and edit reference records.
-- [ ] You know which repository the new entry belongs to, or that it is to be shared by every repository.
-- [ ] You have checked that the entry does not already exist, including among deleted entries.
+- [ ] An account with the Administrator role. Several lists under **Classifications**, including **Current Box Types**, **Custody Status Types** and **Entity Types**, open only for these roles.
+- [ ] At least one repository, because batches and notary accessions always belong to a repository.
 
-## Where the reference lists are found
+## 1. Plan the order of entry
 
-- Under **Records** in the sidebar: **Subseries**, **Batches**, **Authorities** and **Practices**.
-- Under **Operations**: **Notary Accessions**, which record each accession received from a notary.
-- Under **Classifications**: **Document Types** and the controlled vocabularies **Accession Types**, **Barcode Statuses**, **Box Typology**, **Flag Types**, **Location Typology**, **Current Box Types**, **Custody Status Types** and **Entity Types**.
-- Volumes are not kept as a separate list. The volume number is recorded on each document in the **Volume** field.
+Fill a list before the records that refer to it. Begin with the controlled values under **Classifications**, such as **Accession Types**, **Entity Types** and **Document Types**, then add **Subseries** and **Authorities**, then **Batches** and **Notary Accessions**, and only then boxes and documents. The **Import Wizard** follows the same order (subseries, authorities, batches, boxes, documents), and document types must be imported before documents because each document row refers to its document type by identifier.
 
-## 1. Open the list and start a new entry
+## 2. Create a subseries
 
-In the sidebar, under **Records**, select **Subseries**. The list shows each entry with its **Identifier**, its **Standard title in English (Plural)** and its position in the **Hierarchy**. Select **New Subseries** to add an entry; the other lists provide an equivalent button in the same position.
+Under **Records**, select **Subseries**, then select the "New subseries" button at the top right of the list. Enter the **Identifier** and the **Standard title in English (Plural)**; both are required and the identifier must be unique. To place the entry beneath another one, choose it in **Parent subseries**, or leave the field empty for a top-level subseries, then select **Create**.
 
-![Open the list and start a new entry](./block_open-list.png)
+![Create a subseries](./block_create-subseries.png)
 
-## 2. Complete the form and create the entry
+## 3. Record a creator in Authorities
 
-Enter a unique **Identifier** and the **Standard title in English (Plural)**, then choose the **Parent subseries**, or leave it empty for a top-level subseries. Under **Repository & document types**, choose the **Repository**, or leave it empty for a subseries shared by all repositories, and select the permitted **Document types**. Select **Create** to save the entry.
+Select **Authorities**, then the "New authority" button. In **Control Area**, enter the **Citing Reference Code**, which is required and unique; the **NAM Authority Reference Code** is optional. In **Identity Area**, choose the **Type of Entity**, such as **Notary** or **Person**, enter the **Creator Surname** and **Creator Name**, and select **Create**. When **Authorised Form of Name** is left blank, it is completed on saving with the surname first, followed by the name, any suffix and the years of activity, for example "Sample, Anna Maria, 1820-1865".
 
-![Complete the form and create the entry](./block_complete-form.png)
+![Record a creator in Authorities](./block_create-authority.png)
 
-## Required details in the other lists
+## 4. Create a batch and its notary accession
 
-- **Authorities**: the **Citing Reference Code**, **Creator Surname**, **Creator Name** and **Type of Entity** are required. The options of **Type of Entity** are kept on the **Entity Types** page. The form is divided into **Control Area**, **Identity Area** and **Description Area**, and **Authorised Form of Name** is built automatically on saving and can be edited. The **NAM Authority Reference Code** is optional but must be unique.
-- **Batches**: the **Batch Number**, the **Accession Type** and the **Repository** are required. Accessions are linked under **Linked Accessions**.
-- **Notary Accessions**: the **Title** and the **Repository** are required. The **Accession Number** follows the format `2025-124`, and the related batches are chosen under **Batches**.
-- **Document Types**: the **Identifier** is pre-filled with the next free code in the form `DT00001`, and the **Name** must be unique.
-- **Practices**: the **Name** is required and must be unique. The optional **Identifier** is used to match the practice during import.
+Select **Batches**, then the "New Batch" button. The **Batch Number** is pre-filled with the next free number, and reserved numbers are refused. Choose the **Accession Type** and the **Repository**, link any existing accessions in **Linked Accessions**, and select **Create**. To record the accession itself, open **Notary Accessions** under **Operations**, select the "New Notary Accession" button, enter the **Title** and **Accession Date**, choose the **Batches** and the **Repository**, and select **Create**. The creator is recorded on each document rather than on the accession.
 
-## 3. Edit an entry
+## 5. Add an entry to a lookup list
 
-In the list, select **Edit** on the row of the entry. Amend the values and select **Save changes**.
+Under **Classifications**, open the list concerned, for example **Current Box Types**, and select the "New current box type" button at the top right of the list. Enter the **Identifier**, which is the value stored on records, and the **Label** shown in drop-down lists, then select **Create**. The position of an entry in drop-down lists follows **Sort order**; on lists that allow it, rows can also be dragged into a new order. On **Document Types**, the **Identifier** is pre-filled with the next free code in the form DT00001.
 
-## 4. Deactivate an entry that is no longer in use
+![Add an entry to a lookup list](./block_add-lookup-entry.png)
 
-Deactivate an entry rather than delete it, so that the records which already refer to it remain readable. For Subseries, Batches, Practices and Document Types, open the entry with **Edit**, switch off **Is active** and select **Save changes**. Authorities and Notary Accessions cannot be deactivated. In **Document Types** and **Practices**, you may instead select several rows, open **Bulk actions** and choose **Deactivate selected**.
+## 6. Edit an entry
 
-## 5. Deactivate a classification value
+Select **Edit** on the row, change the values and select **Save changes**. The identifier of an entity type or a custody status type cannot be changed while records still use it, because records store that identifier.
 
-In a list under **Classifications**, such as **Box Typology**, select **Deactivate** on the row of the value and select **Confirm**. The value is hidden from new records, while existing records that use it are unaffected; select **Activate** on the same row to make it available again.
+## 7. Deactivate an entry that is no longer used
 
-![Deactivate a classification value](./block_deactivate-classification.png)
+On a lookup list under **Classifications**, select **Deactivate** on the row, then select **Confirm**. The value is hidden from new records, while existing records that already use it are unaffected; select **Activate** to make it available again. For **Document Types** and **Practices**, open the entry and select **Deactivate**, or tick several rows and choose **Deactivate selected**. For **Subseries** and **Batches**, switch off **Is active** on the edit form and select **Save changes**; an inactive batch remains listed but is no longer offered when creating boxes or documents.
 
-## Why the import order matters
+## 8. Remove a creator or an accession
 
-Each imported row is linked to reference entries that must already exist, so import them in this order, as recommended on the first step of the **Import Wizard**: Subseries, Authorities, Batches, Locations, Boxes, Document Types and finally Documents. The wizard does not enforce the order, but rows that refer to entries not yet imported fail or create unintended records. A document row is matched to its subseries, authority, batch, box and document type, and a row that names a subseries which does not yet exist fails with an error. Import volumes only after the documents they belong to.
+**Authorities** and **Notary Accessions** have no active setting, so an entry that is no longer wanted is deleted instead. On the **Authorities** list, the **Delete** action appears only for a creator with no documents attached, so that no document loses its creator.
 
 ## Tips
 
-> **Tip:** If an identifier is reported as already in use, set the **Archived (deleted) subseries** filter on the **Subseries** list to find the deleted entry and select **Restore**.
+> **Tip:** If a subseries identifier is reported as already in use, the subseries may have been deleted: apply the **Archived (deleted) subseries** filter on the **Subseries** list to find it and restore it.
 >
-> **Tip:** An authority can be deleted only when no documents are attached to it; otherwise, the row offers no **Delete** action.
+> **Tip:** An entity type that authorities still use, or a custody status type that documents still hold, cannot be deleted. Deactivate it instead.
 >
-> **Tip:** A custody status type or an entity type that records are using cannot be deleted or re-coded.
->
-> **Tip:** An inactive batch remains listed and editable, but it is no longer offered when new boxes or documents are created.
->
-> **Tip:** Use **Download template** on a list to obtain a spreadsheet whose column headers match the import.
+> **Tip:** Select **Download template** on the **Authorities** list to obtain a spreadsheet whose column headings match the import.
 
 ## Summary
 
-Reference entries are created and edited from their own lists, and entries that are no longer needed are deactivated rather than deleted. Keeping Subseries, Authorities and Batches complete before boxes and documents are imported ensures that every imported row can be linked to its reference records.
+Fill the controlled values first, then subseries and authorities, then batches and notary accessions, so that every later record finds its references. Keep values that records already use by deactivating them rather than deleting them.

@@ -1,61 +1,59 @@
 # How to check an import and correct the rows that failed
 
-After you start an import from the Import Wizard, the rows are processed in the background. The Import Status page shows how far each import has progressed, how many rows were saved and how many were rejected, together with the reason for every rejection, so that you can correct those rows in your spreadsheet and import them again.
+Imports run in the background, so the Import Wizard does not show their outcome. The Import Status page shows how far each import has progressed, how many rows were imported and why any rows were rejected, so that you can correct those rows and import them again.
 
 ## Prerequisites
 
-- [ ] An account with the administrator or super administrator role. The Import Wizard and the Import Status page are not available to other roles.
-- [ ] An import that you have already started from the Import Wizard.
-- [ ] The spreadsheet that you imported, so that you can correct it.
+- [ ] An account with the Administrator role. The Import Status and Import Wizard pages are not available to other roles.
+- [ ] An import that has already been started from the Import Wizard.
+- [ ] Microsoft Excel or another spreadsheet program to edit the error report.
 
 ## 1. Open the Import Status page
 
-In the sidebar, under **Importation**, select **Import Status**. The page lists the 50 most recent imports, with the newest at the top. Locate your import by the spreadsheet name shown in the **File** column.
+In the sidebar, under **Importation**, select **Import Status**. The page lists the 50 most recent imports, newest first, with one row for each file that was imported.
 
 ![Open the Import Status page](./block_open-import-status.png)
 
-## 2. Follow the progress of the import
+## 2. Follow the progress and the totals
 
-While the import is running, the **Completed** column shows **Pending** and the **Processed / Total** column shows how many rows have been processed out of the total in the file. The page does not refresh by itself, so reload it in your browser to see the latest figures. Until the import has finished, the **Failed** column also counts the rows that have not been processed yet, so rely on it only once the **Completed** column shows a time.
+Locate your file in the **File** column. **Processed / Total** shows how many rows of the file have been worked through out of the total, **OK** shows how many were imported successfully, and **Failed** shows the rows that were not imported. **Completed** shows when the import finished, or **Pending** while it is still running; **Started by** names the user who started it.
 
-## 3. Review the totals and the reasons for failure
+## 3. Check that the Failed count is final
 
-When the import has finished, the **Completed** column shows how long ago it ended. The **OK** column gives the number of rows that were saved and the **Failed** column the number of rows that were rejected. Below the number of failed rows, each reason is listed once with the number of rows it affects, for example `12×` followed by the explanation, so that you can see at a glance what needs to be corrected.
+Rely on the **Failed** figure only once **Completed** shows a time. While an import is **Pending**, **Failed** is calculated as the total minus the rows imported so far, so it also includes rows that have not yet been processed. If **Stalled — queue worker?** appears, the import has been waiting for more than five minutes and your system administrator should be informed.
+
+A red note under **Processed / Total** stating that rows were never imported means that part of the file was not processed at all. Those rows are included in **Failed** but have no reason and are not in the error report: import them again from your original file.
 
 ## 4. Download the error report
 
-Select **Errors CSV**, either below the number in the **Failed** column or in the **Download** column. The file contains every rejected row with the values it had in your spreadsheet, followed by an `error` column that explains in plain English why that row was rejected, for example that a required value is missing or that the row refers to a record which does not exist yet.
+Read the reasons listed under the **Failed** count, then select **Errors CSV**, either below the count or in the **Download** column. The file contains every rejected row with its original values, followed by a final column that states why the row was rejected. The link appears only after the import has completed with at least one failed row.
 
-## 5. Correct the rows in your spreadsheet
+## 5. Correct the rows in the spreadsheet
 
-Using the `error` column of the report as your guide, correct each failed row in your original spreadsheet. Keep the corrected rows in a copy of the spreadsheet that has the same column headings and contains only the rows that failed. Rows that were saved successfully do not need to be imported again.
+In your spreadsheet program, correct each row as its reason indicates, for example by supplying a required value or replacing a location code that does not exist. Keep the column headings exactly as they are, so that the columns are recognised again; the final reason column is not part of the import and should be deleted before the file is saved. Rows rejected with the reason "Skipped — row already exists (skip duplicates enabled)." were not errors and should be left out of the corrected file unless you intend to update those records.
 
 ## 6. Import the corrected rows again
 
-In the sidebar, select **Import Wizard** and work through its steps with the corrected file, choosing the same type of records as before. On the final step, **Confirm and import**, tick **I have reviewed the preview and I want to import these rows.** and select **Start import**.
+Select **Import Wizard** in the sidebar and take the corrected file through the wizard with the same **Type of records** as the original import. Continue until you reach the final step, **Confirm and import**.
 
-![Import the corrected rows again](./block_import-again.png)
+## 7. Decide how existing rows are handled
 
-## 7. Decide how rows that already exist are handled
+Leave **Overwrite existing records (update rows that already exist instead of skipping them)** unticked for a normal import. A row that matches a record already in the archive is then skipped, never rewritten, and is counted under **Failed** with the reason "Skipped — row already exists (skip duplicates enabled)." Tick the box only when you deliberately intend to update existing records from the file.
 
-Before you select **Start import**, decide whether to tick **Overwrite existing records (update rows that already exist instead of skipping them)**. Each row is matched to an existing record by its identifying value, such as a document identifier or a box barcode, so importing the same row again never creates a duplicate. Leave the option unticked for a normal import, in which rows that already exist are skipped and listed among the failed rows with the reason **Skipped — row already exists (skip duplicates enabled)**; tick it only when you intend to update the existing records with the values in your file.
+![Decide how existing rows are handled](./block_existing-rows.png)
 
-## 8. Check the result of the new import
+## 8. Start the import and check the result
 
-Return to **Import Status**. The new import appears at the top of the list. When it has finished, confirm that the **Failed** column shows `0`; if any rows are still rejected, repeat the correction for those rows only.
+Tick **I have reviewed the preview and I want to import these rows.** and select **Start import**. Return to **Import Status** and confirm, once **Completed** shows a time, that **Failed** is 0 or lists only the rows you expected.
 
 ## Tips
 
-> **Tip:** If **Stalled — queue worker?** appears in the **Completed** column instead of **Pending**, the import has been waiting for more than five minutes. Contact your system administrator, because the import cannot proceed until the background queue is running.
+> **Tip:** Import only the corrected rows rather than the whole original file. Rows that were already imported would otherwise be skipped and counted as failed, or rewritten if **Overwrite existing records (update rows that already exist instead of skipping them)** is ticked.
 >
-> **Tip:** The **Validate rows** step of the Import Wizard checks formats, allowed values and required cells before anything is written. Missing parent records and rows that already exist are reported only after the import, on the **Import Status** page.
+> **Tip:** Immediately after you start an import, the **Download failed rows (CSV)** button at the top of the **Import Wizard** page downloads the report for that import, with the reason in a column named `_validation_error`.
 >
-> **Tip:** Immediately after an import starts, the Import Wizard also offers **Download failed rows (CSV)**, which provides the same error report for that import.
->
-> **Tip:** An `error` that reports a missing parent record usually means that the records were imported in the wrong order. Import the parent records first, following the order given in the first step of the Import Wizard.
->
-> **Tip:** If you deliberately include rows that were already imported, expect them to appear among the failed rows as skipped unless you tick the overwrite option. This is not an error and the existing records remain unchanged.
+> **Tip:** Reasons are grouped on the **Import Status** page, so a line such as "3× Document batch does not match its box batch." covers three rows with the same problem.
 
 ## Summary
 
-The Import Status page shows the progress and totals of each import and explains why every rejected row failed. Download the error report, correct the failed rows in your spreadsheet and import them again from the Import Wizard; existing records are matched rather than duplicated, and are updated only when you choose to overwrite them.
+Wait until **Completed** shows a time before relying on the **Failed** count, use **Errors CSV** to see why each row was rejected, correct those rows and import them again through the **Import Wizard**. Rows that already exist are skipped unless **Overwrite existing records (update rows that already exist instead of skipping them)** is ticked.

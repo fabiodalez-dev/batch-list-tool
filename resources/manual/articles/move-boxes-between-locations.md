@@ -1,59 +1,57 @@
 # How to move boxes between locations
 
-When a box is transferred to another room, shelf or store, its location must be updated so that the catalogue reflects where the box is physically kept. This guide explains how to move a single box or several boxes at once from the Boxes list, what is recorded for each move, and where past movements can be reviewed.
+When a box is transferred to another room, shelf or repository, its location in Logistics Tool must be updated so that every report reflects where the box now stands. You can move one box at a time with **Move to location**, or move several boxes in a single operation with **Relocate boxes**; each move is recorded with its date, its author and, where given, its reason.
 
 ## Prerequisites
 
-- [ ] A user account with permission to edit boxes.
-- [ ] The destination must already exist as an active location in **Locations**.
-- [ ] The boxes to be moved must not be marked as destroyed.
+- [ ] Your role must allow you to edit boxes. Without that permission the move actions are not available to you.
+- [ ] The target location must exist and be active. An inactive or deleted location is not offered in the list.
+- [ ] The target location must be global or belong to the same repository as the box. A location of another repository is refused.
 
-## 1. Open the Boxes list
+## 1. Open the list of boxes
 
-In the sidebar, under **Records**, select **Boxes**. The list shows the boxes of the active repository, with the current location of each box in the **Location** column.
+In the sidebar, under **Records**, select **Boxes**. Use the filter rules or the search field to bring the boxes you intend to move into the list.
 
-![Open the Boxes list](./block_open-boxes-list.png)
+![Open the list of boxes](./block_open-boxes.png)
 
 ## 2. Move a single box
 
-Locate the box in the list and scroll the table to the right to reach the actions of its row, then select **Move to location**. The same action is also available at the top of the page of the box itself.
+In the row of the box, select **Move to location**; the same action is available at the top of the box page. In the **Move box to a different location** window, choose the **Target location**, enter the reason in **Reason (optional)** if you wish to keep one, and select **Submit**. The confirmation **Box moved to** followed by the location name appears once the move is saved.
 
-## 3. Choose the target location
+![Move a single box](./block_move-one-box.png)
 
-In the **Move box to a different location** dialogue, search for the destination in **Target location**; only active locations are offered. Optionally, explain the move in **Reason (optional)**, then select **Submit**.
+## 3. Move several boxes at once
 
-![Choose the target location](./block_choose-target-location.png)
+Tick the checkbox of each box to move, open **Power actions** and select **Relocate boxes**. In the **Relocate boxes** window, choose the target in **Location**, add a **Tracking Note** if required, and select **Confirm**. Only active locations of type Repository or Room, either shared by every repository or belonging to the repository you are working in, are offered; boxes of another repository are skipped and counted in the confirmation message.
 
-## 4. Select several boxes to move together
+![Move several boxes at once](./block_move-several-boxes.png)
 
-To move several boxes to the same location, tick the checkbox at the start of each row. Open **Power actions** above the table and select **Relocate boxes**.
+## Leave PERM OUT switched off for an ordinary move
 
-![Select several boxes to move together](./block_select-several-boxes.png)
+The **Relocate boxes** window also contains **Mark barcode as PERM OUT**. Leave it switched off when you are only changing the location: marking boxes PERM OUT is a permanent custody change, and it is the only case in which the location may be left empty.
 
-## 5. Confirm the relocation
+## What is recorded
 
-In the **Relocate boxes** dialogue, select the destination in **Location**, which offers only locations of type Repository or Room, and, if required, add a comment in **Tracking Note**; it is added to every selected box, separated by `; ` from any note already there. Leave **Mark barcode as PERM OUT** switched off for an ordinary move, as this is a permanent custody change. Select **Confirm** to apply the move.
+Every change of location adds an entry to the box's **Location history**, with the previous location, the new location, the date and time, and the user who made the move. A reason entered in **Move to location** is appended to the box's **Tracking Note** with the prefix `[Move]`; the note entered in **Relocate boxes** is appended as written. The change is also written to the **Audit log**, which records the field that changed with its old and new values.
 
-## What is recorded for each move
+## Which documents follow the box
 
-Each move updates the **Location** of the box and adds an entry to its location history, stating the previous and new locations, the date and time, and the user who made the change; the change is also written to the audit trail. A reason entered for a single box is added to its **Tracking Note**, preceded by `[Move]`. The documents whose **Custody Status** is **In Box** move with the box and show its location from then on, even if they had a location of their own. A document linked to the box but kept elsewhere, for example **Not in Box** in Archive 3, keeps its location until it is moved back into the box. In a bulk relocation, boxes that belong to a different repository from the chosen location are skipped, and the notification states how many.
+Documents whose custody status is In Box travel with the box: any location of their own is cleared, so that they show the location of the box from then on, and each document whose location was cleared receives an entry in the **Audit log**. Documents that are still linked to the box but kept elsewhere, with a custody status such as Not in Box, Mounted; no box or Conservation Box, keep their own location until they are placed back in the box.
 
-## 6. Review the location history of a box
+## 4. Review the moves
 
-In the Boxes list, select **View** in the row of the box, then open the **Location history** tab. Each entry shows when the box was **Moved**, the location it came **From**, the location it went **To**, and **By** whom.
-
-## 7. Review movements on the Box Movements page
-
-In the sidebar, under **Operations**, select **Box Movements**. This register lists every document transferred from one box to another, with its **Document**, **From box**, **To box**, **Movement date**, **Reason** and **User**. Read it together with the location history of each box to reconstruct the full custody chain.
+Open the box with **View** and select the **Location history** tab, where each row shows **Moved** (the date and time, as dd-mm-yyyy hh:mm), **From**, **To** and **By**; the **How** and **Notes** columns can be shown from the column selector. To review documents moved from one box to another, open **Reports** and select **Document movement history**. A box that changes location while its contents stay in the same box does not appear in that report; its move is found in the box's **Location history**.
 
 ## Tips
 
-> **Tip:** Record a reason for every move: it remains on the box in **Tracking Note**, where it can be read without opening the audit log.
+> **Tip:** If the message **Cannot move — target location belongs to a different repository** appears, choose a location of the box's own repository or a global location.
 >
-> **Tip:** If the destination does not appear in the search, confirm in **Locations** that it exists and is active.
+> **Tip:** If **Relocate boxes** reports **No boxes changed**, either every field was left blank or all the selected boxes belong to a repository other than that of the target location.
 >
-> **Tip:** After a move, check the **Location** column of the Boxes list to confirm that each box shows its new location.
+> **Tip:** A destroyed box cannot be moved: **Move to location** is not shown for it.
+>
+> **Tip:** To send boxes back to the RAS store, use **Return to RAS**, which is a separate action with its own form.
 
 ## Summary
 
-A single box is moved with **Move to location**, and several boxes are moved together with **Relocate boxes**. Every move is recorded in the **Location history** of the box and in the audit trail, while transfers of documents between boxes are listed on the **Box Movements** page.
+Use **Move to location** for a single box and **Relocate boxes** for a selection. Each move is recorded in the box's **Location history**, in the **Tracking Note** when a reason or note is given, and in the **Audit log**, and the documents held In Box follow the box to its new location.
