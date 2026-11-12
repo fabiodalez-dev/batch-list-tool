@@ -7,6 +7,7 @@ use App\Models\User;
 use App\Settings\BackupSettings;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Support\Facades\Artisan;
+use Illuminate\Support\Facades\File;
 use Spatie\Health\Checks\Checks\BackupsCheck;
 use Spatie\Health\Facades\Health;
 
@@ -120,9 +121,9 @@ it('the Backups health check finds the zips in the backup folder', function (): 
 
         expect($result->status->value)->toBe('ok');
     } finally {
-        @unlink($zip);
+        File::delete($zip);
         if ($made) {
-            @rmdir($dir);
+            File::deleteDirectory($dir);
         }
     }
 });
