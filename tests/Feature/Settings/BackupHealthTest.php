@@ -126,3 +126,8 @@ it('the Backups health check finds the zips in the backup folder', function (): 
         }
     }
 });
+
+it('leaves the logs out of the nightly backup', function (): void {
+    expect(config('backup.backup.source.files.exclude'))->toContain(storage_path('logs'))
+        ->and(config('backup.backup.source.files.include'))->toContain(base_path());
+});
