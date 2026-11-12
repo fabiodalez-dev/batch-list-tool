@@ -88,7 +88,7 @@ class PendingDisinfestationReport extends Page implements HasTable
                     ->placeholder('—'),
 
                 Tables\Columns\TextColumn::make('series.code')
-                    ->label('Series')
+                    ->label('Subseries')
                     ->placeholder('—'),
 
                 Tables\Columns\TextColumn::make('batch.batch_number')
@@ -176,7 +176,7 @@ class PendingDisinfestationReport extends Page implements HasTable
                     }),
 
                 Tables\Filters\SelectFilter::make('series_id')
-                    ->label('Series')
+                    ->label('Subseries')
                     ->relationship('series', 'code')
                     ->searchable()
                     ->multiple()
@@ -294,7 +294,7 @@ class PendingDisinfestationReport extends Page implements HasTable
             columns: [
                 'Identifier' => 'identifier',
                 'Type' => 'document_type',
-                'Series' => 'series',
+                'Subseries' => 'series',
                 'Batch' => 'batch',
                 'Current box' => 'current_box',
                 'Box barcode' => 'box_barcode',
@@ -321,7 +321,7 @@ class PendingDisinfestationReport extends Page implements HasTable
         return ReportRenderer::renderPdf(
             title: 'Documents pending disinfestation',
             slug: 'pending-disinfestation',
-            headers: ['Identifier', 'Type', 'Series', 'Batch', 'Current box', 'Box barcode', 'Box status', 'Location', 'Created at', 'Days waiting'],
+            headers: ['Identifier', 'Type', 'Subseries', 'Batch', 'Current box', 'Box barcode', 'Box status', 'Location', 'Created at', 'Days waiting'],
             rows: $rows,
         );
     }
@@ -353,7 +353,7 @@ class PendingDisinfestationReport extends Page implements HasTable
         return [
             'Identifier' => fn (Document $r) => $r->identifier,
             'Type' => fn (Document $r) => $r->document_type,
-            'Series' => fn (Document $r) => $r->series?->getAttribute('code'),
+            'Subseries' => fn (Document $r) => $r->series?->getAttribute('code'),
             'Batch' => fn (Document $r) => $r->batch?->getAttribute('batch_number'),
             'Current box' => fn (Document $r) => $r->currentBox?->getAttribute('box_number'),
             'Box barcode' => fn (Document $r) => $r->currentBox?->getAttribute('barcode'),
