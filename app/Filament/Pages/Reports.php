@@ -56,6 +56,29 @@ class Reports extends Page
 {
     use ExplainsPage;
 
+    /**
+     * The report pages opened from this landing page. They have no sidebar
+     * item of their own, so the "Reports" item stays highlighted on them.
+     *
+     * @var list<class-string<Page>>
+     */
+    public const array REPORT_PAGES = [
+        ActivityOverTimeReport::class,
+        BoxesPendingDisinfestationReport::class,
+        BoxesReadyToDestroyReport::class,
+        BoxMovementHistoryReport::class,
+        DocumentLocationReport::class,
+        DocumentsByBatchReport::class,
+        DocumentsByCreatorReport::class,
+        DocumentsBySeriesReport::class,
+        FlagsByTypeReport::class,
+        MassMigrationReport::class,
+        PendingDisinfestationReport::class,
+        RasNraReconciliationReport::class,
+        RasReconciliationReport::class,
+        StockTakeReport::class,
+    ];
+
     protected string $view = 'filament.pages.reports';
 
     protected static string|\UnitEnum|null $navigationGroup = 'Reports';
@@ -80,6 +103,17 @@ class Reports extends Page
     public static function shouldRegisterNavigation(): bool
     {
         return static::canAccess();
+    }
+
+    /**
+     * @return array<string>
+     */
+    public static function getNavigationItemActiveRoutePattern(): array
+    {
+        return [
+            static::getRouteName(),
+            ...array_map(static fn (string $page): string => $page::getRouteName(), self::REPORT_PAGES),
+        ];
     }
 
     /**
