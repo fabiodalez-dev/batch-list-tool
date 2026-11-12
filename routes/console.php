@@ -3,6 +3,7 @@
 use Illuminate\Foundation\Inspiring;
 use Illuminate\Support\Facades\Artisan;
 use Illuminate\Support\Facades\Schedule;
+use Spatie\Health\Commands\ScheduleCheckHeartbeatCommand;
 
 Artisan::command('inspire', function () {
     $this->comment(Inspiring::quote());
@@ -30,6 +31,11 @@ Schedule::command('backup:monitor')
     ->withoutOverlapping()
     ->onOneServer()
     ->emailOutputOnFailure(env('MAIL_BACKUP_RECIPIENT'));
+
+// spatie/laravel-health's Schedule check reads a heartbeat this command writes
+// every minute; without it the check reported "The schedule did not run yet"
+// forever, even with the scheduler running.
+Schedule::command(ScheduleCheckHeartbeatCommand::class)->everyMinute();
 
 // spatie/laravel-health — refresh the cached results consumed by the public
 // `/health` JSON endpoint (RFQ-2026-06 §3.4.1). Every 5 minutes is the upstream
