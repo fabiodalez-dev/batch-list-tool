@@ -5,6 +5,7 @@ declare(strict_types=1);
 use App\Filament\Pages\Settings\BackupHealthPage;
 use App\Models\User;
 use App\Settings\BackupSettings;
+use Illuminate\Console\Scheduling\Schedule;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Support\Facades\Artisan;
 use Illuminate\Support\Facades\File;
@@ -131,4 +132,11 @@ it('the Backups health check finds the zips in the backup folder', function (): 
 it('leaves the logs out of the nightly backup', function (): void {
     expect(config('backup.backup.source.files.exclude'))->toContain(storage_path('logs'))
         ->and(config('backup.backup.source.files.include'))->toContain(base_path());
+});
+
+it('schedules the heartbeat the Schedule health check reads', function (): void {
+    $events = collect(app(Schedule::class)->events())
+        ->map(fn ($event): string => (string) $event->command);
+
+    expect($events->contains(fn (string $c): bool => str_contains($c, 'health:schedule-check-heartbeat')))->toBeTrue();
 });
