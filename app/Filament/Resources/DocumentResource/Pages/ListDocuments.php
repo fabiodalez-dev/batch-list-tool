@@ -12,6 +12,7 @@ use App\Filament\Pages\UserGuide;
 use App\Filament\Resources\DocumentResource;
 use App\Models\CustomFieldDefinition;
 use App\Models\Document;
+use App\Models\Repository;
 use App\Models\Scopes\RepositoryScope;
 use App\Support\ActiveRepository;
 use App\Support\BulkImport\TemplateGenerator;
@@ -59,14 +60,34 @@ class ListDocuments extends ListRecords
             ->color('danger')
             ->requiresConfirmation()
             ->modalHeading('Delete ALL documents in this repository')
-            ->modalDescription('This permanently removes every document in your current repository scope, together with their movements, flags and history. This cannot be undone. Type DELETE to confirm.')
+            // 2026-11-12: run by mistake on the whole NRA when only one batch
+            // was meant to go. The modal now names the repository and the
+            // number of documents, points at the right tool for a single
+            // batch, and asks for the repository code instead of a fixed word.
+            ->modalDescription(function (): string {
+                $repository = self::activeRepositoryForDeleteAll();
+                if ($repository === null) {
+                    return 'Pick a specific repository in the top bar first: this action never deletes across repositories.';
+                }
+
+                return sprintf(
+                    'This permanently removes all %s documents of %s (%s), not only the ticked ones, together with their movements, flags and history. This cannot be undone. To delete a single batch, filter the list by that batch and use "Delete selected" instead.',
+                    number_format(self::deleteAllCount($repository->id)),
+                    $repository->name,
+                    $repository->code,
+                );
+            })
             ->modalSubmitActionLabel('Delete everything')
             ->form([
                 TextInput::make('confirmation')
-                    ->label('Type DELETE to confirm')
+                    ->label(fn (): string => 'Type the repository code (' . (self::activeRepositoryForDeleteAll()?->code ?? '—') . ') to confirm')
                     ->required()
-                    ->rule('in:DELETE')
-                    ->validationMessages(['in' => 'You must type DELETE (in capitals) to confirm.']),
+                    ->rule(fn (): \Closure => function (string $attribute, mixed $value, \Closure $fail): void {
+                        $code = self::activeRepositoryForDeleteAll()?->code;
+                        if ($code === null || trim((string) $value) !== $code) {
+                            $fail('Type the repository code exactly as shown to confirm.');
+                        }
+                    }),
             ])
             ->action(function (): void {
                 abort_unless(
@@ -170,6 +191,22 @@ class ListDocuments extends ListRecords
 
             UserGuide::helpAction('find-documents-with-search-and-filters'),
         ];
+    }
+
+    private static function activeRepositoryForDeleteAll(): ?Repository
+    {
+        $id = app(ActiveRepository::class)->id();
+
+        return $id === null ? null : Repository::query()->find($id);
+    }
+
+    private static function deleteAllCount(int $repositoryId): int
+    {
+        return Document::query()
+            ->withoutGlobalScope(RepositoryScope::class)
+            ->withTrashed()
+            ->where('repository_id', $repositoryId)
+            ->count();
     }
 
     /**
