@@ -1541,7 +1541,7 @@ class ImportWizard extends Page
     protected function stepWhat(): Step
     {
         return Step::make('What are you importing?')
-            ->description('Pick the entity. Order matters: Series → Authorities → Batches → Boxes → Documents.')
+            ->description('Pick the entity. Import what the rows point to first: Subseries → Authorities → Locations → Batches → Boxes → Documents. A document row needs its Subseries, Authority and NRA Location code to exist already; a missing batch is created.')
             ->icon('heroicon-o-queue-list')
             ->schema([
                 Radio::make('import_type')
