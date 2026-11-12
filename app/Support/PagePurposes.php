@@ -184,7 +184,7 @@ Per document lists every document with its catalogue identifier, Actual Authorit
                 'refs' => 'Client feedback 2026-11-10 (Report 2) · NAF Queries Q4 · RFQ §3.2.2 (export, save templates)',
             ],
             AuditSettingsPage::class => [
-                'body' => 'This page configures the audit trail itself. A super-administrator can turn audit writing on or off (when off, no new audit records are written but every existing record is preserved) and set the retention threshold in days (0 keeps records indefinitely). It is the control panel behind the read-only Audit log, governing how the §3.1.5 "who changed what, when" history is captured and how long it is kept.
+                'body' => 'This page configures the audit trail itself. A super-administrator can turn audit writing on or off (when off, no new audit records are written but every existing record is preserved) and set the retention threshold in days: every night the records older than that are deleted (0 keeps records indefinitely). It is the control panel behind the read-only Audit log, governing how the §3.1.5 "who changed what, when" history is captured and how long it is kept.
 
 Keeping a reliable, long-lived audit trail is essential to the NRA workflow, because every box movement, barcode status change and disinfestation/cataloguing edit must remain reconstructable for compliance long after migration. The retention threshold lets the institution balance that obligation against storage growth.
 
