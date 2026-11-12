@@ -159,6 +159,9 @@ class AuditResource extends Resource
                                 'restored' => 'Restored',
                                 'impersonation_started' => 'Impersonation started',
                                 'impersonation_ended' => 'Impersonation ended',
+                                'two_factor_enabled' => 'Two-factor enabled',
+                                'two_factor_disabled' => 'Two-factor disabled',
+                                'two_factor_reset' => 'Two-factor reset by a super administrator',
                             ])
                             ->multiple(),
                         SelectConstraint::make('auditable_type')

@@ -2,6 +2,7 @@
 
 namespace App\Filament\Resources;
 
+use App\Actions\Users\ResetTwoFactorAuthentication;
 use App\Filament\Resources\UserResource\Pages;
 use App\Filament\Resources\UserResource\RelationManagers;
 use App\Filament\Support\EqualsFirst;
@@ -268,6 +269,7 @@ class UserResource extends Resource
                             ->persistent()
                             ->send();
                     }),
+                self::resetTwoFactorAction()->iconButton(),
                 Action::make('toggleActive')
                     ->label(fn (User $record): string => $record->is_active ? 'Deactivate' : 'Activate')
                     ->iconButton()
@@ -288,6 +290,46 @@ class UserResource extends Resource
                     DeleteBulkAction::make(),
                 ]),
             ]);
+    }
+
+    /**
+     * "Reset two-factor authentication" — for a user who lost the device with
+     * their authenticator. Super administrators only, never on themselves (they
+     * use their own profile), and only when the user has two-factor set up.
+     */
+    public static function resetTwoFactorAction(): Action
+    {
+        return Action::make('resetTwoFactor')
+            ->label('Reset two-factor authentication')
+            ->icon('heroicon-o-device-phone-mobile')
+            ->color('danger')
+            ->requiresConfirmation()
+            ->modalHeading(fn (User $record): string => 'Reset two-factor authentication for ' . $record->name . '?')
+            ->modalDescription('Their authenticator secret and recovery codes are deleted. They sign in with their password alone until they set up two-factor authentication again from their profile. The reset is recorded in the Audit log.')
+            ->modalSubmitActionLabel('Reset two-factor authentication')
+            ->visible(fn (User $record): bool => self::canResetTwoFactor($record))
+            ->action(function (User $record): void {
+                $administrator = auth()->user();
+                abort_unless($administrator instanceof User && self::canResetTwoFactor($record), 403);
+
+                app(ResetTwoFactorAuthentication::class)($record, $administrator);
+
+                Notification::make()
+                    ->title('Two-factor authentication reset')
+                    ->body($record->name . ' can now sign in with the password and set up two-factor authentication again.')
+                    ->success()
+                    ->send();
+            });
+    }
+
+    public static function canResetTwoFactor(User $record): bool
+    {
+        $administrator = auth()->user();
+
+        return $administrator instanceof User
+            && $administrator->hasRole('super_admin')
+            && ! $administrator->is($record)
+            && filled($record->two_factor_secret);
     }
 
     public static function getRelations(): array
