@@ -365,8 +365,11 @@ class AppServiceProvider extends ServiceProvider
                 ->warnWhenUsedSpaceIsAbovePercentage(80)
                 ->failWhenUsedSpaceIsAbovePercentage(95),
             ScheduleCheck::new(),
+            // locatedAt() takes a glob, not a folder: given the bare folder,
+            // the check globbed the folder itself, treated it as a file and
+            // threw "does not exist" every five minutes since June.
             BackupsCheck::new()
-                ->locatedAt($backupPath)
+                ->locatedAt($backupPath . '/*.zip')
                 ->youngestBackShouldHaveBeenMadeBefore(now()->subDays(2)),
         ]);
     }
