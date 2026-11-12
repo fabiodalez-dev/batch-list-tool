@@ -117,7 +117,7 @@ class BrandingPage extends Page
                     ->schema([
                         Placeholder::make('logo_preview')
                             ->label('Current logo')
-                            ->content(function (): HtmlString|string {
+                            ->content(function (): HtmlString {
                                 $path = app(BrandingSettings::class)->logo_path;
 
                                 if (! $path || ! Storage::disk('public')->exists($path)) {
