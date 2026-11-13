@@ -102,7 +102,7 @@ class AuditSettingsPage extends Page
                             ->integer()
                             ->minValue(0)
                             ->required()
-                            ->helperText('Number of days to retain audit records. Set to 0 to keep indefinitely.'),
+                            ->helperText('Audit records older than this many days are deleted every night. Set to 0 to keep them indefinitely.'),
                     ]),
             ]);
     }

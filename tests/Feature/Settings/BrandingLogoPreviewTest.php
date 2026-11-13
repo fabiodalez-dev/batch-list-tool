@@ -70,7 +70,8 @@ it('renders fallback text in the logo preview placeholder when no logo is set', 
 
     Livewire\Livewire::test(BrandingPage::class)
         ->assertStatus(200)
-        ->assertSee('No logo set');
+        ->assertSee('No logo uploaded: the default NAF logo is used.')
+        ->assertSeeHtml('images/brand-logo.png');
 });
 
 it('clears logo_path when the remove_logo header action is called', function () {

@@ -20,7 +20,7 @@
                 No RAS report has been uploaded for this repository yet. Press <strong>Upload RAS report</strong> and choose the export RAS sends (Excel or CSV).
             </p>
             <p class="mt-1 text-xs text-gray-500 dark:text-gray-400">
-                Read from it: barcode (Column 1), RAS reference ARK/box-batch (Column 4, e.g. ARK/054-4 = batch 4, box 54) and status In / Out / Perm Out (Column 6). A sheet with real headers (Barcode, Reference, Status) works too.
+                Read from it: barcode (Column 1), RAS reference ARK/box-batch (Column 4, e.g. ARK/123-9 = batch 9, box 123) and status In / Out / Perm Out (Column 6). A sheet with real headers (Barcode, Reference, Status) works too.
             </p>
         </x-filament::section>
     @else

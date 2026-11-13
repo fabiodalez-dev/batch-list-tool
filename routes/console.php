@@ -24,6 +24,14 @@ Schedule::command('backup:run')
     ->onOneServer()
     ->emailOutputOnFailure(env('MAIL_BACKUP_RECIPIENT'));
 
+// Audit retention: delete audit rows older than the threshold saved on the
+// Audit settings page (0 = keep forever, the command then does nothing).
+Schedule::command('nra:prune-audits')
+    ->dailyAt('03:30')
+    ->withoutOverlapping()
+    ->onOneServer()
+    ->emailOutputOnFailure(env('MAIL_BACKUP_RECIPIENT'));
+
 // Weekly monitor check — verifies backups exist and aren't stale.
 Schedule::command('backup:monitor')
     ->mondays()

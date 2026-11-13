@@ -101,7 +101,7 @@ class BackupDestinationResource extends Resource
 
                         Toggle::make('is_default')
                             ->label('Default destination')
-                            ->helperText('The primary target highlighted in the Backup Center. Only one destination can be the default — setting this clears it on the others.'),
+                            ->helperText('Marks this destination as the default in the Default column of the destinations list. It does not change where backups go: every active destination receives each backup. Only one destination can be the default — setting this clears it on the others.'),
                     ]),
 
                 // ── 2. Connection (driver-specific) ─────────────────────────

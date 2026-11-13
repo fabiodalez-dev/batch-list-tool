@@ -988,7 +988,7 @@ class DocumentResource extends Resource
                     // Sorted by the name the cell shows, not the code in the column.
                     ->sortable(query: fn (Builder $query, string $direction): Builder => TableSorts::blanksLast($query, "COALESCE((SELECT sort_type.name FROM document_types sort_type WHERE sort_type.id = documents.document_type_id), NULLIF(documents.document_type, ''))", $direction))
                     ->toggleable()),
-                $gc(Tables\Columns\TextColumn::make('series.code')->label('Series')
+                $gc(Tables\Columns\TextColumn::make('series.code')->label(ColumnLabels::get('document', 'series'))
                     ->formatStateUsing(fn (?string $state, Document $record): ?string => $record->series?->title ? $state . ': ' . $record->series->title : $state)
                     ->sortable()->toggleable(), 'series_id'),
                 // Client 2026-10-27: Batch then Box, in number order (1, 2, 3…

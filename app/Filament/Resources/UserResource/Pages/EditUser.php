@@ -15,6 +15,7 @@ class EditUser extends EditRecord
     {
         return [
             Actions\ViewAction::make(),
+            UserResource::resetTwoFactorAction(),
             Actions\DeleteAction::make(),
         ];
     }

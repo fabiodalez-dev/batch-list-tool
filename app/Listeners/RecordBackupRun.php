@@ -23,14 +23,57 @@ use Spatie\Backup\Events\CleanupWasSuccessful;
  *
  * Every handler is wrapped defensively: a missing field or an unreadable disk
  * must never let a listener crash the backup run that triggered it. Registered
- * in AppServiceProvider via Event::listen() calls, mirroring LogAuthenticationEvent.
+ * by Laravel's listener discovery (one handle* method per event).
+ *
+ * A backup started from the Backup & Health page already has a "running" row:
+ * while RunBackupFromBackupCenter runs the command inside recordingInto(), the
+ * backup events complete that row instead of adding a second one.
  */
 class RecordBackupRun
 {
+    /** The page-started BackupRun the running backup reports into, if any. */
+    private static ?int $currentRunId = null;
+
+    /**
+     * Run $callback with backup events written onto the BackupRun $runId.
+     *
+     * @template T
+     *
+     * @param callable(): T $callback
+     * @return T
+     */
+    public static function recordingInto(int $runId, callable $callback): mixed
+    {
+        $previous = self::$currentRunId;
+        self::$currentRunId = $runId;
+
+        try {
+            return $callback();
+        } finally {
+            self::$currentRunId = $previous;
+        }
+    }
+
     public function handleBackupWasSuccessful(BackupWasSuccessful $event): void
     {
         try {
             $sizeBytes = $this->newestBackupSize($event->diskName, $event->backupName);
+            $message = "Backup '{$event->backupName}' completed on disk '{$event->diskName}'.";
+
+            $current = $this->currentRun();
+            if ($current instanceof BackupRun) {
+                // With several destination disks spatie reports each one; a
+                // failure on one disk must not be overwritten by a later success.
+                $current->fill([
+                    'destination_disk' => $event->diskName,
+                    'status' => $current->status === 'failed' ? 'failed' : 'success',
+                    'finished_at' => now(),
+                    'size_bytes' => $sizeBytes ?? $current->size_bytes,
+                    'message' => $current->status === 'failed' ? $current->message : $message,
+                ])->save();
+
+                return;
+            }
 
             BackupRun::create([
                 'type' => 'backup',
@@ -39,7 +82,7 @@ class RecordBackupRun
                 'started_at' => now(),
                 'finished_at' => now(),
                 'size_bytes' => $sizeBytes,
-                'message' => "Backup '{$event->backupName}' completed on disk '{$event->diskName}'.",
+                'message' => $message,
             ]);
         } catch (\Throwable $throwable) {
             Log::warning('RecordBackupRun::handleBackupWasSuccessful failed', ['error' => $throwable->getMessage()]);
@@ -49,6 +92,18 @@ class RecordBackupRun
     public function handleBackupHasFailed(BackupHasFailed $event): void
     {
         try {
+            $current = $this->currentRun();
+            if ($current instanceof BackupRun) {
+                $current->fill([
+                    'destination_disk' => $event->diskName ?? $current->destination_disk,
+                    'status' => 'failed',
+                    'finished_at' => now(),
+                    'message' => $this->throwableMessage($event->exception ?? null),
+                ])->save();
+
+                return;
+            }
+
             BackupRun::create([
                 'type' => 'backup',
                 'destination_disk' => $event->diskName,
@@ -92,6 +147,13 @@ class RecordBackupRun
         } catch (\Throwable $throwable) {
             Log::warning('RecordBackupRun::handleCleanupHasFailed failed', ['error' => $throwable->getMessage()]);
         }
+    }
+
+    private function currentRun(): ?BackupRun
+    {
+        return self::$currentRunId !== null
+            ? BackupRun::query()->find(self::$currentRunId)
+            : null;
     }
 
     /**

@@ -141,7 +141,7 @@ class DocumentsBySeriesReport extends Page implements HasTable
                     }),
 
                 Tables\Filters\SelectFilter::make('series_id')
-                    ->label('Series')
+                    ->label('Subseries')
                     ->relationship('series', 'code')
                     ->searchable()
                     ->multiple()
