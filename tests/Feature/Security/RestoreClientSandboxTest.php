@@ -3,6 +3,7 @@
 declare(strict_types=1);
 
 use App\Actions\Backup\RestoreDatabase;
+use Illuminate\Support\Facades\File;
 
 /*
  * Security audit 2026-11-13, lead 6c: the restore pipes the archive's SQL
@@ -63,7 +64,7 @@ it('does not hand the dump to a mysql client that cannot be sandboxed', function
     try {
         expect(fn () => $probe->import($dump))->toThrow(Exception::class);
     } finally {
-        @unlink($dump);
+        File::delete($dump);
     }
 
     expect($probe->clientUsed)->toBeFalse()
@@ -77,7 +78,7 @@ it('uses the mysql client when it can run sandboxed', function () {
 
     $probe = sa_restoreProbe('--sandbox');
     $probe->import($dump);
-    @unlink($dump);
+    File::delete($dump);
 
     expect($probe->clientUsed)->toBeTrue();
 });
