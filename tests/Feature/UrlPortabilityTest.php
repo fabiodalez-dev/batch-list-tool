@@ -9,11 +9,16 @@ use Illuminate\Support\Facades\Route;
 | URL portability — the app must serve from any URL (root / sub-domain /
 | sub-folder), including behind a reverse proxy. We assert that the trusted
 | X-Forwarded-* headers drive the scheme, host and path-prefix used to build
-| absolute URLs (links, assets, redirects).
+| absolute URLs (links, assets, redirects). The headers are honoured only
+| from a proxy listed in TRUSTED_PROXIES, so these tests declare the test
+| client (127.0.0.1) as that proxy. tests/Feature/Security/ForwardedHeadersTest
+| covers the untrusted case.
 |--------------------------------------------------------------------------
 */
 
 beforeEach(function () {
+    config(['trustedproxy.proxies' => '127.0.0.1']);
+
     Route::get('/__url_probe__', fn () => response()->json([
         'url' => url('/admin'),
         'root' => url('/'),

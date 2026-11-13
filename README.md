@@ -34,6 +34,8 @@ php artisan serve
 
 Open <http://127.0.0.1:8000/admin>.
 
+Installing on a server behind a reverse proxy or HTTPS terminator: see [docs/deploy/reverse-proxy.md](docs/deploy/reverse-proxy.md) for `TRUSTED_PROXIES` and `APP_URL`.
+
 ### Default admin (local dev only)
 
 | Field | Value |

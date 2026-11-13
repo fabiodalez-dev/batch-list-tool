@@ -107,6 +107,17 @@ class RestoreDatabase
     }
 
     /**
+     * Pick the sandbox option out of the client's `--help` text.
+     */
+    public static function sandboxOptionFromHelp(string $text): ?string
+    {
+        // Only MariaDB's --sandbox refuses every client command that reaches
+        // the host (\! shell, \. source, tee). MySQL's --skip-system-command
+        // leaves tee and source working, so a MySQL client is not used.
+        return preg_match('/^\s*--sandbox\b/m', $text) === 1 ? '--sandbox' : null;
+    }
+
+    /**
      * Stream the backup archive off its destination disk into a LOCAL temp file
      * and return the local path. Works for any driver (local/ftp/sftp/s3): the
      * read goes through Storage::disk($disk), not the local filesystem, so a
@@ -321,9 +332,10 @@ class RestoreDatabase
     /**
      * STEP C — import the SQL dump into the default database connection.
      *
-     * Prefers the `mysql` CLI (shell-escaped credentials) when available, which
-     * handles large dumps and multi-statement SQL natively; otherwise falls
-     * back to DB::unprepared() with the dump contents.
+     * Prefers the `mysql` CLI (shell-escaped credentials) when available and
+     * able to run sandboxed, which handles large dumps and multi-statement SQL
+     * natively; otherwise falls back to DB::unprepared() with the dump
+     * contents.
      *
      * @throws RuntimeException if the import fails.
      */
@@ -333,7 +345,11 @@ class RestoreDatabase
         $config = config('database.connections.' . $connection, []);
         $driver = $config['driver'] ?? null;
 
-        if ($driver === 'mysql' && $this->mysqlClientAvailable()) {
+        // The mysql client runs its own commands found in the dump, `\!` (a
+        // shell command on this host) among them. It is used only when it can
+        // be told to refuse them; otherwise the dump goes through PDO, where
+        // such a line is just an SQL error (security audit 2026-11-13).
+        if ($driver === 'mysql' && $this->mysqlClientAvailable() && $this->clientSandboxOption() !== null) {
             $this->importViaMysqlClient($sqlPath, $config);
 
             return;
@@ -372,6 +388,7 @@ class RestoreDatabase
         // goes through MYSQL_PWD so it never appears on the command line / `ps`.
         $command = [
             $binary,
+            (string) $this->clientSandboxOption(),
             '--host=' . $host,
             '--port=' . $port,
             '--user=' . $username,
@@ -400,6 +417,26 @@ class RestoreDatabase
                 . trim($process->getErrorOutput())
             );
         }
+    }
+
+    /**
+     * The client option that stops the `mysql` client from running its own
+     * commands that reach outside the database (`\!` shell, `\.` source,
+     * tee), or null when the installed client has none. Only MariaDB's
+     * `--sandbox` (10.5.25+) covers all three.
+     */
+    protected function clientSandboxOption(): ?string
+    {
+        $binary = (new ExecutableFinder)->find('mysql');
+
+        if ($binary === null) {
+            return null;
+        }
+
+        $help = new Process([$binary, '--help'], null, null, null, 15.0);
+        $help->run();
+
+        return self::sandboxOptionFromHelp($help->getOutput());
     }
 
     /**

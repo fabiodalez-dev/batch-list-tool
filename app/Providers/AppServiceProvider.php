@@ -7,10 +7,12 @@ use App\Models\Document;
 use App\Models\User;
 use App\Observers\BackupDestinationObserver;
 use App\Observers\DocumentObserver;
+use App\Policies\AuditPolicy;
 use App\Settings\AuditSettings;
 use App\Settings\BackupSettings;
 use App\Support\BackupDestinations;
 use App\Support\BackupRetention;
+use App\Support\RoleLabels;
 use Filament\Actions\Action;
 use Filament\Actions\BulkAction;
 use Filament\Actions\DeleteBulkAction;
@@ -28,6 +30,7 @@ use Illuminate\Support\Facades\Gate;
 use Illuminate\Support\Facades\Log;
 use Illuminate\Support\ServiceProvider;
 use Illuminate\Validation\Rules\Password;
+use Illuminate\Validation\ValidationException;
 use Laravel\Telescope\TelescopeServiceProvider;
 use OwenIt\Auditing\Models\Audit;
 use Spatie\Backup\Config\Config as BackupConfig;
@@ -42,6 +45,7 @@ use Spatie\Health\Checks\Checks\DatabaseCheck;
 use Spatie\Health\Checks\Checks\ScheduleCheck;
 use Spatie\Health\Checks\Checks\UsedDiskSpaceCheck;
 use Spatie\Health\Facades\Health;
+use Spatie\Permission\Models\Role;
 
 class AppServiceProvider extends ServiceProvider
 {
@@ -78,6 +82,8 @@ class AppServiceProvider extends ServiceProvider
     public function boot(): void
     {
         Document::observe(DocumentObserver::class);
+
+        $this->protectBuiltInRoles();
 
         // Security baseline §5: at least 12 characters with upper case, lower
         // case and a digit. Password::default() is what Fortify, Filament's
@@ -199,6 +205,11 @@ class AppServiceProvider extends ServiceProvider
         // roles only. Pulse's PulseServiceProvider checks Gate::check('viewPulse')
         // on its dashboard route.
         Gate::define('viewPulse', fn (?User $user): bool => $user instanceof User && $user->hasAnyRole(['super_admin', 'admin']));
+
+        // The Audit model lives in the vendor namespace, so policy discovery
+        // never finds App\Policies\AuditPolicy: bind it explicitly, or the
+        // view_any_audit / view_audit permissions gate nothing.
+        Gate::policy(Audit::class, AuditPolicy::class);
 
         $this->registerHealthChecks();
 
@@ -351,16 +362,6 @@ class AppServiceProvider extends ServiceProvider
         }
     }
 
-    /**
-     * Register the application health checks exposed via /health.
-     *
-     * Four standard checks for NAF IT monitoring / uptime probes (RFQ-2026-06 §3.4.1):
-     *   - Database connectivity
-     *   - Used disk space (warn 80%, fail 95%)
-     *   - Laravel schedule running (verifies `schedule:run` cron is firing)
-     *   - Recent backup present (younger than 2 days) under the local-disk
-     *     spatie/laravel-backup destination
-     */
     protected function registerHealthChecks(): void
     {
         // The local-disk path where spatie/laravel-backup stores its zip archives.
@@ -383,5 +384,48 @@ class AppServiceProvider extends ServiceProvider
                 ->locatedAt($backupPath . '/*.zip')
                 ->youngestBackShouldHaveBeenMadeBefore(now()->subDays(2)),
         ]);
+    }
+
+    /**
+     * Register the application health checks exposed via /health.
+     *
+     * Four standard checks for NAF IT monitoring / uptime probes (RFQ-2026-06 §3.4.1):
+     *   - Database connectivity
+     *   - Used disk space (warn 80%, fail 95%)
+     *   - Laravel schedule running (verifies `schedule:run` cron is firing)
+     *   - Recent backup present (younger than 2 days) under the local-disk
+     *     spatie/laravel-backup destination
+     */
+    /**
+     * The four application roles are referenced by name in code (the Shield
+     * super_admin bypass, canAccessPanel(), the repository scopes, the user
+     * form), so their names are fixed. Whoever holds update_role could
+     * otherwise rename super_admin away and their own role to super_admin
+     * in the role editor (security audit 2026-11-13). Roles made in the role
+     * editor can still be renamed and deleted.
+     */
+    private function protectBuiltInRoles(): void
+    {
+        $builtIn = array_keys(RoleLabels::MAP);
+
+        Role::updating(function (Role $role) use ($builtIn): void {
+            if (! $role->isDirty('name')) {
+                return;
+            }
+
+            if (in_array($role->getOriginal('name'), $builtIn, true) || in_array($role->name, $builtIn, true)) {
+                throw ValidationException::withMessages([
+                    'data.name' => __('The built-in roles (:roles) cannot be renamed, and no role can take one of their names.', ['roles' => implode(', ', $builtIn)]),
+                ]);
+            }
+        });
+
+        Role::deleting(function (Role $role) use ($builtIn): void {
+            if (in_array($role->name, $builtIn, true)) {
+                throw ValidationException::withMessages([
+                    'name' => __('The built-in role :role cannot be deleted.', ['role' => $role->name]),
+                ]);
+            }
+        });
     }
 }

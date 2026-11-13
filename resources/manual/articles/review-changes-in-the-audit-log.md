@@ -4,7 +4,7 @@ The **Audit log** records every change made to the records held in the Archive T
 
 ## Prerequisites
 
-- [ ] An account with permission to view the **Audit log**. By default every role (Super administrator, Administrator, ReadingRoom and General) has this permission.
+- [ ] An account with permission to view the **Audit log**. By default every role (Super administrator, Administrator, ReadingRoom and General) has this permission. ReadingRoom and General users see only the entries of the records in their own repositories; Administrators and Super administrators see every entry.
 - [ ] The super-administrator role, if you need to change the **Audit settings**.
 
 ## 1. Open the Audit log

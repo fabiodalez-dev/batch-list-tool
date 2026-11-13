@@ -68,9 +68,7 @@ class InitialDataSeeder extends Seeder
         // Assign Shield-generated permissions per role (admin = all; editor = view+create+update; viewer = view only)
         $allPerms = Permission::pluck('name')->all();
         $admin->syncPermissions($allPerms);
-        $editor->syncPermissions(
-            collect($allPerms)->filter(fn ($p) => str_starts_with((string) $p, 'view_') || str_starts_with((string) $p, 'create_') || str_starts_with((string) $p, 'update_') || str_starts_with((string) $p, 'reorder_') || $p === 'resolve_document_flag')->all()
-        );
+        $editor->syncPermissions(self::editorPermissions($allPerms));
         $viewer->syncPermissions(
             collect($allPerms)->filter(fn ($p) => str_starts_with((string) $p, 'view_') && ! str_ends_with((string) $p, '_user'))->all()
         );
@@ -99,5 +97,23 @@ class InitialDataSeeder extends Seeder
         $this->command->info('   Password: ChangeMe!Local2026');
         $this->command->info('   URL:      http://127.0.0.1:8000/admin');
         $this->command->info('═══════════════════════════════════════════════════');
+    }
+
+    /**
+     * The permissions of the editor (ReadingRoom) role: view, create, update
+     * and reorder on the archive, plus resolving document flags. Never on
+     * accounts or roles: create_user / update_user would let an editor make
+     * an admin or reset an admin's password (security audit 2026-11-13).
+     *
+     * @param array<int, string> $allPermissions
+     * @return array<int, string>
+     */
+    public static function editorPermissions(array $allPermissions): array
+    {
+        return collect($allPermissions)
+            ->filter(fn ($p) => str_starts_with((string) $p, 'view_') || str_starts_with((string) $p, 'create_') || str_starts_with((string) $p, 'update_') || str_starts_with((string) $p, 'reorder_') || $p === 'resolve_document_flag')
+            ->reject(fn ($p) => str_ends_with((string) $p, '_user') || str_ends_with((string) $p, '_role'))
+            ->values()
+            ->all();
     }
 }
