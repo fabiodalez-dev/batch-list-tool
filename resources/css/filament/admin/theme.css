@@ -328,42 +328,32 @@
 /* Badges: light pills with dark text become dark-tinted pills with light text
    of the same hue (primary was the worst — brand-orange-800 text on a dark
    lift = dark-on-dark). */
-.dark .fi-badge {
+.dark .fi-badge:not(.fi-color),
+.dark .fi-badge.fi-color-primary {
     background-color: var(--cream-200);
     color: var(--coffee-800);
 }
 
-.dark .fi-badge[data-color="primary"] {
-    background-color: oklch(31% 0.050 215);
-    color: oklch(84% 0.065 210);
-}
-
-.dark .fi-badge[data-color="success"] {
+.dark .fi-badge.fi-color-success {
     background-color: oklch(30% 0.060 150);
     color: oklch(86% 0.100 150);
 }
 
-.dark .fi-badge[data-color="warning"] {
+.dark .fi-badge.fi-color-warning {
     background-color: oklch(33% 0.065 80);
     color: oklch(88% 0.110 85);
 }
 
-.dark .fi-badge[data-color="danger"] {
+.dark .fi-badge.fi-color-danger {
     background-color: oklch(32% 0.070 25);
     color: oklch(85% 0.110 25);
-}
-
-.dark .fi-badge[data-color="gray"] {
-    background-color: var(--cream-200);
-    color: var(--coffee-700);
 }
 
 /* Solid coloured buttons: the label was --cream-50 (a light surface token that
    correctly becomes DARK in dark mode) → dark-on-colour. Pin a near-white
    label so it reads on the accent fill in both modes; the amber warning button
    keeps a dark label (warm-warning-500 stays a light amber in dark). */
-.dark .fi-btn[data-color="primary"],
-.dark .fi-btn-color-primary,
+.dark .fi-btn.fi-color-primary:not(.fi-outlined),
 .dark .fi-btn[data-color="danger"],
 .dark .fi-btn-color-danger,
 .dark .fi-btn[data-color="success"],
@@ -823,21 +813,22 @@ input.fi-input {
     letter-spacing: 0.005em;
 }
 
-.fi-btn[data-color="primary"],
-.fi-btn-color-primary {
+/* Primary buttons: the panel primary with a white label. Filament 5 renders
+   them as .fi-btn.fi-color-primary with its own shade classes (a light 400
+   fill with dark text for this palette); the old [data-color] selectors no
+   longer matched anything. Outlined buttons keep Filament's outline. */
+.fi-btn.fi-color-primary:not(.fi-outlined) {
     background-color: var(--brand-500);
-    color: var(--cream-50);
+    color: #fff;
     border: 0;
 }
 
-.fi-btn[data-color="primary"]:hover,
-.fi-btn-color-primary:hover {
+.fi-btn.fi-color-primary:not(.fi-outlined):hover {
     background-color: var(--brand-600);
-    color: var(--cream-50);
+    color: #fff;
 }
 
-.fi-btn[data-color="primary"]:active,
-.fi-btn-color-primary:active {
+.fi-btn.fi-color-primary:not(.fi-outlined):active {
     background-color: var(--brand-700);
 }
 
@@ -914,14 +905,23 @@ input.fi-input {
 
 /* --- Badges / status pills ----------------------------------------- */
 
+/* Filament 5 marks a coloured badge with .fi-color.fi-color-{name} (a badge
+   with no colour set gets fi-color-primary; gray gets no class at all). The
+   cream pill is for the neutral ones only: a reset on every .fi-badge also
+   flattened the badges the code colours (Audit log Event, RAS reconciliation
+   Result), because this unlayered rule beats Filament's layered colours. */
 .fi-badge {
-    background-color: var(--cream-200);
-    color: var(--coffee-800);
     border-radius: 6px;
     padding: 0.125rem 0.5rem;
     font-size: 0.75rem;
     font-weight: 500;
     border: 0;
+}
+
+.fi-badge:not(.fi-color),
+.fi-badge.fi-color-primary {
+    background-color: var(--cream-200);
+    color: var(--coffee-800);
 }
 
 /* A badge with its own palette (Color::hex, e.g. the Flag Types colours)
@@ -937,29 +937,19 @@ input.fi-input {
     color: var(--color-300);
 }
 
-.fi-badge[data-color="primary"] {
-    background-color: var(--brand-100);
-    color: var(--brand-800);
-}
-
-.fi-badge[data-color="success"] {
+.fi-badge.fi-color-success {
     background-color: oklch(94% 0.05 145);
     color: oklch(30% 0.10 145);
 }
 
-.fi-badge[data-color="warning"] {
+.fi-badge.fi-color-warning {
     background-color: oklch(94% 0.07 80);
     color: oklch(35% 0.12 80);
 }
 
-.fi-badge[data-color="danger"] {
+.fi-badge.fi-color-danger {
     background-color: oklch(94% 0.05 25);
     color: oklch(35% 0.15 25);
-}
-
-.fi-badge[data-color="gray"] {
-    background-color: var(--cream-200);
-    color: var(--coffee-700);
 }
 
 /* --- Forms / labels ------------------------------------------------- */
@@ -1917,4 +1907,14 @@ body:has(.fi-simple-main),
 
 .dark .nra-manual-prose .nra-manual-figure {
     box-shadow: none;
+}
+
+/* Branding page: the current-logo preview keeps the image's proportions. */
+.nra-branding-logo-preview {
+    display: block;
+    width: auto;
+    height: auto;
+    max-width: 100%;
+    max-height: 4rem;
+    object-fit: contain;
 }

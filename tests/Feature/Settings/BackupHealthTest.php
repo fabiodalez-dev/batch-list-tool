@@ -3,12 +3,13 @@
 declare(strict_types=1);
 
 use App\Filament\Pages\Settings\BackupHealthPage;
+use App\Jobs\RunBackupFromBackupCenter;
 use App\Models\User;
 use App\Settings\BackupSettings;
 use Illuminate\Console\Scheduling\Schedule;
 use Illuminate\Foundation\Testing\RefreshDatabase;
-use Illuminate\Support\Facades\Artisan;
 use Illuminate\Support\Facades\File;
+use Illuminate\Support\Facades\Queue;
 use Spatie\Health\Checks\Checks\BackupsCheck;
 use Spatie\Health\Facades\Health;
 
@@ -68,17 +69,15 @@ it('dispatches a backup run', function () {
     $admin = actAsAdmin_backup();
     $this->actingAs($admin);
 
-    // Spy on Artisan::queue so we can assert it is called without
-    // actually running a backup in the test environment.
-    // The full-backup action queues `backup:run` with an (empty) parameters
-    // array — queueBackup('full', 'backup:run') → Artisan::queue('backup:run', []).
-    Artisan::shouldReceive('queue')
-        ->once()
-        ->with('backup:run', []);
+    // Fake the queue so no real backup runs in the test environment. The
+    // full-backup action queues the job that runs `backup:run` with no options.
+    Queue::fake();
 
     Livewire\Livewire::test(BackupHealthPage::class)
         ->callAction('runBackup')
         ->assertNotified();
+
+    Queue::assertPushed(RunBackupFromBackupCenter::class, fn (RunBackupFromBackupCenter $job): bool => $job->parameters === []);
 });
 
 it('persists retention settings', function () {

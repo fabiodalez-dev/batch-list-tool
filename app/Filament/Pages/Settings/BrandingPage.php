@@ -101,7 +101,7 @@ class BrandingPage extends Page
                             ->label('Application name')
                             ->required()
                             ->maxLength(191)
-                            ->helperText('Displayed in the panel header and browser tab title.'),
+                            ->helperText('Shown in the browser tab title. The header shows the logo, not this name.'),
 
                         TextInput::make('logo_height')
                             ->label('Logo height (CSS)')
@@ -112,21 +112,25 @@ class BrandingPage extends Page
                     ]),
 
                 Section::make('Logo')
+                    ->description('The sidebar and the top bar always show the white NAF logo on the green bar. The logo set here is the one shown on the light pages, such as the sign-in page; in dark mode those pages show the white logo too.')
                     ->columns(1)
                     ->schema([
                         Placeholder::make('logo_preview')
                             ->label('Current logo')
-                            ->content(function (): HtmlString|string {
+                            ->content(function (): HtmlString {
                                 $path = app(BrandingSettings::class)->logo_path;
 
                                 if (! $path || ! Storage::disk('public')->exists($path)) {
-                                    return 'No logo set — the brand name is shown as text.';
+                                    return new HtmlString(
+                                        '<img src="' . e(asset('images/brand-logo.png')) . '" alt="Default NAF logo" class="nra-branding-logo-preview">'
+                                        . '<span class="mt-1 block text-sm text-gray-500 dark:text-gray-400">No logo uploaded: the default NAF logo is used.</span>'
+                                    );
                                 }
 
                                 $url = Storage::disk('public')->url($path);
 
                                 return new HtmlString(
-                                    '<img src="' . e($url) . '" alt="Current logo" style="max-height:4rem">'
+                                    '<img src="' . e($url) . '" alt="Current logo" class="nra-branding-logo-preview">'
                                 );
                             }),
 
@@ -140,7 +144,7 @@ class BrandingPage extends Page
 
                         Toggle::make('clear_logo')
                             ->label('Remove current logo')
-                            ->helperText('Toggle on and save to remove the logo (brand name will be shown as text).')
+                            ->helperText('Toggle on and save to remove the uploaded logo: the default NAF logo is shown again.')
                             ->dehydrated(false)
                             ->default(false)
                             ->visible(fn (): bool => (bool) app(BrandingSettings::class)->logo_path),
@@ -191,7 +195,7 @@ class BrandingPage extends Page
                 ->color('danger')
                 ->requiresConfirmation()
                 ->modalHeading('Remove logo')
-                ->modalDescription('This will clear the current logo. The brand name will be shown as text until a new logo is uploaded.')
+                ->modalDescription('This removes the uploaded logo. The default NAF logo is shown again until a new logo is uploaded.')
                 ->visible(fn (): bool => (bool) app(BrandingSettings::class)->logo_path)
                 ->action(function (): void {
                     abort_unless(static::canAccess(), 403);
@@ -202,7 +206,7 @@ class BrandingPage extends Page
 
                     Notification::make()
                         ->title('Logo removed')
-                        ->body('The logo has been cleared. Upload a new one to restore branding.')
+                        ->body('The uploaded logo has been removed: the default NAF logo is shown again.')
                         ->success()
                         ->send();
                 }),

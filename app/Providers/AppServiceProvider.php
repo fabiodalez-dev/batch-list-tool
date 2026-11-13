@@ -10,6 +10,7 @@ use App\Observers\DocumentObserver;
 use App\Settings\AuditSettings;
 use App\Settings\BackupSettings;
 use App\Support\BackupDestinations;
+use App\Support\BackupRetention;
 use Filament\Actions\Action;
 use Filament\Actions\BulkAction;
 use Filament\Actions\DeleteBulkAction;
@@ -29,6 +30,7 @@ use Illuminate\Support\ServiceProvider;
 use Illuminate\Validation\Rules\Password;
 use Laravel\Telescope\TelescopeServiceProvider;
 use OwenIt\Auditing\Models\Audit;
+use Spatie\Backup\Config\Config as BackupConfig;
 use Spatie\Backup\Notifications\Notifications\BackupHasFailedNotification;
 use Spatie\Backup\Notifications\Notifications\BackupWasSuccessfulNotification;
 use Spatie\Backup\Notifications\Notifications\CleanupHasFailedNotification;
@@ -160,6 +162,15 @@ class AppServiceProvider extends ServiceProvider
         // two rows per backup run.
 
         $this->configureBackupNotifications();
+
+        // The retention saved on the Backup & Health page (BackupSettings) is
+        // what backup:clean must apply. spatie injects its Config object into
+        // the cleanup command and strategy, so the stored values are folded in
+        // whenever that object is built; config/backup.php stays the fallback.
+        $this->app->extend(
+            BackupConfig::class,
+            static fn (BackupConfig $config): BackupConfig => BackupRetention::withStoredRetention($config),
+        );
 
         // Mirror AuditSettings::enabled at runtime so that toggling the Audit
         // settings page actually stops new audit rows being written.

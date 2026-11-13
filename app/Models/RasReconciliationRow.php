@@ -85,7 +85,7 @@ class RasReconciliationRow extends Model
         return self::OUTCOMES[$this->outcome] ?? $this->outcome;
     }
 
-    /** "ARK/054-4" style key of ours, for display next to RAS's. */
+    /** "ARK/123-9" style key of ours, for display next to RAS's. */
     public function ourReference(): ?string
     {
         if ($this->our_box === null && $this->our_batch === null) {
