@@ -10,11 +10,11 @@ The **RAS ↔ NRA reconciliation** report compares the list received from RAS wi
 
 ## 1. Open the reconciliation report
 
-In the sidebar, select **Reports**. On the Reports page, select the **RAS ↔ NRA reconciliation** card; the card also shows the date of the last upload, or **No upload yet**.
+In the sidebar, select **Reports**. On the Reports page, select the **RAS ↔ NRA reconciliation** card; the card also shows the date of the last upload, or **No upload yet**. While the report is open, **Reports** remains highlighted in the sidebar.
 
 ## 2. Upload the list received from RAS
 
-Select **Upload RAS report**. In the **Upload the RAS report** dialogue, add the file to the **RAS report** field, then select **Compare**. The report reads the barcode from Column 1, the RAS reference in the form ARK/box-batch from Column 4 and the status from Column 6; a sheet with the headers Barcode, Reference and Status is also accepted.
+Select **Upload RAS report**. In the **Upload the RAS report** dialogue, add the file to the **RAS report** field, then select **Compare**. The report reads the barcode from Column 1, the RAS reference in the form ARK/box-batch from Column 4 (for example, ARK/123-9 is box 123 of batch 9) and the status from Column 6; a sheet with the headers Barcode, Reference and Status is also accepted.
 
 ![Upload the list received from RAS](./block_upload-the-ras-list.png)
 
@@ -26,7 +26,7 @@ When the comparison is complete, a notification states how many RAS rows were co
 
 ## 4. Read the comparison
 
-Each row sets one line of the RAS list beside the matching box in the Logistics Tool. **RAS barcode**, **RAS batch / box** and **RAS status** show what RAS reported; **Our barcode**, **Our batch / box** and **Our status** show our box, and selecting either of the first two opens that box. **Result** states the outcome of the comparison and **Note** explains it, for example by giving the barcode our box carries now; when the statuses disagree, both status values are shown in red.
+Each row sets one line of the RAS list beside the matching box in the Logistics Tool. **RAS barcode**, **RAS batch / box** and **RAS status** show what RAS reported; **Our barcode**, **Our batch / box** and **Our status** show our box, and selecting either of the first two opens that box. **Result** states the outcome of the comparison in a coloured badge and **Note** explains it, for example by giving the barcode our box carries now; when the statuses disagree, both status values are shown in red.
 
 ## What each result means
 
@@ -37,6 +37,7 @@ Each row sets one line of the RAS list beside the matching box in the Logistics 
 - **Earlier barcode not in our history**: as for Barcode differs, but the current barcode of our box also appears on the RAS list, so RAS is listing an earlier barcode that our barcode history does not record, typically a Perm Out container.
 - **Only in RAS**: neither the barcode nor the batch / box matches any of our RAS boxes.
 - **Only in our system**: one of our RAS boxes whose current barcode does not appear on the RAS list and that no Barcode differs row already points to.
+- The badge colours help you to scan the list: green for Reconciled, amber for Status differs and Barcode differs, red for Batch / box differs, blue for Only in RAS and Only in our system, and cream, the neutral colour, for Earlier barcode not in our history. The same colours are used on the summary tiles.
 
 ## 5. Show discrepancies only, or every row
 

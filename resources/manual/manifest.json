@@ -4,14 +4,14 @@
     "subtitle": "User Manual",
     "client": "Notarial Archives Foundation",
     "reference": "RFQ-2026-06 · Deliverable 11: User manual",
-    "version": "2.0",
-    "date": "12 November 2026",
+    "version": "2.1",
+    "date": "13 November 2026",
     "author": "Prepared by Fabio Gaetano D'Alessandro",
     "introduction": [
         "The Logistics Tool helps the staff of the Notarial Archives Foundation and the National Repository keep track of their collection of historic notarial records: which documents exist, which box and batch each one belongs to, where every box is shelved, and how items move, are disinfested, returned to RAS or flagged over time.",
         "This manual is organised as a series of short, task-based guides. Each guide states who can carry out the task, lists what is needed beforehand, and then describes the steps in order, using the labels exactly as they appear on screen. Screenshots show the relevant screens; they contain example data only.",
         "The guides are grouped in six parts. Staff who are new to the application should begin with Part 1. Part 2 describes how batch lists are imported from Excel or CSV files, and should be read before the first import. Parts 3 and 4 cover everyday work on documents, boxes and storage locations, Part 5 the reports, and Part 6 is intended for administrators.",
-        "The application has three roles: Administrator, ReadingRoom and General. Some actions are reserved for administrators with full access; on screen they also appear as Administrator, as the first of the two Administrator entries in the Role list. Where a guide requires a particular role, this is stated in its prerequisites. If a menu item or button described here does not appear, ask an administrator to check the permissions assigned to your account. The same guides are available inside the application under Help."
+        "The application has four roles: Super administrator, Administrator, ReadingRoom and General. Some actions, such as restoring a backup or changing the audit settings, are reserved for the Super administrator. Where a guide requires a particular role, this is stated in its prerequisites. If a menu item or button described here does not appear, ask an administrator to check the permissions assigned to your account. The same guides are available inside the application under Help."
     ],
     "parts": [
         {

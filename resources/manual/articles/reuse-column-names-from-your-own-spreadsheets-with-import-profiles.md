@@ -4,7 +4,7 @@ When a spreadsheet uses its own column headings instead of those in the import t
 
 ## Prerequisites
 
-- [ ] An administrator account: the **Import Wizard** is available only to administrators, and both **Import Wizard** and **Import Profiles** are in the **Importation** group of the sidebar.
+- [ ] An account with the Administrator or Super administrator role: the **Import Wizard** is not available to the ReadingRoom or General roles, and both **Import Wizard** and **Import Profiles** are in the **Importation** group of the sidebar.
 - [ ] A spreadsheet (.xlsx or .csv) whose column headings differ from the template headings.
 - [ ] The records that the spreadsheet depends on, such as Subseries, Authorities or Batches, already exist in Logistics Tool.
 
@@ -40,7 +40,7 @@ Open **Import Profiles** in the **Importation** group. The list shows each profi
 >
 > **Tip:** The column mapping of a saved profile cannot be edited. To change it, run the wizard again with a real file and save a new profile.
 >
-> **Tip:** You see your own profiles and the profiles that colleagues have shared in your repository. Only the owner or an administrator can edit or delete a profile.
+> **Tip:** You see your own profiles and the profiles that colleagues have shared in your repository. Only the owner, an Administrator or a Super administrator can edit a profile, and only an Administrator or a Super administrator can delete one.
 >
 > **Tip:** A profile does not bypass any checks: every import started from a profile still runs **Validate rows** before anything is written.
 

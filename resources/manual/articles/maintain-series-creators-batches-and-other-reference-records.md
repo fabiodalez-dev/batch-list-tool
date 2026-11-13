@@ -4,12 +4,12 @@ Every document in the catalogue points to reference records: the subseries it is
 
 ## Prerequisites
 
-- [ ] An account with the Administrator role. Several lists under **Classifications**, including **Current Box Types**, **Custody Status Types** and **Entity Types**, open only for these roles.
+- [ ] An account with the Administrator or Super administrator role. Several lists under **Classifications**, including **Current Box Types**, **Custody Status Types** and **Entity Types**, open only for these roles.
 - [ ] At least one repository, because batches and notary accessions always belong to a repository.
 
 ## 1. Plan the order of entry
 
-Fill a list before the records that refer to it. Begin with the controlled values under **Classifications**, such as **Accession Types**, **Entity Types** and **Document Types**, then add **Subseries** and **Authorities**, then **Batches** and **Notary Accessions**, and only then boxes and documents. The **Import Wizard** follows the same order (subseries, authorities, batches, boxes, documents), and document types must be imported before documents because each document row refers to its document type by identifier.
+Fill a list before the records that refer to it. Begin with the controlled values under **Classifications**, such as **Accession Types**, **Entity Types** and **Document Types**, then add **Subseries** and **Authorities**, then **Locations**, then **Batches** and **Notary Accessions**, and only then boxes and documents. The **Import Wizard** follows the same order (subseries, authorities, locations, batches, boxes, documents). Import document types before documents: each document row is linked to its document type by identifier or name, and a type that does not exist yet is kept only as text.
 
 ## 2. Create a subseries
 

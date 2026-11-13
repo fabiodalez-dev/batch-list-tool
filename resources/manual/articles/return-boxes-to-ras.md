@@ -21,7 +21,7 @@ Select **Power actions** above the table, then select **Return to RAS**. To retu
 
 ## 3. Enter a new barcode for each box
 
-The dialog **Return the selected boxes to RAS** lists one row per box, headed by the box and its current barcode. Enter the **New barcode** for every box: it is required, it must differ from the box's current barcode, and it must not belong to any other box. For a box that is not a RAS box, you may also enter a **New box number (optional)** and choose a **Current Box Type**; leave the box number blank to keep its identifier.
+The dialog **Return the selected boxes to RAS** (**Return this box to RAS** for a single box) lists one row per box, headed by the box and its current barcode. Enter the **New barcode** for every box: it is required, it must differ from the box's current barcode, and it must not belong to any other box. For a box that is not a RAS box, you may also enter a **New box number (optional)** and choose a **Current Box Type**; leave the box number blank to keep its identifier.
 
 ![Enter a new barcode for each box](./block_enter-barcodes.png)
 

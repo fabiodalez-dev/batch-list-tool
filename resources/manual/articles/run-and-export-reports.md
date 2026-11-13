@@ -4,7 +4,7 @@ The Reports page gathers the canned reports of the Logistics Tool in one place. 
 
 ## Prerequisites
 
-- [ ] A Logistics Tool account whose role includes permission to view reports. Without it, **Reports** does not appear in the sidebar.
+- [ ] A Logistics Tool account whose role includes permission to view reports. The built-in roles Super administrator, Administrator, ReadingRoom and General all include it; without it, **Reports** does not appear in the sidebar.
 - [ ] The repository you wish to report on selected as the active repository in the top bar, where your account can see more than one repository.
 
 ## 1. Open the Reports page
@@ -15,7 +15,7 @@ In the sidebar, under the **Reports** group, select **Reports**. The page lists 
 
 ## 2. Choose a report
 
-Select the card of the report you require, for example **Stock take (by location)**. The report opens on its own page, with its actions in the header and its results in a table below. Select **About this page** under the title for a fuller description of what the report includes.
+Select the card of the report you require, for example **Stock take (by location)**. The report opens on its own page, with its actions in the header and its results in a table below, while **Reports** remains highlighted in the sidebar so that you can return to the list of reports at any time. Select **About this page** under the title for a fuller description of what the report includes.
 
 ![Choose a report](./block_choose-report.png)
 
@@ -41,6 +41,8 @@ Select the card of the report you require, for example **Stock take (by location
 In the **Stock take** report, select **Per box** or **Per document** in the header to choose the view. Select the **Filter** icon above the table, then set the filters you need, for example a **Location** or a **Box type**, or switch on **Include documents kept outside their box (Not in Box / Mounted / Conservation Box)**. Select **Apply filters** to update the results, or **Reset** to clear them.
 
 ![Set the filters](./block_set-filters.png)
+
+The subseries filter is labelled **Subseries** in **Documents by batch**, **Documents by creator / notary**, **Documents by subseries** and **Documents pending disinfestation**, where the column of the same name also appears. In the **Per document** view of the stock take and in **Mass migration**, the filter is labelled **Series (with its subseries)**: choosing a series also includes the documents of its subseries.
 
 ## 4. Read and sort the results
 

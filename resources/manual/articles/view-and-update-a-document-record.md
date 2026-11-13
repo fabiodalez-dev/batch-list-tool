@@ -6,7 +6,7 @@ Each document held in the Logistics Tool has its own record page, which brings t
 
 - [ ] You are signed in to the Logistics Tool with a role that may view documents, and the repository that holds the document is selected.
 - [ ] To change a record, your role must also allow you to edit documents; to raise flags, it must allow you to create document flags.
-- [ ] The **History** tab is shown only to users whose role grants access to the audit trail, and the **Audit info** section only to administrators with full access.
+- [ ] The **History** tab is shown only to users whose role grants access to the audit trail, and the **Audit info** section only to Super administrators.
 
 ## 1. Open the document from the Documents list
 

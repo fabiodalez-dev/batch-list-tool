@@ -4,7 +4,7 @@ This guide is for administrators of Logistics Tool. It explains how to confirm o
 
 ## Prerequisites
 
-- [ ] An account with the Administrator role. Other roles do not see these pages in the sidebar.
+- [ ] An account with the Administrator or Super administrator role. Other roles do not see these pages in the sidebar.
 - [ ] For an off-site destination, the connection details supplied by your IT department (server address, port, user name and password or key, or the storage bucket details).
 - [ ] For a new logo, an image file of no more than 2 MB.
 
@@ -16,27 +16,27 @@ In the sidebar, under **Administration**, select **Backup & Health**. The **Back
 
 ## 2. Read the status cards
 
-Check the three cards at the top of the page. **Database** shows **Connected** in green when the application can reach its database. **Latest backup** shows the file name, date and time (dd-mm-yyyy hh:mm) and size of the most recent archive on this server; an amber card reading **No backups found** means no archive exists yet. **Local storage** shows the free space on the server disk where backups are written, marked **(healthy)** below 75% used, **(getting full)** from 75% to 90% and **(low space)** above 90%.
+Check the three cards at the top of the page. **Database** shows **Connected** when the application can reach its database. **Latest backup** shows the name, date and time (dd-mm-yyyy hh:mm) and size of the most recent archive on this server; an amber card reading **No backups found** means that no archive exists yet. **Local storage** shows the free space on the server disk where backups are written, marked **(healthy)** below 75% used, **(getting full)** from 75% to 90% and **(low space)** above 90%.
 
 ## 3. Review the backup archives
 
-The **Backup archives** list shows every `.zip` archive held on the configured destinations, newest first, with its **File**, **Disk**, **Size** and **Date**. Select **Download** to save a copy of an archive. Select **Delete** only when an archive is no longer required; you are asked to confirm, and the deletion cannot be undone. Administrators with full access also see **Restore**, which overwrites the live database and asks you to tick an acknowledgement and type the current database name before it proceeds.
+The **Backup archives** list shows every archive held on the configured destinations, newest first, with its **File**, **Disk**, **Size** and **Date**. Select **Download** to save a copy of an archive. Select **Delete** only when an archive is no longer required; you are asked to confirm, and the deletion cannot be undone. Super administrators also see **Restore**, which overwrites the live database: the application first takes a fresh database safety snapshot, and you must tick the acknowledgement and type the current database name before the restore proceeds.
 
 ## 4. Check the run history
 
-The **Run history** table lists the 15 most recent runs with their **Type**, **Status**, **Started**, **Finished**, **Duration**, **Size** and **Message**. A green **Success** badge confirms a completed backup or cleanup and a red **Failed** badge requires attention. A backup started from this page appears as **Running** with the message **Queued from Backup Center**; when it finishes, a separate row of type BACKUP records the result.
+The **Run history** table lists the 15 most recent runs with their **Type**, **Status**, **Started**, **Finished**, **Duration**, **Size** and **Message**. A green **Success** badge confirms a completed backup, cleanup or restore, and a red **Failed** badge requires attention; the message explains the cause. A backup started from this page has its own row, of type FULL, DB or FILES, which shows **Running** with the message **Queued from Backup Center** while it is in progress and then changes to **Success** or **Failed** on the same row, with its finish time, duration and size. The nightly backups appear as BACKUP rows and the nightly cleanup as CLEANUP rows.
 
 ## 5. Run a backup on demand
 
-Backups run automatically every night at 02:30 (server time). To take an additional backup, select **Run backup now** at the top of the page and confirm with **Yes, run backup**. To back up only the database or only the application files, select **Run DB-only** or **Run files-only** instead. The backup runs in the background, so you may leave the page.
+Backups run automatically every night at 02:30 (server time). To take an additional backup, select **Run backup now** at the top of the page and confirm with **Yes, run backup**. To back up only the database or only the application files, select **Run DB-only** or **Run files-only** instead. The backup runs in the background, so you may leave the page; its row in the **Run history** shows the result when it finishes.
 
-## 6. Record the retention policy
+## 6. Set the retention policy
 
-If the retention policy needs to change, scroll to **Retention policy** and enter the new values in **Keep daily backups** (days), **Keep weekly backups** (weeks) and **Keep monthly backups** (months). Select **Save retention** to store them. Note that the nightly cleanup does not currently use these values: archives are kept according to the application's fixed retention rules (16 days, 8 weeks and 4 months).
+Scroll to **Retention policy** and enter how many backups to keep in **Keep daily backups** (days), **Keep weekly backups** (weeks) and **Keep monthly backups** (months). Select **Save retention** to store the values. The nightly cleanup, which runs at 03:00 after the nightly backup, applies the saved values to every destination from its next run onwards.
 
 ## 7. Add a backup destination
 
-Select **Configure destinations** at the top of the **Backup & health** page, or **Backup destinations** in the sidebar, and then select the button labelled "New Backup destination" at the top of the list. Under **Destination**, enter a **Name** and choose the **Storage type**: **Local (this server's disk)**, **FTP**, **SFTP (SSH)** or **S3 / S3-compatible**. Leave **Active** switched on, and switch on **Default destination** only for your primary target.
+Select **Configure destinations** at the top of the **Backup & health** page, or **Backup destinations** in the sidebar, and then select the button labelled "New Backup destination" at the top of the list. Under **Destination**, enter a **Name** and choose the **Storage type**: **Local (this server's disk)**, **FTP**, **SFTP (SSH)** or **S3 / S3-compatible**. Leave **Active** switched on. **Default destination** only marks the destination in the **Default** column of the list; it does not change where backups go, because every active destination receives each backup.
 
 ![Add a backup destination](./block_add-destination.png)
 
@@ -50,7 +50,7 @@ In the **Backup destinations** list, select **Edit** on the destination's row an
 
 ## 10. Test the connection
 
-In the **Backup destinations** list, select **Test connection** on the destination's row. The application writes and removes a small test file on the destination and reports **Connection OK**, or **Connection failed** with the reason returned by the server. To make another destination the default, select **Set default** on its row.
+In the **Backup destinations** list, select **Test connection** on the destination's row. The application writes and removes a small test file on the destination and reports **Connection OK**, or **Connection failed** with the reason returned by the server. To mark another destination as the default, select **Set default** on its row.
 
 ## 11. Open the Branding page
 
@@ -60,26 +60,24 @@ In the sidebar, under **Administration**, select **Branding**. The **Branding se
 
 ## 12. Change the application name
 
-Under **Brand identity**, enter the new name in **Application name**. The name is shown in the browser tab title. If the logo appears too large or too small, adjust **Logo height (CSS)** with a value such as `2.25rem` or `36px`.
+Under **Brand identity**, enter the new name in **Application name**. The name is shown in the browser tab title; the sidebar and the top bar show the logo, not the name. If the logo appears too large or too small, adjust **Logo height (CSS)** with a value such as `2.25rem` or `36px`.
 
 ## 13. Change the logo
 
-Under **Logo**, **Current logo** shows the logo in use. Drag an image onto **Upload new logo**, or select the field to choose a file. To return to the default logo instead, switch on **Remove current logo**, or select **Remove logo** at the top of the page and confirm. Select **Save changes**; the new name and logo appear on the next page load.
+Under **Logo**, **Current logo** shows the logo in use, in its original proportions. Drag an image onto **Upload new logo**, or select the field to choose a file. The uploaded logo is shown on the light pages, such as the sign-in page; the sidebar and the top bar always show the white NAF logo on the green bar. To return to the default logo, switch on **Remove current logo**, or select **Remove logo** at the top of the page and confirm. Select **Save changes**; the new name and logo appear on the next page load.
 
 ## About colours
 
-The **Branding settings** page has no colour field. The colours are fixed in the application theme: the sidebar and top bar use the NAF Knowledge shade `#2D4A50`, the selected sidebar item `#415C63`, and buttons and badges `#4A6F77`. A change of colour requires a change to the application by its developer.
+The **Branding settings** page has no colour field. The colours are fixed in the application theme: the sidebar and the top bar use the dark NAF Knowledge green #2D4A50 and the selected sidebar item #415C63. Primary buttons, such as **Save changes**, use the panel green #4A6F77 with white labels. Neutral badges are cream, while success, warning and danger badges keep their green, amber and red. A change of colour requires a change to the application by its developer.
 
 ## Tips
 
-> **Tip:** Check the **Run history** after each scheduled night; a **Failed** row is the earliest sign that a destination or the server needs attention.
+> **Tip:** Check the **Run history** after each night; a **Failed** row is the earliest sign that a destination or the server requires attention.
 >
 > **Tip:** Keep at least one off-site destination active, so that a failure of this server does not lose the archive data.
 >
 > **Tip:** Switching **Active** off on a destination keeps its settings but excludes it from backups until you switch it on again.
->
-> **Tip:** The uploaded logo is used on light pages such as the sign-in page. The sidebar and top bar always show the white NAF Knowledge logo.
 
 ## Summary
 
-You can now confirm on the **Backup & Health** page that backups are healthy, run a backup on demand, manage and test backup destinations, and change the application name and logo. Colours remain fixed by the application theme.
+You can now confirm on the **Backup & Health** page that backups are healthy, run a backup on demand, set the retention policy, manage and test backup destinations, and change the application name and logo. Colours remain fixed by the application theme.

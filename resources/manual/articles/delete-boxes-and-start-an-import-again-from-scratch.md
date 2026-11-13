@@ -4,7 +4,7 @@ Deleting a box in Logistics Tool does not remove it: the box is archived, and a 
 
 ## Prerequisites
 
-- [ ] An account that may delete boxes. **Delete all documents** is shown only to administrators with full access.
+- [ ] An account that may delete boxes. **Delete all documents** is shown only to Super administrators.
 - [ ] The spreadsheet you intend to import again, checked and ready.
 - [ ] A recent backup, because a box deleted for good cannot be recovered from within the application.
 
@@ -14,7 +14,7 @@ Deleting a box in Logistics Tool does not remove it: the box is archived, and a 
 
 ## 1. Filter the boxes by box type
 
-Open **Boxes** and select **Filters**. Select **Add rule**, choose **Box type**, select the type of box you intend to import again (for example `RAS`) and select **Apply filters**. The list now shows only boxes of that type.
+Open **Boxes** and select **Filter**. Select **Add rule**, choose **Box type**, select the type of box you intend to import again (for example `RAS`) and select **Apply filters**. The list now shows only boxes of that type.
 
 ![Filter the boxes by box type](./block_filter-by-box-type.png)
 

@@ -9,13 +9,13 @@ This guide explains how to move around the Logistics Tool: the dashboard, the na
 
 ## 1. Review the dashboard
 
-Select **Dashboard** at the top of the sidebar. The **Overview** cards show the totals for **Documents**, **Active Batches**, **Boxes in archive**, **Authorities (Notaries)** and **Open flags**, and administrators also see a **Repositories** card. Below them, users permitted to read the audit trail see **Changes recorded per month**; then come the charts **Documents catalogued per month**, **Moves per month** and **Documents by Subseries**, followed by the **Recent Activity** table.
+Select **Dashboard** at the top of the sidebar. The **Overview** cards show the totals for **Documents**, **Active Batches**, **Boxes in archive**, **Authorities (Notaries)** and **Open flags**, and users with the Super administrator or Administrator role also see a **Repositories** card. Below them, users permitted to read the audit trail see **Changes recorded per month**; then come the charts **Documents catalogued per month**, **Moves per month** and **Documents by Subseries**, followed by the **Recent Activity** table.
 
 ![Review the dashboard](./block_review-the-dashboard.png)
 
-## 2. Use the navigation menu
+## 2. Use the navigation menu and the top bar
 
-Use the sidebar to open any area of the tool. The pages are arranged in the groups **Records**, **Classifications**, **Operations**, **Importation**, **Reports**, **My Account**, **Administration** and **Help**; select a group heading to collapse or expand it. You see only the groups and pages that your role permits.
+Use the sidebar to open any area of the tool. The pages are arranged in the groups **Records**, **Classifications**, **Operations**, **Importation**, **Reports**, **My Account**, **Administration** and **Help**; select a group heading to collapse or expand it. You see only the groups and pages that your role permits. In the top bar, select the bell icon (**Notifications**) to read your notifications, such as the message you receive when an import you started has finished.
 
 ## 3. Choose the active repository
 
@@ -23,7 +23,7 @@ In the top bar, open the repository list beside the **Search** field and select 
 
 ## 4. Set your default repository
 
-Open the user menu at the right of the top bar, select **Profile**, choose your usual repository in **Default repository** and select **Save changes**. The default repository is pre-filled in the **Repository** field when you create a record such as a batch, a location or a document, and imports use it unless another repository is selected in the top bar. The list offers only the repositories to which you are assigned.
+Open the user menu at the right of the top bar, select **Profile**, choose your usual repository in **Default repository** and select **Save changes**. The default repository is pre-selected as the repository of new records, such as a batch, a location or a document, and it is used by document and box imports started while **All repositories** is selected in the top bar. It does not change the repository selected when you sign in, as the top bar keeps your last choice. The list offers only the repositories to which you are assigned. If you change your **Email address** or enter a **New password**, you must also enter your **Current password** before you save.
 
 ![Set your default repository](./block_set-the-default-repository.png)
 
@@ -47,4 +47,4 @@ Under **My Account**, select **Preferences**. Choose the **Default table page si
 
 ## Summary
 
-You can now move between the dashboard and the areas of the sidebar, narrow your work to one repository from the top bar, set the repository used to pre-fill new records, open the user guide and save your personal preferences. Your preferences apply only to your own account and do not change any archival record.
+You can now move between the dashboard and the areas of the sidebar, read your notifications, narrow your work to one repository from the top bar, set the repository used for new records and imports, open the user guide and save your personal preferences. Your preferences apply only to your own account and do not change any archival record.

@@ -52,7 +52,7 @@ Select **Reports** in the sidebar. **Documents pending disinfestation** lists th
 
 ## Tips
 
-> **Tip:** The notification shown after each box action stays on screen until it is closed, and lists every skipped box with the reason.
+> **Tip:** The notification shown after each box action stays on screen until it is closed, and gives each reason for skipping with the number of boxes concerned, naming up to ten of them.
 >
 > **Tip:** Hover over a date in the **Disinfested Date** column to see the earlier rounds; **from box** under a date means that the document shows the date of its box.
 >

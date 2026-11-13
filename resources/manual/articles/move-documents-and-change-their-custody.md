@@ -6,7 +6,7 @@ The document actions move documents between boxes, take them out of a box, send 
 
 - [ ] A role that is permitted to edit documents. Without it, the document actions are not shown.
 - [ ] A role that is permitted to view documents, for **Export selected (CSV)**.
-- [ ] An Administrator account with full access, for **Move to repository (cross-tenant)**. Other roles do not see this action.
+- [ ] A Super administrator account, for **Move to repository (cross-tenant)**. Other roles do not see this action.
 - [ ] For moves and museum loans: the target box, and an active location, already recorded in the repository of the documents.
 
 ## 1. Select the documents and open Power actions
@@ -69,7 +69,7 @@ When the documents return, select **Mark disinfested**, check the **Disinfestati
 
 ## 13. Move documents to another repository
 
-Super-admin users only: on the **Documents** list, select **Move to repository (cross-tenant)**, choose the **Target repository**, enter the **Reason (required for audit log)** (at least 8 characters), leave **Clear box and batch on transferred documents** switched on unless there is a reason not to, and confirm. The documents, together with their flags and identifier history, move to the target repository, and their box and batch are cleared when the switch is on. The transfer is written to the audit log with the previous repository, the new repository and your reason.
+Super administrators only: on the **Documents** list, select **Move to repository (cross-tenant)**, choose the **Target repository**, enter the **Reason (required for audit log)** (at least 8 characters), leave **Clear box and batch on transferred documents** switched on unless there is a reason not to, and confirm. The documents, together with their flags and identifier history, move to the target repository, and their box and batch are cleared when the switch is on. The transfer is written to the audit log with the previous repository, the new repository and your reason.
 
 ## 14. Export the selected documents
 

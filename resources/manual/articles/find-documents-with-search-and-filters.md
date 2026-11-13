@@ -41,7 +41,7 @@ Select **Apply filters** to update the list. The rules are shown under **Active 
 
 ## 8. Choose, reorder and save the columns
 
-Select the **Column manager** button (the columns icon beside the **Filter** button), tick the columns you wish to see and clear the others, and drag a column by its handle to change its position. Select **Apply columns** to save the layout, which is kept for your user account the next time you sign in. Select **Reset** in the **Columns** panel to return to the standard layout.
+Select the **Column manager** button (the columns icon beside the **Filter** button), tick the columns you wish to see, such as **Subseries** or **Batch**, and clear the others. Drag a column by its handle to change its position. Select **Apply columns** to save the layout, which is kept for your user account the next time you sign in. Select **Reset** in the **Columns** panel to return to the standard layout.
 
 ## 9. Sort the list
 

@@ -4,13 +4,13 @@ Two-factor authentication adds a second check to your sign-in to the Logistics T
 
 ## Prerequisites
 
-- [ ] An active user account with your email address and password.
+- [ ] An active user account with your email address and password. A deactivated account cannot sign in, even with the correct password.
 - [ ] An authenticator app installed on your phone, such as 1Password, Authy, Google Authenticator or Microsoft Authenticator.
 - [ ] A secure place to store your recovery codes, such as a password manager.
 
 ## 1. Sign in with your password
 
-On the **Sign in** page, enter your **Email address** and **Password**, type the answer to the **Security check** question as a digit, and select **Sign in**. If you are signing in for the first time, the **Profile** page opens and asks you to change your password: enter it in **New password** and **Confirm new password**, enter your **Current password** and select **Save changes**.
+On the sign-in page, enter your **Email address** and **Password**, type the answer to the **Security check** question as a digit, and select **Sign in**. If you are signing in for the first time, the **Profile** page opens and asks you to change your password: enter it in **New password** and **Confirm new password**, enter your **Current password** and select **Save changes**.
 
 ## Password requirements
 
@@ -41,7 +41,7 @@ Under **Step 2**, type the code that your authenticator app currently displays a
 
 ## 6. Store your recovery codes
 
-Record the recovery codes listed in the highlighted panel before you leave the page, as this is the only time they are shown. Store them in a password manager, on paper, or in another place that only you can reach; each code can be used once if you lose access to your authenticator app.
+Record the recovery codes listed in the highlighted panel before you leave the page. They are shown only during this enrolment and do not appear again when you return to the page later. Store them in a password manager, on paper, or in another place that only you can reach; each code can be used once if you lose access to your authenticator app.
 
 ## 7. Sign in with a code
 
@@ -51,7 +51,11 @@ The next time you sign in, enter your email address, password and the answer to 
 
 ## 8. If you lose your phone
 
-On the **Two-factor challenge** page, select **Use a recovery code instead**, enter one of your unused codes in **Recovery code** and select **Sign in**. Once you are signed in, open the **Two-factor authentication** page and either select **Regenerate recovery codes** to replace your codes, or select **Disable two-factor authentication**, enter your **Password** and select **Confirm**, then enrol your new phone. If you have lost both your phone and your recovery codes, contact an administrator of the Logistics Tool for assistance.
+On the **Two-factor challenge** page, select **Use a recovery code instead**, enter one of your unused codes in **Recovery code** and select **Sign in**. Once you are signed in, open the **Two-factor authentication** page and either select **Regenerate recovery codes**, enter your **Password** and select **Confirm** to receive a new set of codes, or select **Disable two-factor authentication**, enter your **Password** and select **Confirm**, then enrol your new phone.
+
+## 9. If you have also lost your recovery codes
+
+Contact a Super administrator. On the **Users** page, the Super administrator selects **Reset two-factor authentication** for your account and confirms the reset, which is recorded in the **Audit log**. You can then sign in with your password alone and set up two-factor authentication again.
 
 ## Tips
 
@@ -63,8 +67,8 @@ On the **Two-factor challenge** page, select **Use a recovery code instead**, en
 >
 > **Tip:** Regenerating your recovery codes immediately invalidates the previous set, so replace any stored copies at the same time.
 >
-> **Tip:** Two-factor authentication is strongly recommended for every account with the Administrator role.
+> **Tip:** Two-factor authentication is strongly recommended for every account with the Administrator or Super administrator role.
 
 ## Summary
 
-Your account now requires a code from your authenticator app at every sign-in. Keep your recovery codes in a safe place, as they are the only way to sign in without your phone.
+Your account now requires a code from your authenticator app at every sign-in. Keep your recovery codes in a safe place, as they are the only way to sign in without your phone unless a Super administrator resets your two-factor authentication.
