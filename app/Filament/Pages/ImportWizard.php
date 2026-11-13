@@ -1558,14 +1558,14 @@ class ImportWizard extends Page
                         'volumes' => 'Volumes (the physical volumes inside a document)',
                     ])
                     ->descriptions([
-                        'accessions' => 'Primary path for new accessions and mass batch-list import. One row per document; every ancestor is resolved or created automatically. Depends on: Series (must pre-exist).',
+                        'accessions' => 'Primary path for new accessions and mass batch-list import. One row per document; every ancestor is resolved or created automatically. Depends on: Subseries (must already exist).',
                         'series' => 'Depends on: nothing — import this first.',
                         'authorities' => 'Depends on: nothing.',
-                        'locations' => 'Depends on: at least one Repository AND a matching Location Type — the "type" column must be one of the configured location types (built-in ones like room / shelf / showcase always work). Parents must be imported before their children (re-run after fixing order if parent not found).',
+                        'locations' => 'Depends on: a matching Location Type, and the repository code if the location belongs to one repository (left blank, the location is shared by every repository) — the "type" column must be one of the configured location types (built-in ones like room / shelf / showcase always work). Parents must be imported before their children (re-run after fixing order if parent not found).',
                         'batches' => 'Depends on: at least one Repository.',
-                        'boxes' => 'Depends on: at least one Batch. Import the RAS parent boxes first, then the boxes inside them. In "parent_box_number" put the parent RAS box\'s NUMBER (e.g. "1") or its barcode — every IN_SITU / NRA box needs a RAS parent. "Location" is a location CODE (e.g. "SHELF-A3"), not the room name.',
+                        'boxes' => 'Depends on: the Batches and the location codes named in the rows. Import the RAS parent boxes first, then the boxes inside them. In "parent_box_number" put the parent RAS box\'s NUMBER (e.g. "1") or its barcode — every IN_SITU / NRA box needs a RAS parent. "Location" is a location CODE (e.g. "SHELF-A3"), not the room name.',
                         'documentTypes' => 'Depends on: nothing. Import this BEFORE documents — the documents sheet links each row to a Document Type by its Identifier.',
-                        'documents' => 'Depends on: Series + Authorities + Batches + Boxes + Document Types.',
+                        'documents' => 'Depends on: Subseries + Authorities + the NRA Location codes used. Document Types are matched by identifier or name (an unknown one is kept as text); a missing batch is created, and the box is matched or created inside it.',
                         'volumes' => 'Depends on: Documents — each row is matched to its document by "Document Identifier", so import the documents first.',
                     ])
                     ->required()
