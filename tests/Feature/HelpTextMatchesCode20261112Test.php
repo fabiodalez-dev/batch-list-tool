@@ -38,6 +38,16 @@ it('the Import Wizard step 1 names Subseries and what a document row needs', fun
         ->not->toContain('Series → Authorities → Batches');
 });
 
+it('the Import Wizard option texts state the dependencies the importers apply', function (): void {
+    $html = Livewire::test(ImportWizard::class)->html();
+
+    expect($html)->not->toContain('Depends on: Series')
+        ->not->toContain('Series + Authorities + Batches + Boxes')
+        ->toContain('Depends on: Subseries (must already exist).')
+        ->toContain('Depends on: Subseries + Authorities + the NRA Location codes used.')
+        ->toContain('a missing batch is created, and the box is matched or created inside it');
+});
+
 it('the Audit log "About this page" describes filter rules, not From / To', function (): void {
     $body = PagePurposes::for(ListAudits::class)['body'] ?? '';
 
