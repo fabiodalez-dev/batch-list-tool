@@ -10,6 +10,7 @@ use App\Models\Scopes\RepositoryScope;
 use App\Models\Series;
 use App\Models\StockTakeEntry;
 use App\Models\User;
+use Database\Seeders\InitialDataSeeder;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Spatie\Permission\Models\Permission;
 use Spatie\Permission\Models\Role;
@@ -153,7 +154,7 @@ function bl_shieldPermissionNames(): array
 
 /**
  * Seed Shield permissions + assign them per role (admin = all, editor =
- * view/create/update/reorder, viewer = view_*). Mirrors
+ * view/create/update/reorder except on users and roles, viewer = view_*). Mirrors
  * InitialDataSeeder::run() without invoking shield:generate (which would
  * cost ~500ms per call).
  *
@@ -187,15 +188,7 @@ function bl_seedShieldPermissions(): void
 
     /** @var Role $editor */
     $editor = Role::findByName('editor', 'web');
-    $editor->syncPermissions(
-        collect($all)
-            ->filter(fn ($p) => str_starts_with((string) $p, 'view_')
-                || str_starts_with((string) $p, 'create_')
-                || str_starts_with((string) $p, 'update_')
-                || str_starts_with((string) $p, 'reorder_')
-                || $p === 'resolve_document_flag')
-            ->all()
-    );
+    $editor->syncPermissions(InitialDataSeeder::editorPermissions($all));
 
     /** @var Role $viewer */
     $viewer = Role::findByName('viewer', 'web');

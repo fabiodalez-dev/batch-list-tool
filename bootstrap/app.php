@@ -1,5 +1,6 @@
 <?php
 
+use App\Http\Middleware\EnsureUserIsActive;
 use Bepsvpt\SecureHeaders\SecureHeadersMiddleware;
 use Illuminate\Foundation\Application;
 use Illuminate\Foundation\Configuration\Exceptions;
@@ -36,6 +37,15 @@ return Application::configure(basePath: dirname(__DIR__))
                 | Request::HEADER_X_FORWARDED_PROTO
                 | Request::HEADER_X_FORWARDED_PREFIX,
         );
+
+        // A deactivated account is signed out on every web request, including
+        // the plain-`auth` routes outside the panel (security audit 2026-11-13).
+        $middleware->appendToGroup('web', EnsureUserIsActive::class);
+
+        // Fortify registers no `login` route (views = false), so a guest on a
+        // plain-`auth` route crashed with "Route [login] not defined" instead
+        // of being sent to the panel login.
+        $middleware->redirectGuestsTo(fn () => route('filament.admin.auth.login'));
 
         // Security baseline §4-§6: global HTTP security headers + CSP + honeypot
         $middleware->append([

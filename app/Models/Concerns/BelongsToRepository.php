@@ -4,6 +4,7 @@ namespace App\Models\Concerns;
 
 use App\Models\Repository;
 use App\Models\Scopes\RepositoryScope;
+use App\Support\ActiveRepository;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
 
@@ -80,6 +81,32 @@ trait BelongsToRepository
                     'Multi-tenant violation: cannot create '
                     . $model::class
                     . ' in repository_id=' . ($model->getAttribute('repository_id') ?? 'null')
+                    . ' — user only has access to: ' . implode(',', $allowedIds)
+                );
+            }
+        });
+
+        // The `updating` side of the same rule: a non-privileged user cannot
+        // move a record into a repository they do not belong to. The edit
+        // forms only offer the user's own repositories, but the submitted
+        // value was never checked against that list, so a hand-edited request
+        // re-stamped a Batch into another repository (security audit
+        // 2026-11-13). The allowed set is the one the read scope uses.
+        static::updating(function (Model $model) {
+            if (! $model->isDirty('repository_id') || self::callerChoseGlobalRepository($model)) {
+                return;
+            }
+
+            $allowedIds = ActiveRepository::allowedRepositoryIdsFor(auth()->user());
+            if ($allowedIds === null) {
+                return; // CLI / queue, or admin / super_admin
+            }
+
+            if (! in_array((int) $model->getAttribute('repository_id'), $allowedIds, true)) {
+                throw new \DomainException(
+                    'Multi-tenant violation: cannot move '
+                    . $model::class
+                    . ' to repository_id=' . ($model->getAttribute('repository_id') ?? 'null')
                     . ' — user only has access to: ' . implode(',', $allowedIds)
                 );
             }

@@ -6,7 +6,17 @@ use App\Filament\Resources\AuditResource\Pages;
 use App\Filament\Support\EqualsFirst;
 use App\Filament\Support\ListRules;
 use App\Filament\Support\MatchQueryBuilder;
+use App\Models\Accession;
+use App\Models\Batch;
+use App\Models\Box;
+use App\Models\BoxMovement;
+use App\Models\Document;
+use App\Models\DocumentFlag;
+use App\Models\ImportProfile;
+use App\Models\Location;
+use App\Models\ReportTemplate;
 use App\Models\User;
+use App\Support\ActiveRepository;
 use App\Support\DisplayDate;
 use App\Support\History\Timeline;
 use Filament\Actions\ViewAction;
@@ -29,13 +39,31 @@ use OwenIt\Auditing\Models\Audit;
  * No Create/Edit/Delete — audits are write-only via owen-it observers and a
  * tampering surface for the panel would defeat the audit guarantee.
  *
- * Multi-tenant scope (when PR #7 lands): non-admins should see only audits
- * that target Documents/Batches/etc visible under their RepositoryScope.
- * Implemented in getEloquentQuery() below — currently a no-op on main because
- * RepositoryScope is not yet on main.
+ * Multi-tenant scope: a user restricted to some repositories sees only the
+ * audits of records they can see themselves (see getEloquentQuery()).
  */
 class AuditResource extends Resource
 {
+    /**
+     * Audited models that carry a repository scope. A repository-restricted
+     * user sees an audit row only when its record is one of these and passes
+     * that model's own scope; audits of anything else (users, lookups,
+     * settings) stay with admin and super_admin.
+     *
+     * @var list<class-string<Model>>
+     */
+    public const array REPOSITORY_SCOPED_AUDITABLES = [
+        Accession::class,
+        Batch::class,
+        Box::class,
+        BoxMovement::class,
+        Document::class,
+        DocumentFlag::class,
+        ImportProfile::class,
+        Location::class,
+        ReportTemplate::class,
+    ];
+
     protected static ?string $model = Audit::class;
 
     protected static string|\BackedEnum|null $navigationIcon = 'heroicon-o-clipboard-document-list';
@@ -50,11 +78,16 @@ class AuditResource extends Resource
 
     public static function getEloquentQuery(): Builder
     {
-        // When BelongsToRepository / RepositoryScope land on main (PR #7),
-        // restrict non-admin users to audits on auditables they can see.
-        // For now: return the unscoped query — Audits are still gated by the
-        // Resource's authorization (super_admin / admin only).
-        return parent::getEloquentQuery();
+        $query = parent::getEloquentQuery();
+
+        // null = admin / super_admin (or no user): the whole log.
+        if (ActiveRepository::allowedRepositoryIdsFor(auth()->user()) === null) {
+            return $query;
+        }
+
+        // whereHasMorph runs each related model's global scopes, so the
+        // repository rule is the one the user already has on that model.
+        return $query->whereHasMorph('auditable', self::REPOSITORY_SCOPED_AUDITABLES);
     }
 
     public static function canCreate(): bool
