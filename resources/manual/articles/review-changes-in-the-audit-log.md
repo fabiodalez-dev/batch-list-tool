@@ -1,48 +1,63 @@
 # How to review changes in the audit log
 
-The **Audit log** records every change made to the records held in the Archive Tool: who made the change, when it was made, and the old and new value of each field. This guide explains how to open the log, narrow it with filters, inspect an individual entry and, for super-administrators, where the audit trail itself is configured.
+The audit log is a read-only record of the changes made in the Logistics Tool: who made each change, when it was made, which record it affected and the old and new value of every field. This guide explains how to find and filter entries, compare old and new values, export the results and, for Super administrators, configure the audit trail and its retention.
 
 ## Prerequisites
 
-- [ ] An account with permission to view the **Audit log**. By default every role (Super administrator, Administrator, ReadingRoom and General) has this permission. ReadingRoom and General users see only the entries of the records in their own repositories; Administrators and Super administrators see every entry.
-- [ ] The super-administrator role, if you need to change the **Audit settings**.
+- [ ] An account whose role includes the audit permission. If **Audit log** does not appear in the sidebar, ask your administrator for access.
+- [ ] Be aware of what your role shows: ReadingRoom and General users see only the entries of records in the repositories they can see, while Administrators and Super administrators see the whole log.
+- [ ] A Super administrator account, if you need to open the **Audit settings** page.
 
-## 1. Open the Audit log
+## 1. Open the audit log
 
-In the sidebar, under **Administration**, select **Audit log**. The table lists the most recent changes first, showing for each entry **When** it occurred, **Who** made it, the event, the **Model** and **Record** concerned, and a summary of the **Changes**.
+In the sidebar, under **Administration**, select **Audit log**. The page lists the most recent changes first, with the columns **When**, **Who**, **Event**, **Model**, **Record** and **Changes**; dates and times are shown as dd-mm-yyyy hh:mm:ss. The **Event** badge is coloured by type: green for created, amber for updated and red for deleted records.
 
-![Open the Audit log](./block_open-audit-log.png)
+![Open the audit log](./block_open-audit-log.png)
 
-## 2. Filter the entries
+## 2. Read the entries in the list
 
-Select the **Filter** icon above the table to open the **Filters** panel. Choose a user in **Who**, a record type in **Model** and an event in **Event**, then enter a date range in **From** and **To**. If required, enter a column name in **Field changed** or a number in **Record ID**, and select **Apply filters** to update the list.
+Each row is one recorded event. For an updated record, the **Changes** column lists every field that changed, each followed by its old value, an arrow and its new value, with linked records shown by name; where the text is shortened, hover over it to read it in full. A dash in **Who** means that the change was made by the system rather than by a user.
 
-## 3. Open an entry
+## 3. Add filter rules
 
-Select **View** at the end of a row to open that entry. The **Context** section shows when the change was made, the event, the user and their email address, the model and the **Record ID**, together with the IP address and the URL from which the change was made.
+Select **Filter** above the table to open the **Filters** panel, then select **Add rule** and choose what to filter on: **When**, **Who**, **Event**, **Model**, **Record ID** or **Field changed**. Complete the rule, for example **Who** with one or more users, **Event** with **Updated** or **Deleted**, or **When** with **Is after** and a date in dd-mm-yyyy format. The **Event** rule also lists the two-factor events: **Two-factor enabled**, **Two-factor disabled** and **Two-factor reset by a super administrator**.
 
-![Open an entry](./block_open-entry.png)
+![Add filter rules](./block_add-filter-rules.png)
 
-## 4. Compare the old and new values
+## 4. Combine the rules and apply them
 
-Select **Old values** to expand the list of each changed **Field** with its **Old value**, then select **New values** to see the **New value** recorded for the same fields. To open the record that was changed, select the number shown under **Record ID**.
+For every rule after the first, choose how it joins the rules above it: **AND**, **OR** or **AND NOT**. The rules are read from top to bottom, so a rule joined with **OR** widens the rules above it and a rule joined with **AND NOT** excludes its matches. Select **Apply filters** to update the list.
 
-## 5. Configure the audit trail (super-administrators)
+## 5. Open an entry and compare the values
 
-In the sidebar, under **Administration**, select **Audit settings**. Use **Enable audit trail** to turn the recording of changes on or off, and, if required, enter a value in **Retention threshold (days)**. Note that at present audit records are kept indefinitely, whatever value is entered in this field. Select **Save changes** to apply the settings.
+Select **View** on the row you wish to examine. The **Context** section shows when the change was made, the event, the user, the model and the **Record ID**, which links to the record where a page for it exists. Select the **Old values** and **New values** headings to expand them and compare each **Field** with its **Old value** and **New value**.
 
-![Configure the audit trail (super-administrators)](./block_audit-settings.png)
+![Open an entry and compare the values](./block_open-entry.png)
+
+## 6. Export the entries shown
+
+Select **Export CSV** at the top of the audit log. The file contains the entries currently shown, with your filters and search applied, as one row per changed field: when, who, event, record type, record, field, old value, new value and IP address.
+
+## 7. Export the history of a box or document
+
+To export the history of a single record, open the box or document and go to its **History** tab, which combines the audit trail with barcode, seal, location, box move, identifier and flag changes. Select **Export history (CSV)** to download the whole history of that record.
+
+## 8. Configure the audit trail (Super administrators only)
+
+Under **Administration**, select **Audit settings** and, in the **Audit configuration** section, use **Enable audit trail** to turn recording on or off; when it is off, no new entries are written and existing entries are kept. In **Retention threshold (days)**, enter how many days entries are kept: every night at 03:30 a cleanup deletes the entries older than that number of days, and 0 keeps every entry indefinitely. Select **Save changes** to store the settings, which take effect on the next request.
 
 ## Tips
 
-> **Tip:** The **Export CSV** button above the table downloads the entries currently shown, with one row per changed field, including the old and new values.
+> **Tip:** Entries in the audit log cannot be created, edited or deleted from the application, which preserves the integrity of the trail; only the nightly cleanup removes entries older than the retention threshold.
 >
-> **Tip:** When a summary in the **Changes** column is shortened, the complete text appears as a tooltip over the cell.
+> **Tip:** Before you lower the **Retention threshold (days)** value, use **Export CSV** to keep a copy of any older entries you still need, because the next nightly cleanup deletes them from the audit log.
 >
-> **Tip:** An entry for a newly created record has no **Old values** section, and an entry for a deleted record has no **New values** section.
+> **Tip:** Use the **Field changed** rule with a field name to find every change to one field, for example every change to a box location.
 >
-> **Tip:** Audit entries cannot be edited or deleted from the panel, which preserves the integrity of the trail. When **Enable audit trail** is off, no new entries are written, but existing entries are retained.
+> **Tip:** The **Record ID** column is hidden by default, as are the IP address and user agent columns; show them from the column manager above the table.
+>
+> **Tip:** The **Old values** and **New values** sections show values as they are stored, so a linked record may appear as its number; the **Changes** column in the list shows the same change with the record name.
 
 ## Summary
 
-The **Audit log** shows who changed which record and when, the filters narrow it to a user, record type, event or period, and each entry lists the old and new value of every changed field. Super-administrators control whether changes are recorded, and for how long they are kept, on the **Audit settings** page.
+Open **Audit log** under **Administration**, narrow the list with filter rules, select **View** to compare old and new values, and use **Export CSV** or **Export history (CSV)** to keep a copy. Super administrators turn recording on or off and set how long entries are kept on the **Audit settings** page.
