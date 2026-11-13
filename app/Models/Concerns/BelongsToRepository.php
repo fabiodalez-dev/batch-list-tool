@@ -4,6 +4,7 @@ namespace App\Models\Concerns;
 
 use App\Models\Repository;
 use App\Models\Scopes\RepositoryScope;
+use App\Support\ActiveRepository;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
 
@@ -80,6 +81,38 @@ trait BelongsToRepository
                     'Multi-tenant violation: cannot create '
                     . $model::class
                     . ' in repository_id=' . ($model->getAttribute('repository_id') ?? 'null')
+                    . ' — user only has access to: ' . implode(',', $allowedIds)
+                );
+            }
+        });
+
+        // The `updating` side of the same rule: a non-privileged user cannot
+        // move a record into a repository they do not belong to. The edit
+        // forms only offer the user's own repositories, but the submitted
+        // value was never checked against that list, so a hand-edited request
+        // re-stamped a Batch into another repository (security audit
+        // 2026-11-13). The allowed set is the one the read scope uses.
+        static::updating(function (Model $model) {
+            if (! $model->isDirty('repository_id')) {
+                return;
+            }
+
+            $allowedIds = ActiveRepository::allowedRepositoryIdsFor(auth()->user());
+            if ($allowedIds === null) {
+                return; // CLI / queue, or admin / super_admin
+            }
+
+            // Global (NULL) records are shared by every repository: a
+            // restricted user neither publishes one of theirs as global nor
+            // pulls a shared one into their repository.
+            $from = $model->getOriginal('repository_id');
+            $to = $model->getAttribute('repository_id');
+
+            if ($from === null || $to === null || ! in_array((int) $to, $allowedIds, true)) {
+                throw new \DomainException(
+                    'Multi-tenant violation: cannot move '
+                    . $model::class
+                    . ' to repository_id=' . ($model->getAttribute('repository_id') ?? 'null')
                     . ' — user only has access to: ' . implode(',', $allowedIds)
                 );
             }

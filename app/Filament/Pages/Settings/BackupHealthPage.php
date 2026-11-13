@@ -7,6 +7,7 @@ namespace App\Filament\Pages\Settings;
 use App\Actions\Backup\RestoreDatabase;
 use App\Filament\Concerns\ExplainsPage;
 use App\Filament\Resources\BackupDestinationResource;
+use App\Jobs\RunBackupFromBackupCenter;
 use App\Models\BackupRun;
 use App\Settings\BackupSettings;
 use App\Support\DisplayDate;
@@ -19,7 +20,6 @@ use Filament\Pages\Page;
 use Filament\Schemas\Components\Section;
 use Filament\Schemas\Schema;
 use Illuminate\Support\Collection;
-use Illuminate\Support\Facades\Artisan;
 use Illuminate\Support\Facades\Auth;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Storage;
@@ -35,8 +35,8 @@ use Illuminate\Validation\ValidationException;
  *     (listBackups()), each with a gated Download link and a confirmed Delete
  *     Livewire action — both guarded against directory traversal.
  *   - On-demand "Run backup now" / "Run DB-only" / "Run files-only" header
- *     actions that queue the spatie/laravel-backup `backup:run` command and
- *     record a "running" BackupRun row.
+ *     actions that record a "running" BackupRun row and queue the
+ *     spatie/laravel-backup `backup:run` command that completes it.
  *   - A run-history table (last ~15 BackupRun rows).
  *   - A form to persist the retention settings from BackupSettings
  *     (keep_daily / keep_weekly / keep_monthly).
@@ -412,7 +412,7 @@ class BackupHealthPage extends Page
                 ->modalDescription('This will queue a full backup (files + database). The backup runs in the background — you can navigate away safely.')
                 ->modalSubmitActionLabel('Yes, run backup')
                 ->visible(fn () => static::canAccess())
-                ->action(fn () => $this->queueBackup('full', 'backup:run')),
+                ->action(fn () => $this->queueBackup('full')),
 
             Action::make('runDbBackup')
                 ->label('Run DB-only')
@@ -423,7 +423,7 @@ class BackupHealthPage extends Page
                 ->modalDescription('This will queue a backup of the database only (no files). It runs in the background.')
                 ->modalSubmitActionLabel('Yes, back up the database')
                 ->visible(fn () => static::canAccess())
-                ->action(fn () => $this->queueBackup('db', 'backup:run', ['--only-db' => true])),
+                ->action(fn () => $this->queueBackup('db', ['--only-db' => true])),
 
             Action::make('runFilesBackup')
                 ->label('Run files-only')
@@ -434,7 +434,7 @@ class BackupHealthPage extends Page
                 ->modalDescription('This will queue a backup of the application files only (no database). It runs in the background.')
                 ->modalSubmitActionLabel('Yes, back up the files')
                 ->visible(fn () => static::canAccess())
-                ->action(fn () => $this->queueBackup('files', 'backup:run', ['--only-files' => true])),
+                ->action(fn () => $this->queueBackup('files', ['--only-files' => true])),
 
             Action::make('save')
                 ->label('Save retention')
@@ -445,21 +445,22 @@ class BackupHealthPage extends Page
     }
 
     /**
-     * Queue a backup run via Artisan and record a "running" BackupRun row.
+     * Record a "running" BackupRun row and queue the backup that completes it.
+     *
+     * RunBackupFromBackupCenter runs backup:run and writes the outcome (status,
+     * finish time, size, message) onto this same row.
      *
      * @param 'full'|'db'|'files' $type
      * @param array<string, mixed> $parameters
      */
-    protected function queueBackup(string $type, string $command, array $parameters = []): void
+    protected function queueBackup(string $type, array $parameters = []): void
     {
         abort_unless(static::canAccess(), 403);
-
-        Artisan::queue($command, $parameters);
 
         /** @var array<int, string> $disks */
         $disks = (array) config('backup.backup.destination.disks', ['local']);
 
-        BackupRun::create([
+        $run = BackupRun::create([
             'type' => $type,
             'destination_disk' => $disks[0] ?? 'local',
             'status' => 'running',
@@ -467,6 +468,8 @@ class BackupHealthPage extends Page
             'triggered_by_user_id' => Auth::id(),
             'message' => 'Queued from Backup Center',
         ]);
+
+        RunBackupFromBackupCenter::dispatch($run->id, $parameters);
 
         $label = match ($type) {
             'db' => 'Database backup queued',
@@ -476,7 +479,7 @@ class BackupHealthPage extends Page
 
         Notification::make()
             ->title($label)
-            ->body('The backup has been dispatched to the queue. Check the run history once the queue worker processes it.')
+            ->body('The backup has been dispatched to the queue. Its line in the run history shows Running until it finishes, then Success or Failed.')
             ->success()
             ->send();
 

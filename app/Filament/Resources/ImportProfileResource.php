@@ -297,7 +297,7 @@ class ImportProfileResource extends Resource
     public static function importTypeOptions(): array
     {
         return [
-            ImportProfile::TYPE_SERIES => 'Series',
+            ImportProfile::TYPE_SERIES => 'Subseries',
             ImportProfile::TYPE_AUTHORITIES => 'Authorities (notaries)',
             ImportProfile::TYPE_BATCHES => 'Batches',
             ImportProfile::TYPE_BOXES => 'Boxes',

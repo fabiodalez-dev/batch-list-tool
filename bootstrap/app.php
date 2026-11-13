@@ -1,5 +1,6 @@
 <?php
 
+use App\Http\Middleware\EnsureUserIsActive;
 use Bepsvpt\SecureHeaders\SecureHeadersMiddleware;
 use Illuminate\Foundation\Application;
 use Illuminate\Foundation\Configuration\Exceptions;
@@ -16,26 +17,32 @@ return Application::configure(basePath: dirname(__DIR__))
     ->withMiddleware(function (Middleware $middleware) {
         // URL portability — the app must serve correctly from ANY URL: root
         // domain, sub-domain, or sub-folder, including behind a reverse proxy
-        // (LiteSpeed/cPanel, nginx, a load balancer). Trusting the proxy's
-        // X-Forwarded-* headers lets Laravel reconstruct the real external
-        // scheme / host / port / path-prefix, so every generated link, asset
-        // URL, redirect and cookie matches the address the user actually typed
-        // — without hard-coding APP_URL per deployment.
+        // (nginx, a load balancer, an HTTPS terminator). The X-Forwarded-*
+        // headers below let Laravel rebuild the real external scheme / host /
+        // port / path prefix, so links, redirects and cookies match the address
+        // the user typed. X-Forwarded-Prefix covers a sub-folder mount.
         //
-        // X-Forwarded-Prefix is included so a sub-folder mount (e.g.
-        // https://example.org/archive/) resolves routes + assets under that
-        // prefix. We trust '*' because the application is only reachable
-        // through its fronting proxy in every supported deployment (cPanel/
-        // LiteSpeed, nginx, a load balancer). To restrict trust to specific
-        // proxy IPs/CIDRs, replace '*' with the list here.
+        // They are honoured ONLY from the proxies listed in TRUSTED_PROXIES
+        // (config/trustedproxy.php, read by the middleware on each request).
+        // Empty, the default, trusts nobody: trusting every client let anyone
+        // forge the host of password-reset links and the IP used by the login
+        // throttle and the audit log (security audit 2026-11-13).
         $middleware->trustProxies(
-            at: '*',
             headers: Request::HEADER_X_FORWARDED_FOR
                 | Request::HEADER_X_FORWARDED_HOST
                 | Request::HEADER_X_FORWARDED_PORT
                 | Request::HEADER_X_FORWARDED_PROTO
                 | Request::HEADER_X_FORWARDED_PREFIX,
         );
+
+        // A deactivated account is signed out on every web request, including
+        // the plain-`auth` routes outside the panel (security audit 2026-11-13).
+        $middleware->appendToGroup('web', EnsureUserIsActive::class);
+
+        // Fortify registers no `login` route (views = false), so a guest on a
+        // plain-`auth` route crashed with "Route [login] not defined" instead
+        // of being sent to the panel login.
+        $middleware->redirectGuestsTo(fn () => route('filament.admin.auth.login'));
 
         // Security baseline §4-§6: global HTTP security headers + CSP + honeypot
         $middleware->append([

@@ -5,12 +5,16 @@
             <x-slot name="description">A 6-digit TOTP code from your authenticator app is required at every sign-in. To turn this off use the "Disable 2FA" header action above.</x-slot>
 
             <div class="prose dark:prose-invert max-w-none">
-                <p class="text-sm text-gray-500 dark:text-gray-400">Recovery codes — store these somewhere safe (password manager, printed in a locked drawer). Each code is single-use; you can regenerate the set by disabling and re-enabling 2FA.</p>
-                <ul class="font-mono text-sm">
-                    @foreach ($this->recoveryCodes() as $code)
-                        <li>{{ $code }}</li>
-                    @endforeach
-                </ul>
+                @if ($this->recoveryCodes() !== [])
+                    <p class="text-sm text-gray-500 dark:text-gray-400">Recovery codes — store these somewhere safe (password manager, printed in a locked drawer). Each code is single-use. They are shown only now: once you leave this page they cannot be displayed again.</p>
+                    <ul class="font-mono text-sm">
+                        @foreach ($this->recoveryCodes() as $code)
+                            <li>{{ $code }}</li>
+                        @endforeach
+                    </ul>
+                @else
+                    <p class="text-sm text-gray-500 dark:text-gray-400">Recovery codes are shown only once, right after you confirm the code. For a new set, use "Regenerate recovery codes" on the Two-factor authentication page: it asks for your password.</p>
+                @endif
             </div>
         </x-filament::section>
     @elseif ($this->isEnabledButUnconfirmed())

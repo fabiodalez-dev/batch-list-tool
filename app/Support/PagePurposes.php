@@ -86,7 +86,7 @@ Changes take effect after you press “Save changes”. The default-repository c
             EditProfile::class => [
                 'body' => 'Your account Profile page. Here you maintain your own identity in the system — name and email — and change your password (the current password is required to confirm any sensitive change). Because every edit, box move and disinfestation entry is written to the audit trail against your user, keeping this record accurate is what makes “who changed what” trustworthy.
 
-This page also holds your Default repository: the archive that is pre-selected when you open the panel. The list is restricted to repositories you are actually assigned to, and the server re-checks that constraint on save — you cannot set a repository you do not belong to. This keeps each repository\'s boxes, locations and records properly separated.
+This page also holds your Default repository: the repository pre-selected for new records, and the one document and box imports use when "All repositories" is selected in the top bar. It does not decide which repository is selected when you sign in; the top bar keeps your last choice. The list is restricted to repositories you are actually assigned to, and the server re-checks that constraint on save — you cannot set a repository you do not belong to. This keeps each repository\'s boxes, locations and records properly separated.
 
 Profile changes affect only your account, never the archival data itself.',
                 'refs' => 'RFQ §3.3 (User Roles) · §3.1.5 (Full audit trail — User) · §3.5 (Multi-Repository / provenance & data separation) · §3.4.3 (Usability)',
@@ -154,7 +154,7 @@ The filters intentionally mirror the standalone flags dashboard so you don\'t ha
                 'refs' => 'RFQ §3.1.12 (replace colour-coding with searchable/filterable/reportable flags) · Appendix 2 (xviii) · §3.2.2 (export, save templates)',
             ],
             RasReconciliationReport::class => [
-                'body' => 'Upload the export RAS sends (Excel or CSV) and the system matches it with our RAS boxes: barcode (Column 1), RAS reference ARK/box-batch (Column 4, e.g. ARK/054-4 is box 54 of batch 4) and status IN / OUT / PERM_OUT (Column 6). Only the rows that do not tally are listed: status differs, barcode differs, batch / box differs, only in RAS, only in our system. Untick "Discrepancies only" to see the reconciled rows too.
+                'body' => 'Upload the export RAS sends (Excel or CSV) and the system matches it with our RAS boxes: barcode (Column 1), RAS reference ARK/box-batch (Column 4, e.g. ARK/123-9 is box 123 of batch 9) and status IN / OUT / PERM_OUT (Column 6). Only the rows that do not tally are listed: status differs, barcode differs, batch / box differs, only in RAS, only in our system. Untick "Discrepancies only" to see the reconciled rows too.
 
 An earlier barcode of one of our boxes (kept in its barcode history) is matched as well, with the status it had when it was replaced. After correcting our records, press "Compare again" to recheck the same upload. The latest upload per repository is kept, with who uploaded it and when.',
                 'refs' => 'Client feedback 2026-11-10, Report 1 (RAS - NRA reconciliation) · §3.2.2 (export)',
@@ -184,7 +184,7 @@ Per document lists every document with its catalogue identifier, Actual Authorit
                 'refs' => 'Client feedback 2026-11-10 (Report 2) · NAF Queries Q4 · RFQ §3.2.2 (export, save templates)',
             ],
             AuditSettingsPage::class => [
-                'body' => 'This page configures the audit trail itself. A super-administrator can turn audit writing on or off (when off, no new audit records are written but every existing record is preserved) and set the retention threshold in days (0 keeps records indefinitely). It is the control panel behind the read-only Audit log, governing how the §3.1.5 "who changed what, when" history is captured and how long it is kept.
+                'body' => 'This page configures the audit trail itself. A super-administrator can turn audit writing on or off (when off, no new audit records are written but every existing record is preserved) and set the retention threshold in days: every night the records older than that are deleted (0 keeps records indefinitely). It is the control panel behind the read-only Audit log, governing how the §3.1.5 "who changed what, when" history is captured and how long it is kept.
 
 Keeping a reliable, long-lived audit trail is essential to the NRA workflow, because every box movement, barcode status change and disinfestation/cataloguing edit must remain reconstructable for compliance long after migration. The retention threshold lets the institution balance that obligation against storage growth.
 
@@ -200,7 +200,7 @@ Restore overwrites the live database from a chosen archive and is therefore supe
                 'refs' => 'RFQ §3.4.2 (daily automated backups) · §3.4.1 (scalable / performance) · §3.3 (Administrator / super_admin gating)',
             ],
             BrandingPage::class => [
-                'body' => 'Customise the look of the panel without touching code: set the application name (shown in the header and browser tab), upload a logo, set its display height, and remove the logo to fall back to the brand name as text. Changes are saved via settings and applied on the next page load.
+                'body' => 'Customise the look of the panel without touching code: set the application name (shown in the browser tab title), upload a logo, set its display height, and remove the uploaded logo to go back to the default NAF logo. The sidebar and the top bar always show the white NAF logo; the logo set here is the one on the light pages, such as the sign-in page. Changes are saved via settings and applied on the next page load.
 
 This supports the multi-archive nature of the system — a repository or archive that adopts the tool can present it under its own identity. The uploaded logo is served locally from the public disk (no external CDN), in line with the project\'s local-assets policy. Restricted to Administrators (super_admin / admin); other roles are refused.',
                 'refs' => 'RFQ §3.5 (multi-repository / multi-archive adoption) · §3.3 (Administrator-only) · §3.4.3 (usability)',
@@ -224,7 +224,7 @@ For Notary Accessions a batch is allocated per accession (in the 30+ range), and
 
 In the NRA workflow the audit trail is the accountability backbone across the whole lifecycle — acquisition, storage, disinfestation, cataloguing and migration. Because the legacy spreadsheet had no way to track who edited a cell, every box movement, barcode status change (IN / OUT / PERM OUT), disinfestation date and metadata edit is now captured automatically here so the institution can reconstruct the provenance of any decision.
 
-The log is write-only: there is no Create, Edit or Delete and no bulk delete — audit records are produced automatically by the model observers and cannot be altered from the panel, which is what makes them trustworthy. Use the Event, Model and date-range (From / To) filters to narrow the list, and sort by When (newest first by default) when investigating a specific incident.',
+The log is write-only: there is no Create, Edit or Delete and no bulk delete — audit records are produced automatically by the model observers and cannot be altered from the panel, which is what makes them trustworthy. Narrow the list with filter rules (When, Who, Event, Model, Record ID, Field changed, IP address, User agent), and sort by When (newest first by default) when investigating a specific incident. Records older than the retention threshold set on Audit settings are deleted every night; with 0 they are kept.',
                 'refs' => 'RFQ §3.1.5 (full audit trail: old value, new value, user, timestamp) · §2.1 (auditable database) · §2.3 (legacy: no audit trail) · §3.5.1 (audit history per repository)',
             ],
             ListAuthorities::class => [
@@ -236,7 +236,7 @@ The register can be populated individually, or bulk-imported from the Authoritie
                 'refs' => 'RFQ §3.1.1, §3.1.3, §3.1.11 · Appendix 2: Catalogue Identifier (Creator) · Glossary: Creator, Identifier',
             ],
             ListBackupDestinations::class => [
-                'body' => 'Configure where the daily automated backups are sent. Each destination has a friendly name, a storage type (Local disk, FTP, SFTP/SSH or S3-compatible) and the matching connection fields (host, port, credentials, root path). Exactly one destination can be the default — the primary target highlighted in the Backup Center.
+                'body' => 'Configure where the daily automated backups are sent. Each destination has a friendly name, a storage type (Local disk, FTP, SFTP/SSH or S3-compatible) and the matching connection fields (host, port, credentials, root path). One destination can be marked as the default (the Default column of the list); it does not change where backups go, as every active destination receives each backup.
 
 This underpins the RFQ non-functional requirement for daily automated backups: backups can be written off-site (FTP/SFTP/S3) so a failure of this server does not lose the notarial register data. Secret fields (password, passphrase, secret key) are write-only — they are stored encrypted, never sent back to the browser on edit, and only overwritten when you actually type a new value; leave them blank to keep the current credential. Inactive destinations are ignored by backups but kept for later.
 
@@ -264,7 +264,7 @@ This page is mostly a read/audit view: most movements are created through the Do
 
 Each box carries a type, batch, barcode and barcode status (IN / OUT / PERM OUT), an optional seal number (recorded for Batch 50 wills boxes), a current NRA location, and a destroyed flag. Box and barcode changes are versioned: the page exposes the box barcode history (old/new barcode, status from/to, reason, timestamp) and the seal number history, satisfying the requirement to preserve movement and barcode provenance.
 
-Key rules enforced here: In Situ boxes (NRA/MAV/STVC) must reference a parent RAS box unless explicitly marked as provenance-unknown; MAV and STVC are legacy types and are flagged as such; a box/document cannot be set PERM OUT without a disinfestation date; and once every document in a box is catalogued the box may be marked destroyed. New rows can be created individually or bulk-imported from Excel/CSV (with a downloadable template).',
+Key rules enforced here: In Situ boxes (NRA/MAV/STVC) must reference a parent RAS box unless explicitly marked as provenance-unknown; MAV and STVC are legacy types and are flagged as such; a box can be set PERM OUT without a disinfestation date (the rule was relaxed in August 2026 so legacy perm-out boxes could be loaded), while the "Mark PERM_OUT" action on the Documents list still asks for one on every selected document; and once every document in a box is catalogued the box may be marked destroyed. New rows can be created individually or bulk-imported from Excel/CSV (with a downloadable template).',
                 'refs' => 'RFQ §3.1.1, §3.1.6, §3.1.7, §3.1.10 · Appendix 1 rules 1, 3 · Appendix 2: RAS Box, In Situ Box, Box History, Barcodes, Box Destroyed, Current Box · Glossary: Box, RAS Box, In Situ Box, Barcode Status',
             ],
             ListDocumentFlags::class => [

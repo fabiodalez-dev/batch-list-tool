@@ -13,6 +13,7 @@ use Filament\Pages\Page;
 use Filament\Schemas\Schema;
 use Illuminate\Contracts\Encryption\DecryptException;
 use Illuminate\Contracts\View\View;
+use Illuminate\Support\Facades\Hash;
 use Laravel\Fortify\Actions\ConfirmTwoFactorAuthentication;
 use Laravel\Fortify\Actions\DisableTwoFactorAuthentication;
 use Laravel\Fortify\Actions\EnableTwoFactorAuthentication;
@@ -52,6 +53,17 @@ class TwoFactorEnrolment extends Page
      * @var array<string, mixed>
      */
     public array $data = [];
+
+    /**
+     * Recovery codes revealed once, right after the code is confirmed. They
+     * are not read back from the account on a later visit: a signed-in
+     * session alone must not be enough to see them (security audit
+     * 2026-11-13). A new set comes from "Regenerate recovery codes" on the
+     * Two-factor authentication page, which asks for the password.
+     *
+     * @var array<int, string>|null
+     */
+    public ?array $shownRecoveryCodes = null;
 
     protected string $view = 'filament.pages.auth.two-factor-enrolment';
 
@@ -107,6 +119,8 @@ class TwoFactorEnrolment extends Page
         // ValidationException already propagates naturally to Livewire +
         // surfaces under the `data.code` form field — no try/catch needed.
         $confirm($this->user(), (string) ($this->data['code'] ?? ''));
+
+        $this->shownRecoveryCodes = $this->user()->refresh()->recoveryCodes();
 
         Notification::make()
             ->title('Two-factor authentication confirmed')
@@ -176,19 +190,7 @@ class TwoFactorEnrolment extends Page
      */
     public function recoveryCodes(): array
     {
-        if (! $this->isConfirmed()) {
-            return [];
-        }
-
-        try {
-            $decrypted = decrypt($this->user()->two_factor_recovery_codes);
-        } catch (DecryptException) {
-            return [];
-        }
-
-        $decoded = json_decode((string) $decrypted, true);
-
-        return is_array($decoded) ? $decoded : [];
+        return $this->shownRecoveryCodes ?? [];
     }
 
     protected function getHeaderActions(): array
@@ -215,9 +217,25 @@ class TwoFactorEnrolment extends Page
                 ->icon('heroicon-o-lock-open')
                 ->visible(fn (): bool => $this->isEnabled())
                 ->requiresConfirmation()
-                ->modalDescription('Disabling 2FA removes the TOTP secret and recovery codes. You will not be challenged for a code at next login.')
-                ->action(function (DisableTwoFactorAuthentication $disable): void {
+                ->modalDescription('Enter your password to confirm. Disabling 2FA removes the TOTP secret and recovery codes. You will not be challenged for a code at next login.')
+                ->schema([
+                    TextInput::make('password')
+                        ->label('Password')
+                        ->password()
+                        ->required(),
+                ])
+                ->action(function (array $data, DisableTwoFactorAuthentication $disable): void {
+                    if (! Hash::check((string) ($data['password'] ?? ''), (string) $this->user()->password)) {
+                        Notification::make()
+                            ->title('Incorrect password.')
+                            ->danger()
+                            ->send();
+
+                        return;
+                    }
+
                     $disable($this->user());
+                    $this->shownRecoveryCodes = null;
                     Notification::make()
                         ->title('2FA disabled')
                         ->success()

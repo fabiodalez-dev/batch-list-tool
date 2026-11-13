@@ -9,6 +9,7 @@ use App\Filament\Support\MatchQueryBuilder;
 use App\Filament\Support\SearchableSelects;
 use App\Models\Document;
 use App\Models\Volume;
+use App\Support\ActiveRepository;
 use App\Support\ColumnLabels\ColumnLabels;
 use App\Support\CustomFields\CustomFieldSchema;
 use App\Support\DisplayDate;
@@ -324,6 +325,16 @@ class VolumeResource extends Resource
      */
     public static function getEloquentQuery(): Builder
     {
-        return parent::getEloquentQuery()->with(['customFieldValues.definition', 'document']);
+        $query = parent::getEloquentQuery()->with(['customFieldValues.definition', 'document']);
+
+        // A volume has no repository of its own: it is in its document's.
+        // A repository-restricted user sees a volume only when they can see
+        // its document (Document's own scope runs inside whereHas). Admin and
+        // super_admin keep every volume (security audit 2026-11-13).
+        if (ActiveRepository::allowedRepositoryIdsFor(auth()->user()) === null) {
+            return $query;
+        }
+
+        return $query->whereHas('document', fn (Builder $document) => $document->withTrashed());
     }
 }

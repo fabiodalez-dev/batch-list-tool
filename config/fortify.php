@@ -171,7 +171,11 @@ return [
         // Features::registration(),
         Features::resetPasswords(),
         // Features::emailVerification(),
-        Features::updateProfileInformation(),
+        // Off: PUT /user/profile-information changed the account e-mail (where
+        // reset links go) without the current password, and nothing in the
+        // application calls it. The panel profile page (EditProfile) is the
+        // only way to edit name and e-mail, and it asks for the password.
+        // Features::updateProfileInformation(),
         Features::updatePasswords(),
         Features::twoFactorAuthentication([
             'confirm' => true,

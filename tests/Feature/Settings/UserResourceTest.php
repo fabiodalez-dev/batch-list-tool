@@ -142,7 +142,7 @@ it('exposes all role labels via roleOptions when acting as super_admin', functio
     $options = UserResource::roleOptions();
 
     expect($options)->toMatchArray([
-        'super_admin' => 'Administrator',
+        'super_admin' => 'Super administrator',
         'admin' => 'Administrator',
         'editor' => 'ReadingRoom',
         'viewer' => 'General',

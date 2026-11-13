@@ -142,7 +142,7 @@ class DocumentsByCreatorReport extends Page implements HasTable
                     ->query(fn (Builder $query, array $data): Builder => self::scopeViaDocumentColumn($query, 'repository_id', $data['values'] ?? [])),
 
                 Tables\Filters\SelectFilter::make('series_id')
-                    ->label('Series')
+                    ->label('Subseries')
                     ->options(fn (): array => self::seriesOptions())
                     ->multiple()
                     ->searchable()

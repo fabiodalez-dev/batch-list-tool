@@ -15,7 +15,7 @@ use PhpOffice\PhpSpreadsheet\Shared\Date as ExcelDate;
  *
  * The sample is an Excel grid with the headers "Column1".."Column8":
  *   Column1  barcode          AA30928
- *   Column4  RAS reference    ARK/054-4  = box 54 of batch 4
+ *   Column4  RAS reference    ARK/123-9  = box 123 of batch 9
  *   Column6  status           In / Out / Perm Out
  *   Column7  date             01/14/2019 (m/d/Y)
  *   Column8  container type   PREMIUM / XLPREMIUM / CONTAINER
@@ -41,7 +41,7 @@ final class RasExport
     private const int HEADER_SCAN_ROWS = 10;
 
     /**
-     * "ARK/054-4" → ['box' => '54', 'batch' => '4']. The box can carry a
+     * "ARK/123-9" → ['box' => '123', 'batch' => '9']. The box can carry a
      * letter ("ARK/9A-12"), the prefix any case ("Ark/", "ark/"), and the
      * numbers leading zeros. Anything else gives null.
      *

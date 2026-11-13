@@ -52,7 +52,7 @@ This document covers:
 | Git              | `/usr/local/cpanel/3rdparty/lib/path-bin/git` (2.48.2)         |
 | Node / npm       | NOT installed - Filament assets must be pre-built and committed |
 | Database         | MySQL `archivet_nra` (4.7 MB), user `archivet_nrauser`         |
-| TLS              | terminated at the cPanel reverse proxy (X-Forwarded-Proto)     |
+| TLS              | terminated by LiteSpeed itself, no proxy or CDN in front (`TRUSTED_PROXIES` stays empty, see `reverse-proxy.md`) |
 
 ### 1.1. Layout: Laravel directly in `public_html/`
 
@@ -283,6 +283,7 @@ APP_KEY=                           # filled by `php artisan key:generate`
 APP_DEBUG=false
 APP_URL=https://archivetool.eu
 APP_TIMEZONE=Europe/Malta
+TRUSTED_PROXIES=                   # empty: LiteSpeed terminates HTTPS, nothing in front (docs/deploy/reverse-proxy.md)
 
 LOG_CHANNEL=stack
 LOG_LEVEL=warning

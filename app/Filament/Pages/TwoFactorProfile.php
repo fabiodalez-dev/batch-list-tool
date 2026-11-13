@@ -180,8 +180,23 @@ class TwoFactorProfile extends Page
             ->visible(fn (): bool => (bool) $this->user()->two_factor_confirmed_at)
             ->requiresConfirmation()
             ->modalHeading('Regenerate recovery codes')
-            ->modalDescription('Your old recovery codes will stop working immediately. Save the new codes somewhere safe before leaving this page.')
-            ->action(function (): void {
+            ->modalDescription('Enter your password to confirm. Your old recovery codes will stop working immediately. Save the new codes somewhere safe before leaving this page.')
+            ->form([
+                TextInput::make('password')
+                    ->label('Password')
+                    ->password()
+                    ->required(),
+            ])
+            ->action(function (array $data): void {
+                if (! Hash::check($data['password'] ?? '', (string) $this->user()->password)) {
+                    Notification::make()
+                        ->title('Incorrect password.')
+                        ->danger()
+                        ->send();
+
+                    return;
+                }
+
                 app(GenerateNewRecoveryCodes::class)($this->user());
 
                 $this->user()->refresh();

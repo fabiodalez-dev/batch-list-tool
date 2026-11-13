@@ -66,3 +66,15 @@ it('returns the parent Eloquent query unmodified (placeholder for future tenant 
     $count = Audit::count();
     expect(AuditResource::getEloquentQuery()->count())->toBe($count);
 });
+
+it('the list page heading matches the sidebar label', function () {
+    $admin = User::factory()->create(['is_active' => true]);
+    $admin->assignRole('super_admin');
+    $this->actingAs($admin);
+
+    Livewire\Livewire::test(ListAudits::class)
+        ->assertSuccessful()
+        ->assertSee('Audit log');
+
+    expect((new ListAudits)->getTitle())->toBe('Audit log');
+});

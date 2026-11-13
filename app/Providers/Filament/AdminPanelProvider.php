@@ -54,6 +54,13 @@ class AdminPanelProvider extends PanelProvider
             ->login(TwoFactorLogin::class)
             ->passwordReset()
             ->profile(EditProfile::class)
+            // Bell icon in the top bar. Imports finish in the queue and tell the
+            // user who started them through a database notification (with the
+            // failed-rows download when there are any); without this the
+            // notifications were stored in the `notifications` table and never
+            // shown. Polling picks them up without broadcasting.
+            ->databaseNotifications()
+            ->databaseNotificationsPolling('30s')
             // Left-navigation group order (Charlene UX restructure). Groups
             // render in exactly this sequence; each resource/page pins itself
             // to one of these via $navigationGroup + $navigationSort.
