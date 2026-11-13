@@ -47,7 +47,11 @@ Select **Save changes**. The new permissions take effect for every user on their
 
 ## Tips
 
-> **Tip:** Deactivate a user rather than deleting the account, so that the audit history linked to that user is preserved.
+> **Tip:** Deactivate a user rather than deleting the account, so that the audit history linked to that user is preserved. A deactivated user is signed out at once and can no longer sign in.
+>
+> **Tip:** The four built-in roles (Super administrator, Administrator, ReadingRoom and General) cannot be renamed or deleted on the **Roles** page; roles you create there can.
+>
+> **Tip:** Only Administrators and Super administrators manage users and roles; ReadingRoom and General users do not see the **Users** and **Roles** pages.
 >
 > **Tip:** On the edit form, **Password** may be left blank to keep the user's current password.
 >

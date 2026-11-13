@@ -40,7 +40,7 @@ The next time you sign in, enter your email address and password as usual. On th
 
 ## If you lose your phone
 
-On the **Two-factor challenge** page, select **Use a recovery code instead**, enter one of your unused codes in **Recovery code** and select **Sign in**. Once you are signed in, open the Two-factor authentication page and select **Regenerate recovery codes**, or select **Disable two-factor authentication** and enrol your new phone. If you have lost both your phone and your recovery codes, contact your administrator for assistance.
+On the **Two-factor challenge** page, select **Use a recovery code instead**, enter one of your unused codes in **Recovery code** and select **Sign in**. Once you are signed in, open the Two-factor authentication page and select **Regenerate recovery codes**, or select **Disable two-factor authentication** and enrol your new phone; both ask for your **Password** before they go ahead. If you have lost both your phone and your recovery codes, contact your administrator for assistance.
 
 ## Tips
 
@@ -48,7 +48,7 @@ On the **Two-factor challenge** page, select **Use a recovery code instead**, en
 >
 > **Tip:** Two-factor authentication is strongly recommended for every account with the Administrator role.
 >
-> **Tip:** Regenerating your recovery codes immediately invalidates the previous set, so replace any stored copies at the same time.
+> **Tip:** Regenerating your recovery codes immediately invalidates the previous set, so replace any stored copies at the same time. Recovery codes are shown only once, right after they are created: they cannot be displayed again later.
 
 ## Summary
 
