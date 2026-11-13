@@ -93,7 +93,7 @@ trait BelongsToRepository
         // re-stamped a Batch into another repository (security audit
         // 2026-11-13). The allowed set is the one the read scope uses.
         static::updating(function (Model $model) {
-            if (! $model->isDirty('repository_id') || self::callerChoseGlobalRepository($model)) {
+            if (! $model->isDirty('repository_id')) {
                 return;
             }
 
@@ -102,7 +102,13 @@ trait BelongsToRepository
                 return; // CLI / queue, or admin / super_admin
             }
 
-            if (! in_array((int) $model->getAttribute('repository_id'), $allowedIds, true)) {
+            // Global (NULL) records are shared by every repository: a
+            // restricted user neither publishes one of theirs as global nor
+            // pulls a shared one into their repository.
+            $from = $model->getOriginal('repository_id');
+            $to = $model->getAttribute('repository_id');
+
+            if ($from === null || $to === null || ! in_array((int) $to, $allowedIds, true)) {
                 throw new \DomainException(
                     'Multi-tenant violation: cannot move '
                     . $model::class

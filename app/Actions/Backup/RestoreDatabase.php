@@ -111,11 +111,10 @@ class RestoreDatabase
      */
     public static function sandboxOptionFromHelp(string $text): ?string
     {
-        return match (true) {
-            str_contains($text, '--sandbox') => '--sandbox',
-            str_contains($text, '--system-command') => '--skip-system-command',
-            default => null,
-        };
+        // Only MariaDB's --sandbox refuses every client command that reaches
+        // the host (\! shell, \. source, tee). MySQL's --skip-system-command
+        // leaves tee and source working, so a MySQL client is not used.
+        return preg_match('/^\s*--sandbox\b/m', $text) === 1 ? '--sandbox' : null;
     }
 
     /**
@@ -423,8 +422,8 @@ class RestoreDatabase
     /**
      * The client option that stops the `mysql` client from running its own
      * commands that reach outside the database (`\!` shell, `\.` source,
-     * tee), or null when the installed client has none: MariaDB's
-     * `--sandbox` (10.5.25+), MySQL's `--skip-system-command` (8.0.40+).
+     * tee), or null when the installed client has none. Only MariaDB's
+     * `--sandbox` (10.5.25+) covers all three.
      */
     protected function clientSandboxOption(): ?string
     {

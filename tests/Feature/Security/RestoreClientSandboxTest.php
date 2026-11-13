@@ -10,8 +10,8 @@ use App\Actions\Backup\RestoreDatabase;
  * the dump. A line `\! <command>` in an archive on a backup destination (an
  * admin-defined FTP/SFTP server, or one taken over) ran that command on the
  * application host. Reproduced against a throwaway MariaDB 12.3 server: the
- * file named by `\! touch` was created. The client now runs sandboxed, and
- * without a client that can be sandboxed the dump goes through PDO.
+ * file named by `\! touch` was created. The client now runs only with MariaDB's
+ * --sandbox (which also blocks tee and source); otherwise the dump goes through PDO.
  */
 
 function sa_restoreProbe(?string $sandboxOption): RestoreDatabase
@@ -44,9 +44,11 @@ function sa_restoreProbe(?string $sandboxOption): RestoreDatabase
     };
 }
 
-it('recognises the sandbox option of MariaDB and MySQL clients', function () {
+it('trusts only MariaDB --sandbox, which also blocks tee and source', function () {
     expect(RestoreDatabase::sandboxOptionFromHelp('  --sandbox           Disallow commands that access the file system'))->toBe('--sandbox')
-        ->and(RestoreDatabase::sandboxOptionFromHelp('  --system-command    Enable (by default) or disable the system mysql command.'))->toBe('--skip-system-command')
+        // MySQL's --skip-system-command leaves tee (file write) and source working.
+        ->and(RestoreDatabase::sandboxOptionFromHelp('  --system-command    Enable (by default) or disable the system mysql command.'))->toBeNull()
+        ->and(RestoreDatabase::sandboxOptionFromHelp('                      expired password sandbox mode even if --batch was'))->toBeNull()
         ->and(RestoreDatabase::sandboxOptionFromHelp("  --batch             Don't use history file."))->toBeNull();
 });
 
