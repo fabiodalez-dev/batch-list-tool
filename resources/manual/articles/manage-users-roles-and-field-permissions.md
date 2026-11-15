@@ -1,64 +1,90 @@
 # How to manage users, roles and field permissions
 
-Administrators control who may use the archive tool and what each person may see or change. This guide explains how to add a user, assign a role and repositories, reset a user's access, and use the field permission matrix to set read, write and hidden access for each role.
+Administrators decide who may sign in to the Logistics Tool, what each person may do and which repositories they work in. This guide explains how to add a user, reset another user's password or two-factor authentication, deactivate an account and adjust field-level access on the Field permissions page.
 
 ## Prerequisites
 
-- [ ] You are signed in with the **Administrator** or **Super administrator** role.
-- [ ] The repositories the new user will work in already exist on the **Repositories** page.
+- [ ] You are signed in with the Administrator or Super administrator role. The Users and Field permissions pages are not available to the ReadingRoom and General roles.
+- [ ] To reset another user's two-factor authentication, you are signed in with the Super administrator role.
+- [ ] The repositories you intend to assign to the user already exist.
+- [ ] You have the new user's full name and email address.
 
 ## 1. Open the Users page
 
-In the sidebar, under **Administration**, select **Users**. The list shows each user with their **Roles** and active status. Select **New user** to open the form for a new user.
+In the sidebar, under **Administration**, select **Users**. The list shows each user's **Name**, **Email**, **Roles** and whether the account is active, with the actions for each user at the end of the row.
 
 ![Open the Users page](./block_open-users.png)
 
-## 2. Enter the user's identity and initial password
+## 2. Start a new user
 
-In the **Identity** section, enter the user's **Name** and **Email**; the email address must not already be in use. In the **Initial access** section, enter a temporary password in **Password** and enter it again in the confirmation field beside it. New users are always required to change this password at their first sign-in, so **Force password change on next login** remains enabled.
+Select **New user** at the top right of the page. The **Create User** form opens with three sections: **Identity**, **Initial access** and **Role & access**.
 
-![Enter the user's identity and initial password](./block_enter-identity.png)
+## 3. Enter the user's identity
 
-## 3. Assign a role and repositories
+In the **Identity** section, enter the user's **Name** and **Email**. The email address must not already belong to another user.
 
-In the **Role & access** section, select the user's **Role**: **Administrator** for full access, **ReadingRoom** for read and write access to metadata, or **General** for read-only access. **Super administrator** is listed only when you hold that role yourself. Select one or more **Repositories**, then choose the **Default repository**: the repository pre-selected for the user's new records, and the one their document and box imports use when **All repositories** is selected in the top bar. Leave **Is active** enabled and select **Create**.
+![Enter the user's identity](./block_enter-identity.png)
 
-## 4. Change an existing user's role or repositories
+## 4. Set the initial password
 
-On the **Users** page, select **Edit** on the user's row. Change the **Role**, **Repositories** or **Default repository** as required, then select **Save changes**. You cannot change your own role or deactivate your own account.
+In the **Initial access** section, enter a **Password** and repeat it in **Password confirmation**. The password must be at least 12 characters long and contain upper-case letters, lower-case letters and at least one number. **Force password change on next login** is always switched on for a new user, so the user must replace this password at the first sign-in.
 
-## 5. Reset a user's access
+## 5. Assign a role and repositories
 
-If a user can no longer sign in, select **Reset password** on the user's row, then select **Confirm**. A notification displays a temporary password; pass it to the user by a secure channel, as they must replace it at their next sign-in. To suspend a user without deleting the account, select **Deactivate** instead, and select **Activate** later to restore access.
+In the **Role & access** section, select a **Role**: **Super administrator**, **Administrator**, **ReadingRoom** or **General**. Select one or more **Repositories**, then select the **Default repository**, which is required: it is pre-selected as the repository of new records, and imports started with **All repositories** in the top bar use it. Leave **Is active** switched on.
 
-## 6. Open the field permission matrix
+## 6. Create the account
 
-In the sidebar, under **Administration**, select **Field permissions**. The **Field-level permission matrix** shows one table per resource, with a row for each field and a column for each role.
+Scroll to the bottom of the form and select **Create**. The user appears in the list and can sign in with the password you set. To add several users in succession, select **Create & create another** instead.
 
-![Open the field permission matrix](./block_open-field-permissions.png)
+## 7. Reset another user's password
 
-## 7. Set read, write and hidden access for each field
+On the **Users** page, select the **Reset password** button (the key icon) in the user's row, then select **Confirm**. The tool generates a 16-character temporary password and displays it in a **Password reset** notification, which remains on screen until you close it. Copy the temporary password and give it to the user by a secure means.
 
-On each field's row, select the checkboxes under the **Administrator**, **ReadingRoom** and **General** columns: **R** lets the role read the field, **W** lets it edit the field, and **H** hides the field from that role. Write access includes read access, and hidden takes precedence over both. The **Super administrator** column always shows **RW** and cannot be changed.
+## 8. Ensure the user changes the temporary password
 
-## 8. Save the matrix
+A reset always requires the user to change the password. At the next sign-in, the tool opens the **Profile** page with the message **You must change your password before continuing.**, and no other page is available until the user enters a **New password**, repeats it in **Confirm new password**, enters the temporary password as the **Current password** and selects **Save changes**.
 
-Select **Save changes**. The new permissions take effect for every user on their next page load.
+## 9. Reset another user's two-factor authentication
+
+If a user has lost the device that holds their authenticator, select **Reset two-factor authentication** (the red mobile telephone icon) in the user's row on the **Users** page, or at the top of the user's view or edit page, then confirm with **Reset two-factor authentication**. The user's authenticator secret and recovery codes are deleted, so the user signs in with the password alone until two-factor authentication is set up again under **My Account** > **Two-factor authentication**. The action is available only to a Super administrator, only for users who have two-factor authentication set up and never for your own account, and every reset is recorded in the **Audit log**.
+
+## 10. Deactivate an account
+
+On the **Users** page, select the **Deactivate** button (the no-entry icon) in the user's row, then select **Confirm**. A deactivated user who is signed in is signed out on the next request, any later sign-in attempt is refused, and the **Is active** column shows a cross. To restore access, select **Activate** in the same row. You cannot deactivate your own account or change your own role.
+
+## 11. Open the field permission matrix
+
+In the sidebar, under **Administration**, select **Field permissions**. The **Field-level permission matrix** shows one table per resource, with the fields in rows and the roles in columns.
+
+## 12. Set read, write or hidden access for each role
+
+For each field, tick the boxes under the role concerned: **R** allows the role to read the field, **W** allows it to change the field, and **H** hides the field from that role entirely. Write access implies read access, and hidden takes precedence over both. The **Super administrator** column always shows **RW** and cannot be changed, and the row **default (unlisted fields)** applies to every field of the resource that is not listed separately.
+
+![Set read, write or hidden access for each role](./block_set-field-access.png)
+
+## 13. Save the matrix
+
+Select **Save changes**. The notification **Field permissions saved** confirms that the new matrix applies to every user on their next page load. To remove all adjustments and return to the original settings, select **Reset to config defaults** and confirm.
+
+## The four built-in roles
+
+**Super administrator** has full access, including restoring backups, the audit settings and resetting another user's two-factor authentication. **Administrator** manages records, users, roles and field permissions, but cannot change, reset or deactivate a Super administrator account. **ReadingRoom** reads, creates and edits records but has no access to users or roles, and **General** has read-only access. These four roles cannot be renamed or deleted under **Roles**, and no other role can be given one of their names; roles that you create yourself can be renamed and deleted.
+
+## Password rules and automatic sign-out
+
+Every password set in the tool, whether on the user form, on the **Profile** page or after a reset, must be at least 12 characters long and contain upper-case letters, lower-case letters and at least one number. Existing passwords remain valid until they are next changed. By default, a session ends after 30 minutes without activity, after which the user must sign in again.
 
 ## Tips
 
-> **Tip:** Deactivate a user rather than deleting the account, so that the audit history linked to that user is preserved. A deactivated user is signed out at once and can no longer sign in.
+> **Tip:** Deactivate an account rather than deleting it: deactivation preserves the audit history linked to that user.
 >
-> **Tip:** The four built-in roles (Super administrator, Administrator, ReadingRoom and General) cannot be renamed or deleted on the **Roles** page; roles you create there can.
+> **Tip:** When editing an existing user, leave **Password** blank to keep the current password.
 >
-> **Tip:** Only Administrators and Super administrators manage users and roles; ReadingRoom and General users do not see the **Users** and **Roles** pages.
+> **Tip:** Only a **Super administrator** can give another user the **Super administrator** role; other administrators do not see it in the **Role** list.
 >
-> **Tip:** On the edit form, **Password** may be left blank to keep the user's current password.
->
-> **Tip:** The **default (unlisted fields)** row of each table sets access for every field of that resource that has no row of its own.
->
-> **Tip:** To discard every change made on the matrix, select **Reset to config defaults** and confirm; the permissions return to the baseline configuration.
+> **Tip:** Use **Roles** under **Administration** to review what each role may do on whole pages, and **Field permissions** for individual fields.
 
 ## Summary
 
-You have added a user with a role, repositories and a default repository, learned how to reset or suspend access, and set field-level access for each role on the **Field-level permission matrix**.
+You can now add users with a role, repositories and a default repository, reset a forgotten password with a temporary one that must be changed at the next sign-in, reset the two-factor authentication of a user who has lost their device, deactivate accounts that are no longer needed, and control read, write and hidden access to individual fields for each role.

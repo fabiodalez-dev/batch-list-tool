@@ -1,50 +1,49 @@
 # How to reuse column names from your own spreadsheets with Import Profiles
 
-An Import Profile records which heading in your spreadsheet fills which field in the archive. Once it is saved, you can import a spreadsheet whose headings differ from the template, for example columns renamed by staff, without renaming any column by hand.
+When a spreadsheet uses its own column headings instead of those in the import template, the Import Wizard asks you to match each heading to a field by hand. An Import Profile saves that column mapping, so that the next spreadsheet with the same layout can be imported without renaming any column or repeating the mapping.
 
 ## Prerequisites
 
-- [ ] An account with the administrator role, as the **Import Wizard** is available to administrators only.
-- [ ] Your spreadsheet saved as an `.xlsx` or `.csv` file of no more than 50 MB, with its headings in the first row.
+- [ ] An account with the Administrator or Super administrator role: the **Import Wizard** is not available to the ReadingRoom or General roles, and both **Import Wizard** and **Import Profiles** are in the **Importation** group of the sidebar.
+- [ ] A spreadsheet (.xlsx or .csv) whose column headings differ from the template headings.
+- [ ] The records that the spreadsheet depends on, such as Subseries, Authorities or Batches, already exist in Logistics Tool.
 
-## 1. Open the Import Wizard and choose the type of records
+## 1. Map your headings in the Import Wizard
 
-In the sidebar, under **Importation**, select **Import Wizard**. Under **Type of records**, select the entity your spreadsheet contains, for example **Boxes (physical containers)**, and then select **Next**.
+Open **Import Wizard**, select the **Type of records** and upload your file in **Upload your filled file**. In **Preview & map columns**, choose the heading from your spreadsheet for each importer field; fields marked with an asterisk are required. Continue when the wizard displays **All required columns are mapped — you can continue.** and complete **Validate rows**.
 
-## 2. Upload your spreadsheet
+## 2. Save the mapping as a profile on the last step
 
-Your own spreadsheet replaces the template, so select **Next** on the **Download the template** step. On the **Upload your filled file** step, drop your file into **Spreadsheet file** and select **Next**.
+On **Confirm and import**, tick **I have reviewed the preview and I want to import these rows.** and then tick **Save this column mapping as a reusable profile**. Enter a recognisable **Profile name**, and tick **Share this profile with the rest of my repository** if colleagues import the same layout. Select **Start import**; the notification **Profile saved** confirms that the profile has been created.
 
-## 3. Map each of your headings to the field it fills
+![Save the mapping as a profile on the last step](./block_save-profile.png)
 
-On the **Preview & map columns** step, the wizard pre-selects the headings it recognises. For each field that shows the wrong heading or **— (skip this column) —**, open its list and choose the heading from your spreadsheet that holds that information. Fields marked with an asterisk are required; continue when the page reads **All required columns are mapped — you can continue.**
+## 3. Start the next import from the saved profile
 
-![Map each of your headings to the field it fills](./block_map-columns.png)
+The next time you receive a spreadsheet with the same headings, open **Import Wizard** and select the same **Type of records**. Open **Start from a saved profile** and choose your profile; the most recently used profiles appear first. The field is shown only when at least one profile exists for the selected type.
 
-## 4. Validate the rows
+![Start the next import from the saved profile](./block_start-from-profile.png)
 
-On the **Validate rows** step, select **Run validation** and review any errors that are reported. Select **Next** when you are satisfied with the result.
+## 4. Check the pre-filled mapping and import
 
-## 5. Save the mapping as a profile
+Upload the new file and continue to **Preview & map columns**: each importer field is already matched to your heading. Confirm that the wizard displays **All required columns are mapped — you can continue.**, then complete **Validate rows** and **Confirm and import** as usual.
 
-On the **Confirm and import** step, tick **I have reviewed the preview and I want to import these rows.** and **Save this column mapping as a reusable profile**, then enter a **Profile name** that describes the spreadsheet layout. Tick **Share this profile with the rest of my repository** if colleagues use the same layout, and select **Start import** to save the profile and start the import.
+## 5. Review your profiles in Import Profiles
 
-![Save the mapping as a profile](./block_save-profile.png)
+Open **Import Profiles** in the **Importation** group. The list shows each profile's **Name**, the records it **Imports**, whether it is **Shared**, its **Owner**, how many times it has been **Used** and when it was **Last used**. Select **View** to read the column mapping and to open the profile with **Use in Import Wizard**, or **Edit** to rename it, add a description or change **Share with my repository**.
 
-## 6. Pick the profile for your next import
-
-The next time you receive a spreadsheet with the same headings, open the **Import Wizard** and select the same **Type of records**. In **Start from a saved profile**, choose your profile: when you upload the file, the **Preview & map columns** step is already filled in with your mapping.
-
-![Pick the profile for your next import](./block_use-profile.png)
+![Review your profiles in Import Profiles](./block_manage-profiles.png)
 
 ## Tips
 
-> **Tip:** Under **Importation**, **Import Profiles** lists every profile you can use; open one and select **Use in Import Wizard** to start the wizard with that profile already loaded.
+> **Tip:** Profiles can only be created from the last step of the Import Wizard; the **Import Profiles** page has no create button.
 >
-> **Tip:** A profile applies to a single type of records. Selecting a different **Type of records** clears the profile you picked.
+> **Tip:** The column mapping of a saved profile cannot be edited. To change it, run the wizard again with a real file and save a new profile.
 >
-> **Tip:** The column mapping of a saved profile cannot be edited. To change it, run the wizard again, correct the mapping and save it under a new **Profile name**.
+> **Tip:** You see your own profiles and the profiles that colleagues have shared in your repository. Only the owner, an Administrator or a Super administrator can edit a profile, and only an Administrator or a Super administrator can delete one.
+>
+> **Tip:** A profile does not bypass any checks: every import started from a profile still runs **Validate rows** before anything is written.
 
 ## Summary
 
-You map your own headings once, save the mapping as an Import Profile on the final step of the Import Wizard, and pick that profile in the first step of every later import that uses the same layout.
+Save your column mapping once on **Confirm and import**, pick it in **Start from a saved profile** for every later spreadsheet with the same layout, and use **Import Profiles** to review, rename or share the profiles you have saved.

@@ -1,44 +1,50 @@
-# How to choose a repository and set your preferences
+# How to find your way around, choose a repository and set your preferences
 
-The Logistics Tool can hold the records of several repositories at once. This guide explains how to choose which repository you are working in, how the navigation menu and dashboard are organised, and how to tailor the tool to your own way of working on the **Preferences** page.
+This guide explains how to move around the Logistics Tool: the dashboard, the navigation menu, the repository selector in the top bar, the in-app user guide and your personal preferences. Setting these correctly ensures that every list and form you open shows the records of the repository you are working on.
 
 ## Prerequisites
 
-- [ ] An active user account with which you are signed in to the Logistics Tool.
-- [ ] Access to more than one repository, if you wish to use the repository selector. The selector is shown only when there is more than one repository to choose from.
+- [ ] An active Logistics Tool account with which you can sign in.
+- [ ] Access to more than one repository, if you intend to use the repository selector in the top bar.
 
-## 1. Find your way around the dashboard
+## 1. Review the dashboard
 
-After you sign in, the **Dashboard** opens with the **Changes recorded per month** chart, an **Overview** of key figures, the **Pending disinfestation — action required** table, the **Documents by Subseries** and **Top 15 Batches by Document Count** charts, and **Recent Activity**. The navigation menu on the left groups the pages under **Records**, **Classifications**, **Operations**, **Importation**, **Reports**, **My Account** and **Administration**, showing only the pages that your role permits. Select **Dashboard** at the top of the menu at any time to return to this overview.
+Select **Dashboard** at the top of the sidebar. The **Overview** cards show the totals for **Documents**, **Active Batches**, **Boxes in archive**, **Authorities (Notaries)** and **Open flags**, and users with the Super administrator or Administrator role also see a **Repositories** card. Below them, users permitted to read the audit trail see **Changes recorded per month**; then come the charts **Documents catalogued per month**, **Moves per month** and **Documents by Subseries**, followed by the **Recent Activity** table.
 
-![Find your way around the dashboard](./block_find-your-way-around.png)
+![Review the dashboard](./block_review-the-dashboard.png)
 
-## 2. Choose the active repository
+## 2. Use the navigation menu and the top bar
 
-Open the repository selector in the top bar, to the right of the search field, and select the repository you wish to work in; the page reloads and every list, report and dashboard figure is narrowed to that repository. Select **All repositories** to see the records of every repository you have access to. Your last choice is remembered the next time you sign in.
+Use the sidebar to open any area of the tool. The pages are arranged in the groups **Records**, **Classifications**, **Operations**, **Importation**, **Reports**, **My Account**, **Administration** and **Help**; select a group heading to collapse or expand it. You see only the groups and pages that your role permits. In the top bar, select the bell icon (**Notifications**) to read your notifications, such as the message you receive when an import you started has finished.
 
-## 3. Select a specific repository before importing
+## 3. Choose the active repository
 
-Imports are carried out by administrators: before you open the **Import Wizard**, select the repository that the spreadsheet belongs to, and do not leave the selector on **All repositories**. An import must know which repository each row belongs to, because the same identifier may exist in more than one repository. With **All repositories** selected, a document or box import uses your **Default repository**; if you have none, the affected rows are refused with a message asking you to select a repository before importing.
+In the top bar, open the repository list beside the **Search** field and select the repository you wish to work on; the page reloads showing only that repository's records. Select **All repositories** to see every repository you have access to. The list appears only when you have access to more than one repository, and your last choice is restored the next time you sign in.
 
-## 4. Open the Preferences page
+## 4. Set your default repository
 
-In the navigation menu, under **My Account**, select **Preferences**. The page shows the settings that apply to your own account only; they do not change any archival record.
+Open the user menu at the right of the top bar, select **Profile**, choose your usual repository in **Default repository** and select **Save changes**. The default repository is pre-selected as the repository of new records, such as a batch, a location or a document, and it is used by document and box imports started while **All repositories** is selected in the top bar. It does not change the repository selected when you sign in, as the top bar keeps your last choice. The list offers only the repositories to which you are assigned. If you change your **Email address** or enter a **New password**, you must also enter your **Current password** before you save.
 
-![Open the Preferences page](./block_open-preferences.png)
+![Set your default repository](./block_set-the-default-repository.png)
 
-## 5. Change your preferences
+## 5. Open the user guide
 
-In **Default table page size**, choose how many rows every table shows per page, and in **Language**, choose the interface language or leave it empty to use the system default. In **Display timezone**, search for and select the timezone in which dates and times are displayed, for example Europe/Malta. Select **Save changes** to apply your choices; the message **Preferences saved** confirms that they have been stored.
+Select **User guide** under **Help** at the foot of the sidebar, or select **User guide** in the user menu from any page. Type a term in **Search the guide** to find the relevant article. On the **Documents**, **Boxes** and **Reports** pages, the **Help** button opens the guide at the article for that page in a new tab.
+
+## 6. Set your preferences
+
+Under **My Account**, select **Preferences**. Choose the **Default table page size** (10, 25, 50 or 100 rows per page in every table), the **Language** (**English** or **Italiano**) and the **Display timezone** used for dates and times, then select **Save changes**. Leave **Language** or **Display timezone** blank to use the system default.
+
+![Set your preferences](./block_set-your-preferences.png)
 
 ## Tips
 
-> **Tip:** Your **Default repository** is set on your Profile page rather than on the **Preferences** page. It is pre-selected as the repository of new records, and document and box imports started with **All repositories** use it; the repository selector itself reopens on your last choice.
+> **Tip:** Select **About this page** below a page title to read what the page is for and how it fits into the archive workflow.
 >
-> **Tip:** Expand **About this page** at the top of the **Preferences** page for a short explanation of each setting.
+> **Tip:** The page size you choose on **Preferences** applies to every table; you can still change the number of rows shown on an individual table while you work.
 >
-> **Tip:** Administrators who need an overview across the whole archive should switch back to **All repositories** after completing work in a single repository.
+> **Tip:** The user menu also contains the theme switcher, with which you can change between the light and dark appearance, and **Sign out**.
 
 ## Summary
 
-Use the repository selector in the top bar to work in one repository or in **All repositories**, and always select a specific repository before importing. Use the **Preferences** page to set your table page size, language and display timezone.
+You can now move between the dashboard and the areas of the sidebar, read your notifications, narrow your work to one repository from the top bar, set the repository used for new records and imports, open the user guide and save your personal preferences. Your preferences apply only to your own account and do not change any archival record.

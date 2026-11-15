@@ -4,14 +4,14 @@
     "subtitle": "User Manual",
     "client": "Notarial Archives Foundation",
     "reference": "RFQ-2026-06 · Deliverable 11: User manual",
-    "version": "1.0",
-    "date": "23 October 2026",
+    "version": "2.1",
+    "date": "13 November 2026",
     "author": "Prepared by Fabio Gaetano D'Alessandro",
     "introduction": [
-        "The Logistics Tool helps the staff of the Notarial Archives Foundation and the National Repository keep track of their collection of historic notarial records: which documents exist, which box and batch each one belongs to, where every box is shelved, and how items move, are disinfested or flagged over time.",
+        "The Logistics Tool helps the staff of the Notarial Archives Foundation and the National Repository keep track of their collection of historic notarial records: which documents exist, which box and batch each one belongs to, where every box is shelved, and how items move, are disinfested, returned to RAS or flagged over time.",
         "This manual is organised as a series of short, task-based guides. Each guide states who can carry out the task, lists what is needed beforehand, and then describes the steps in order, using the labels exactly as they appear on screen. Screenshots show the relevant screens; they contain example data only.",
-        "The guides are grouped in five parts. Staff who are new to the application should begin with Part 1. Part 2 describes how batch lists are imported from Excel or CSV files, and should be read before the first import. Parts 3 and 4 cover everyday work on the catalogue and the reports. Part 5 is intended for administrators.",
-        "Some screens and actions are available only to certain roles. Where a guide requires the administrator role, this is stated in its prerequisites. If a menu item or button described here does not appear, ask an administrator to check the permissions assigned to your account."
+        "The guides are grouped in six parts. Staff who are new to the application should begin with Part 1. Part 2 describes how batch lists are imported from Excel or CSV files, and should be read before the first import. Parts 3 and 4 cover everyday work on documents, boxes and storage locations, Part 5 the reports, and Part 6 is intended for administrators.",
+        "The application has four roles: Super administrator, Administrator, ReadingRoom and General. Some actions, such as restoring a backup or changing the audit settings, are reserved for the Super administrator. Where a guide requires a particular role, this is stated in its prerequisites. If a menu item or button described here does not appear, ask an administrator to check the permissions assigned to your account. The same guides are available inside the application under Help."
     ],
     "parts": [
         {
@@ -33,25 +33,35 @@
             ]
         },
         {
-            "title": "Part 3 · Working with the catalogue",
-            "intro": "How to find and update documents, boxes and storage locations.",
+            "title": "Part 3 · Working with documents",
+            "intro": "How to find documents, update their records and move them between boxes, locations and custody states.",
             "articles": [
                 "find-documents-with-search-and-filters",
                 "view-and-update-a-document-record",
+                "move-documents-and-change-their-custody"
+            ]
+        },
+        {
+            "title": "Part 4 · Boxes and storage",
+            "intro": "How to manage boxes, move them between locations, send them to disinfestation, return them to RAS and maintain the storage locations.",
+            "articles": [
                 "manage-boxes-and-their-barcode-status",
                 "move-boxes-between-locations",
+                "send-boxes-to-disinfestation-and-record-the-end-of-a-round",
+                "return-boxes-to-ras",
                 "set-up-and-maintain-storage-locations"
             ]
         },
         {
-            "title": "Part 4 · Reports",
-            "intro": "How to produce the ready-made reports.",
+            "title": "Part 5 · Reports",
+            "intro": "How to produce the ready-made reports and reconcile the RAS barcodes.",
             "articles": [
-                "run-and-export-reports"
+                "run-and-export-reports",
+                "reconcile-ras-barcodes-with-an-uploaded-list"
             ]
         },
         {
-            "title": "Part 5 · Administration",
+            "title": "Part 6 · Administration",
             "intro": "Tasks for administrators: reference lists, users and permissions, the audit log, backups and branding.",
             "articles": [
                 "maintain-series-creators-batches-and-other-reference-records",

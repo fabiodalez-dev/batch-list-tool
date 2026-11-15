@@ -1,79 +1,79 @@
 # How to manage boxes and their barcode status
 
-The Boxes register records every physical container that holds notarial documents. This guide explains how to locate a box, open its record, update its type, number, batch, parent RAS box, barcode, barcode status, seal number and location, review the documents it contains together with its barcode, seal and location history, and apply an action to several boxes at once.
+Every box held by the Notarial Archives has its own record in the Logistics Tool, with its type, batch, number, barcode, barcode status, seal and location. This guide explains how to find a box, read its page, correct its details and use the box actions, so that the record always matches the physical box on the shelf.
 
 ## Prerequisites
 
-- [ ] A user account with permission to view and edit boxes.
-- [ ] The box number, barcode or seal number of the box you intend to update.
+- [ ] A user account with permission to view boxes. Editing a box or changing its barcode status also requires permission to update boxes; **Change batch** requires permission to update both boxes and documents.
+- [ ] Permission to delete boxes, if you need to mark boxes as physically destroyed.
+- [ ] The repository you work in selected in the repository switcher at the top of the page.
 
-## 1. Find the box on the Boxes list
+## 1. Open the Boxes list and search it
 
-In the sidebar, under **Records**, select **Boxes**. Enter the box number, barcode or seal number in the **Search** field above the table; the list narrows as you type. To restrict the list further, for example by **Batch** or **Barcode status**, select the **Filter** button beside the search field.
+In the sidebar, under **Records**, select **Boxes**. To find a particular box, type its box number, barcode or seal number in the search field above the list.
 
-![Find the box on the Boxes list](./block_find-the-box.png)
+![Open the Boxes list and search it](./block_open-the-boxes-list.png)
 
-## 2. Open the box record
+## 2. Choose the columns you need
 
-The actions for each box are at the end of its row; scroll the table to the right to reach them, then select **View**. The **Details** section of the record page shows the identification, the barcode and its status, the location, the number of documents and any destruction details. The barcode status appears as a coloured badge: green for **IN**, amber for **OUT** and red for **PERM_OUT**.
+By default the list shows **Batch**, **Box number**, **Barcode**, **Barcode status**, **Box type**, **Location**, **Tracking Note**, **Seal Number**, **Notes**, **Destroyed**, **Parent box**, **Is legacy** and **Inputter**. Use the column manager above the list to show hidden columns, such as **Current Box Type**, or to hide those you do not need; column headings can also be dragged into a different order. A box without a barcode shows a dash under **Barcode status**, and a box without a location of its own shows the location shared by its documents, marked `from documents`.
 
-## 3. Review the box history
+## 3. Narrow the list with filter rules
 
-Below the sections of the record page, select a tab to review the changes recorded for the box: **History** for the complete chronology, **Barcode history** for each barcode and status change, **Seal history** for each seal number change, and **Location history** for each move.
+Select the filter icon above the list to open the **Filters** panel, select **Add rule** and choose a field, for example **Barcode status** or **Box type**, then set its condition. Every further rule begins with **AND**, **OR** or **AND NOT**, which joins it to the rules above it, read from top to bottom. Select **Apply filters** to run the rules; set **Archived (deleted) boxes** if deleted boxes should also be listed.
 
-![Review the box history](./block_review-the-history.png)
+## 4. Open a box
 
-## 4. See the documents in the box
+Selecting a row opens the **Documents** list filtered to that box, including the documents that have since moved on into an In Situ box; **View documents** at the end of the row does the same. To open the page of the box itself, select **View** at the end of the row.
 
-The **Documents** figure in the **Details** section states how many documents the box contains. To list them, select **View documents** on the row of the box in the Boxes list; the Documents list opens filtered to that box. Selecting the row itself has the same effect.
+## 5. Read the box page
 
-## 5. Open the edit form
+The **Details** section shows the box type, **Current Box Type**, **Batch**, number, barcode, **Seal Number**, **Barcode status** and **Location**, together with the counts **Documents**, **Documents, including those moved on** and **Child IN_SITU boxes**. Below it, the **History** tab lists everything recorded about the box in one chronology, and the **Barcode history**, **Seal history** and **Location history** tabs show each log on its own.
 
-Select **Edit** on the row of the box in the Boxes list. The **Edit** action is also available at the top of the record page.
+![Read the box page](./block_read-the-box-page.png)
 
-## 6. Update the type, number and batch
+## 6. Edit the box type, batch and number
 
-In the **Details** section, select the **Box type** (for a new box: RAS, IN SITU, NRA or another active type such as MUS; MAV and STVC are kept for existing boxes only), then the **Current Box Type**, choose the **Batch** and enter the **Box number**. A box number must be unique within its batch, and the helper text below the field lists the numbers already used. For an IN_SITU or NRA box, the field is labelled **Box identifier** instead, for example `NRA1`.
+On the box page, select **Edit**. Choose the **Box type**; MAV and STVC are legacy types that remain editable on existing boxes but cannot be given to new ones. Select the **Batch**, which is required for a RAS box and optional for an IN_SITU or NRA box, then enter the **Box number**; for an IN_SITU or NRA box the same field is labelled **Box identifier** and takes a value such as `NRA1`.
 
-![Update the type, number and batch](./block_update-identification.png)
+![Edit the box type, batch and number](./block_edit-type-batch-number.png)
 
-## 7. Set the parent RAS box
+## 7. Set the parent RAS box of an IN_SITU or NRA box
 
-If the box type is IN_SITU or NRA, further provenance fields appear in the form. Select the RAS box of origin in **Parent RAS box**. Turn on **Provenance Unknown** only when the RAS box of origin is genuinely unknown.
+For an IN_SITU or NRA box, select the **Parent box batch** first and then its box in **Parent RAS box**. Use **Additional parent boxes** when the box was assembled from several RAS boxes, and tick **Provenance Unknown** only if the RAS box of origin is genuinely unknown.
 
-## 8. Update the barcode, status and seal
+## 8. Edit the barcode, barcode status, seal and location
 
-In the same section, enter the **Barcode** affixed to the box; it must be unique across all boxes and is required for RAS boxes. Select the **Barcode status**: **IN**, **OUT** or **PERM OUT**. Enter the yellow security seal in **Seal Number** where one is fitted.
+Enter the **Barcode**, which is required for a RAS box and must not be used by any other box, then choose the **Barcode status**, which only RAS boxes have. Enter the **Seal Number** of the yellow security seal and, if needed, choose a **Location (RFQ §3.1.9)**. Select **Save changes** to record the changes.
 
-## 9. Set the location
+## Barcode status rules
 
-Select the room, shelf or holding area in **Location (RFQ §3.1.9)**. The location is optional for every box type. When a RAS box becomes **IN**, its location changes to **RAS** automatically.
+A RAS box starts at IN and can change to OUT or PERM OUT; PERM OUT is a permanent transfer, so a box at PERM OUT cannot change to OUT and can return to IN only with a new barcode that differs from the previous one. When a RAS box changes to IN, its location is set to RAS automatically. Every change of barcode or status is written to **Barcode history**, and every change of seal number to **Seal history**.
 
-## 10. Save the changes
+## The uniqueness rule for box type and number
 
-Select **Save changes** at the bottom of the form. Any change to the barcode, the barcode status or the seal number is recorded automatically and appears in the history tabs of the record page.
+A box type and number can be used only once per batch, or once per repository for boxes with no batch. If you save a type and number that another box already carries, the form names the box that already carries them, with its batch and record number, and the box is not saved until the number or batch is corrected. When a batch is selected, the help text under **Box number** lists the numbers already used in that batch.
 
-## 11. Apply an action to several boxes
+## 9. Move boxes to another batch
 
-Tick the boxes in the Boxes list and open **Power actions** above the table.
+On the Boxes list, tick the boxes to move, open **Power actions** and select **Change batch**. Choose the **New batch** and submit; the documents in each box move to the new batch with it. A box is skipped, and named in the notification, if it is already in that batch, if the batch belongs to a different repository, or if the batch already has a box with the same type and number.
 
-- **Relocate boxes** moves them to a location of type Repository or Room; see the guide to moving boxes between locations.
-- **Change batch** moves them to another batch, together with their documents.
-- **Send to disinfestation** marks the documents physically in them (**Custody Status** **In Box**) as currently in disinfestation, shown as **Current Cycle** on the Documents page, and moves the boxes to the location **Disinfestation**. RAS boxes go **OUT**.
-- **Finish disinfestation** asks for the **Disinfestation date**, which becomes the latest disinfestation date of their documents, and a **Destination**. **Return to RAS** moves the boxes to the location **RAS** and sets RAS boxes **IN**. **To an archive location (NRA)** moves them to the **Archive location** you choose and sets RAS boxes **PERM OUT**.
-- **Mark IN**, **Mark OUT** and **Mark PERM OUT** change the barcode status.
-- **Destroy boxes** marks them as destroyed, with an optional **Reason / where destroyed**.
+## 10. Change the barcode status of several boxes
 
-The disinfestation actions need the locations named **Disinfestation** and **RAS** to exist under **Locations**.
+Tick the boxes, open **Power actions** and select **Mark IN**, **Mark OUT** or **Mark PERM OUT**, then confirm. Only RAS boxes are changed; boxes of other types, destroyed boxes and boxes already at that status are skipped and named, and the rules above still apply to each box.
+
+## 11. Mark a box as destroyed
+
+On the box page or at the end of its row, select **Mark as destroyed**, optionally enter the **Reason / where destroyed**, and select **Mark destroyed**. The box can be marked only once every document in it has a catalogue identifier; otherwise the tool states how many uncatalogued documents remain. To mark several boxes at once, tick them and select **Destroy boxes** under **Power actions**.
 
 ## Tips
 
-> **Tip:** MAV and STVC are legacy box types: existing boxes of these types remain editable, but they cannot be assigned to new boxes.
+> **Tip:** Filters remain applied when you leave the Boxes list and return to it, so select **Reset** in the **Filters** panel when you need the full list again.
 >
-> **Tip:** A box without a barcode, such as an IN_SITU box, shows no barcode status on the Boxes list or on its record page.
+> **Tip:** A destroyed box stays in the list with **Destroyed** set to Yes, so that its provenance is kept.
 >
-> **Tip:** To relocate a box with a recorded reason, select **Move to location** on the record page instead of editing the location field.
+> **Tip:** To move a single box to a different shelf with a recorded reason, use **Move to location** at the end of its row instead of editing the location field.
 
 ## Summary
 
-You can locate any box from the Boxes list, review its details and contents on its record page, and update its identification, barcode, status, seal and location from the edit form, and apply an action to several boxes through **Power actions**. Every barcode, status and seal change is preserved in the box history for later reference.
+You can find a box with the search field and filter rules, read its contents and histories on its page, and correct its type, batch, number, parent, barcode, status, seal and location from **Edit**. The **Power actions** menu applies **Change batch**, the status actions and **Destroy boxes** to several boxes at once, while each box is checked against the same rules.

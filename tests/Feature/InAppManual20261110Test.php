@@ -140,7 +140,7 @@ it('lists every article of the manifest in the contents, in manual order', funct
     $manifest = json_decode((string) file_get_contents(resource_path('manual/manifest.json')), true);
     $expected = collect($manifest['parts'])->flatMap(fn ($p) => $p['articles'])->values()->all();
 
-    expect(iam_manual()->slugs())->toBe($expected)->and(count($expected))->toBe(16);
+    expect(iam_manual()->slugs())->toBe($expected)->and(count($expected))->toBe(20);
 
     $this->actingAs(iam_viewer());
     $html = $this->get(UserGuide::getUrl(['article' => 'run-and-export-reports']))->assertOk()->getContent();
@@ -156,7 +156,7 @@ it('lists every article of the manifest in the contents, in manual order', funct
     expect($positions)->toBe($sorted);
 
     // The open article lists its sections as anchors.
-    expect($html)->toContain('href="#4-export-the-results"');
+    expect($html)->toContain('href="#5-export-the-results"');
 });
 
 it('points every screenshot at a file that exists under public/manual/images', function (): void {
