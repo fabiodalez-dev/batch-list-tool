@@ -16,8 +16,8 @@ The Import Wizard in the Logistics Tool loads an Excel or CSV batch list into th
 - Locations: a matching location type, and the repository code if the location belongs to one repository (leave it blank for a location shared by every repository). Parent locations must be imported before their children.
 - Batches: at least one repository.
 - Boxes: the batch must already exist, because the box import does not create batches. Import the RAS parent boxes first, then the boxes inside them, and enter locations by their location code (for example `SHELF-A3`).
-- Document Types: no other records are needed. Import them before documents, because each document row links to a document type by its identifier.
-- Documents: the subseries, every authority and any NRA location code on the row must already exist, otherwise the row fails. A batch number that does not yet exist is created during the import.
+- Document Types: no other records are needed. Import them before documents, so that each document row can be linked to its document type, matched by identifier or by name. A document type that is not found does not stop the row: the value is kept as text on the document, without a link.
+- Documents: the subseries, every authority and any NRA location code on the row must already exist, otherwise the row fails. A batch number that does not yet exist is created during the import. A box given by its barcode must already exist; a box given by its number is matched inside the document's batch, or created there if it is new.
 - Volumes: the documents must already exist, because each row is matched to its document by its document identifier in the repository of the import.
 - New Accession: the subseries and any practice named on the row must already exist. The authority, accession, batch and box are created automatically.
 
