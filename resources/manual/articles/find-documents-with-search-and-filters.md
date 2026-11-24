@@ -19,7 +19,7 @@ Type a word or code in the **Search** box above the table, for example a creator
 
 ## 3. Add filter rules
 
-Select the **Filter** button (the funnel icon beside the search box) to open the **Filters** panel. Select **Add rule**, type part of a field name to shorten the list of fields, and select the field. Choose the condition, such as **Equals** or **Contains**, and enter the value.
+Select the **Filter** button (the funnel icon beside the search box) to open the **Filters** panel. Select **Add rule**, type part of a field name to shorten the list of fields, and select the field. Choose the condition, such as **Equals** or **Contains**, and enter the value. The **Creator** rule picks one or more creators by surname, name or reference code.
 
 ![Add filter rules](./block_add-filter-rules.png)
 

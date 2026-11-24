@@ -23,6 +23,8 @@ Select **Authorities**, then the "New authority" button. In **Control Area**, en
 
 ![Record a creator in Authorities](./block_create-authority.png)
 
+To see every document of a creator, open the authority and select **Documents by this creator**; the button shows how many there are. The **Documents** list opens with a **Creator** rule for that authority, which you can combine with other rules. On the **Authorities** list, the **Documents** link on each row does the same.
+
 ## 4. Create a batch and its notary accession
 
 Select **Batches**, then the "New Batch" button. The **Batch Number** is pre-filled with the next free number, and reserved numbers are refused. Choose the **Accession Type** and the **Repository**, link any existing accessions in **Linked Accessions**, and select **Create**. To record the accession itself, open **Notary Accessions** under **Operations**, select the "New Notary Accession" button, enter the **Title** and **Accession Date**, choose the **Batches** and the **Repository**, and select **Create**. The creator is recorded on each document rather than on the accession.

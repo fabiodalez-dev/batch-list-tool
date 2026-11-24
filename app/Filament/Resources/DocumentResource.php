@@ -1150,6 +1150,18 @@ class DocumentResource extends Resource
                                     ->searchable()
                                     ->multiple(),
                             ),
+                        // Client 2026-11-24: "a link to all documents by this
+                        // creator" from the authority — the link applies this rule.
+                        RelationshipConstraint::make('authorities')
+                            ->label('Creator')
+                            ->selectable(
+                                IsRelatedToOperator::make()
+                                    ->titleAttribute('surname')
+                                    ->getOptionLabelFromRecordUsing(fn (Authority $record): string => self::creatorOptionLabel($record))
+                                    ->getSearchResultsUsing(fn (string $search): array => self::creatorSearchOptions($search))
+                                    ->searchable()
+                                    ->multiple(),
+                            ),
                         EqualsFirst::text('creator_surname', 'Creator (surname)')->relationship('authorities', 'surname'),
                         EqualsFirst::text('creator_name', 'Creator (name)')->relationship('authorities', 'given_names'),
                         EqualsFirst::text('authority_citing_code', 'Actual Authority Reference Code')->relationship('authorities', 'alternative_identifier'),
@@ -1282,6 +1294,49 @@ class DocumentResource extends Resource
      * Client 2026-11-06: the Creator cell reads surname first, "Abela, Giovanni",
      * and a single name alone when only one is known.
      */
+    /** "Surname, Given names (R123)" — the creator as the rule picker and its summary show it. */
+    public static function creatorOptionLabel(Authority $authority): string
+    {
+        $code = trim((string) $authority->alternative_identifier);
+        $name = self::creatorName($authority);
+
+        return $code !== '' ? trim($name . ' (' . $code . ')') : ($name !== '' ? $name : '#' . $authority->getKey());
+    }
+
+    /**
+     * Creators for the "Creator" rule, searched by surname, given names or
+     * Actual Authority Reference Code.
+     *
+     * @return array<int, string>
+     */
+    public static function creatorSearchOptions(string $search): array
+    {
+        $search = trim($search);
+
+        return Authority::query()
+            ->when($search !== '', fn (Builder $q): Builder => $q->where(fn (Builder $q): Builder => $q
+                ->where('surname', 'like', "%{$search}%")
+                ->orWhere('given_names', 'like', "%{$search}%")
+                ->orWhere('alternative_identifier', $search)
+                ->orWhere('alternative_identifier', 'like', "{$search}%")))
+            ->orderBy('surname')->orderBy('given_names')
+            ->limit(50)
+            ->get()
+            ->mapWithKeys(fn (Authority $a): array => [$a->getKey() => self::creatorOptionLabel($a)])
+            ->all();
+    }
+
+    /** The Documents list filtered on one creator (a "Creator is" rule). */
+    public static function creatorDocumentsUrl(Authority $authority): string
+    {
+        return self::getUrl('index', [
+            'filters' => ['queryBuilder' => ['match' => 'all', 'rules' => ['creator' => [
+                'type' => 'authorities',
+                'data' => ['operator' => 'isRelatedTo', 'settings' => ['value' => [$authority->getKey()]]],
+            ]]]],
+        ]);
+    }
+
     public static function creatorName(Authority $authority): string
     {
         $given = trim(implode(' ', array_filter([$authority->given_names, $authority->name_suffix])));

@@ -13,6 +13,7 @@ class EditAuthority extends EditRecord
     protected function getHeaderActions(): array
     {
         return [
+            AuthorityResource::documentsAction(),
             Actions\ViewAction::make(),
             Actions\DeleteAction::make(),
         ];

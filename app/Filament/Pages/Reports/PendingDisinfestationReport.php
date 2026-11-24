@@ -10,7 +10,9 @@ use App\Filament\Pages\Reports\Concerns\CapsExportRows;
 use App\Filament\Pages\Reports\Concerns\ExportsWhatIsOnScreen;
 use App\Filament\Pages\Reports\Concerns\HasReportTemplates;
 use App\Filament\Pages\Reports\Filters\DateRangeFilter;
+use App\Filament\Resources\DocumentResource;
 use App\Filament\Widgets\PendingDisinfestationTable;
+use App\Models\Authority;
 use App\Models\Document;
 use App\Models\ReportTemplate;
 use App\Support\DisplayDate;
@@ -76,6 +78,26 @@ class PendingDisinfestationReport extends Page implements HasTable
             ->query(fn (): Builder => $this->reportQuery())
             ->defaultSort('created_at', 'asc')
             ->columns([
+                // Client 2026-11-24: "put 'creator' and 'authority identifier'
+                // before the document identifier ... much easier for us to see
+                // what the document is that way."
+                Tables\Columns\TextColumn::make('creator_names')
+                    ->label('Creator')
+                    ->state(fn (Document $r): array => self::creatorNames($r))
+                    ->listWithLineBreaks()
+                    ->placeholder('—')
+                    ->searchable(query: fn (Builder $query, string $search): Builder => $query->whereHas('authorities', fn (Builder $a): Builder => $a
+                        ->where('surname', 'like', "%{$search}%")
+                        ->orWhere('given_names', 'like', "%{$search}%"))),
+
+                Tables\Columns\TextColumn::make('authority_identifiers')
+                    ->label('Authority Identifier')
+                    ->state(fn (Document $r): array => self::authorityIdentifiers($r))
+                    ->listWithLineBreaks()
+                    ->placeholder('—')
+                    ->searchable(query: fn (Builder $query, string $search): Builder => $query->whereHas('authorities', fn (Builder $a): Builder => $a
+                        ->where('alternative_identifier', $search))),
+
                 Tables\Columns\TextColumn::make('identifier')
                     ->label('Identifier')
                     ->sortable()
@@ -292,6 +314,8 @@ class PendingDisinfestationReport extends Page implements HasTable
             title: 'Documents pending disinfestation',
             slug: 'pending-disinfestation',
             columns: [
+                'Creator' => 'creator',
+                'Authority Identifier' => 'authority_identifier',
                 'Identifier' => 'identifier',
                 'Type' => 'document_type',
                 'Subseries' => 'series',
@@ -321,7 +345,7 @@ class PendingDisinfestationReport extends Page implements HasTable
         return ReportRenderer::renderPdf(
             title: 'Documents pending disinfestation',
             slug: 'pending-disinfestation',
-            headers: ['Identifier', 'Type', 'Subseries', 'Batch', 'Current box', 'Box barcode', 'Box status', 'Location', 'Created at', 'Days waiting'],
+            headers: ['Creator', 'Authority Identifier', 'Identifier', 'Type', 'Subseries', 'Batch', 'Current box', 'Box barcode', 'Box status', 'Location', 'Created at', 'Days waiting'],
             rows: $rows,
         );
     }
@@ -333,7 +357,7 @@ class PendingDisinfestationReport extends Page implements HasTable
         $query = $this->exportQuery();
         $rows = $this->fetchExportRowsWithCap(
             $query
-                ->with(['currentBox:id,box_number,barcode,barcode_status', 'batch:id,batch_number', 'series:id,code'])
+                ->with(['currentBox:id,box_number,barcode,barcode_status', 'batch:id,batch_number', 'series:id,code', 'authorities:id,surname,given_names,name_suffix,alternative_identifier'])
                 ->orderBy('documents.created_at'),
         );
 
@@ -351,6 +375,8 @@ class PendingDisinfestationReport extends Page implements HasTable
     public function getXlsxColumns(): array
     {
         return [
+            'Creator' => fn (Document $r) => implode('; ', self::creatorNames($r)),
+            'Authority Identifier' => fn (Document $r) => implode('; ', self::authorityIdentifiers($r)),
             'Identifier' => fn (Document $r) => $r->identifier,
             'Type' => fn (Document $r) => $r->document_type,
             'Subseries' => fn (Document $r) => $r->series?->getAttribute('code'),
@@ -392,7 +418,7 @@ class PendingDisinfestationReport extends Page implements HasTable
     protected function reportQuery(): Builder
     {
         return Document::query()
-            ->with(['currentBox:id,box_number,barcode,barcode_status,location_id', 'currentBox.location', 'location', 'batch:id,batch_number', 'series:id,code'])
+            ->with(['currentBox:id,box_number,barcode,barcode_status,location_id', 'currentBox.location', 'location', 'batch:id,batch_number', 'series:id,code', 'authorities:id,surname,given_names,name_suffix,alternative_identifier'])
             ->whereNull('disinfestation_date')
             ->where(function (Builder $q): void {
                 $q->whereNull('current_box_id')
@@ -421,6 +447,8 @@ class PendingDisinfestationReport extends Page implements HasTable
             : 0;
 
         return [
+            implode('; ', self::creatorNames($r)),
+            implode('; ', self::authorityIdentifiers($r)),
             $r->identifier,
             $r->document_type,
             $r->series?->getAttribute('code'),
@@ -467,5 +495,39 @@ class PendingDisinfestationReport extends Page implements HasTable
         abort_unless(static::canAccess(), 403);
 
         return [];
+    }
+
+    /**
+     * The document's creators as the Documents list writes them ("Surname, Given names").
+     *
+     * @return list<string>
+     */
+    private static function creatorNames(Document $r): array
+    {
+        $names = [];
+        foreach ($r->authorities as $authority) {
+            if ($authority instanceof Authority && ($name = DocumentResource::creatorName($authority)) !== '') {
+                $names[] = $name;
+            }
+        }
+
+        return $names;
+    }
+
+    /**
+     * The creators' Actual Authority Reference Codes (R-codes), one per creator.
+     *
+     * @return list<string>
+     */
+    private static function authorityIdentifiers(Document $r): array
+    {
+        $codes = [];
+        foreach ($r->authorities as $authority) {
+            if ($authority instanceof Authority && ($code = trim((string) $authority->alternative_identifier)) !== '') {
+                $codes[] = $code;
+            }
+        }
+
+        return $codes;
     }
 }

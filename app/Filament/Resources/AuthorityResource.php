@@ -12,6 +12,7 @@ use App\Filament\Support\Operators\WorkedBetweenOperator;
 use App\Models\Authority;
 use App\Models\Lookup\EntityType;
 use App\Support\ColumnLabels\ColumnLabels;
+use Filament\Actions\Action;
 use Filament\Actions\BulkActionGroup;
 use Filament\Actions\DeleteAction;
 use Filament\Actions\DeleteBulkAction;
@@ -210,6 +211,23 @@ class AuthorityResource extends Resource
                             ->columnSpanFull()),
                     ]),
             ]);
+    }
+
+    /**
+     * Client 2026-11-24: "When we are looking at the authority file, is there a
+     * way we can have a link to all documents by this creator?" — opens the
+     * Documents list on a "Creator is" rule for this authority.
+     */
+    public static function documentsAction(bool $withCount = true): Action
+    {
+        return Action::make('documentsByCreator')
+            ->label(fn (Authority $record): string => $withCount
+                ? 'Documents by this creator (' . number_format($record->documents()->count()) . ')'
+                : 'Documents')
+            ->icon('heroicon-o-document-text')
+            ->color('gray')
+            ->visible(fn (): bool => DocumentResource::canViewAny())
+            ->url(fn (Authority $record): string => DocumentResource::creatorDocumentsUrl($record));
     }
 
     public static function infolist(Schema $schema): Schema
@@ -532,6 +550,7 @@ class AuthorityResource extends Resource
             ->actions([
                 ViewAction::make(),
                 EditAction::make(),
+                self::documentsAction(withCount: false),
                 // Feedback1 — hide row Delete when the creator still has
                 // documents attached, so deleting one never orphans records.
                 DeleteAction::make()
