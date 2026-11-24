@@ -15,8 +15,10 @@ use App\Models\Lookup\BoxType;
 use App\Models\ReportTemplate;
 use App\Models\Repository;
 use App\Support\Reports\BoxReportCriteria;
+use App\Support\Reports\DisinfestationCapacity;
 use App\Support\Reports\ReportRenderer;
 use Filament\Actions\Action;
+use Filament\Forms\Components\TextInput;
 use Filament\Pages\Page;
 use Filament\Tables;
 use Filament\Tables\Concerns\InteractsWithTable;
@@ -55,7 +57,7 @@ class BoxesPendingDisinfestationReport extends Page implements HasTable
 
     public const REPORT_SOURCE = ReportTemplate::SOURCE_BOXES_PENDING_DISINFESTATION;
 
-    private const array HEADERS = ['Batch / Box', 'Barcode', 'Status', 'Current Box Type', 'Documents pending', 'Location'];
+    private const array HEADERS = ['Batch', 'Box', 'Barcode', 'Status', 'Current Box Type', 'Box spaces', 'Documents pending', 'Location'];
 
     protected string $view = 'filament.pages.reports.table';
 
@@ -86,16 +88,25 @@ class BoxesPendingDisinfestationReport extends Page implements HasTable
             ->query(fn (): Builder => $this->reportQuery())
             ->defaultSort(fn (Builder $query): Builder => BoxReportCriteria::orderBoxes($query, 'boxes.box_type', BoxReportCriteria::BATCH_NUMBER_SQL, 'boxes.box_number'))
             ->columns([
-                Tables\Columns\TextColumn::make('box_label')
-                    ->label('Batch / Box')
-                    ->state(fn (Box $r): string => $r->shortLabel())
-                    ->searchable(query: fn (Builder $query, string $search): Builder => $query->where(fn (Builder $q): Builder => $q
-                        ->where('boxes.box_number', 'like', "%{$search}%")
-                        ->orWhereHas('batch', fn (Builder $b): Builder => $b->where('batch_number', $search))))
+                // Client 2026-11-24: batch and box in separate columns, so the
+                // list can be filtered by batch and the Excel needs no splitting.
+                Tables\Columns\TextColumn::make('batch.batch_number')
+                    ->label('Batch')
+                    ->placeholder('—')
+                    ->searchable(query: fn (Builder $query, string $search): Builder => $query->whereHas('batch', fn (Builder $b): Builder => $b->where('batch_number', $search)))
                     ->sortable(query: fn (Builder $query, string $direction): Builder => BoxReportCriteria::orderBoxes($query, 'boxes.box_type', BoxReportCriteria::BATCH_NUMBER_SQL, 'boxes.box_number', $direction)),
+                Tables\Columns\TextColumn::make('box_label')
+                    ->label('Box')
+                    ->state(fn (Box $r): string => self::boxLabel($r))
+                    ->searchable(query: fn (Builder $query, string $search): Builder => $query->where('boxes.box_number', 'like', "%{$search}%")),
                 Tables\Columns\TextColumn::make('barcode')->label('Barcode')->placeholder('—')->searchable()->copyable(),
                 Tables\Columns\TextColumn::make('barcode_status')->label('Status')->badge()->color('success'),
                 Tables\Columns\TextColumn::make('current_box_type')->label('Current Box Type')->placeholder('—')->toggleable(),
+                Tables\Columns\TextColumn::make('box_spaces')
+                    ->label('Box spaces')
+                    ->state(fn (Box $r): int => DisinfestationCapacity::weightFor($r->current_box_type))
+                    ->alignEnd()
+                    ->tooltip('The space the box takes at disinfestation, from "Counts as" on Current Box Types (RAS Box 1, Big Brown Box 2).'),
                 Tables\Columns\TextColumn::make('pending_documents_count')
                     ->label('Documents pending')
                     ->alignEnd()
@@ -116,12 +127,76 @@ class BoxesPendingDisinfestationReport extends Page implements HasTable
                     ->searchable()
                     ->multiple()
                     ->query(fn (Builder $query, array $data): Builder => empty($data['values']) ? $query : $query->whereIn('boxes.location_id', $data['values'])),
+                Tables\Filters\SelectFilter::make('batch_id')
+                    ->label('Batch')
+                    ->relationship('batch', 'batch_number')
+                    ->searchable()
+                    ->multiple()
+                    ->query(fn (Builder $query, array $data): Builder => empty($data['values']) ? $query : $query->whereIn('boxes.batch_id', $data['values'])),
                 self::repositoryFilter(),
+                // Client 2026-11-24: "generate the export as the next 250 box
+                // spaces (as that is the capacity for Comtec)". Last, so it
+                // fills from the boxes the other filters leave.
+                Tables\Filters\Filter::make('box_spaces')
+                    ->schema([
+                        TextInput::make('spaces')
+                            ->label('Fill up to (box spaces)')
+                            ->numeric()
+                            ->integer()
+                            ->minValue(1)
+                            ->placeholder('e.g. 250')
+                            ->helperText('Takes the boxes in list order (batch, then box) until this many spaces are filled. A Big Brown Box takes 2.'),
+                    ])
+                    ->query(fn (Builder $query, array $data): Builder => self::fillBoxSpaces($query, (int) ($data['spaces'] ?? 0)))
+                    ->indicateUsing(fn (array $data): ?string => (int) ($data['spaces'] ?? 0) > 0 ? 'Up to ' . (int) $data['spaces'] . ' box spaces' : null),
             ])
             ->bulkActions([
                 SendBoxesToDisinfestationAction::bulk(),
             ])
             ->paginated([25, 50, 100]);
+    }
+
+    /**
+     * The box without its batch: "8" for a RAS box (its batch has its own
+     * column), "NRA 500" for the others.
+     */
+    public static function boxLabel(Box $box): string
+    {
+        return ($box->box_type ?? 'RAS') === 'RAS'
+            ? (string) $box->box_number
+            : trim($box->box_type . ' ' . $box->box_number);
+    }
+
+    /**
+     * Keep the first boxes, in the report's order, whose spaces add up to no
+     * more than $capacity. The fill stops at the first box that no longer fits,
+     * so the boxes sent stay in sequence.
+     *
+     * @param Builder<Box> $query
+     * @return Builder<Box>
+     */
+    public static function fillBoxSpaces(Builder $query, int $capacity): Builder
+    {
+        if ($capacity <= 0) {
+            return $query;
+        }
+
+        $candidates = BoxReportCriteria::orderBoxes((clone $query)->reorder()->setEagerLoads([])->select(['boxes.id', 'boxes.current_box_type']), 'boxes.box_type', BoxReportCriteria::BATCH_NUMBER_SQL, 'boxes.box_number')
+            ->toBase()
+            ->get();
+
+        $ids = [];
+        $used = 0;
+        foreach ($candidates as $box) {
+            $spaces = DisinfestationCapacity::weightFor(is_string($box->current_box_type) ? $box->current_box_type : null);
+            if ($used + $spaces > $capacity) {
+                break;
+            }
+            $used += $spaces;
+            $ids[] = (int) $box->id;
+        }
+
+        return $query->whereIn('boxes.id', $ids);
     }
 
     /** The repository filter the box reports share (a box's tenant is its batch's, else its own). */
@@ -244,10 +319,12 @@ class BoxesPendingDisinfestationReport extends Page implements HasTable
         foreach ($records as $box) {
             /** @var Box $box */
             $rows[] = [
-                $box->shortLabel(),
+                $box->batch_id !== null ? $box->getRelationValue('batch')?->getAttribute('batch_number') : null,
+                self::boxLabel($box),
                 $box->barcode,
                 $box->barcode_status,
                 $box->current_box_type,
+                DisinfestationCapacity::weightFor($box->current_box_type),
                 (int) $box->getAttribute('pending_documents_count'),
                 $box->location?->getAttribute('name'),
             ];

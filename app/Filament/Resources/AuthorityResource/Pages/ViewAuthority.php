@@ -13,6 +13,7 @@ class ViewAuthority extends ViewRecord
     protected function getHeaderActions(): array
     {
         return [
+            AuthorityResource::documentsAction(),
             Actions\EditAction::make(),
         ];
     }

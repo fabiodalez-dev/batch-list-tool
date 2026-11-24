@@ -48,7 +48,7 @@ To handle one document on its own, open it from the **Documents** list, select *
 
 ## 7. See what is pending
 
-Select **Reports** in the sidebar. **Documents pending disinfestation** lists the documents without a disinfestation date that are not PERM_OUT, with the **Days waiting** of each. **Boxes pending disinfestation** lists the boxes at status IN that hold at least one document (In Box) with no disinfestation date, with the number of **Documents pending**; select boxes there and choose **Send to disinfestation**, exactly as on the Boxes list.
+Select **Reports** in the sidebar. **Documents pending disinfestation** lists the documents without a disinfestation date that are not PERM_OUT, with the **Days waiting** of each. **Boxes pending disinfestation** lists the boxes at status IN that hold at least one document (In Box) with no disinfestation date, with the number of **Documents pending** and the **Box spaces** each box takes (a Big Brown Box counts 2). To fill one round, for example the 250 spaces of a Comtec round, enter that number in the **Fill up to (box spaces)** filter, then select the boxes and choose **Send to disinfestation**, exactly as on the Boxes list. The **Batch** filter narrows the list to one batch first, and the Excel export gives **Batch** and **Box** in separate columns.
 
 ## Tips
 

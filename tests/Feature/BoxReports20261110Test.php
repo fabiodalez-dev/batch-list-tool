@@ -205,7 +205,7 @@ it('lists IN boxes holding at least one document in the box never disinfested', 
         ->assertCanNotSeeTableRecords([$out, $done, $mountedOnly, $onItsWay, $legacyRound, $destroyed]);
 
     expect((int) $page->instance()->getTableRecords()->first()->pending_documents_count)->toBe(1);
-    expect(br_csv($page))->toContain('"Batch 7 / Box 1",BX7-1,IN,,1,"Room A"');
+    expect(br_csv($page))->toContain('7,1,BX7-1,IN,,1,1,"Room A"');
 });
 
 it('offers the send-to-disinfestation bulk action on the pending boxes', function (): void {

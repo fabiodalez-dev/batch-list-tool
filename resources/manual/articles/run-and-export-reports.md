@@ -27,8 +27,8 @@ Select the card of the report you require, for example **Stock take (by location
 - **Documents by creator / notary**: the number of documents for each authority (notary).
 - **Documents by subseries**: the number of documents in each subseries.
 - **Boxes ready to be destroyed**: RAS boxes whose documents all have a catalogue identifier, which can therefore be marked as destroyed.
-- **Documents pending disinfestation**: documents without a disinfestation date that are not in a PERM_OUT box.
-- **Boxes pending disinfestation**: boxes at status IN that hold at least one document (In Box) without a disinfestation date. You can select boxes in this report and choose **Send to disinfestation**.
+- **Documents pending disinfestation**: documents without a disinfestation date that are not in a PERM_OUT box. The **Creator** and **Authority Identifier** come first on each row, before the document **Identifier**.
+- **Boxes pending disinfestation**: boxes at status IN that hold at least one document (In Box) without a disinfestation date. **Batch** and **Box** are separate columns, in the exports too, and the **Batch** filter narrows the list to one or more batches. **Box spaces** gives the space each box takes, from **Counts as** on **Current Box Types** (a RAS Box 1, a Big Brown Box 2). To prepare one round, enter the number of spaces in the **Fill up to (box spaces)** filter, for example 250: the report keeps the boxes in list order, batch then box, until that many spaces are filled, and the exports contain the same boxes. You can select boxes in this report and choose **Send to disinfestation**.
 - **Document movement history**: documents moved between boxes, showing when, from which box to which, why and by whom.
 - **Flags by type**: for each flag type and severity, the number of documents with an open or acknowledged flag and the number with a resolved or dismissed flag.
 - **RAS ↔ NRA reconciliation**: compares an uploaded RAS report with the RAS boxes in the tool and lists only the discrepancies. This report is described in *How to reconcile RAS barcodes with an uploaded list*.
@@ -46,7 +46,7 @@ The subseries filter is labelled **Subseries** in **Documents by batch**, **Docu
 
 ## 4. Read and sort the results
 
-Type in **Search** to find a particular box, barcode or document within the results. Select a column heading that can be sorted, such as **Batch / Box**, to sort by it, and select it again to reverse the order. In the stock take, each location heading shows how many boxes or documents it holds; dates are shown as dd-mm-yyyy, and the **Per page** selector at the foot of the table shows 25, 50 or 100 rows.
+Type in **Search** to find a particular box, barcode or document within the results. Select a column heading that can be sorted, such as **Batch**, to sort by it, and select it again to reverse the order. In the stock take, each location heading shows how many boxes or documents it holds; dates are shown as dd-mm-yyyy, and the **Per page** selector at the foot of the table shows 25, 50 or 100 rows.
 
 ## 5. Export the results
 
