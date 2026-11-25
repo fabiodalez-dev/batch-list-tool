@@ -147,7 +147,10 @@ class BoxesPendingDisinfestationReport extends Page implements HasTable
                             ->placeholder('e.g. 250')
                             ->helperText('Takes the boxes in list order (batch, then box) until this many spaces are filled. A Big Brown Box takes 2.'),
                     ])
-                    ->query(fn (Builder $query, array $data): Builder => self::fillBoxSpaces($query, (int) ($data['spaces'] ?? 0)))
+                    // baseQuery, not query: Filament hands query() an empty
+                    // nested query, so the fill would count every box, pending
+                    // or not. The base query is the report's own.
+                    ->baseQuery(fn (Builder $query, array $data, HasTable $livewire): Builder => self::fillBoxSpaces($query, (int) ($data['spaces'] ?? 0), $livewire))
                     ->indicateUsing(fn (array $data): ?string => (int) ($data['spaces'] ?? 0) > 0 ? 'Up to ' . (int) $data['spaces'] . ' box spaces' : null),
             ])
             ->bulkActions([
@@ -175,13 +178,27 @@ class BoxesPendingDisinfestationReport extends Page implements HasTable
      * @param Builder<Box> $query
      * @return Builder<Box>
      */
-    public static function fillBoxSpaces(Builder $query, int $capacity): Builder
+    public static function fillBoxSpaces(Builder $query, int $capacity, ?HasTable $livewire = null): Builder
     {
         if ($capacity <= 0) {
             return $query;
         }
 
-        $candidates = BoxReportCriteria::orderBoxes((clone $query)->reorder()->setEagerLoads([])->select(['boxes.id', 'boxes.current_box_type']), 'boxes.box_type', BoxReportCriteria::BATCH_NUMBER_SQL, 'boxes.box_number')
+        $candidates = (clone $query)->reorder()->setEagerLoads([])->select(['boxes.id', 'boxes.current_box_type']);
+
+        // The other filters (batch, location, ...) apply after the base query,
+        // so the fill applies them itself to count only the boxes they leave.
+        if ($livewire !== null) {
+            $candidates->where(function (Builder $candidates) use ($livewire): void {
+                foreach ($livewire->getTable()->getFilters() as $filter) {
+                    if ($filter->getName() !== 'box_spaces') {
+                        $filter->apply($candidates, $livewire->getTableFilterState($filter->getName()) ?? []);
+                    }
+                }
+            });
+        }
+
+        $candidates = BoxReportCriteria::orderBoxes($candidates, 'boxes.box_type', BoxReportCriteria::BATCH_NUMBER_SQL, 'boxes.box_number')
             ->toBase()
             ->get();
 

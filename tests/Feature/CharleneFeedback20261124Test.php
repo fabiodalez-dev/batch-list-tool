@@ -193,3 +193,32 @@ it('fills the next N box spaces in list order, a Big Brown Box taking two', func
         ->filterTable('box_spaces', ['spaces' => null])
         ->assertCanSeeTableRecords([$one, $two, $three, $four, $first]);
 });
+
+it('fills only from the boxes in the report, not from boxes earlier in the order that have nothing pending', function (): void {
+    // Production 2026-11-24: "Fill up to 250" gave an empty list. The filter
+    // counted spaces over every box, so the first 250 spaces went to boxes
+    // with nothing pending, and none of them was in the report.
+    $b45 = ($this->batch)('45');
+    $b46 = ($this->batch)('46');
+    $done = ($this->ras)($b45, '1');
+    $pending = ($this->ras)($b46, '1');
+    $later = ($this->ras)($b46, '2');
+    ($this->doc)($pending);
+    ($this->doc)($later);
+
+    Livewire::test(BoxesPendingDisinfestationReport::class)
+        ->assertCanNotSeeTableRecords([$done])
+        ->filterTable('box_spaces', ['spaces' => 1])
+        ->assertCanSeeTableRecords([$pending])
+        ->assertCanNotSeeTableRecords([$done, $later]);
+
+    // With the batch filter, the fill counts only that batch's pending boxes.
+    $b47 = ($this->batch)('47');
+    $own = ($this->ras)($b47, '5');
+    ($this->doc)($own);
+    Livewire::test(BoxesPendingDisinfestationReport::class)
+        ->filterTable('batch_id', [$b47->id])
+        ->filterTable('box_spaces', ['spaces' => 1])
+        ->assertCanSeeTableRecords([$own])
+        ->assertCanNotSeeTableRecords([$pending, $later]);
+});
